@@ -40,19 +40,21 @@ class LoginFragment : BaseFragment<FragmentLoginBinding>() {
     }
 
     private fun setupClickListeners() {
-
         binding.btnLogin.setOnClickListener {
-            // Disable immediately — prevents double-tap race condition
             it.isEnabled = false
 
             val email = binding.etEmail.text?.toString()?.trim() ?: ""
             val password = binding.etPassword.text?.toString() ?: ""
 
             clearError()
+
+            // Show loading immediately on tap — don't wait for ViewModel
+            binding.progressBar.visibility = View.VISIBLE
+            binding.btnLogin.text = "Signing in..."
+
             viewModel.login(email, password)
         }
 
-        // Allow IME "Done" action on password field to trigger login
         binding.etPassword.setOnEditorActionListener { _, _, _ ->
             binding.btnLogin.performClick()
             true
@@ -84,11 +86,13 @@ class LoginFragment : BaseFragment<FragmentLoginBinding>() {
     private fun showIdle() {
         binding.progressBar.visibility = View.GONE
         binding.btnLogin.isEnabled = true
+        binding.btnLogin.text = "Sign In"
     }
 
     private fun showError(message: String) {
         binding.progressBar.visibility = View.GONE
         binding.btnLogin.isEnabled = true
+        binding.btnLogin.text = "Sign In"
         binding.tvError.visibility = View.VISIBLE
         binding.tvError.text = message
     }
