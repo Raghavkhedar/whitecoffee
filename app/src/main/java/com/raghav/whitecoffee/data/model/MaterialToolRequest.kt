@@ -1,0 +1,95 @@
+package com.raghav.whitecoffee.data.model
+
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.DocumentSnapshot
+
+data class RequestItem(
+    val itemName: String = "",
+    val quantity: Int = 0,
+    val unit: String = "",      // e.g. "pcs", "kg", "m"
+    val notes: String = ""
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "itemName" to itemName,
+        "quantity" to quantity,
+        "unit"     to unit,
+        "notes"    to notes
+    )
+
+    companion object {
+        fun fromMap(map: Map<*, *>): RequestItem = RequestItem(
+            itemName = map["itemName"] as? String ?: "",
+            quantity = (map["quantity"] as? Long)?.toInt() ?: 0,
+            unit     = map["unit"] as? String ?: "",
+            notes    = map["notes"] as? String ?: ""
+        )
+    }
+}
+
+data class MaterialToolRequest(
+    @DocumentId
+    val id: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    val employeeId: String = "",
+    val siteId: String = "",
+    val siteName: String = "",
+    val items: List<RequestItem> = emptyList(),
+    val status: String = "pending",     // "pending", "approved", "rejected"
+    val notes: String = "",
+    val submittedAt: Timestamp? = null
+) {
+    /** One row per item for Google Sheets export */
+    fun toSheetRows(): List<Map<String, Any>> = items.map { item ->
+        mapOf(
+            "Employee ID"  to employeeId,
+            "Name"         to userName,
+            "Site"         to siteName,
+            "Item"         to item.itemName,
+            "Quantity"     to item.quantity,
+            "Unit"         to item.unit,
+            "Item Notes"   to item.notes,
+            "Status"       to status,
+            "Notes"        to notes,
+            "Submitted At" to (submittedAt?.toDate()?.toString() ?: "")
+        )
+    }
+
+    fun toMap(): Map<String, Any?> = mapOf(
+        "userId"      to userId,
+        "userName"    to userName,
+        "employeeId"  to employeeId,
+        "siteId"      to siteId,
+        "siteName"    to siteName,
+        "items"       to items.map { it.toMap() },
+        "status"      to status,
+        "notes"       to notes,
+        "submittedAt" to submittedAt
+    )
+
+    companion object {
+        fun fromDocument(doc: DocumentSnapshot): MaterialToolRequest? {
+            return try {
+                val rawItems = (doc.get("items") as? List<*>)
+                    ?.filterIsInstance<Map<*, *>>()
+                    ?.map { RequestItem.fromMap(it) }
+                    ?: emptyList()
+                MaterialToolRequest(
+                    id          = doc.id,
+                    userId      = doc.getString("userId") ?: return null,
+                    userName    = doc.getString("userName") ?: "",
+                    employeeId  = doc.getString("employeeId") ?: "",
+                    siteId      = doc.getString("siteId") ?: "",
+                    siteName    = doc.getString("siteName") ?: "",
+                    items       = rawItems,
+                    status      = doc.getString("status") ?: "pending",
+                    notes       = doc.getString("notes") ?: "",
+                    submittedAt = doc.getTimestamp("submittedAt")
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+}
