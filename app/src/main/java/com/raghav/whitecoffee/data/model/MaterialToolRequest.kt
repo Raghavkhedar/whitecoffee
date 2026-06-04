@@ -38,6 +38,7 @@ data class MaterialToolRequest(
     val items: List<RequestItem> = emptyList(),
     val status: String = "pending",     // "pending", "approved", "rejected"
     val notes: String = "",
+    val photoUrls: List<String> = emptyList(),
     val submittedAt: Timestamp? = null
 ) {
     /** One row per item for Google Sheets export */
@@ -65,6 +66,7 @@ data class MaterialToolRequest(
         "items"       to items.map { it.toMap() },
         "status"      to status,
         "notes"       to notes,
+        "photoUrls"   to photoUrls,
         "submittedAt" to submittedAt
     )
 
@@ -74,6 +76,9 @@ data class MaterialToolRequest(
                 val rawItems = (doc.get("items") as? List<*>)
                     ?.filterIsInstance<Map<*, *>>()
                     ?.map { RequestItem.fromMap(it) }
+                    ?: emptyList()
+                val photoUrls = (doc.get("photoUrls") as? List<*>)
+                    ?.filterIsInstance<String>()
                     ?: emptyList()
                 MaterialToolRequest(
                     id          = doc.id,
@@ -85,6 +90,7 @@ data class MaterialToolRequest(
                     items       = rawItems,
                     status      = doc.getString("status") ?: "pending",
                     notes       = doc.getString("notes") ?: "",
+                    photoUrls   = photoUrls,
                     submittedAt = doc.getTimestamp("submittedAt")
                 )
             } catch (e: Exception) {

@@ -22,6 +22,7 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
 
     private val viewModel: TransferViewModel by viewModels()
     private val itemRows = mutableListOf<ItemTransferRowBinding>()
+    private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
         inflater: LayoutInflater,
@@ -31,9 +32,20 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupPhotoHelper()
         setupClickListeners()
         observeViewModel()
         addItemRow()
+    }
+
+    private fun setupPhotoHelper() {
+        photoPickerHelper = PhotoPickerHelper(
+            fragment           = this,
+            thumbnailContainer = binding.containerPhotos,
+            scrollView         = binding.scrollPhotos,
+            onPhotosChanged    = { /* no-op: we read uris on submit */ }
+        )
+        binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
 
     private fun setupClickListeners() {
@@ -47,7 +59,8 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
                 transferredBy = binding.etTransferredBy.text?.toString() ?: "",
                 receivedBy    = binding.etReceivedBy.text?.toString() ?: "",
                 items         = collectItems(),
-                notes         = binding.etNotes.text?.toString() ?: ""
+                notes         = binding.etNotes.text?.toString() ?: "",
+                photoUris     = photoPickerHelper.getSelectedUris()
             )
         }
     }

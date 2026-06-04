@@ -24,10 +24,10 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
 
     private val viewModel: MaterialToolRequestViewModel by viewModels()
 
-    // Keeps track of all item row bindings for reading values on submit
     private val itemRows = mutableListOf<ItemRequestRowBinding>()
     private var selectedSite: Site? = null
     private var availableSites: List<Site> = emptyList()
+    private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
         inflater: LayoutInflater,
@@ -37,10 +37,20 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupPhotoHelper()
         setupClickListeners()
         observeViewModel()
-        // Add first item row by default
         addItemRow()
+    }
+
+    private fun setupPhotoHelper() {
+        photoPickerHelper = PhotoPickerHelper(
+            fragment           = this,
+            thumbnailContainer = binding.containerPhotos,
+            scrollView         = binding.scrollPhotos,
+            onPhotosChanged    = { /* no-op: we read uris on submit */ }
+        )
+        binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
 
     private fun setupClickListeners() {
@@ -59,7 +69,7 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
             it.isEnabled = false
             val items = collectItems()
             val notes = binding.etNotes.text?.toString() ?: ""
-            viewModel.submitRequest(site, items, notes)
+            viewModel.submitRequest(site, items, notes, photoPickerHelper.getSelectedUris())
         }
     }
 
@@ -112,7 +122,6 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
         binding.acvSite.setOnItemClickListener { _, _, position, _ ->
             selectedSite = sites[position]
         }
-        // Auto-select if only one site
         if (sites.size == 1) {
             selectedSite = sites[0]
             binding.acvSite.setText(sites[0].name, false)
@@ -131,13 +140,11 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
         rowBinding.btnRemove.setOnClickListener {
             binding.containerItems.removeView(rowBinding.root)
             itemRows.remove(rowBinding)
-            // Re-number remaining rows
             itemRows.forEachIndexed { index, row ->
                 row.tvRowNumber.text = (index + 1).toString()
             }
         }
 
-        // Hide remove button on first row
         if (itemRows.isEmpty()) {
             rowBinding.btnRemove.visibility = View.INVISIBLE
         }

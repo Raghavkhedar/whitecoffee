@@ -181,6 +181,21 @@ class RequestRepository @Inject constructor(
         }
     }
 
+    suspend fun updatePhotoUrls(
+        collectionName: String,
+        docId: String,
+        urls: List<String>
+    ): Result<Unit> {
+        return try {
+            firestore.collection(collectionName).document(docId)
+                .update("photoUrls", urls)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getWorkProgress(): Result<List<WorkProgress>> {
         return try {
             val snapshot = workProgressCol

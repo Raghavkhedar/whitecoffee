@@ -1,8 +1,10 @@
 package com.raghav.whitecoffee.ui.requests
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.core.UiState
+import com.raghav.whitecoffee.data.PhotoUploadManager
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.RequestItem
 import com.raghav.whitecoffee.data.model.Site
@@ -18,7 +20,7 @@ import javax.inject.Inject
 @HiltViewModel
 class MaterialToolRequestViewModel @Inject constructor(
     private val requestRepository: RequestRepository,
-    private val siteRepository: SiteRepository
+    private val siteRepository: SiteRepository,
     private val photoUploadManager: PhotoUploadManager
 ) : ViewModel() {
 
@@ -49,7 +51,8 @@ class MaterialToolRequestViewModel @Inject constructor(
     fun submitRequest(
         site: Site,
         items: List<RequestItem>,
-        notes: String
+        notes: String,
+        photoUris: List<Uri> = emptyList()
     ) {
         if (items.isEmpty()) {
             _submitState.value = UiState.Error("Please add at least one item.")
@@ -70,12 +73,24 @@ class MaterialToolRequestViewModel @Inject constructor(
                 notes    = notes.trim()
             )
             val result = requestRepository.submitMaterialToolRequest(request)
-            _submitState.value = when {
-                result.isSuccess -> UiState.Success(result.getOrThrow())
-                else -> UiState.Error(
+            if (result.isFailure) {
+                _submitState.value = UiState.Error(
                     result.exceptionOrNull()?.message ?: "Submission failed. Try again."
                 )
+                return@launch
             }
+            val docId = result.getOrThrow()
+            if (photoUris.isNotEmpty()) {
+                val uploadResult = photoUploadManager.uploadPhotos(
+                    photoUris, "material_tool_requests", docId
+                )
+                if (uploadResult.isSuccess) {
+                    requestRepository.updatePhotoUrls(
+                        "material_tool_requests", docId, uploadResult.getOrThrow()
+                    )
+                }
+            }
+            _submitState.value = UiState.Success(docId)
         }
     }
 

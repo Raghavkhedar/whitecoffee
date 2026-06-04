@@ -27,6 +27,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
     private val viewModel: MaterialToolBuyViewModel by viewModels()
     private val itemRows = mutableListOf<ItemBuyRowBinding>()
     private var selectedSite: Site? = null
+    private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
         inflater: LayoutInflater,
@@ -36,9 +37,20 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        setupPhotoHelper()
         setupClickListeners()
         observeViewModel()
         addItemRow()
+    }
+
+    private fun setupPhotoHelper() {
+        photoPickerHelper = PhotoPickerHelper(
+            fragment           = this,
+            thumbnailContainer = binding.containerPhotos,
+            scrollView         = binding.scrollPhotos,
+            onPhotosChanged    = { /* no-op: we read uris on submit */ }
+        )
+        binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
 
     private fun setupClickListeners() {
@@ -48,7 +60,11 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
             val site = selectedSite
             if (site == null) { showError("Please select a site."); return@setOnClickListener }
             it.isEnabled = false
-            viewModel.submitPurchase(site, collectItems(), binding.etNotes.text?.toString() ?: "")
+            viewModel.submitPurchase(
+                site, collectItems(),
+                binding.etNotes.text?.toString() ?: "",
+                photoPickerHelper.getSelectedUris()
+            )
         }
     }
 
@@ -97,15 +113,13 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
         val rowNumber = itemRows.size + 1
         rowBinding.tvRowNumber.text = rowNumber.toString()
 
-        // Auto-calculate row total when qty or price changes
         val watcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 val qty = rowBinding.etQuantity.text?.toString()?.toDoubleOrNull() ?: 0.0
                 val price = rowBinding.etPrice.text?.toString()?.toDoubleOrNull() ?: 0.0
-                val rowTotal = qty * price
-                rowBinding.tvRowTotal.text = "Total: ₹%.2f".format(rowTotal)
+                rowBinding.tvRowTotal.text = "Total: ₹%.2f".format(qty * price)
                 updateGrandTotal()
             }
         }

@@ -45,6 +45,7 @@ data class MaterialToolPurchase(
     val grandTotal: Double = 0.0,
     val status: String = "pending",
     val notes: String = "",
+    val photoUrls: List<String> = emptyList(),
     val submittedAt: Timestamp? = null
 ) {
     /** One row per item for Google Sheets export */
@@ -76,6 +77,7 @@ data class MaterialToolPurchase(
         "grandTotal"  to grandTotal,
         "status"      to status,
         "notes"       to notes,
+        "photoUrls"   to photoUrls,
         "submittedAt" to submittedAt
     )
 
@@ -85,6 +87,9 @@ data class MaterialToolPurchase(
                 val rawItems = (doc.get("items") as? List<*>)
                     ?.filterIsInstance<Map<*, *>>()
                     ?.map { PurchaseItem.fromMap(it) }
+                    ?: emptyList()
+                val photoUrls = (doc.get("photoUrls") as? List<*>)
+                    ?.filterIsInstance<String>()
                     ?: emptyList()
                 MaterialToolPurchase(
                     id          = doc.id,
@@ -97,6 +102,7 @@ data class MaterialToolPurchase(
                     grandTotal  = doc.getDouble("grandTotal") ?: 0.0,
                     status      = doc.getString("status") ?: "pending",
                     notes       = doc.getString("notes") ?: "",
+                    photoUrls   = photoUrls,
                     submittedAt = doc.getTimestamp("submittedAt")
                 )
             } catch (e: Exception) {

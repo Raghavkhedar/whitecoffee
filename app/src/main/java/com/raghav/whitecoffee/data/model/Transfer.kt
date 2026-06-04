@@ -40,6 +40,7 @@ data class Transfer(
     val items: List<TransferItem> = emptyList(),
     val status: String = "pending",
     val notes: String = "",
+    val photoUrls: List<String> = emptyList(),
     val transferDate: String = "",      // yyyy-MM-dd
     val submittedAt: Timestamp? = null
 ) {
@@ -74,6 +75,7 @@ data class Transfer(
         "items"         to items.map { it.toMap() },
         "status"        to status,
         "notes"         to notes,
+        "photoUrls"     to photoUrls,
         "transferDate"  to transferDate,
         "submittedAt"   to submittedAt
     )
@@ -84,6 +86,9 @@ data class Transfer(
                 val rawItems = (doc.get("items") as? List<*>)
                     ?.filterIsInstance<Map<*, *>>()
                     ?.map { TransferItem.fromMap(it) }
+                    ?: emptyList()
+                val photoUrls = (doc.get("photoUrls") as? List<*>)
+                    ?.filterIsInstance<String>()
                     ?: emptyList()
                 Transfer(
                     id            = doc.id,
@@ -97,6 +102,7 @@ data class Transfer(
                     items         = rawItems,
                     status        = doc.getString("status") ?: "pending",
                     notes         = doc.getString("notes") ?: "",
+                    photoUrls     = photoUrls,
                     transferDate  = doc.getString("transferDate") ?: "",
                     submittedAt   = doc.getTimestamp("submittedAt")
                 )
