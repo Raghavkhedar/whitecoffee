@@ -1,5 +1,7 @@
 package com.raghav.whitecoffee.data.repository
 
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.raghav.whitecoffee.data.model.Site
 import com.raghav.whitecoffee.data.session.SessionManager
@@ -15,50 +17,120 @@ class SiteRepository @Inject constructor(
 
     private val collection get() = firestore.collection("sites")
 
-    /**
-     * Fetches a single site by document ID.
-     */
     suspend fun getSiteById(siteId: String): Result<Site> {
         return try {
             val doc = collection.document(siteId).get().await()
-            val site = Site.fromDocument(doc)
-                ?: return Result.failure(Exception("Site not found."))
+            val site = Site.fromDocument(doc) ?: return Result.failure(Exception("Site not found."))
             Result.success(site)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    /**
-     * Fetches only the sites assigned to the current user.
-     * Uses SessionManager cache — zero extra Firestore reads for the user doc.
-     */
     suspend fun getAssignedSites(): Result<List<Site>> {
         return try {
             val assignedIds = sessionManager.assignedSites
             if (assignedIds.isEmpty()) return Result.success(emptyList())
-
-            // Firestore whereIn supports max 30 items — safe for any realistic site list
             val snapshot = collection
                 .whereIn(com.google.firebase.firestore.FieldPath.documentId(), assignedIds)
                 .get()
                 .await()
+            Result.success(snapshot.documents.mapNotNull { Site.fromDocument(it) })
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
-            val sites = snapshot.documents.mapNotNull { Site.fromDocument(it) }
-            Result.success(sites)
+    suspend fun getAllSites(): Result<List<Site>> {
+        return try {
+            val snapshot = collection.get().await()
+            Result.success(snapshot.documents.mapNotNull { Site.fromDocument(it) })
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ── Admin operations ──────────────────────────────────────────────────
+
+    suspend fun createSite(
+        name: String,
+        latitude: Double,
+        longitude: Double,
+        geofenceRadius: Double
+    ): Result<String> {
+        return try {
+            val data = mapOf(
+                "name"           to name.trim(),
+                "latitude"       to latitude,
+                "longitude"      to longitude,
+                "geofenceRadius" to geofenceRadius,
+                "assignedUserIds" to emptyList<String>(),
+                "createdAt"      to Timestamp.now()
+            )
+            val ref = collection.add(data).await()
+            Result.success(ref.id)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateSite(
+        siteId: String,
+        name: String,
+        latitude: Double,
+        longitude: Double,
+        geofenceRadius: Double
+    ): Result<Unit> {
+        return try {
+            collection.document(siteId).update(
+                mapOf(
+                    "name"           to name.trim(),
+                    "latitude"       to latitude,
+                    "longitude"      to longitude,
+                    "geofenceRadius" to geofenceRadius
+                )
+            ).await()
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     /**
-     * Fetches all sites — used by office role users.
+     * Atomically updates site's assignedUserIds AND each user's assignedSites list.
+     * Uses batch writes so both sides stay in sync.
      */
-    suspend fun getAllSites(): Result<List<Site>> {
+    suspend fun assignUsersToSite(
+        siteId: String,
+        newUserIds: List<String>,
+        previousUserIds: List<String>
+    ): Result<Unit> {
         return try {
-            val snapshot = collection.get().await()
-            val sites = snapshot.documents.mapNotNull { Site.fromDocument(it) }
-            Result.success(sites)
+            val batch = firestore.batch()
+
+            batch.update(
+                collection.document(siteId),
+                "assignedUserIds", newUserIds
+            )
+
+            val removed = previousUserIds.filter { it !in newUserIds }
+            removed.forEach { uid ->
+                batch.update(
+                    firestore.collection("users").document(uid),
+                    "assignedSites", FieldValue.arrayRemove(siteId)
+                )
+            }
+
+            val added = newUserIds.filter { it !in previousUserIds }
+            added.forEach { uid ->
+                batch.update(
+                    firestore.collection("users").document(uid),
+                    "assignedSites", FieldValue.arrayUnion(siteId)
+                )
+            }
+
+            batch.commit().await()
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -26,6 +26,9 @@
             android:id="@+id/action_homeFragment_to_attendanceFragment"
             app:destination="@id/attendanceFragment" />
         <action
+            android:id="@+id/action_homeFragment_to_officeAttendanceFragment"
+            app:destination="@id/officeAttendanceFragment" />
+        <action
             android:id="@+id/action_homeFragment_to_materialToolRequestFragment"
             app:destination="@id/materialToolRequestFragment" />
         <action
@@ -40,6 +43,12 @@
         <action
             android:id="@+id/action_homeFragment_to_workProgressFragment"
             app:destination="@id/workProgressFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_leaveFragment"
+            app:destination="@id/leaveFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_leaveApprovalsFragment"
+            app:destination="@id/leaveApprovalsFragment" />
         <action
             android:id="@+id/action_homeFragment_to_loginFragment"
             app:destination="@id/loginFragment"
@@ -77,10 +86,39 @@
         android:name="com.raghav.whitecoffee.ui.requests.ToolTransferFragment"
         android:label="Tool Transfer" />
 
+    <!-- ── Office Attendance ── -->
+    <fragment
+        android:id="@+id/officeAttendanceFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.OfficeAttendanceFragment"
+        android:label="Attendance" />
+
     <!-- ── Work Progress ── -->
     <fragment
         android:id="@+id/workProgressFragment"
         android:name="com.raghav.whitecoffee.ui.requests.WorkProgressFragment"
         android:label="Work Progress" />
+
+    <!-- ── Leave (My Leaves list) ── -->
+    <fragment
+        android:id="@+id/leaveFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.LeaveFragment"
+        android:label="My Leaves">
+        <action
+            android:id="@+id/action_leaveFragment_to_applyLeaveFragment"
+            app:destination="@id/applyLeaveFragment" />
+    </fragment>
+
+    <!-- ── Apply Leave ── -->
+    <fragment
+        android:id="@+id/applyLeaveFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.ApplyLeaveFragment"
+        android:label="Apply for Leave" />
+
+    <!-- ── Leave Approvals (office only) ── -->
+    <fragment
+        android:id="@+id/leaveApprovalsFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.LeaveApprovalsFragment"
+        android:label="Leave Approvals" />
+
 
 </navigation>

@@ -362,6 +362,96 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Row 4: Leave | Leave Approvals (office only) -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_leave"
+            style="@style/WC.CardView.NoPadding"
+            android:layout_width="0dp"
+            android:layout_height="120dp"
+            android:layout_marginStart="20dp"
+            android:layout_marginEnd="8dp"
+            android:layout_marginTop="12dp"
+            app:layout_constraintTop_toBottomOf="@id/card_tool_transfer"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="@id/guideline_center">
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/icon_leave"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="🗓️"
+                    android:textSize="20sp"
+                    android:gravity="center"
+                    android:background="@drawable/icon_bg"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Leave"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary"
+                    android:layout_marginTop="10dp"
+                    app:layout_constraintTop_toBottomOf="@id/icon_leave"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_leave_approvals"
+            style="@style/WC.CardView.NoPadding"
+            android:layout_width="0dp"
+            android:layout_height="120dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="20dp"
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/card_tool_transfer"
+            app:layout_constraintStart_toEndOf="@id/guideline_center"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="16dp">
+
+                <TextView
+                    android:id="@+id/icon_leave_approvals"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:text="✅"
+                    android:textSize="20sp"
+                    android:gravity="center"
+                    android:background="@drawable/icon_bg"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Leave Approvals"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary"
+                    android:layout_marginTop="10dp"
+                    app:layout_constraintTop_toBottomOf="@id/icon_leave_approvals"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+            </androidx.constraintlayout.widget.ConstraintLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Center guideline for 2-column grid -->
         <androidx.constraintlayout.widget.Guideline
             android:id="@+id/guideline_center"

@@ -19,7 +19,8 @@ class AttendanceRepository @Inject constructor(
     private val sessionManager: SessionManager
 ) {
 
-    private val collection get() = firestore.collection("attendance")
+    private val userDoc    get() = firestore.collection("users").document(sessionManager.userId)
+    private val collection get() = userDoc.collection("attendance")
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     /**
@@ -30,7 +31,6 @@ class AttendanceRepository @Inject constructor(
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
-                .whereEqualTo("userId", sessionManager.userId)
                 .whereEqualTo("date", today)
                 .orderBy("timestamp", Query.Direction.ASCENDING)
                 .get()
@@ -102,7 +102,6 @@ class AttendanceRepository @Inject constructor(
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
-                .whereEqualTo("userId", sessionManager.userId)
                 .whereEqualTo("date", today)
                 .orderBy("timestamp", Query.Direction.ASCENDING)
                 .get()

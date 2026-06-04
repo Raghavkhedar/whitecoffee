@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 3 End
+### Last Updated: Session 8 End
 
 ---
 
@@ -96,9 +96,9 @@ com.raghav.whitecoffee
 │   └── repository/
 │       ├── AuthRepository.kt            ✅
 │       ├── UserRepository.kt            ✅
-│       ├── AttendanceRepository.kt      ✅
+│       ├── AttendanceRepository.kt      ✅ sub-collection: users/{uid}/attendance
 │       ├── SiteRepository.kt            ✅
-│       └── RequestRepository.kt         ✅ + updatePhotoUrls()
+│       └── RequestRepository.kt         ✅ sub-collections under users/{uid}/
 │
 └── ui/
     ├── login/
@@ -108,9 +108,31 @@ com.raghav.whitecoffee
     │   ├── HomeFragment.kt              ✅ TESTED
     │   └── HomeViewModel.kt             ✅
     ├── attendance/
-    │   ├── AttendanceFragment.kt        ✅ TESTED
+    │   ├── AttendanceFragment.kt        ✅ TESTED (operations — full GPS flow)
     │   ├── AttendanceViewModel.kt       ✅
-    │   └── AttendanceTimelineAdapter.kt ✅
+    │   ├── AttendanceTimelineAdapter.kt ✅
+    │   ├── OfficeAttendanceFragment.kt  ✅ Simple check-in/out for office role
+    │   └── OfficeAttendanceViewModel.kt ✅ OfficeState: NotCheckedIn/CheckedIn/DayComplete
+    ├── attendance/ (continued)
+    │   ├── LeaveFragment.kt             ✅ My Leaves list + FAB to apply
+    │   ├── LeaveViewModel.kt            ✅
+    │   ├── LeaveRequestAdapter.kt       ✅ status badge: pending/approved/rejected
+    │   ├── ApplyLeaveFragment.kt        ✅ leave type + date range + reason
+    │   ├── ApplyLeaveViewModel.kt       ✅ auto-calculates total days
+    │   ├── LeaveApprovalsFragment.kt    ✅ office only — approve/reject with dialog
+    │   ├── LeaveApprovalsViewModel.kt   ✅ collectionGroup query across all users
+    │   └── LeaveApprovalAdapter.kt      ✅
+    ├── admin/
+    │   ├── AdminUserListFragment.kt     ✅ list all users, tap to edit
+    │   ├── AdminUserListViewModel.kt    ✅
+    │   ├── AdminUserAdapter.kt          ✅ role badge coloured purple/blue/green
+    │   ├── AddEditUserFragment.kt       ✅ add (secondary Firebase Auth) / edit user
+    │   ├── AddEditUserViewModel.kt      ✅ createUser via secondary app, updateProfile, resetPassword
+    │   ├── AdminSiteListFragment.kt     ✅ list all sites, tap to edit
+    │   ├── AdminSiteListViewModel.kt    ✅
+    │   ├── AdminSiteAdapter.kt          ✅
+    │   ├── AddEditSiteFragment.kt       ✅ add/edit site + multi-select user assignment
+    │   └── AddEditSiteViewModel.kt      ✅ assignUsersToSite (batch writes)
     └── requests/
         ├── PhotoPickerHelper.kt         ✅ Reusable multi-photo picker
         ├── MaterialToolRequestFragment.kt   ✅ + photo support
@@ -120,25 +142,163 @@ com.raghav.whitecoffee
         ├── MaterialTransferFragment.kt      ✅ + photo support
         ├── ToolTransferFragment.kt          ✅ (no photos)
         ├── TransferViewModel.kt             ✅ + photo upload for material transfer
-        ├── WorkProgressFragment.kt          ← NEXT TO BUILD (Step 21)
-        └── WorkProgressViewModel.kt         ← NEXT TO BUILD (Step 21)
+        ├── WorkProgressFragment.kt          ✅ Step 21 DONE
+        └── WorkProgressViewModel.kt         ✅ Step 21 DONE
 ```
 
 ---
 
-## FIRESTORE COLLECTIONS (6 separate — no shared collection)
+## FIRESTORE SCHEMA (Sub-Collections Per User — NoSQL document database)
 
-| Screen | Collection |
-|---|---|
-| Attendance | `attendance` |
-| M&T Request | `material_tool_requests` |
-| M&T Buy | `material_tool_purchases` |
-| Material Transfer | `material_transfers` |
-| Tool Transfer | `tool_transfers` |
-| Work Progress | `work_progress` |
+> Firebase Firestore is **non-relational (NoSQL)**. Collections = tables, Documents = rows. No JOINs.
+> All user-owned data lives in sub-collections under `/users/{userId}/` — no userId filter needed on reads.
+> For admin cross-user queries use Firestore `collectionGroup("collection_name")`.
 
-### Firestore indexes created:
-- `attendance`: userId ASC + date ASC + timestamp ASC ✅
+### Collection structure:
+```
+/users/{userId}                              ← User profile document
+/users/{userId}/attendance/{eventId}         ← Attendance events
+/users/{userId}/material_requests/{id}       ← M&T Requests
+/users/{userId}/material_purchases/{id}      ← M&T Purchases
+/users/{userId}/material_transfers/{id}      ← Material Transfers
+/users/{userId}/tool_transfers/{id}          ← Tool Transfers
+/users/{userId}/work_progress/{id}           ← Work Progress
+
+/sites/{siteId}                              ← Site info (top-level, shared)
+```
+
+### `/users/{userId}` — User Profile
+| Field | Type | Notes |
+|---|---|---|
+| userId | String | Firebase Auth UID |
+| employeeId | String | HR ID e.g. "EMP001" |
+| userName | String | Display name |
+| email | String | Lowercase |
+| role | String | "operations" or "office" |
+| assignedSiteIds | List\<String\> | Site IDs this user works at |
+| createdAt | Timestamp | |
+
+### `/users/{userId}/attendance/{eventId}` — Attendance Events
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized (for collectionGroup queries) |
+| employeeId | String | Denormalized |
+| userName | String | Denormalized |
+| date | String | yyyy-MM-dd |
+| type | String | home_in / home_out / site_in / site_out / market_in / market_out / **office_in / office_out** |
+| timestamp | Timestamp | When event occurred |
+| latitude | Double | GPS |
+| longitude | Double | GPS |
+| siteId | String? | site_in / site_out only |
+| siteName | String? | site_in / site_out only |
+| marketName | String? | market_in / market_out only |
+
+### `/users/{userId}/material_requests/{requestId}` — M&T Requests
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| siteId | String | Which site needs items |
+| siteName | String | |
+| items | List\<Map\> | itemName, quantity, unit, notes |
+| status | String | pending / approved / rejected |
+| notes | String | Overall notes |
+| photoUrls | List\<String\> | Firebase Storage URLs |
+| submittedAt | Timestamp | |
+
+### `/users/{userId}/material_purchases/{purchaseId}` — M&T Purchases
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| siteId | String | |
+| siteName | String | |
+| items | List\<Map\> | itemName, quantity, unit, pricePerUnit, totalPrice, notes |
+| grandTotal | Double | Sum of all item totals |
+| status | String | pending / approved / rejected |
+| notes | String | |
+| photoUrls | List\<String\> | |
+| submittedAt | Timestamp | |
+
+### `/users/{userId}/material_transfers/{transferId}` — Material Transfers
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| fromLocation | String | Site name, warehouse, etc. |
+| toLocation | String | |
+| transferredBy | String | Person handing over |
+| receivedBy | String | Person receiving |
+| items | List\<Map\> | itemName, quantity, unit, condition |
+| status | String | pending / approved / rejected |
+| notes | String | |
+| photoUrls | List\<String\> | |
+| transferDate | String | yyyy-MM-dd |
+| submittedAt | Timestamp | |
+
+### `/users/{userId}/tool_transfers/{transferId}` — Tool Transfers
+Same schema as material_transfers (no photoUrls field).
+
+### `/users/{userId}/work_progress/{progressId}` — Work Progress
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| siteId | String | |
+| siteName | String | |
+| date | String | yyyy-MM-dd |
+| hoursWorked | Double | e.g. 7.5 |
+| workDescription | String | What was accomplished |
+| photoUrls | List\<String\> | |
+| status | String | pending / approved / rejected |
+| submittedAt | Timestamp | |
+
+### `/sites/{siteId}` — Sites
+| Field | Type | Notes |
+|---|---|---|
+| siteId | String | DocumentId |
+| name | String | |
+| latitude | Double | |
+| longitude | Double | |
+| geofenceRadius | Int | Meters |
+| assignedUserIds | List\<String\> | Users assigned here |
+
+### `/users/{userId}/leave_requests/{requestId}` — Leave Requests
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized — needed for collectionGroup approve/reject path |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| leaveType | String | Sick Leave / Casual Leave / Annual Leave / Unpaid Leave |
+| fromDate | String | yyyy-MM-dd |
+| toDate | String | yyyy-MM-dd |
+| totalDays | Int | Auto-calculated inclusive days |
+| reason | String | |
+| status | String | pending / approved / rejected |
+| approvedBy | String | Manager's name |
+| approverComment | String | Rejection reason |
+| submittedAt | Timestamp | |
+| reviewedAt | Timestamp | |
+
+> **Firestore index required for Leave Approvals screen:**
+> Collection group `leave_requests` → `status` ASC + `submittedAt` ASC
+> Create in Firebase Console → Firestore → Indexes → Composite → Add index
+
+### Migration note:
+Old flat collections (`attendance`, `material_tool_requests`, etc.) were replaced by sub-collections.
+Delete old flat collections from Firestore Console — they only contain test data.
+Old Firestore index `attendance: userId + date + timestamp` is no longer needed.
+New index needed: `users/{uid}/attendance: date ASC + timestamp ASC` (create if queries are slow).
 
 ---
 
@@ -168,36 +328,45 @@ accent_light:     #EBF2FB  — icon backgrounds
 | Material Transfer | ✅ | ✅ |
 | Tool Transfer | ✅ | ✅ |
 | Work Progress | ❌ Hidden | ✅ Visible |
+| Leave (apply + my history) | ✅ | ✅ |
+| Leave Approvals | ✅ (approve/reject all staff) | ❌ Hidden |
+| User Management | ❌ | ❌ | ✅ Admin only |
+| Site Management | ❌ | ❌ | ✅ Admin only |
 
 Role checked via `sessionManager.isOperations` / `sessionManager.isOffice`
 
 ---
 
-## ATTENDANCE LOGIC (Operations users — event-based)
+## ATTENDANCE LOGIC
 
+### Operations users — event-based (AttendanceFragment + AttendanceViewModel)
 Every check-in/out = one Firestore doc with GPS coordinates.
 
-### Event types:
-- `home_in` → start of day
-- `home_out` → end of day  
-- `site_in` → arrived at site (validated inside 200m geofence)
-- `site_out` → left site
-- `market_in` → arrived at market (manual name entry)
-- `market_out` → left market
+Event types: `home_in`, `home_out`, `site_in`, `site_out`, `market_in`, `market_out`
 
-### State machine:
+State machine:
 ```
 NoRecord → HomeCheckedIn → SiteCheckedIn ←→ MarketCheckedIn
                         → MarketCheckedIn
                         → DayComplete (home_out)
 ```
-
-### Rules:
 - GPS captured on EVERY event
-- Only ONE location at a time (site OR market)
-- Can go Market → come back → check in at site again
-- Site check-in = button-triggered geofence validation (Phase 1)
+- Site check-in validates 200m geofence
 - Site picker dialog when multiple assigned sites
+
+### Office users — simple check-in/out (OfficeAttendanceFragment + OfficeAttendanceViewModel)
+Event types: `office_in`, `office_out`
+
+State machine: `NotCheckedIn → CheckedIn → DayComplete`
+- GPS captured on both events
+- No geofencing, no site selection, no market
+- Button listener set once in `setupActionButton()`, reads `viewModel.state.value` at tap time
+
+### HomeFragment routing:
+```kotlin
+if (viewModel.isOperations) navigate(attendanceFragment)
+else navigate(officeAttendanceFragment)
+```
 
 ---
 
@@ -205,12 +374,19 @@ NoRecord → HomeCheckedIn → SiteCheckedIn ←→ MarketCheckedIn
 
 - Firebase Storage (Blaze plan) ✅ enabled
 - Compression: max 1080px + JPEG 75% = ~150-250KB per photo
-- Storage path: `requests/{userId}/{collection}/{docId}/{timestamp}.jpg`
+- Storage path: `requests/{userId}/{collectionName}/{docId}/{timestamp}.jpg`
 - `PhotoUploadManager` handles compress + upload
 - `PhotoPickerHelper` handles UI picker + thumbnails
-- Applies to: M&T Request, M&T Buy, Material Transfer
+- Applies to: M&T Request, M&T Buy, Material Transfer, Work Progress
 - `photoUrls: List<String>` field in all relevant Firestore models
 - Upload flow: submit doc first → get docId → upload photos → update doc with URLs
+
+### Collection names used in photo upload calls (must match Firestore sub-collection names):
+- M&T Request → `"material_requests"`
+- M&T Purchase → `"material_purchases"`
+- Material Transfer → `"material_transfers"`
+- Tool Transfer → `"tool_transfers"`
+- Work Progress → `"work_progress"`
 
 ---
 
@@ -230,30 +406,45 @@ NoRecord → HomeCheckedIn → SiteCheckedIn ←→ MarketCheckedIn
 
 ## BUILD STATUS
 
-### ✅ DONE
+### ✅ DONE (Session 5 complete)
 - Phase 1: Foundation (Hilt, Firebase, core, DI, location, session, network)
 - Phase 2: Data layer (7 models, 5 repositories)
-- Phase 3 partial:
+- Phase 3 ALL SCREENS COMPLETE:
   - Login ✅ tested
-  - Home ✅ tested (role visibility works)
-  - Attendance ✅ tested (full GPS flow + timeline)
-  - M&T Request ✅ (with photo upload)
-  - M&T Buy ✅ (with auto grand total + photo upload)
-  - Material Transfer ✅ (with photo upload)
-  - Tool Transfer ✅ (no photos)
+  - Home ✅ tested (role routing works for both roles)
+  - Attendance (Operations) ✅ full GPS + geofence + timeline
+  - Attendance (Office) ✅ simple check-in/out with GPS
+  - M&T Request ✅ (operations only, photo upload)
+  - M&T Buy ✅ (both roles, auto grand total + photos)
+  - Material Transfer ✅ (both roles, photos)
+  - Tool Transfer ✅ (both roles, no photos)
+  - Work Progress ✅ (operations only, photos)
+  - Leave (apply + my history) ✅ (both roles)
+  - Leave Approvals ✅ (office + admin)
+  - User Management ✅ (admin — add via secondary Firebase App, edit, password reset)
+  - Site Management ✅ (admin — add/edit, multi-select user assignment, batch writes)
+- 3 roles: operations / office / admin (admin includes all office capabilities via isOffice)
+- Firestore schema: sub-collections under `/users/{userId}/`
+- nav_graph: 15 destinations wired
 
 ### ⏳ REMAINING
 
-**Step 21 — Work Progress screen (NEXT)**
-Files to create:
-- `res/layout/fragment_work_progress.xml`
-- `ui/requests/WorkProgressViewModel.kt`
-- `ui/requests/WorkProgressFragment.kt`
+**Step 23 — My Submissions screens (NEXT)**
+Each form type needs a list/history screen showing the user's past submissions with status badges.
+- One RecyclerView screen per type (or a tabbed screen)
+- Shows: type, site, date, status badge (pending/approved/rejected), submitted time
+- Tapping a row could show detail (Phase 4)
+- Reuses data already returned by `getX()` methods in RequestRepository
 
-Fields: siteId, siteName, date, hoursWorked (Double), workDescription, photoUrls, status
+**Admin Web Portal ✅ DONE** — `C:\Users\ragha\AndroidStudioProjects\whitecoffee-admin\`
+Next.js 14 + TypeScript + Tailwind + Firebase Hosting
+Pages: Dashboard, Users, Sites, Leave Requests, Attendance, Submissions
+Deploy: `npm run deploy` from the admin portal directory
+See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 
-**Phase 4 — After all screens done:**
+**Phase 4 — After submissions history:**
 - Firestore security rules
+- Manager/office approval screen (collectionGroup queries across all users)
 - Background geofencing auto-checkout
 - Biometric login
 - Admin web portal (Next.js + Firebase)
@@ -265,7 +456,7 @@ Fields: siteId, siteName, date, hoursWorked (Double), workDescription, photoUrls
 ## KEY ARCHITECTURE DECISIONS (locked — never change)
 
 1. **Event-based attendance** — one doc per event, GPS always captured
-2. **6 separate Firestore collections** — one per feature tab
+2. **Sub-collections per user** — `/users/{uid}/{collection}/{docId}` — no userId filter needed on reads
 3. **Array of maps for line items** — one read = one Sheets row
 4. **SessionManager cache** — never re-query Firestore by email
 5. **LocationState** (not LocationResult — name clash with GMS)
@@ -276,6 +467,7 @@ Fields: siteId, siteName, date, hoursWorked (Double), workDescription, photoUrls
 10. **Photo upload** — submit doc first, get docId, then upload, then update URLs
 11. **Image compression** — Android Bitmap API, no extra library
 12. **Admin users** — Cloud Function in Phase 4 (atomic Auth + Firestore)
+13. **collectionGroup queries** — for admin/office views that need all users' data (Phase 4)
 
 ---
 
@@ -284,12 +476,13 @@ Fields: siteId, siteName, date, hoursWorked (Double), workDescription, photoUrls
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. Then continue building WhiteCoffee from Step 21 — 
-Work Progress screen. Create fragment_work_progress.xml, 
-WorkProgressViewModel.kt and WorkProgressFragment.kt following 
-the exact same MVVM pattern as the other request screens.
-The Work Progress screen captures: site selection (from assigned sites),
-date (auto-filled today), hours worked, work description, and photos.
+Read CLAUDE.md first. Then continue building WhiteCoffee from Step 23 —
+My Submissions / history screens. Each form type (M&T Request, M&T Buy,
+Material Transfer, Tool Transfer, Work Progress) needs a list screen
+showing the user's past submissions with status badges (pending/approved/rejected).
+Follow the same MVVM pattern. Repository get() methods already exist.
+IMPORTANT: Before testing Leave Approvals, create the Firestore composite index:
+Collection group "leave_requests" → status ASC + submittedAt ASC.
 ```
 
 ---

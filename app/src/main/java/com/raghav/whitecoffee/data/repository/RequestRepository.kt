@@ -18,12 +18,13 @@ class RequestRepository @Inject constructor(
     private val sessionManager: SessionManager
 ) {
 
-    // ── Collection references ──────────────────────────────────────────────
-    private val mtRequestCol    get() = firestore.collection("material_tool_requests")
-    private val mtPurchaseCol   get() = firestore.collection("material_tool_purchases")
-    private val matTransferCol  get() = firestore.collection("material_transfers")
-    private val toolTransferCol get() = firestore.collection("tool_transfers")
-    private val workProgressCol get() = firestore.collection("work_progress")
+    // ── Collection references (sub-collections under the current user's doc) ──
+    private val userDoc         get() = firestore.collection("users").document(sessionManager.userId)
+    private val mtRequestCol    get() = userDoc.collection("material_requests")
+    private val mtPurchaseCol   get() = userDoc.collection("material_purchases")
+    private val matTransferCol  get() = userDoc.collection("material_transfers")
+    private val toolTransferCol get() = userDoc.collection("tool_transfers")
+    private val workProgressCol get() = userDoc.collection("work_progress")
 
     // ── M&T Request ────────────────────────────────────────────────────────
 
@@ -50,7 +51,6 @@ class RequestRepository @Inject constructor(
     suspend fun getMaterialToolRequests(): Result<List<MaterialToolRequest>> {
         return try {
             val snapshot = mtRequestCol
-                .whereEqualTo("userId", sessionManager.userId)
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
@@ -85,7 +85,6 @@ class RequestRepository @Inject constructor(
     suspend fun getMaterialToolPurchases(): Result<List<MaterialToolPurchase>> {
         return try {
             val snapshot = mtPurchaseCol
-                .whereEqualTo("userId", sessionManager.userId)
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
@@ -118,7 +117,6 @@ class RequestRepository @Inject constructor(
     suspend fun getMaterialTransfers(): Result<List<Transfer>> {
         return try {
             val snapshot = matTransferCol
-                .whereEqualTo("userId", sessionManager.userId)
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
@@ -151,7 +149,6 @@ class RequestRepository @Inject constructor(
     suspend fun getToolTransfers(): Result<List<Transfer>> {
         return try {
             val snapshot = toolTransferCol
-                .whereEqualTo("userId", sessionManager.userId)
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
@@ -187,7 +184,7 @@ class RequestRepository @Inject constructor(
         urls: List<String>
     ): Result<Unit> {
         return try {
-            firestore.collection(collectionName).document(docId)
+            userDoc.collection(collectionName).document(docId)
                 .update("photoUrls", urls)
                 .await()
             Result.success(Unit)
@@ -199,7 +196,6 @@ class RequestRepository @Inject constructor(
     suspend fun getWorkProgress(): Result<List<WorkProgress>> {
         return try {
             val snapshot = workProgressCol
-                .whereEqualTo("userId", sessionManager.userId)
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
                 .get()
                 .await()

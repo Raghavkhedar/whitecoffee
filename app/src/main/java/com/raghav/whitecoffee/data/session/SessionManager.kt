@@ -41,9 +41,13 @@ class SessionManager @Inject constructor(
     val isOperations: Boolean
         get() = _role == ROLE_OPERATIONS
 
-    /** True if the current user has the office role. */
+    /** True if the current user has the office role (admin also has all office capabilities). */
     val isOffice: Boolean
-        get() = _role == ROLE_OFFICE
+        get() = _role == ROLE_OFFICE || _role == ROLE_ADMIN
+
+    /** True if the current user has the admin role. */
+    val isAdmin: Boolean
+        get() = _role == ROLE_ADMIN
 
     /**
      * Called by LoginViewModel after successful Firebase Auth + Firestore
@@ -81,6 +85,7 @@ class SessionManager @Inject constructor(
 
     companion object {
         const val ROLE_OPERATIONS = "operations"
-        const val ROLE_OFFICE = "office"
+        const val ROLE_OFFICE     = "office"
+        const val ROLE_ADMIN      = "admin"
     }
 }

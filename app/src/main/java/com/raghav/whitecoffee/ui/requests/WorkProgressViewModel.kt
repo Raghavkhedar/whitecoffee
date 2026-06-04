@@ -5,9 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.PhotoUploadManager
-import com.raghav.whitecoffee.data.model.MaterialToolRequest
-import com.raghav.whitecoffee.data.model.RequestItem
 import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.WorkProgress
 import com.raghav.whitecoffee.data.repository.RequestRepository
 import com.raghav.whitecoffee.data.repository.SiteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,7 +17,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class MaterialToolRequestViewModel @Inject constructor(
+class WorkProgressViewModel @Inject constructor(
     private val requestRepository: RequestRepository,
     private val siteRepository: SiteRepository,
     private val photoUploadManager: PhotoUploadManager
@@ -48,31 +47,32 @@ class MaterialToolRequestViewModel @Inject constructor(
         }
     }
 
-    fun submitRequest(
+    fun submitProgress(
         site: Site,
-        items: List<RequestItem>,
-        notes: String,
+        date: String,
+        hoursWorked: Double,
+        workDescription: String,
         photoUris: List<Uri> = emptyList()
     ) {
-        if (items.isEmpty()) {
-            _submitState.value = UiState.Error("Please add at least one item.")
+        if (workDescription.isBlank()) {
+            _submitState.value = UiState.Error("Please enter a work description.")
             return
         }
-        val invalidItem = items.firstOrNull { it.itemName.isBlank() || it.quantity <= 0 }
-        if (invalidItem != null) {
-            _submitState.value = UiState.Error("Please fill in all item names and quantities.")
+        if (hoursWorked <= 0.0) {
+            _submitState.value = UiState.Error("Please enter valid hours worked.")
             return
         }
 
         _submitState.value = UiState.Loading
         viewModelScope.launch {
-            val request = MaterialToolRequest(
-                siteId   = site.id,
-                siteName = site.name,
-                items    = items,
-                notes    = notes.trim()
+            val progress = WorkProgress(
+                siteId          = site.id,
+                siteName        = site.name,
+                date            = date,
+                hoursWorked     = hoursWorked,
+                workDescription = workDescription.trim()
             )
-            val result = requestRepository.submitMaterialToolRequest(request)
+            val result = requestRepository.submitWorkProgress(progress)
             if (result.isFailure) {
                 _submitState.value = UiState.Error(
                     result.exceptionOrNull()?.message ?: "Submission failed. Try again."
@@ -82,11 +82,11 @@ class MaterialToolRequestViewModel @Inject constructor(
             val docId = result.getOrThrow()
             if (photoUris.isNotEmpty()) {
                 val uploadResult = photoUploadManager.uploadPhotos(
-                    photoUris, "material_requests", docId
+                    photoUris, "work_progress", docId
                 )
                 if (uploadResult.isSuccess) {
                     requestRepository.updatePhotoUrls(
-                        "material_requests", docId, uploadResult.getOrThrow()
+                        "work_progress", docId, uploadResult.getOrThrow()
                     )
                 }
             }
@@ -98,10 +98,3 @@ class MaterialToolRequestViewModel @Inject constructor(
         _submitState.value = UiState.Empty
     }
 }
-
-
-
-
-
-
-

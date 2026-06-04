@@ -7,21 +7,22 @@ data class Site(
     @DocumentId
     val id: String = "",
     val name: String = "",
-    val address: String = "",
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
-    val geofenceRadius: Double = 200.0      // metres, default 200m
+    val geofenceRadius: Double = 200.0,
+    val assignedUserIds: List<String> = emptyList()
 ) {
     companion object {
         fun fromDocument(doc: DocumentSnapshot): Site? {
             return try {
                 Site(
-                    id             = doc.id,
-                    name           = doc.getString("name") ?: return null,
-                    address        = doc.getString("address") ?: "",
-                    latitude       = doc.getDouble("latitude") ?: return null,
-                    longitude      = doc.getDouble("longitude") ?: return null,
-                    geofenceRadius = doc.getDouble("geofenceRadius") ?: 200.0
+                    id              = doc.id,
+                    name            = doc.getString("name") ?: return null,
+                    latitude        = doc.getDouble("latitude") ?: return null,
+                    longitude       = doc.getDouble("longitude") ?: return null,
+                    geofenceRadius  = doc.getDouble("geofenceRadius") ?: 200.0,
+                    assignedUserIds = (doc.get("assignedUserIds") as? List<*>)
+                        ?.filterIsInstance<String>() ?: emptyList()
                 )
             } catch (e: Exception) {
                 null

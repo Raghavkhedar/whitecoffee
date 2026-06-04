@@ -15,6 +15,9 @@ object AttendanceType {
     const val SITE_OUT    = "site_out"
     const val MARKET_IN   = "market_in"
     const val MARKET_OUT  = "market_out"
+    // Office role — simple check-in/out only
+    const val OFFICE_IN   = "office_in"
+    const val OFFICE_OUT  = "office_out"
 }
 
 /**

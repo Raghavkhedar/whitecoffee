@@ -81,11 +81,11 @@ class MaterialToolBuyViewModel @Inject constructor(
             val docId = result.getOrThrow()
             if (photoUris.isNotEmpty()) {
                 val uploadResult = photoUploadManager.uploadPhotos(
-                    photoUris, "material_tool_purchases", docId
+                    photoUris, "material_purchases", docId
                 )
                 if (uploadResult.isSuccess) {
                     requestRepository.updatePhotoUrls(
-                        "material_tool_purchases", docId, uploadResult.getOrThrow()
+                        "material_purchases", docId, uploadResult.getOrThrow()
                     )
                 }
             }

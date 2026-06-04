@@ -35,18 +35,21 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     private fun setupRoleVisibility() {
-        // M&T Request — Operations only
         binding.cardMtRequest.visibility =
             if (viewModel.isOperations) View.VISIBLE else View.GONE
-
-        // Work Progress — Operations only
         binding.cardWorkProgress.visibility =
             if (viewModel.isOperations) View.VISIBLE else View.GONE
+        binding.cardLeaveApprovals.visibility =
+            if (viewModel.isOffice) View.VISIBLE else View.GONE
     }
 
     private fun setupCardListeners() {
         binding.cardAttendance.setOnClickListener {
-            findNavController().navigate(R.id.action_homeFragment_to_attendanceFragment)
+            if (viewModel.isOperations) {
+                findNavController().navigate(R.id.action_homeFragment_to_attendanceFragment)
+            } else {
+                findNavController().navigate(R.id.action_homeFragment_to_officeAttendanceFragment)
+            }
         }
         binding.cardMtRequest.setOnClickListener {
             findNavController().navigate(R.id.action_homeFragment_to_materialToolRequestFragment)
@@ -62,6 +65,12 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         }
         binding.cardWorkProgress.setOnClickListener {
             findNavController().navigate(R.id.action_homeFragment_to_workProgressFragment)
+        }
+        binding.cardLeave.setOnClickListener {
+            findNavController().navigate(R.id.action_homeFragment_to_leaveFragment)
+        }
+        binding.cardLeaveApprovals.setOnClickListener {
+            findNavController().navigate(R.id.action_homeFragment_to_leaveApprovalsFragment)
         }
         binding.btnLogout.setOnClickListener {
             viewModel.logout()
