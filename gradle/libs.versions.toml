@@ -1,4 +1,6 @@
 [versions]
+# Photo Upload
+glide                   = "4.16.0"
 # ── Build Toolchain (PINNED — do not bump without testing Hilt) ──
 agp                     = "8.7.3"
 kotlin                  = "2.0.21"
@@ -36,6 +38,8 @@ junitExt                = "1.2.1"
 espresso                = "3.6.1"
 
 [libraries]
+# Photo Upload
+glide                   = { group = "com.github.bumptech.glide", name = "glide", version.ref = "glide" }
 # ── Hilt ──
 hilt-android            = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler           = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
@@ -46,6 +50,7 @@ firebase-bom            = { group = "com.google.firebase", name = "firebase-bom"
 firebase-auth           = { group = "com.google.firebase", name = "firebase-auth" }
 firebase-firestore      = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-analytics      = { group = "com.google.firebase", name = "firebase-analytics" }
+firebase-storage      = { group = "com.google.firebase", name = "firebase-storage" }
 
 # ── Coroutines ──
 coroutines-android      = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

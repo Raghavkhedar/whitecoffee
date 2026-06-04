@@ -48,6 +48,8 @@ android {
 }
 
 dependencies {
+    // Photo Upload
+    implementation(libs.glide)
     // ── Hilt ──
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
@@ -58,6 +60,7 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.analytics)
+    implementation(libs.firebase.storage)
 
     // ── Coroutines ──
     implementation(libs.coroutines.android)

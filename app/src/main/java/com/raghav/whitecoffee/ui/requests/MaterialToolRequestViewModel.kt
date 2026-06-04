@@ -19,6 +19,7 @@ import javax.inject.Inject
 class MaterialToolRequestViewModel @Inject constructor(
     private val requestRepository: RequestRepository,
     private val siteRepository: SiteRepository
+    private val photoUploadManager: PhotoUploadManager
 ) : ViewModel() {
 
     private val _sitesState = MutableStateFlow<UiState<List<Site>>>(UiState.Loading)
