@@ -2,7 +2,10 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.raghav.whitecoffee.data.model.AttendanceRecord
+import com.raghav.whitecoffee.data.model.AttendanceState
+import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
@@ -20,35 +23,50 @@ class AttendanceRepository @Inject constructor(
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     /**
-     * Fetches today's attendance record for the current user.
-     * Returns null inside Result.success if no record exists yet today.
+     * Fetches all attendance events for today, ordered by timestamp.
+     * Derives the current AttendanceState from the event sequence.
      */
-    suspend fun getTodayAttendance(): Result<AttendanceRecord?> {
+    suspend fun getTodayState(): Result<AttendanceState> {
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
                 .whereEqualTo("userId", sessionManager.userId)
                 .whereEqualTo("date", today)
-                .limit(1)
+                .orderBy("timestamp", Query.Direction.ASCENDING)
                 .get()
                 .await()
 
-            val record = snapshot.documents.firstOrNull()?.let {
-                AttendanceRecord.fromDocument(it)
-            }
-            Result.success(record)
+            val events = snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) }
+            val state = deriveState(events)
+            Result.success(state)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     /**
-     * Creates a new check-in record.
-     * Called when user taps any check-in button (Home / Site / Market).
+     * Derives current attendance state from today's event list.
+     * The last event determines the current state.
      */
-    suspend fun checkIn(
-        mode: String,
-        checkInTime: String,
+    private fun deriveState(events: List<AttendanceRecord>): AttendanceState {
+        if (events.isEmpty()) return AttendanceState.NoRecord
+        return when (val lastEvent = events.last().type) {
+            AttendanceType.HOME_IN    -> AttendanceState.HomeCheckedIn(events.last())
+            AttendanceType.HOME_OUT   -> AttendanceState.DayComplete
+            AttendanceType.SITE_IN    -> AttendanceState.SiteCheckedIn(events.last())
+            AttendanceType.SITE_OUT   -> AttendanceState.HomeCheckedIn(events.last())
+            AttendanceType.MARKET_IN  -> AttendanceState.MarketCheckedIn(events.last())
+            AttendanceType.MARKET_OUT -> AttendanceState.HomeCheckedIn(events.last())
+            else -> AttendanceState.NoRecord
+        }
+    }
+
+    /**
+     * Records a single attendance event.
+     * Every check-in and check-out calls this — GPS always captured.
+     */
+    suspend fun recordEvent(
+        type: String,
         latitude: Double,
         longitude: Double,
         siteId: String = "",
@@ -59,60 +77,38 @@ class AttendanceRepository @Inject constructor(
             val today = LocalDate.now().format(dateFormatter)
             val record = AttendanceRecord(
                 userId      = sessionManager.userId,
-                userName    = sessionManager.name,
                 employeeId  = sessionManager.employeeId,
-                mode        = mode,
+                userName    = sessionManager.name,
                 date        = today,
-                checkInTime = checkInTime,
-                checkInLat  = latitude,
-                checkInLng  = longitude,
+                type        = type,
+                timestamp   = Timestamp.now(),
+                latitude    = latitude,
+                longitude   = longitude,
                 siteId      = siteId,
                 siteName    = siteName,
-                marketName  = marketName,
-                timestamp   = Timestamp.now()
+                marketName  = marketName
             )
-
-            val docRef = collection.add(record.toMap()).await()
-            Result.success(docRef.id)
+            val ref = collection.add(record.toMap()).await()
+            Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     /**
-     * Updates an existing attendance record with check-out time.
-     * Called when user taps any check-out button.
+     * Fetches today's full event log — for displaying timeline on screen.
      */
-    suspend fun checkOut(
-        recordId: String,
-        checkOutTime: String
-    ): Result<Unit> {
+    suspend fun getTodayEvents(): Result<List<AttendanceRecord>> {
         return try {
-            collection
-                .document(recordId)
-                .update("checkOutTime", checkOutTime)
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Fetches attendance history for the current user.
-     * Ordered by date descending — most recent first.
-     */
-    suspend fun getAttendanceHistory(limit: Long = 30): Result<List<AttendanceRecord>> {
-        return try {
+            val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
                 .whereEqualTo("userId", sessionManager.userId)
-                .orderBy("timestamp", com.google.firebase.firestore.Query.Direction.DESCENDING)
-                .limit(limit)
+                .whereEqualTo("date", today)
+                .orderBy("timestamp", Query.Direction.ASCENDING)
                 .get()
                 .await()
-
-            val records = snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) }
-            Result.success(records)
+            val events = snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) }
+            Result.success(events)
         } catch (e: Exception) {
             Result.failure(e)
         }
