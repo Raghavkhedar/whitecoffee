@@ -15,8 +15,7 @@ data class WorkProgress(
     val date: String = "",              // yyyy-MM-dd
     val hoursWorked: Double = 0.0,      // e.g. 7.5
     val workDescription: String = "",
-    val photoUrls: List<String> = emptyList(),   // Firebase Storage URLs (Phase 4)
-    val status: String = "pending",
+    val photoUrls: List<String> = emptyList(),
     val submittedAt: Timestamp? = null
 ) {
     /** Flat row for Google Sheets export */
@@ -28,7 +27,6 @@ data class WorkProgress(
         "Hours Worked"     to hoursWorked,
         "Work Description" to workDescription,
         "Photo Count"      to photoUrls.size,
-        "Status"           to status,
         "Submitted At"     to (submittedAt?.toDate()?.toString() ?: "")
     )
 
@@ -42,7 +40,6 @@ data class WorkProgress(
         "hoursWorked"     to hoursWorked,
         "workDescription" to workDescription,
         "photoUrls"       to photoUrls,
-        "status"          to status,
         "submittedAt"     to submittedAt
     )
 
@@ -61,7 +58,6 @@ data class WorkProgress(
                     workDescription = doc.getString("workDescription") ?: "",
                     photoUrls       = (doc.get("photoUrls") as? List<*>)
                         ?.filterIsInstance<String>() ?: emptyList(),
-                    status          = doc.getString("status") ?: "pending",
                     submittedAt     = doc.getTimestamp("submittedAt")
                 )
             } catch (e: Exception) {

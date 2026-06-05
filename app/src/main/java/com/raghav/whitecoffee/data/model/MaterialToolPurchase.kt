@@ -43,7 +43,6 @@ data class MaterialToolPurchase(
     val siteName: String = "",
     val items: List<PurchaseItem> = emptyList(),
     val grandTotal: Double = 0.0,
-    val status: String = "pending",
     val notes: String = "",
     val photoUrls: List<String> = emptyList(),
     val submittedAt: Timestamp? = null
@@ -61,7 +60,6 @@ data class MaterialToolPurchase(
             "Total Price"    to item.totalPrice,
             "Grand Total"    to grandTotal,
             "Item Notes"     to item.notes,
-            "Status"         to status,
             "Notes"          to notes,
             "Submitted At"   to (submittedAt?.toDate()?.toString() ?: "")
         )
@@ -75,7 +73,6 @@ data class MaterialToolPurchase(
         "siteName"    to siteName,
         "items"       to items.map { it.toMap() },
         "grandTotal"  to grandTotal,
-        "status"      to status,
         "notes"       to notes,
         "photoUrls"   to photoUrls,
         "submittedAt" to submittedAt
@@ -100,7 +97,6 @@ data class MaterialToolPurchase(
                     siteName    = doc.getString("siteName") ?: "",
                     items       = rawItems,
                     grandTotal  = doc.getDouble("grandTotal") ?: 0.0,
-                    status      = doc.getString("status") ?: "pending",
                     notes       = doc.getString("notes") ?: "",
                     photoUrls   = photoUrls,
                     submittedAt = doc.getTimestamp("submittedAt")

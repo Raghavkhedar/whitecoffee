@@ -69,7 +69,13 @@ class AuthRepository @Inject constructor(
      * Returns true if a Firebase user is currently signed in
      * AND session data is populated.
      */
-    fun isLoggedIn(): Boolean = sessionManager.isLoggedIn
+    fun isLoggedIn(): Boolean {
+        if (auth.currentUser == null) return false
+        if (sessionManager.isLoggedIn) return true
+        // Firebase user exists but in-memory cache is empty (process was killed)
+        // Try restoring from SharedPreferences — avoids a Firestore round-trip
+        return sessionManager.tryRestoreFromCache()
+    }
 
     /**
      * Maps Firebase exception messages to user-friendly strings.

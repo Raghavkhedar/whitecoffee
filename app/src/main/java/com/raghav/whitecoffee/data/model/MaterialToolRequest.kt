@@ -36,7 +36,6 @@ data class MaterialToolRequest(
     val siteId: String = "",
     val siteName: String = "",
     val items: List<RequestItem> = emptyList(),
-    val status: String = "pending",     // "pending", "approved", "rejected"
     val notes: String = "",
     val photoUrls: List<String> = emptyList(),
     val submittedAt: Timestamp? = null
@@ -51,7 +50,6 @@ data class MaterialToolRequest(
             "Quantity"     to item.quantity,
             "Unit"         to item.unit,
             "Item Notes"   to item.notes,
-            "Status"       to status,
             "Notes"        to notes,
             "Submitted At" to (submittedAt?.toDate()?.toString() ?: "")
         )
@@ -64,7 +62,6 @@ data class MaterialToolRequest(
         "siteId"      to siteId,
         "siteName"    to siteName,
         "items"       to items.map { it.toMap() },
-        "status"      to status,
         "notes"       to notes,
         "photoUrls"   to photoUrls,
         "submittedAt" to submittedAt
@@ -88,7 +85,6 @@ data class MaterialToolRequest(
                     siteId      = doc.getString("siteId") ?: "",
                     siteName    = doc.getString("siteName") ?: "",
                     items       = rawItems,
-                    status      = doc.getString("status") ?: "pending",
                     notes       = doc.getString("notes") ?: "",
                     photoUrls   = photoUrls,
                     submittedAt = doc.getTimestamp("submittedAt")

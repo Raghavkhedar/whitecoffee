@@ -1,22 +1,20 @@
 package com.raghav.whitecoffee.data.session
 
+import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Single source of truth for the currently authenticated user's identity.
- *
- * Populated once at login — every screen reads from here instead of
- * re-querying Firestore by email. This is the correct fix for the v2
- * name/email display bugs.
- *
- * Cleared on logout so stale data never bleeds into a new session.
- */
 @Singleton
 class SessionManager @Inject constructor(
-    private val firebaseAuth: FirebaseAuth
+    private val firebaseAuth: FirebaseAuth,
+    @ApplicationContext private val context: Context
 ) {
+
+    private val prefs by lazy {
+        context.getSharedPreferences("wc_session", Context.MODE_PRIVATE)
+    }
 
     // In-memory cache of the current user's Firestore profile fields
     private var _userId: String = ""
@@ -67,12 +65,35 @@ class SessionManager @Inject constructor(
         _role = role
         _employeeId = employeeId
         _assignedSites = assignedSites
+        // Persist so next app launch skips the Firestore re-fetch
+        prefs.edit()
+            .putString("userId", _userId)
+            .putString("name", _name)
+            .putString("email", _email)
+            .putString("role", _role)
+            .putString("employeeId", _employeeId)
+            .putString("assignedSites", assignedSites.joinToString(","))
+            .apply()
     }
 
     /**
-     * Called on logout. Clears all cached identity and signs out of Firebase.
-     * After this call, isLoggedIn returns false immediately.
+     * Restores in-memory cache from SharedPreferences if Firebase Auth still
+     * has a valid user. Called on app launch to skip the Firestore round-trip.
+     * Returns true if session was restored successfully.
      */
+    fun tryRestoreFromCache(): Boolean {
+        val userId = prefs.getString("userId", "") ?: ""
+        if (userId.isEmpty()) return false
+        _userId      = userId
+        _name        = prefs.getString("name", "") ?: ""
+        _email       = prefs.getString("email", "") ?: ""
+        _role        = prefs.getString("role", "") ?: ""
+        _employeeId  = prefs.getString("employeeId", "") ?: ""
+        _assignedSites = prefs.getString("assignedSites", "")
+            ?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+        return true
+    }
+
     fun clearSession() {
         _userId = ""
         _name = ""
@@ -80,6 +101,7 @@ class SessionManager @Inject constructor(
         _role = ""
         _employeeId = ""
         _assignedSites = emptyList()
+        prefs.edit().clear().apply()
         firebaseAuth.signOut()
     }
 

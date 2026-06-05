@@ -7,7 +7,12 @@ import android.net.Uri
 import com.google.firebase.storage.FirebaseStorage
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,10 +41,10 @@ class PhotoUploadManager @Inject constructor(
         docId: String
     ): Result<List<String>> {
         return try {
-            val urls = mutableListOf<String>()
-            uris.forEach { uri ->
-                val url = uploadSinglePhoto(uri, collectionName, docId)
-                urls.add(url)
+            val urls = coroutineScope {
+                uris.map { uri ->
+                    async { uploadSinglePhoto(uri, collectionName, docId) }
+                }.awaitAll()
             }
             Result.success(urls)
         } catch (e: Exception) {
@@ -52,19 +57,16 @@ class PhotoUploadManager @Inject constructor(
         collectionName: String,
         docId: String
     ): String {
-        // Step 1 — Compress
-        val compressed = compressImage(uri)
+        // Step 1 — Compress on IO thread (bitmap decode is CPU + I/O heavy)
+        val compressed = withContext(Dispatchers.IO) { compressImage(uri) }
 
         // Step 2 — Build storage path
         val timestamp = System.currentTimeMillis()
         val path = "requests/${sessionManager.userId}/$collectionName/$docId/$timestamp.jpg"
-        val ref = storage.reference.child(path)
 
-        // Step 3 — Upload
-        ref.putBytes(compressed).await()
-
-        // Step 4 — Get download URL
-        return ref.downloadUrl.await().toString()
+        // Step 3 — Upload and return the path (no extra getDownloadUrl round-trip)
+        storage.reference.child(path).putBytes(compressed).await()
+        return path
     }
 
     /**

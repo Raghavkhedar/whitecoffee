@@ -32,11 +32,12 @@ class AttendanceRepository @Inject constructor(
             val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
                 .whereEqualTo("date", today)
-                .orderBy("timestamp", Query.Direction.ASCENDING)
                 .get()
                 .await()
 
-            val events = snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) }
+            val events = snapshot.documents
+                .mapNotNull { AttendanceRecord.fromDocument(it) }
+                .sortedBy { it.timestamp?.seconds ?: 0L }
             val state = deriveState(events)
             Result.success(state)
         } catch (e: Exception) {
@@ -103,10 +104,11 @@ class AttendanceRepository @Inject constructor(
             val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
                 .whereEqualTo("date", today)
-                .orderBy("timestamp", Query.Direction.ASCENDING)
                 .get()
                 .await()
-            val events = snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) }
+            val events = snapshot.documents
+                .mapNotNull { AttendanceRecord.fromDocument(it) }
+                .sortedBy { it.timestamp?.seconds ?: 0L }
             Result.success(events)
         } catch (e: Exception) {
             Result.failure(e)

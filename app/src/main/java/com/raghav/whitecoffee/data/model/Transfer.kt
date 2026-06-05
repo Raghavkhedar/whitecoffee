@@ -38,7 +38,6 @@ data class Transfer(
     val transferredBy: String = "",     // name of person handing over
     val receivedBy: String = "",        // name of person receiving
     val items: List<TransferItem> = emptyList(),
-    val status: String = "pending",
     val notes: String = "",
     val photoUrls: List<String> = emptyList(),
     val transferDate: String = "",      // yyyy-MM-dd
@@ -58,7 +57,6 @@ data class Transfer(
             "Unit"           to item.unit,
             "Condition"      to item.condition,
             "Transfer Date"  to transferDate,
-            "Status"         to status,
             "Notes"          to notes,
             "Submitted At"   to (submittedAt?.toDate()?.toString() ?: "")
         )
@@ -73,7 +71,6 @@ data class Transfer(
         "transferredBy" to transferredBy,
         "receivedBy"    to receivedBy,
         "items"         to items.map { it.toMap() },
-        "status"        to status,
         "notes"         to notes,
         "photoUrls"     to photoUrls,
         "transferDate"  to transferDate,
@@ -100,7 +97,6 @@ data class Transfer(
                     transferredBy = doc.getString("transferredBy") ?: "",
                     receivedBy    = doc.getString("receivedBy") ?: "",
                     items         = rawItems,
-                    status        = doc.getString("status") ?: "pending",
                     notes         = doc.getString("notes") ?: "",
                     photoUrls     = photoUrls,
                     transferDate  = doc.getString("transferDate") ?: "",
