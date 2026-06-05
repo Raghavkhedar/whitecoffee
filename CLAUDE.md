@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 8 End
+### Last Updated: Session 9 End
 
 ---
 
@@ -97,7 +97,7 @@ com.raghav.whitecoffee
 │       ├── AuthRepository.kt            ✅
 │       ├── UserRepository.kt            ✅
 │       ├── AttendanceRepository.kt      ✅ sub-collection: users/{uid}/attendance
-│       ├── SiteRepository.kt            ✅
+│       ├── SiteRepository.kt            ✅ getTodayAssignedSites() reads /daily_assignments
 │       └── RequestRepository.kt         ✅ sub-collections under users/{uid}/
 │
 └── ui/
@@ -165,6 +165,7 @@ com.raghav.whitecoffee
 /users/{userId}/work_progress/{id}           ← Work Progress
 
 /sites/{siteId}                              ← Site info (top-level, shared)
+/daily_assignments/{date}_{userId}           ← Daily site assignments (NEW)
 ```
 
 ### `/users/{userId}` — User Profile
@@ -172,11 +173,18 @@ com.raghav.whitecoffee
 |---|---|---|
 | userId | String | Firebase Auth UID |
 | employeeId | String | HR ID e.g. "EMP001" |
-| userName | String | Display name |
+| name | String | Display name |
 | email | String | Lowercase |
-| role | String | "operations" or "office" |
-| assignedSiteIds | List\<String\> | Site IDs this user works at |
+| role | String | "operations", "office", or "admin" |
 | createdAt | Timestamp | |
+
+### `/daily_assignments/{date}_{userId}` — Daily Site Assignments
+| Field | Type | Notes |
+|---|---|---|
+| siteIds | List\<String\> | Sites assigned for this specific date |
+
+Document ID format: `yyyy-MM-dd_{userId}` e.g. `2026-06-05_abc123`
+Read by `SiteRepository.getTodayAssignedSites()` — all ViewModels use this instead of a static assignedSiteIds field.
 
 ### `/users/{userId}/attendance/{eventId}` — Attendance Events
 | Field | Type | Notes |
@@ -269,8 +277,7 @@ Same schema as material_transfers (no photoUrls field).
 | name | String | |
 | latitude | Double | |
 | longitude | Double | |
-| geofenceRadius | Int | Meters |
-| assignedUserIds | List\<String\> | Users assigned here |
+| geofenceRadius | Double | Meters (e.g. 200.0) |
 
 ### `/users/{userId}/leave_requests/{requestId}` — Leave Requests
 | Field | Type | Notes |
@@ -406,7 +413,7 @@ else navigate(officeAttendanceFragment)
 
 ## BUILD STATUS
 
-### ✅ DONE (Session 5 complete)
+### ✅ DONE (Session 9 complete)
 - Phase 1: Foundation (Hilt, Firebase, core, DI, location, session, network)
 - Phase 2: Data layer (7 models, 5 repositories)
 - Phase 3 ALL SCREENS COMPLETE:
@@ -422,32 +429,23 @@ else navigate(officeAttendanceFragment)
   - Leave (apply + my history) ✅ (both roles)
   - Leave Approvals ✅ (office + admin)
   - User Management ✅ (admin — add via secondary Firebase App, edit, password reset)
-  - Site Management ✅ (admin — add/edit, multi-select user assignment, batch writes)
+  - Site Management ✅ (admin — add/edit site name/lat/lng/geofenceRadius)
 - 3 roles: operations / office / admin (admin includes all office capabilities via isOffice)
-- Firestore schema: sub-collections under `/users/{userId}/`
+- Firestore schema: sub-collections under `/users/{userId}/` + `/daily_assignments/`
+- SessionManager persists to SharedPreferences (survives process kill)
+- Daily site assignment system: `/daily_assignments/{date}_{userId}` replaces static `assignedSiteIds`
 - nav_graph: 15 destinations wired
 
-### ⏳ REMAINING
-
-**Step 23 — My Submissions screens (NEXT)**
-Each form type needs a list/history screen showing the user's past submissions with status badges.
-- One RecyclerView screen per type (or a tabbed screen)
-- Shows: type, site, date, status badge (pending/approved/rejected), submitted time
-- Tapping a row could show detail (Phase 4)
-- Reuses data already returned by `getX()` methods in RequestRepository
-
-**Admin Web Portal ✅ DONE** — `C:\Users\ragha\AndroidStudioProjects\whitecoffee-admin\`
+### ✅ Admin Web Portal DONE
+`C:\Users\ragha\AndroidStudioProjects\whitecoffee-admin\`
 Next.js 14 + TypeScript + Tailwind + Firebase Hosting
 Pages: Dashboard, Users, Sites, Leave Requests, Attendance, Submissions
 Deploy: `npm run deploy` from the admin portal directory
 See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 
-**Phase 4 — After submissions history:**
+### ⏳ REMAINING (Phase 4)
 - Firestore security rules
-- Manager/office approval screen (collectionGroup queries across all users)
 - Background geofencing auto-checkout
-- Biometric login
-- Admin web portal (Next.js + Firebase)
 - Google Sheets export (Cloud Functions)
 - Notifications screen
 
@@ -458,7 +456,7 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 1. **Event-based attendance** — one doc per event, GPS always captured
 2. **Sub-collections per user** — `/users/{uid}/{collection}/{docId}` — no userId filter needed on reads
 3. **Array of maps for line items** — one read = one Sheets row
-4. **SessionManager cache** — never re-query Firestore by email
+4. **SessionManager cache** — persists to SharedPreferences; never re-query Firestore by email
 5. **LocationState** (not LocationResult — name clash with GMS)
 6. **Button protection** — disable on tap, re-enable only on error
 7. **Email** — always `.lowercase().trim()` before any Firestore op
@@ -466,8 +464,10 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 9. **Transfer model shared** — Material + Tool Transfer identical structure
 10. **Photo upload** — submit doc first, get docId, then upload, then update URLs
 11. **Image compression** — Android Bitmap API, no extra library
-12. **Admin users** — Cloud Function in Phase 4 (atomic Auth + Firestore)
-13. **collectionGroup queries** — for admin/office views that need all users' data (Phase 4)
+12. **Admin users** — secondary Firebase App instance (admin stays logged in during user creation)
+13. **collectionGroup queries** — for admin/office views that need all users' data
+14. **Daily site assignments** — `/daily_assignments/{date}_{userId}` with `siteIds` field; NOT static `assignedSiteIds` on User. All screens call `SiteRepository.getTodayAssignedSites()`.
+15. **No My Submissions screens** — dropped; users do not view submission history in the app. All approvals via admin web portal only.
 
 ---
 
@@ -476,12 +476,13 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. Then continue building WhiteCoffee from Step 23 —
-My Submissions / history screens. Each form type (M&T Request, M&T Buy,
-Material Transfer, Tool Transfer, Work Progress) needs a list screen
-showing the user's past submissions with status badges (pending/approved/rejected).
-Follow the same MVVM pattern. Repository get() methods already exist.
-IMPORTANT: Before testing Leave Approvals, create the Firestore composite index:
+Read CLAUDE.md first. All Phase 3 screens are complete. The app uses a daily
+site assignment system — /daily_assignments/{date}_{userId} with siteIds field.
+User and Site models no longer have assignedSiteIds / assignedUserIds.
+All screens call SiteRepository.getTodayAssignedSites() for site lists.
+Phase 4 work items: Firestore security rules, background geofencing,
+Cloud Functions for Google Sheets export, notifications.
+IMPORTANT: Firestore composite index needed for Leave Approvals:
 Collection group "leave_requests" → status ASC + submittedAt ASC.
 ```
 

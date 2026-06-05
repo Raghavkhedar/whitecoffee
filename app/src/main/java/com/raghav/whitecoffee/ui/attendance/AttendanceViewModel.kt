@@ -77,7 +77,7 @@ class AttendanceViewModel @Inject constructor(
             }
 
             // Load assigned sites
-            val sitesResult = siteRepository.getAssignedSites()
+            val sitesResult = siteRepository.getTodayAssignedSites()
             if (sitesResult.isSuccess) {
                 _assignedSites.value = sitesResult.getOrThrow()
             }

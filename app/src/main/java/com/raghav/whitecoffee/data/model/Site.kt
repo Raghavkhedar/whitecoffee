@@ -9,8 +9,7 @@ data class Site(
     val name: String = "",
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
-    val geofenceRadius: Double = 200.0,
-    val assignedUserIds: List<String> = emptyList()
+    val geofenceRadius: Double = 200.0
 ) {
     companion object {
         fun fromDocument(doc: DocumentSnapshot): Site? {
@@ -20,9 +19,7 @@ data class Site(
                     name            = doc.getString("name") ?: return null,
                     latitude        = doc.getDouble("latitude") ?: return null,
                     longitude       = doc.getDouble("longitude") ?: return null,
-                    geofenceRadius  = doc.getDouble("geofenceRadius") ?: 200.0,
-                    assignedUserIds = (doc.get("assignedUserIds") as? List<*>)
-                        ?.filterIsInstance<String>() ?: emptyList()
+                    geofenceRadius  = doc.getDouble("geofenceRadius") ?: 200.0
                 )
             } catch (e: Exception) {
                 null

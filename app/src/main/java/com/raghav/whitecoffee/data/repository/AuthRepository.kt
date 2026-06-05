@@ -43,12 +43,11 @@ class AuthRepository @Inject constructor(
 
             // Step 3 — Populate SessionManager so every screen has instant access
             sessionManager.saveSession(
-                userId       = user.id,
-                name         = user.name,
-                email        = user.email,
-                role         = user.role,
-                employeeId   = user.employeeId,
-                assignedSites = user.assignedSites
+                userId     = user.id,
+                name       = user.name,
+                email      = user.email,
+                role       = user.role,
+                employeeId = user.employeeId
             )
 
             Result.success(user)

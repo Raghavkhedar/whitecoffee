@@ -11,7 +11,6 @@ data class User(
     val email: String = "",
     val role: String = "",
     val employeeId: String = "",
-    val assignedSites: List<String> = emptyList(),
     val createdAt: Timestamp? = null
 ) {
     companion object {
@@ -23,8 +22,6 @@ data class User(
                     email = doc.getString("email")?.lowercase()?.trim() ?: return null,
                     role = doc.getString("role")?.trim() ?: return null,
                     employeeId = doc.getString("employeeId")?.trim() ?: "",
-                    assignedSites = (doc.get("assignedSites") as? List<*>)
-                        ?.filterIsInstance<String>() ?: emptyList(),
                     createdAt = doc.getTimestamp("createdAt")
                 )
             } catch (e: Exception) {

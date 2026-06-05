@@ -30,25 +30,12 @@ class UserRepository @Inject constructor(
     }
 
     fun getCurrentUser(): User = User(
-        id            = sessionManager.userId,
-        name          = sessionManager.name,
-        email         = sessionManager.email,
-        role          = sessionManager.role,
-        employeeId    = sessionManager.employeeId,
-        assignedSites = sessionManager.assignedSites
+        id         = sessionManager.userId,
+        name       = sessionManager.name,
+        email      = sessionManager.email,
+        role       = sessionManager.role,
+        employeeId = sessionManager.employeeId
     )
-
-    suspend fun getUsersForSite(siteId: String): Result<List<User>> {
-        return try {
-            val snapshot = firestore.collection("users")
-                .whereArrayContains("assignedSites", siteId)
-                .get()
-                .await()
-            Result.success(snapshot.documents.mapNotNull { User.fromDocument(it) })
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 
     // ── Admin operations ──────────────────────────────────────────────────
 
@@ -61,17 +48,12 @@ class UserRepository @Inject constructor(
         }
     }
 
-    /**
-     * Creates a new Firebase Auth user + Firestore profile atomically.
-     * Uses a secondary Firebase app instance so the admin session is never interrupted.
-     */
     suspend fun createUser(
         email: String,
         password: String,
         name: String,
         role: String,
-        employeeId: String,
-        assignedSites: List<String>
+        employeeId: String
     ): Result<String> {
         val secondaryApp = FirebaseApp.initializeApp(
             context,
@@ -88,13 +70,12 @@ class UserRepository @Inject constructor(
 
             firestore.collection("users").document(uid).set(
                 mapOf(
-                    "userId"        to uid,
-                    "name"          to name.trim(),
-                    "email"         to email.lowercase().trim(),
-                    "role"          to role,
-                    "employeeId"    to employeeId.trim(),
-                    "assignedSites" to assignedSites,
-                    "createdAt"     to Timestamp.now()
+                    "userId"     to uid,
+                    "name"       to name.trim(),
+                    "email"      to email.lowercase().trim(),
+                    "role"       to role,
+                    "employeeId" to employeeId.trim(),
+                    "createdAt"  to Timestamp.now()
                 )
             ).await()
 
@@ -111,16 +92,14 @@ class UserRepository @Inject constructor(
         userId: String,
         name: String,
         role: String,
-        employeeId: String,
-        assignedSites: List<String>
+        employeeId: String
     ): Result<Unit> {
         return try {
             firestore.collection("users").document(userId).update(
                 mapOf(
-                    "name"          to name.trim(),
-                    "role"          to role,
-                    "employeeId"    to employeeId.trim(),
-                    "assignedSites" to assignedSites
+                    "name"       to name.trim(),
+                    "role"       to role,
+                    "employeeId" to employeeId.trim()
                 )
             ).await()
             Result.success(Unit)

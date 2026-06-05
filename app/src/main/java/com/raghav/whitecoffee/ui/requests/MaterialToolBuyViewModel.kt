@@ -35,7 +35,7 @@ class MaterialToolBuyViewModel @Inject constructor(
     private fun loadSites() {
         viewModelScope.launch {
             _sitesState.value = UiState.Loading
-            val result = siteRepository.getAssignedSites()
+            val result = siteRepository.getTodayAssignedSites()
             _sitesState.value = when {
                 result.isSuccess -> {
                     val sites = result.getOrThrow()

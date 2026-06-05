@@ -22,14 +22,12 @@ class SessionManager @Inject constructor(
     private var _email: String = ""
     private var _role: String = ""
     private var _employeeId: String = ""
-    private var _assignedSites: List<String> = emptyList()
 
     val userId: String get() = _userId
     val name: String get() = _name
     val email: String get() = _email
     val role: String get() = _role
     val employeeId: String get() = _employeeId
-    val assignedSites: List<String> get() = _assignedSites
 
     /** True if a user is currently signed in AND session data is populated. */
     val isLoggedIn: Boolean
@@ -56,23 +54,19 @@ class SessionManager @Inject constructor(
         name: String,
         email: String,
         role: String,
-        employeeId: String,
-        assignedSites: List<String>
+        employeeId: String
     ) {
         _userId = userId
         _name = name
         _email = email.lowercase().trim()
         _role = role
         _employeeId = employeeId
-        _assignedSites = assignedSites
-        // Persist so next app launch skips the Firestore re-fetch
         prefs.edit()
             .putString("userId", _userId)
             .putString("name", _name)
             .putString("email", _email)
             .putString("role", _role)
             .putString("employeeId", _employeeId)
-            .putString("assignedSites", assignedSites.joinToString(","))
             .apply()
     }
 
@@ -84,13 +78,11 @@ class SessionManager @Inject constructor(
     fun tryRestoreFromCache(): Boolean {
         val userId = prefs.getString("userId", "") ?: ""
         if (userId.isEmpty()) return false
-        _userId      = userId
-        _name        = prefs.getString("name", "") ?: ""
-        _email       = prefs.getString("email", "") ?: ""
-        _role        = prefs.getString("role", "") ?: ""
-        _employeeId  = prefs.getString("employeeId", "") ?: ""
-        _assignedSites = prefs.getString("assignedSites", "")
-            ?.split(",")?.filter { it.isNotEmpty() } ?: emptyList()
+        _userId     = userId
+        _name       = prefs.getString("name", "") ?: ""
+        _email      = prefs.getString("email", "") ?: ""
+        _role       = prefs.getString("role", "") ?: ""
+        _employeeId = prefs.getString("employeeId", "") ?: ""
         return true
     }
 
@@ -100,7 +92,6 @@ class SessionManager @Inject constructor(
         _email = ""
         _role = ""
         _employeeId = ""
-        _assignedSites = emptyList()
         prefs.edit().clear().apply()
         firebaseAuth.signOut()
     }
