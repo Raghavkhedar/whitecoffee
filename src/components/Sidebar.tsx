@@ -7,7 +7,8 @@ import { auth } from '@/lib/firebase';
 const NAV = [
   { href: '/dashboard', icon: '📊', label: 'Dashboard' },
   { href: '/users',     icon: '👥', label: 'Users' },
-  { href: '/sites',             icon: '🏗️', label: 'Sites' },
+  // SITES — NOT IN USE (no daily assignment system, no geofencing). Re-enable with sites/page.tsx + firestore site functions + Site type.
+  // { href: '/sites',             icon: '🏗️', label: 'Sites' },
   // DAILY ASSIGNMENT SYSTEM — NOT IN USE. Re-enable by uncommenting this line and the page/types/firestore functions.
   // { href: '/daily-assignments', icon: '📅', label: 'Daily Assignments' },
   { href: '/leaves',            icon: '🏖️', label: 'Leave Requests' },

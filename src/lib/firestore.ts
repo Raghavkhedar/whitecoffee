@@ -2,13 +2,15 @@
 
 import {
   collection, collectionGroup, doc, getDocs,
-  addDoc, setDoc, updateDoc, deleteDoc,
+  setDoc, updateDoc, deleteDoc,
   Timestamp, where, query,
+  // addDoc,  // used only by createSite — re-enable when site management is re-enabled
   // getDoc,  // used only by getDailyAssignments — re-enable when daily assignment system is re-enabled
 } from 'firebase/firestore';
 import { db } from './firebase';
+// Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, Site, LeaveRequest, AttendanceRecord } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -29,25 +31,32 @@ export async function deleteUserProfile(uid: string) {
   await deleteDoc(doc(db, 'users', uid));
 }
 
-// ── Sites ─────────────────────────────────────────────────────────────────
-
-export async function getAllSites(): Promise<Site[]> {
-  const snap = await getDocs(collection(db, 'sites'));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Site));
-}
-
-export async function createSite(data: Omit<Site, 'id'>): Promise<string> {
-  const ref = await addDoc(collection(db, 'sites'), data);
-  return ref.id;
-}
-
-export async function updateSite(siteId: string, data: Partial<Omit<Site, 'id'>>) {
-  await updateDoc(doc(db, 'sites', siteId), data as Record<string, unknown>);
-}
-
-export async function deleteSite(siteId: string) {
-  await deleteDoc(doc(db, 'sites', siteId));
-}
+// ── Sites — NOT IN USE ────────────────────────────────────────────────────
+//
+// Re-enable by:
+//   1. Uncommenting these four functions
+//   2. Uncommenting addDoc in the firebase/firestore import above
+//   3. Adding Site back to the @/types import
+//   4. Uncommenting the Site interface in src/types/index.ts
+//   5. Uncommenting sites/page.tsx and the Sidebar.tsx nav entry
+//
+// export async function getAllSites(): Promise<Site[]> {
+//   const snap = await getDocs(collection(db, 'sites'));
+//   return snap.docs.map(d => ({ id: d.id, ...d.data() } as Site));
+// }
+//
+// export async function createSite(data: Omit<Site, 'id'>): Promise<string> {
+//   const ref = await addDoc(collection(db, 'sites'), data);
+//   return ref.id;
+// }
+//
+// export async function updateSite(siteId: string, data: Partial<Omit<Site, 'id'>>) {
+//   await updateDoc(doc(db, 'sites', siteId), data as Record<string, unknown>);
+// }
+//
+// export async function deleteSite(siteId: string) {
+//   await deleteDoc(doc(db, 'sites', siteId));
+// }
 
 // ── Daily Assignments — NOT IN USE ────────────────────────────────────────
 //

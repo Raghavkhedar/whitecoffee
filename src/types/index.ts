@@ -9,13 +9,17 @@ export interface User {
   createdAt?: Timestamp;
 }
 
-export interface Site {
-  id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  geofenceRadius: number;
-}
+// SITE MANAGEMENT — NOT IN USE (no geofencing, no daily assignments).
+// Re-enable by uncommenting this interface and the site functions in firestore.ts,
+// sites/page.tsx, and the Sidebar.tsx nav entry.
+//
+// export interface Site {
+//   id: string;
+//   name: string;
+//   latitude: number;
+//   longitude: number;
+//   geofenceRadius: number;
+// }
 
 // DAILY ASSIGNMENT SYSTEM — NOT IN USE.
 // Re-enable by uncommenting these interfaces and the matching code in firestore.ts,
