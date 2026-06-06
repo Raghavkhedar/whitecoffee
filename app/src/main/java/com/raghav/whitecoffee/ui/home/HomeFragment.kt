@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.viewModels
 import androidx.navigation.fragment.findNavController
+import androidx.constraintlayout.widget.ConstraintLayout
 import com.raghav.whitecoffee.R
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.databinding.FragmentHomeBinding
@@ -35,12 +36,31 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     private fun setupRoleVisibility() {
+        // Operations-only cards
         binding.cardMtRequest.visibility =
             if (viewModel.isOperations) View.VISIBLE else View.GONE
         binding.cardWorkProgress.visibility =
             if (viewModel.isOperations) View.VISIBLE else View.GONE
+        // Leave Approvals: admin only (office role does NOT approve leaves in the app)
         binding.cardLeaveApprovals.visibility =
-            if (viewModel.isOffice) View.VISIBLE else View.GONE
+            if (viewModel.isAdmin) View.VISIBLE else View.GONE
+
+        // For non-operations users, expand lone cards to full width
+        // (their partner card is GONE so they'd otherwise sit at half-width)
+        if (!viewModel.isOperations) {
+            expandToFullWidth(binding.cardAttendance)   // M&T Request is gone
+            expandToFullWidth(binding.cardToolTransfer) // Work Progress is gone
+        }
+        if (!viewModel.isAdmin) {
+            expandToFullWidth(binding.cardLeave)        // Leave Approvals is gone
+        }
+    }
+
+    private fun expandToFullWidth(card: View) {
+        val params = card.layoutParams as ConstraintLayout.LayoutParams
+        params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        params.marginEnd = (20 * resources.displayMetrics.density).toInt()
+        card.layoutParams = params
     }
 
     private fun setupCardListeners() {

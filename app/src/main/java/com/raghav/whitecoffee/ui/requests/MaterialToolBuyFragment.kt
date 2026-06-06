@@ -6,7 +6,6 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -15,18 +14,19 @@ import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.PurchaseItem
-import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentMaterialToolBuyBinding
 import com.raghav.whitecoffee.databinding.ItemBuyRowBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+
+// SiteTask / dropdown removed — site is now two free-text fields (Site Name + Site ID).
+// To re-enable: restore ArrayAdapter dropdown, import SiteTask, restore sitesState observer.
 
 @AndroidEntryPoint
 class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
 
     private val viewModel: MaterialToolBuyViewModel by viewModels()
     private val itemRows = mutableListOf<ItemBuyRowBinding>()
-    private var selectedSite: SiteTask? = null
     private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
@@ -48,7 +48,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
             fragment           = this,
             thumbnailContainer = binding.containerPhotos,
             scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { /* no-op: we read uris on submit */ }
+            onPhotosChanged    = { }
         )
         binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
@@ -57,11 +57,15 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
         binding.btnBack.setOnClickListener { findNavController().navigateUp() }
         binding.btnAddItem.setOnClickListener { addItemRow() }
         binding.btnSubmit.setOnClickListener {
-            val site = selectedSite
-            if (site == null) { showError("Please select a site."); return@setOnClickListener }
+            val siteName = binding.etSiteName.text?.toString()?.trim() ?: ""
+            val siteId   = binding.etSiteId.text?.toString()?.trim() ?: ""
+            if (siteName.isBlank()) {
+                showError("Please enter the site name.")
+                return@setOnClickListener
+            }
             it.isEnabled = false
             viewModel.submitPurchase(
-                site, collectItems(),
+                siteId, siteName, collectItems(),
                 binding.etNotes.text?.toString() ?: "",
                 photoPickerHelper.getSelectedUris()
             )
@@ -71,15 +75,6 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.sitesState.collect { state ->
-                        when (state) {
-                            is UiState.Success -> setupSiteDropdown(state.data)
-                            is UiState.Error   -> showError(state.message)
-                            else -> {}
-                        }
-                    }
-                }
                 launch {
                     viewModel.submitState.collect { state ->
                         when (state) {
@@ -97,14 +92,6 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
                 }
             }
         }
-    }
-
-    private fun setupSiteDropdown(sites: List<SiteTask>) {
-        val adapter = ArrayAdapter(requireContext(),
-            android.R.layout.simple_dropdown_item_1line, sites.map { it.name })
-        binding.acvSite.setAdapter(adapter)
-        binding.acvSite.setOnItemClickListener { _, _, i, _ -> selectedSite = sites[i] }
-        if (sites.size == 1) { selectedSite = sites[0]; binding.acvSite.setText(sites[0].name, false) }
     }
 
     private fun addItemRow() {

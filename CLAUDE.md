@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 10 End
+### Last Updated: Session 11 End
 
 ---
 
@@ -87,18 +87,18 @@ com.raghav.whitecoffee
 │   ├── location/LocationProvider.kt     ✅ Sealed LocationState
 │   ├── model/
 │   │   ├── User.kt                      ✅
-│   │   ├── AttendanceRecord.kt          ✅ event-based + AttendanceState + AttendanceType
+│   │   ├── AttendanceRecord.kt          ✅ event-based + AttendanceState + AttendanceType + locationName field
 │   │   ├── MaterialToolRequest.kt       ✅ + RequestItem
 │   │   ├── MaterialToolPurchase.kt      ✅ + PurchaseItem
 │   │   ├── Transfer.kt                  ✅ + TransferItem
 │   │   ├── WorkProgress.kt              ✅
 │   │   ├── Site.kt                      ✅
-│   │   └── SiteTask.kt                  ✅ Site + workDescription + toolsRequired (Session 10)
+│   │   └── SiteTask.kt                  ⚠️ COMMENTED OUT — daily assignment feature not in use
 │   └── repository/
 │       ├── AuthRepository.kt            ✅
 │       ├── UserRepository.kt            ✅
-│       ├── AttendanceRepository.kt      ✅ sub-collection: users/{uid}/attendance
-│       ├── SiteRepository.kt            ✅ getTodayAssignedSites() → List<SiteTask> (Session 10)
+│       ├── AttendanceRepository.kt      ✅ recordEvent() accepts locationName param
+│       ├── SiteRepository.kt            ✅ getTodayAssignedSites() COMMENTED OUT
 │       └── RequestRepository.kt         ✅ sub-collections under users/{uid}/
 │
 └── ui/
@@ -106,21 +106,21 @@ com.raghav.whitecoffee
     │   ├── LoginFragment.kt             ✅ TESTED
     │   └── LoginViewModel.kt            ✅
     ├── home/
-    │   ├── HomeFragment.kt              ✅ TESTED
-    │   └── HomeViewModel.kt             ✅
+    │   ├── HomeFragment.kt              ✅ Role visibility + ConstraintLayout barriers
+    │   └── HomeViewModel.kt             ✅ isOperations, isOffice, isAdmin
     ├── attendance/
-    │   ├── AttendanceFragment.kt        ✅ TESTED (operations — full GPS flow + work card)
-    │   ├── AttendanceViewModel.kt       ✅ uses SiteTask; getTaskForSite() for work card lookup
-    │   ├── AttendanceTimelineAdapter.kt ✅
-    │   ├── OfficeAttendanceFragment.kt  ✅ Simple check-in/out for office role
-    │   └── OfficeAttendanceViewModel.kt ✅ OfficeState: NotCheckedIn/CheckedIn/DayComplete
+    │   ├── AttendanceFragment.kt        ✅ GPS flow; site check-in = free-text dialog (no geofence)
+    │   ├── AttendanceViewModel.kt       ✅ SiteInputRequired action state; no SiteRepository
+    │   ├── AttendanceTimelineAdapter.kt ✅ includes OFFICE_IN/OFFICE_OUT labels + locationName
+    │   ├── OfficeAttendanceFragment.kt  ✅ Multi-cycle check-in/out + "Where are you?" + timeline
+    │   └── OfficeAttendanceViewModel.kt ✅ NotCheckedIn/CheckedIn; DayComplete REMOVED
     ├── attendance/ (continued)
     │   ├── LeaveFragment.kt             ✅ My Leaves list + FAB to apply
     │   ├── LeaveViewModel.kt            ✅
     │   ├── LeaveRequestAdapter.kt       ✅ status badge: pending/approved/rejected
     │   ├── ApplyLeaveFragment.kt        ✅ leave type + date range + reason
     │   ├── ApplyLeaveViewModel.kt       ✅ auto-calculates total days
-    │   ├── LeaveApprovalsFragment.kt    ✅ office only — approve/reject with dialog
+    │   ├── LeaveApprovalsFragment.kt    ✅ admin only — approve/reject with dialog
     │   ├── LeaveApprovalsViewModel.kt   ✅ collectionGroup query across all users
     │   └── LeaveApprovalAdapter.kt      ✅
     ├── admin/
@@ -132,19 +132,19 @@ com.raghav.whitecoffee
     │   ├── AdminSiteListFragment.kt     ✅ list all sites, tap to edit
     │   ├── AdminSiteListViewModel.kt    ✅
     │   ├── AdminSiteAdapter.kt          ✅
-    │   ├── AddEditSiteFragment.kt       ✅ add/edit site + multi-select user assignment
-    │   └── AddEditSiteViewModel.kt      ✅ assignUsersToSite (batch writes)
+    │   ├── AddEditSiteFragment.kt       ✅ add/edit site name/lat/lng/geofenceRadius
+    │   └── AddEditSiteViewModel.kt      ✅
     └── requests/
         ├── PhotoPickerHelper.kt         ✅ Reusable multi-photo picker
-        ├── MaterialToolRequestFragment.kt   ✅ + photo support
-        ├── MaterialToolRequestViewModel.kt  ✅ + photo upload; uses SiteTask
-        ├── MaterialToolBuyFragment.kt       ✅ + photo support
-        ├── MaterialToolBuyViewModel.kt      ✅ + photo upload; uses SiteTask
+        ├── MaterialToolRequestFragment.kt   ✅ free-text site name + ID fields
+        ├── MaterialToolRequestViewModel.kt  ✅ submitRequest(siteId, siteName, ...)
+        ├── MaterialToolBuyFragment.kt       ✅ free-text site name + ID fields
+        ├── MaterialToolBuyViewModel.kt      ✅ submitPurchase(siteId, siteName, ...)
         ├── MaterialTransferFragment.kt      ✅ + photo support
         ├── ToolTransferFragment.kt          ✅ (no photos)
         ├── TransferViewModel.kt             ✅ + photo upload for material transfer
-        ├── WorkProgressFragment.kt          ✅ uses SiteTask for site dropdown
-        └── WorkProgressViewModel.kt         ✅ uses SiteTask
+        ├── WorkProgressFragment.kt          ✅ free-text site name + ID fields
+        └── WorkProgressViewModel.kt         ✅ submitProgress(siteId, siteName, ...)
 ```
 
 ---
@@ -166,7 +166,7 @@ com.raghav.whitecoffee
 /users/{userId}/work_progress/{id}           ← Work Progress
 
 /sites/{siteId}                              ← Site info (top-level, shared)
-/daily_assignments/{date}_{userId}           ← Daily site assignments (NEW)
+/daily_assignments/{date}_{userId}           ← COMMENTED OUT — not in use
 ```
 
 ### `/users/{userId}` — User Profile
@@ -179,23 +179,9 @@ com.raghav.whitecoffee
 | role | String | "operations", "office", or "admin" |
 | createdAt | Timestamp | |
 
-### `/daily_assignments/{date}_{userId}` — Daily Site Assignments
-
-Document ID format: `yyyy-MM-dd_{userId}` e.g. `2026-06-06_abc123`
-Read by `SiteRepository.getTodayAssignedSites()` → returns `List<SiteTask>`.
-
-**New format (Session 10) — use this when writing new assignments:**
-| Field | Type | Notes |
-|---|---|---|
-| sites | List\<Map\> | Array of `{siteId, workDescription, toolsRequired}` |
-
-**Old format (still supported for backward compat):**
-| Field | Type | Notes |
-|---|---|---|
-| siteIds | List\<String\> | Site IDs only — no work details |
-
-`SiteRepository` auto-detects format: checks for `sites` array first, falls back to `siteIds`.
-Work descriptions and tools required appear as a card in AttendanceFragment when user checks into a site.
+### `/daily_assignments/{date}_{userId}` — Daily Site Assignments (COMMENTED OUT)
+This collection and the `getTodayAssignedSites()` function are commented out.
+See `SiteRepository.kt` and `SiteTask.kt` for re-enable instructions.
 
 ### `/users/{userId}/attendance/{eventId}` — Attendance Events
 | Field | Type | Notes |
@@ -205,13 +191,14 @@ Work descriptions and tools required appear as a card in AttendanceFragment when
 | employeeId | String | Denormalized |
 | userName | String | Denormalized |
 | date | String | yyyy-MM-dd |
-| type | String | home_in / home_out / site_in / site_out / market_in / market_out / **office_in / office_out** |
+| type | String | home_in / home_out / site_in / site_out / market_in / market_out / office_in / office_out |
 | timestamp | Timestamp | When event occurred |
 | latitude | Double | GPS |
 | longitude | Double | GPS |
 | siteId | String? | site_in / site_out only |
-| siteName | String? | site_in / site_out only |
+| siteName | String? | site_in / site_out only — free-text entered by user |
 | marketName | String? | market_in / market_out only |
+| locationName | String? | office_in / office_out only — free-text "Where are you?" |
 
 ### `/users/{userId}/material_requests/{requestId}` — M&T Requests
 | Field | Type | Notes |
@@ -220,8 +207,8 @@ Work descriptions and tools required appear as a card in AttendanceFragment when
 | userId | String | Denormalized |
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
-| siteId | String | Which site needs items |
-| siteName | String | |
+| siteId | String | Free-text entered by user (e.g. "Site-001") |
+| siteName | String | Free-text entered by user |
 | items | List\<Map\> | itemName, quantity, unit, notes |
 | status | String | pending / approved / rejected |
 | notes | String | Overall notes |
@@ -235,8 +222,8 @@ Work descriptions and tools required appear as a card in AttendanceFragment when
 | userId | String | Denormalized |
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
-| siteId | String | |
-| siteName | String | |
+| siteId | String | Free-text entered by user |
+| siteName | String | Free-text entered by user |
 | items | List\<Map\> | itemName, quantity, unit, pricePerUnit, totalPrice, notes |
 | grandTotal | Double | Sum of all item totals |
 | status | String | pending / approved / rejected |
@@ -272,8 +259,8 @@ Same schema as material_transfers (no photoUrls field).
 | userId | String | Denormalized |
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
-| siteId | String | |
-| siteName | String | |
+| siteId | String | Free-text entered by user |
+| siteName | String | Free-text entered by user |
 | date | String | yyyy-MM-dd |
 | hoursWorked | Double | e.g. 7.5 |
 | workDescription | String | What was accomplished |
@@ -288,7 +275,7 @@ Same schema as material_transfers (no photoUrls field).
 | name | String | |
 | latitude | Double | |
 | longitude | Double | |
-| geofenceRadius | Double | Meters (e.g. 200.0) |
+| geofenceRadius | Double | Meters (e.g. 200.0) — stored but NOT enforced at check-in |
 
 ### `/users/{userId}/leave_requests/{requestId}` — Leave Requests
 | Field | Type | Notes |
@@ -315,8 +302,6 @@ Same schema as material_transfers (no photoUrls field).
 ### Migration note:
 Old flat collections (`attendance`, `material_tool_requests`, etc.) were replaced by sub-collections.
 Delete old flat collections from Firestore Console — they only contain test data.
-Old Firestore index `attendance: userId + date + timestamp` is no longer needed.
-New index needed: `users/{uid}/attendance: date ASC + timestamp ASC` (create if queries are slow).
 
 ---
 
@@ -338,20 +323,23 @@ accent_light:     #EBF2FB  — icon backgrounds
 
 ## ROLE-BASED ACCESS
 
-| Feature | Office | Operations |
-|---|---|---|
-| Attendance | Simple GPS check-in/out | Home→Site(geofence)→Market flow |
-| M&T Request | ❌ Hidden | ✅ Visible |
-| M&T Buy | ✅ | ✅ |
-| Material Transfer | ✅ | ✅ |
-| Tool Transfer | ✅ | ✅ |
-| Work Progress | ❌ Hidden | ✅ Visible |
-| Leave (apply + my history) | ✅ | ✅ |
-| Leave Approvals | ✅ (approve/reject all staff) | ❌ Hidden |
-| User Management | ❌ | ❌ | ✅ Admin only |
-| Site Management | ❌ | ❌ | ✅ Admin only |
+| Feature | Operations | Office | Admin |
+|---|---|---|---|
+| Attendance | Full GPS flow (Home→Site→Market) | Multi-cycle check-in/out + location name | Same as Office |
+| M&T Request | ✅ Visible | ❌ Hidden | ❌ Hidden |
+| M&T Buy | ✅ | ✅ | ✅ |
+| Material Transfer | ✅ | ✅ | ✅ |
+| Tool Transfer | ✅ | ✅ | ✅ |
+| Work Progress | ✅ Visible | ❌ Hidden | ❌ Hidden |
+| Leave (apply + my history) | ✅ | ✅ | ✅ |
+| Leave Approvals | ❌ Hidden | ❌ Hidden | ✅ Admin only |
+| User Management | ❌ | ❌ | ✅ |
+| Site Management | ❌ | ❌ | ✅ |
 
-Role checked via `sessionManager.isOperations` / `sessionManager.isOffice`
+Role checked via `sessionManager.isOperations` / `sessionManager.isOffice` / `sessionManager.isAdmin`
+
+**Note:** `isOffice` returns true for both office AND admin roles (admin ⊃ office capabilities).
+Use `isAdmin` for Leave Approvals and admin screens — NOT `isOffice`.
 
 ---
 
@@ -369,22 +357,38 @@ NoRecord → HomeCheckedIn → SiteCheckedIn ←→ MarketCheckedIn
                         → DayComplete (home_out)
 ```
 - GPS captured on EVERY event
-- Site check-in validates 200m geofence
-- Site picker dialog when multiple assigned sites
+- Site check-in: shows dialog with two free-text fields (Site Name + Site ID) — **NO geofencing**
+- No site picker dropdown — user manually enters site name and ID
 
-### Office users — simple check-in/out (OfficeAttendanceFragment + OfficeAttendanceViewModel)
+### Office users — multi-cycle (OfficeAttendanceFragment + OfficeAttendanceViewModel)
 Event types: `office_in`, `office_out`
 
-State machine: `NotCheckedIn → CheckedIn → DayComplete`
+State machine: `NotCheckedIn ↔ CheckedIn` (repeatable — no DayComplete, no End Day button)
 - GPS captured on both events
-- No geofencing, no site selection, no market
-- Button listener set once in `setupActionButton()`, reads `viewModel.state.value` at tap time
+- "Where are you?" free-text field — user enters location name (stored as `locationName` in Firestore)
+- Multiple check-in/out cycles per day supported (sales team use case)
+- Full event timeline shown below the action button
+- State derived from the last event only: last `office_in` → CheckedIn; otherwise NotCheckedIn
 
 ### HomeFragment routing:
 ```kotlin
 if (viewModel.isOperations) navigate(attendanceFragment)
 else navigate(officeAttendanceFragment)
 ```
+
+---
+
+## SITE ENTRY (ALL SCREENS)
+
+Site dropdowns have been removed. Users manually enter:
+- **Site Name** — e.g. "Senken Gurugaon Site"
+- **Site ID** — e.g. "Site-001"
+
+Both fields are plain `TextInputEditText` widgets. Site Name is required; Site ID is optional.
+Applies to: M&T Request, M&T Buy, Work Progress, AttendanceFragment site check-in dialog.
+
+The `/sites/{siteId}` Firestore collection still exists for admin site management (AddEditSiteFragment).
+It is NOT used as a dropdown source anywhere in the app currently.
 
 ---
 
@@ -408,6 +412,22 @@ else navigate(officeAttendanceFragment)
 
 ---
 
+## HOME SCREEN GRID — CONSTRAINTLAYOUT BARRIERS
+
+The 2-column card grid uses three `Barrier` views to prevent layout breaks when GONE cards collapse:
+
+- `barrier_row1` — bottom of `card_attendance` + `card_mt_request`
+- `barrier_row2` — bottom of `card_mt_buy` + `card_material_transfer`
+- `barrier_row3` — bottom of `card_tool_transfer` + `card_work_progress`
+
+Row 4 (`card_leave`, `card_leave_approvals`) anchors to `barrier_row3`.
+
+When a GONE card collapses to 0dp height, the barrier automatically tracks the surviving card.
+`HomeFragment.expandToFullWidth()` programmatically spans a lone card to full width when its
+partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`).
+
+---
+
 ## TEST CREDENTIALS
 
 | Email | Password | Role |
@@ -415,51 +435,46 @@ else navigate(officeAttendanceFragment)
 | test@whitecoffee.com | test1234 | operations |
 | office@whitecoffee.com | test1234 | office |
 
-### Test site (Firestore `sites/Site-001`):
-- Name: Senken Gurugaon Site
-- Lat: 28.4595, Lng: 77.0266
-- geofenceRadius: 200
-
 ---
 
 ## BUILD STATUS
 
-### ✅ DONE (Session 10 complete)
+### ✅ DONE (Session 11 complete)
 - Phase 1: Foundation (Hilt, Firebase, core, DI, location, session, network)
-- Phase 2: Data layer (8 models, 5 repositories)
+- Phase 2: Data layer (7 models, 5 repositories)
 - Phase 3 ALL SCREENS COMPLETE:
   - Login ✅ tested
-  - Home ✅ tested (role routing works for both roles)
-  - Attendance (Operations) ✅ full GPS + geofence + timeline + today's work card
-  - Attendance (Office) ✅ simple check-in/out with GPS
-  - M&T Request ✅ (operations only, photo upload)
-  - M&T Buy ✅ (both roles, auto grand total + photos)
+  - Home ✅ barrier grid + role visibility fixed (Leave Approvals = admin only)
+  - Attendance (Operations) ✅ GPS flow + free-text site dialog (no geofence)
+  - Attendance (Office) ✅ multi-cycle + "Where are you?" + timeline
+  - M&T Request ✅ (operations only, free-text site, photo upload)
+  - M&T Buy ✅ (both roles, free-text site, auto grand total + photos)
   - Material Transfer ✅ (both roles, photos)
   - Tool Transfer ✅ (both roles, no photos)
-  - Work Progress ✅ (operations only, photos)
+  - Work Progress ✅ (operations only, free-text site, photos)
   - Leave (apply + my history) ✅ (both roles)
-  - Leave Approvals ✅ (office + admin)
-  - User Management ✅ (admin — add via secondary Firebase App, edit, password reset)
-  - Site Management ✅ (admin — add/edit site name/lat/lng/geofenceRadius)
-- 3 roles: operations / office / admin (admin includes all office capabilities via isOffice)
-- Firestore schema: sub-collections under `/users/{userId}/` + `/daily_assignments/`
+  - Leave Approvals ✅ (admin only)
+  - User Management ✅ (admin)
+  - Site Management ✅ (admin)
+- 3 roles: operations / office / admin
 - SessionManager persists to SharedPreferences (survives process kill)
-- Daily site assignment system: `/daily_assignments/{date}_{userId}` with `sites` array format
 - nav_graph: 15 destinations wired
 
-### ✅ Session 10 additions:
-- **`SiteTask` model** — combines `Site` (id, name, lat, lng, geofenceRadius) + `workDescription` + `toolsRequired`
-- **`SiteRepository.getTodayAssignedSites()`** now returns `List<SiteTask>` with per-site work details; backward-compatible with old `siteIds` flat format
-- **Today's Work card** in `AttendanceFragment` — shown when operations user is checked in at a site; displays work description and tools required from that day's assignment
-- **All request ViewModels** (`MaterialToolRequestViewModel`, `MaterialToolBuyViewModel`, `WorkProgressViewModel`) updated to use `SiteTask` instead of `Site` for site dropdowns
-- **New `/daily_assignments` format**: `sites: [{siteId, workDescription, toolsRequired}]` array replaces flat `siteIds` list
+### ✅ Session 11 changes:
+- **Daily assignment system commented out** — `SiteTask.kt` fully commented, `getTodayAssignedSites()` commented in `SiteRepository.kt`. Re-enable instructions in both files.
+- **Geofencing removed** from site check-in — `confirmSiteCheckIn(siteId, siteName)` records event directly with no distance check.
+- **Site dropdowns removed** — all screens now use two free-text TextInputEditText fields (Site Name + Site ID).
+- **Office attendance rework** — multi-cycle check-in/out, "Where are you?" free-text, full event timeline, no DayComplete/End Day.
+- **`locationName` field** added to `AttendanceRecord` + `recordEvent()` + `AttendanceTimelineAdapter`.
+- **Home grid layout fixed** — three ConstraintLayout Barriers + `expandToFullWidth()` helper.
+- **Leave Approvals visibility fixed** — now uses `isAdmin` (was incorrectly `isOffice`).
+- **`HomeViewModel.isAdmin`** added.
 
 ### ✅ Admin Web Portal DONE
 `C:\Users\ragha\AndroidStudioProjects\whitecoffee-admin\`
 Next.js 14 + TypeScript + Tailwind + Firebase Hosting
 Pages: Dashboard, Users, Sites, Leave Requests, Attendance, Submissions
 Deploy: `npm run deploy` from the admin portal directory
-See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 
 ### ⏳ REMAINING (Phase 4)
 - Firestore security rules
@@ -484,9 +499,11 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 11. **Image compression** — Android Bitmap API, no extra library
 12. **Admin users** — secondary Firebase App instance (admin stays logged in during user creation)
 13. **collectionGroup queries** — for admin/office views that need all users' data
-14. **Daily site assignments** — `/daily_assignments/{date}_{userId}` with `sites` array (new) or `siteIds` (old compat). All screens call `SiteRepository.getTodayAssignedSites()` → `List<SiteTask>`.
+14. **Daily site assignments COMMENTED OUT** — `SiteRepository.getTodayAssignedSites()` and `SiteTask` class are commented. Site entry is manual free-text in all screens. Re-enable via comments in `SiteRepository.kt` and `SiteTask.kt`.
 15. **No My Submissions screens** — dropped; users do not view submission history in the app. All approvals via admin web portal only.
-16. **SiteTask vs Site** — `Site` is the raw Firestore model (id, name, lat, lng, geofenceRadius). `SiteTask` is the enriched ViewModel model that also carries `workDescription` and `toolsRequired` from the daily assignment. All UI layers use `SiteTask`; `Site` is internal to repositories only.
+16. **Leave Approvals = admin only** — `isOffice` is true for both office and admin; always use `isAdmin` for the Leave Approvals card/screen check.
+17. **Office attendance multi-cycle** — state derived from last event only. `DayComplete` state does not exist for office users. No End Day button.
+18. **No geofencing at check-in** — geofenceRadius field exists in `/sites/` documents but is not enforced anywhere in the app currently.
 
 ---
 
@@ -495,17 +512,14 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. All Phase 3 screens are complete (Session 10 done).
-SiteRepository.getTodayAssignedSites() returns List<SiteTask> — SiteTask combines
-Site data with workDescription + toolsRequired from the daily assignment doc.
-daily_assignments now uses "sites" array format: [{siteId, workDescription, toolsRequired}].
-Old "siteIds" flat format still supported for backward compat.
-When checked in at a site, AttendanceFragment shows a "Today's Work" card.
-All request ViewModels use SiteTask (not Site) for site dropdowns.
-Phase 4 work items: Firestore security rules, background geofencing,
-Cloud Functions for Google Sheets export, notifications.
-IMPORTANT: Firestore composite index needed for Leave Approvals:
-Collection group "leave_requests" → status ASC + submittedAt ASC.
+Read CLAUDE.md first. All Phase 3 screens are complete (Session 11 done).
+Key changes from Session 11:
+- Daily assignment system (SiteTask + getTodayAssignedSites) is COMMENTED OUT in SiteRepository.kt and SiteTask.kt.
+- Site entry is now two free-text fields on all screens (no dropdowns, no geofencing).
+- Office attendance: multi-cycle check-in/out with "Where are you?" text field + full event timeline.
+- Home grid uses ConstraintLayout Barriers (barrier_row1/2/3). Leave Approvals is admin-only.
+Phase 4: Firestore security rules, background geofencing, Cloud Functions, notifications.
+Firestore index: collection group "leave_requests" → status ASC + submittedAt ASC.
 ```
 
 ---

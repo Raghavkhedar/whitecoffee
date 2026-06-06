@@ -8,9 +8,7 @@ import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
-import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
-import com.raghav.whitecoffee.data.repository.SiteRepository
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,15 +16,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
+
+// SiteRepository + SiteTask imports removed — daily assignment system commented out.
+// To re-enable: import SiteRepository, SiteTask; restore _assignedSites, loadSites(),
+// ActionState.SiteSelectionRequired, initiateSiteCheckIn() site-picker logic,
+// confirmSiteCheckIn(SiteTask) with Haversine geofence check, and getTaskForSite().
 
 @HiltViewModel
 class AttendanceViewModel @Inject constructor(
     private val attendanceRepository: AttendanceRepository,
-    private val siteRepository: SiteRepository,
     private val locationProvider: LocationProvider,
     private val sessionManager: SessionManager
 ) : ViewModel() {
@@ -40,9 +38,6 @@ class AttendanceViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<ActionState>(ActionState.Idle)
     val actionState: StateFlow<ActionState> = _actionState.asStateFlow()
 
-    private val _assignedSites = MutableStateFlow<List<SiteTask>>(emptyList())
-    val assignedSites: StateFlow<List<SiteTask>> = _assignedSites.asStateFlow()
-
     val isOperations: Boolean get() = sessionManager.isOperations
 
     sealed interface ActionState {
@@ -50,7 +45,8 @@ class AttendanceViewModel @Inject constructor(
         data object Loading : ActionState
         data class Error(val message: String) : ActionState
         data object Success : ActionState
-        data class SiteSelectionRequired(val sites: List<SiteTask>) : ActionState
+        // User must type Site Name + Site ID — shown as a dialog with two text fields
+        data object SiteInputRequired : ActionState
         data class MarketNameRequired(val currentLat: Double, val currentLng: Double) : ActionState
     }
 
@@ -62,7 +58,6 @@ class AttendanceViewModel @Inject constructor(
         viewModelScope.launch {
             _attendanceState.value = UiState.Loading
 
-            // Load today's state
             val stateResult = attendanceRepository.getTodayState()
             if (stateResult.isFailure) {
                 _attendanceState.value = UiState.Error("Failed to load attendance. Try again.")
@@ -70,17 +65,13 @@ class AttendanceViewModel @Inject constructor(
             }
             _attendanceState.value = UiState.Success(stateResult.getOrThrow())
 
-            // Load today's event log
             val eventsResult = attendanceRepository.getTodayEvents()
             if (eventsResult.isSuccess) {
                 _todayEvents.value = eventsResult.getOrThrow()
             }
 
-            // Load assigned sites
-            val sitesResult = siteRepository.getTodayAssignedSites()
-            if (sitesResult.isSuccess) {
-                _assignedSites.value = sitesResult.getOrThrow()
-            }
+            // DAILY ASSIGNMENT SYSTEM REMOVED — no longer loads assigned sites.
+            // To re-enable, restore: val sitesResult = siteRepository.getTodayAssignedSites()
         }
     }
 
@@ -138,48 +129,27 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
-    // ── Site Check In — Step 1: Get location, then show site picker ───────
+    // ── Site Check In — Step 1: Show dialog for user to type Site Name + Site ID ──
 
     fun initiateSiteCheckIn() {
-        viewModelScope.launch {
-            _actionState.value = ActionState.Loading
-            val sites = _assignedSites.value
-            if (sites.isEmpty()) {
-                _actionState.value = ActionState.Error("No sites assigned to you. Contact your administrator.")
-                return@launch
-            }
-            // Show site selection dialog
-            _actionState.value = ActionState.SiteSelectionRequired(sites)
-        }
+        _actionState.value = ActionState.SiteInputRequired
     }
 
-    // ── Site Check In — Step 2: User picked a site, validate geofence ─────
+    // ── Site Check In — Step 2: User typed site name + ID, record event ───
+    // Geofence validation removed — user checks in from wherever they are.
 
-    fun confirmSiteCheckIn(site: SiteTask) {
+    fun confirmSiteCheckIn(siteId: String, siteName: String) {
         viewModelScope.launch {
             _actionState.value = ActionState.Loading
             val location = locationProvider.getCurrentLocation()
             when (location) {
                 is LocationState.Success -> {
-                    val distance = calculateDistance(
-                        location.latitude, location.longitude,
-                        site.latitude, site.longitude
-                    )
-                    if (distance > site.geofenceRadius) {
-                        val distanceInt = distance.toInt()
-                        _actionState.value = ActionState.Error(
-                            "You are ${distanceInt}m away from ${site.name}. " +
-                                    "You must be within ${site.geofenceRadius.toInt()}m to check in."
-                        )
-                        return@launch
-                    }
-                    // Inside geofence — record check in
                     val result = attendanceRepository.recordEvent(
                         type      = AttendanceType.SITE_IN,
                         latitude  = location.latitude,
                         longitude = location.longitude,
-                        siteId    = site.id,
-                        siteName  = site.name
+                        siteId    = siteId.trim(),
+                        siteName  = siteName.trim()
                     )
                     handleResult(result)
                 }
@@ -299,7 +269,7 @@ class AttendanceViewModel @Inject constructor(
     private suspend fun handleResult(result: Result<String>) {
         if (result.isSuccess) {
             _actionState.value = ActionState.Success
-            loadTodayData()  // Refresh state after every event
+            loadTodayData()
         } else {
             _actionState.value = ActionState.Error(
                 result.exceptionOrNull()?.message ?: "Something went wrong. Try again."
@@ -309,25 +279,5 @@ class AttendanceViewModel @Inject constructor(
 
     fun resetActionState() {
         _actionState.value = ActionState.Idle
-    }
-
-    fun getTaskForSite(siteName: String): SiteTask? =
-        _assignedSites.value.firstOrNull { it.name == siteName }
-
-    /**
-     * Haversine formula — calculates distance in meters between two GPS coordinates.
-     */
-    private fun calculateDistance(
-        lat1: Double, lng1: Double,
-        lat2: Double, lng2: Double
-    ): Double {
-        val earthRadius = 6371000.0 // metres
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLng = Math.toRadians(lng2 - lng1)
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-                cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) *
-                sin(dLng / 2) * sin(dLng / 2)
-        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
-        return earthRadius * c
     }
 }

@@ -14,6 +14,7 @@ class HomeViewModel @Inject constructor(
     val userRole: String get() = sessionManager.role
     val isOperations: Boolean get() = sessionManager.isOperations
     val isOffice: Boolean get() = sessionManager.isOffice
+    val isAdmin: Boolean get() = sessionManager.isAdmin
 
     fun logout() {
         sessionManager.clearSession()

@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -13,11 +12,13 @@ import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.RequestItem
-import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentMaterialToolRequestBinding
 import com.raghav.whitecoffee.databinding.ItemRequestRowBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+
+// SiteTask / dropdown removed — site is now two free-text fields (Site Name + Site ID).
+// To re-enable: restore ArrayAdapter dropdown, import SiteTask, restore sitesState observer.
 
 @AndroidEntryPoint
 class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBinding>() {
@@ -25,8 +26,6 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
     private val viewModel: MaterialToolRequestViewModel by viewModels()
 
     private val itemRows = mutableListOf<ItemRequestRowBinding>()
-    private var selectedSite: SiteTask? = null
-    private var availableSites: List<SiteTask> = emptyList()
     private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
@@ -48,46 +47,32 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
             fragment           = this,
             thumbnailContainer = binding.containerPhotos,
             scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { /* no-op: we read uris on submit */ }
+            onPhotosChanged    = { }
         )
         binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
 
     private fun setupClickListeners() {
         binding.btnBack.setOnClickListener { findNavController().navigateUp() }
-
-        binding.btnAddItem.setOnClickListener {
-            addItemRow()
-        }
+        binding.btnAddItem.setOnClickListener { addItemRow() }
 
         binding.btnSubmit.setOnClickListener {
-            val site = selectedSite
-            if (site == null) {
-                showError("Please select a site.")
+            val siteName = binding.etSiteName.text?.toString()?.trim() ?: ""
+            val siteId   = binding.etSiteId.text?.toString()?.trim() ?: ""
+            if (siteName.isBlank()) {
+                showError("Please enter the site name.")
                 return@setOnClickListener
             }
             it.isEnabled = false
             val items = collectItems()
             val notes = binding.etNotes.text?.toString() ?: ""
-            viewModel.submitRequest(site, items, notes, photoPickerHelper.getSelectedUris())
+            viewModel.submitRequest(siteId, siteName, items, notes, photoPickerHelper.getSelectedUris())
         }
     }
 
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-
-                launch {
-                    viewModel.sitesState.collect { state ->
-                        when (state) {
-                            is UiState.Success -> setupSiteDropdown(state.data)
-                            is UiState.Error   -> showError(state.message)
-                            is UiState.Empty   -> showError("No sites assigned.")
-                            else -> {}
-                        }
-                    }
-                }
-
                 launch {
                     viewModel.submitState.collect { state ->
                         when (state) {
@@ -107,24 +92,6 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
                     }
                 }
             }
-        }
-    }
-
-    private fun setupSiteDropdown(sites: List<SiteTask>) {
-        availableSites = sites
-        val siteNames = sites.map { it.name }
-        val adapter = ArrayAdapter(
-            requireContext(),
-            android.R.layout.simple_dropdown_item_1line,
-            siteNames
-        )
-        binding.acvSite.setAdapter(adapter)
-        binding.acvSite.setOnItemClickListener { _, _, position, _ ->
-            selectedSite = sites[position]
-        }
-        if (sites.size == 1) {
-            selectedSite = sites[0]
-            binding.acvSite.setText(sites[0].name, false)
         }
     }
 

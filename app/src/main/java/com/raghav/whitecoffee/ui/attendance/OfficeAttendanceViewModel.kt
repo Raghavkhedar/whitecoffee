@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.location.LocationState
+import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,53 +20,63 @@ class OfficeAttendanceViewModel @Inject constructor(
     private val locationProvider: LocationProvider
 ) : ViewModel() {
 
+    // DayComplete state removed — office users can check in/out multiple times per day.
     sealed interface OfficeState {
         data object Loading : OfficeState
         data object NotCheckedIn : OfficeState
-        data class CheckedIn(val checkInTime: String) : OfficeState
-        data class DayComplete(val checkInTime: String, val checkOutTime: String) : OfficeState
+        // locationName: where the user checked in from (free-text entered by user)
+        data class CheckedIn(val locationName: String, val checkInTime: String) : OfficeState
         data class Error(val message: String) : OfficeState
     }
 
     private val _state = MutableStateFlow<OfficeState>(OfficeState.Loading)
     val state: StateFlow<OfficeState> = _state.asStateFlow()
 
+    private val _todayEvents = MutableStateFlow<List<AttendanceRecord>>(emptyList())
+    val todayEvents: StateFlow<List<AttendanceRecord>> = _todayEvents.asStateFlow()
+
     init {
         loadTodayState()
     }
 
-    private fun loadTodayState() {
+    fun loadTodayState() {
         viewModelScope.launch {
             _state.value = OfficeState.Loading
+
             val result = attendanceRepository.getTodayEvents()
             if (result.isFailure) {
                 _state.value = OfficeState.NotCheckedIn
                 return@launch
             }
+
             val events = result.getOrThrow()
-            val checkIn  = events.firstOrNull { it.type == AttendanceType.OFFICE_IN }
-            val checkOut = events.firstOrNull { it.type == AttendanceType.OFFICE_OUT }
+            _todayEvents.value = events
+
+            // Current state = last event: office_in → CheckedIn, office_out (or none) → NotCheckedIn
+            val lastEvent = events.lastOrNull()
             _state.value = when {
-                checkIn != null && checkOut != null ->
-                    OfficeState.DayComplete(checkIn.displayTime(), checkOut.displayTime())
-                checkIn != null ->
-                    OfficeState.CheckedIn(checkIn.displayTime())
-                else ->
-                    OfficeState.NotCheckedIn
+                lastEvent?.type == AttendanceType.OFFICE_IN ->
+                    OfficeState.CheckedIn(
+                        locationName = lastEvent.locationName,
+                        checkInTime  = lastEvent.displayTime()
+                    )
+                else -> OfficeState.NotCheckedIn
             }
         }
     }
 
-    fun checkIn() {
+    // locationName: free-text location the user types before checking in (e.g. "Office", "Client Site ABC")
+    fun checkIn(locationName: String) {
         viewModelScope.launch {
             _state.value = OfficeState.Loading
             val location = locationProvider.getCurrentLocation()
             when (location) {
                 is LocationState.Success -> {
                     val result = attendanceRepository.recordEvent(
-                        type      = AttendanceType.OFFICE_IN,
-                        latitude  = location.latitude,
-                        longitude = location.longitude
+                        type         = AttendanceType.OFFICE_IN,
+                        latitude     = location.latitude,
+                        longitude    = location.longitude,
+                        locationName = locationName.trim()
                     )
                     if (result.isSuccess) loadTodayState()
                     else _state.value = OfficeState.Error(
@@ -84,16 +95,18 @@ class OfficeAttendanceViewModel @Inject constructor(
         }
     }
 
-    fun checkOut() {
+    // Records check-out using the same location name as the last check-in
+    fun checkOut(locationName: String) {
         viewModelScope.launch {
             _state.value = OfficeState.Loading
             val location = locationProvider.getCurrentLocation()
             when (location) {
                 is LocationState.Success -> {
                     val result = attendanceRepository.recordEvent(
-                        type      = AttendanceType.OFFICE_OUT,
-                        latitude  = location.latitude,
-                        longitude = location.longitude
+                        type         = AttendanceType.OFFICE_OUT,
+                        latitude     = location.latitude,
+                        longitude    = location.longitude,
+                        locationName = locationName
                     )
                     if (result.isSuccess) loadTodayState()
                     else _state.value = OfficeState.Error(
@@ -111,5 +124,4 @@ class OfficeAttendanceViewModel @Inject constructor(
             }
         }
     }
-
 }

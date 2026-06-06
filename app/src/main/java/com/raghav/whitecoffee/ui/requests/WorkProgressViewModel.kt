@@ -5,10 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.PhotoUploadManager
-import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.data.model.WorkProgress
 import com.raghav.whitecoffee.data.repository.RequestRepository
-import com.raghav.whitecoffee.data.repository.SiteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,39 +14,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+// SiteRepository + SiteTask removed — site is now entered as free text by the user.
+// To re-enable: add SiteRepository injection, restore _sitesState + loadSites(),
+// change submitProgress() back to accept SiteTask.
+
 @HiltViewModel
 class WorkProgressViewModel @Inject constructor(
     private val requestRepository: RequestRepository,
-    private val siteRepository: SiteRepository,
     private val photoUploadManager: PhotoUploadManager
 ) : ViewModel() {
-
-    private val _sitesState = MutableStateFlow<UiState<List<SiteTask>>>(UiState.Loading)
-    val sitesState: StateFlow<UiState<List<SiteTask>>> = _sitesState.asStateFlow()
 
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
-    init {
-        loadSites()
-    }
-
-    private fun loadSites() {
-        viewModelScope.launch {
-            _sitesState.value = UiState.Loading
-            val result = siteRepository.getTodayAssignedSites()
-            _sitesState.value = when {
-                result.isSuccess -> {
-                    val sites = result.getOrThrow()
-                    if (sites.isEmpty()) UiState.Empty else UiState.Success(sites)
-                }
-                else -> UiState.Error("Failed to load sites.")
-            }
-        }
-    }
-
     fun submitProgress(
-        site: SiteTask,
+        siteId: String,
+        siteName: String,
         date: String,
         hoursWorked: Double,
         workDescription: String,
@@ -66,8 +47,8 @@ class WorkProgressViewModel @Inject constructor(
         _submitState.value = UiState.Loading
         viewModelScope.launch {
             val progress = WorkProgress(
-                siteId          = site.id,
-                siteName        = site.name,
+                siteId          = siteId.trim(),
+                siteName        = siteName.trim(),
                 date            = date,
                 hoursWorked     = hoursWorked,
                 workDescription = workDescription.trim()

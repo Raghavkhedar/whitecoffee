@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ArrayAdapter
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -13,7 +12,6 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
-import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentWorkProgressBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -21,15 +19,14 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Calendar
 
+// SiteTask / dropdown removed — site is now two free-text fields (Site Name + Site ID).
+// To re-enable: restore ArrayAdapter dropdown, import SiteTask, restore sitesState observer.
+
 @AndroidEntryPoint
 class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
 
     private val viewModel: WorkProgressViewModel by viewModels()
-
-    private var selectedSite: SiteTask? = null
-    private var availableSites: List<SiteTask> = emptyList()
     private lateinit var photoPickerHelper: PhotoPickerHelper
-
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     override fun inflateBinding(
@@ -55,7 +52,7 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
             fragment           = this,
             thumbnailContainer = binding.containerPhotos,
             scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { /* read uris on submit */ }
+            onPhotosChanged    = { }
         )
         binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
@@ -67,9 +64,10 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
         binding.tilDate.setEndIconOnClickListener { showDatePicker() }
 
         binding.btnSubmit.setOnClickListener {
-            val site = selectedSite
-            if (site == null) {
-                showError("Please select a site.")
+            val siteName = binding.etSiteName.text?.toString()?.trim() ?: ""
+            val siteId   = binding.etSiteId.text?.toString()?.trim() ?: ""
+            if (siteName.isBlank()) {
+                showError("Please enter the site name.")
                 return@setOnClickListener
             }
             val date = binding.etDate.text?.toString()?.trim() ?: ""
@@ -83,7 +81,8 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
 
             it.isEnabled = false
             viewModel.submitProgress(
-                site            = site,
+                siteId          = siteId,
+                siteName        = siteName,
                 date            = date,
                 hoursWorked     = hours,
                 workDescription = description,
@@ -109,18 +108,6 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-
-                launch {
-                    viewModel.sitesState.collect { state ->
-                        when (state) {
-                            is UiState.Success -> setupSiteDropdown(state.data)
-                            is UiState.Error   -> showError(state.message)
-                            is UiState.Empty   -> showError("No sites assigned.")
-                            else -> {}
-                        }
-                    }
-                }
-
                 launch {
                     viewModel.submitState.collect { state ->
                         when (state) {
@@ -140,23 +127,6 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
                     }
                 }
             }
-        }
-    }
-
-    private fun setupSiteDropdown(sites: List<SiteTask>) {
-        availableSites = sites
-        val adapter = ArrayAdapter(
-            requireContext(),
-            android.R.layout.simple_dropdown_item_1line,
-            sites.map { it.name }
-        )
-        binding.acvSite.setAdapter(adapter)
-        binding.acvSite.setOnItemClickListener { _, _, position, _ ->
-            selectedSite = sites[position]
-        }
-        if (sites.size == 1) {
-            selectedSite = sites[0]
-            binding.acvSite.setText(sites[0].name, false)
         }
     }
 

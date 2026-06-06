@@ -183,6 +183,16 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Barrier 1: bottom of row 1 (Attendance + M&T Request).
+             When card_mt_request is GONE its height=0, so the barrier sits at
+             the bottom of card_attendance — row 2 starts in the right place. -->
+        <androidx.constraintlayout.widget.Barrier
+            android:id="@+id/barrier_row1"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:barrierDirection="bottom"
+            app:constraint_referenced_ids="card_attendance,card_mt_request"/>
+
         <!-- Row 2: M&T Buy | Material Transfer -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_mt_buy"
@@ -192,7 +202,7 @@
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/card_attendance"
+            app:layout_constraintTop_toBottomOf="@id/barrier_row1"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="@id/guideline_center">
 
@@ -236,7 +246,7 @@
             android:layout_marginStart="8dp"
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/card_mt_request"
+            app:layout_constraintTop_toBottomOf="@id/barrier_row1"
             app:layout_constraintStart_toEndOf="@id/guideline_center"
             app:layout_constraintEnd_toEndOf="parent">
 
@@ -272,6 +282,14 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Barrier 2: bottom of row 2 (M&T Buy + Material Transfer) -->
+        <androidx.constraintlayout.widget.Barrier
+            android:id="@+id/barrier_row2"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:barrierDirection="bottom"
+            app:constraint_referenced_ids="card_mt_buy,card_material_transfer"/>
+
         <!-- Row 3: Tool Transfer | Work Progress -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_tool_transfer"
@@ -281,7 +299,7 @@
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/card_mt_buy"
+            app:layout_constraintTop_toBottomOf="@id/barrier_row2"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="@id/guideline_center">
 
@@ -326,7 +344,7 @@
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
             android:visibility="gone"
-            app:layout_constraintTop_toBottomOf="@id/card_material_transfer"
+            app:layout_constraintTop_toBottomOf="@id/barrier_row2"
             app:layout_constraintStart_toEndOf="@id/guideline_center"
             app:layout_constraintEnd_toEndOf="parent">
 
@@ -362,7 +380,17 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Row 4: Leave | Leave Approvals (office only) -->
+        <!-- Barrier 3: bottom of row 3 (Tool Transfer + Work Progress).
+             When card_work_progress is GONE its height=0, barrier = bottom of card_tool_transfer.
+             When both are visible (operations), barrier = bottom of the taller card. -->
+        <androidx.constraintlayout.widget.Barrier
+            android:id="@+id/barrier_row3"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:barrierDirection="bottom"
+            app:constraint_referenced_ids="card_tool_transfer,card_work_progress"/>
+
+        <!-- Row 4: Leave | Leave Approvals (admin only) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_leave"
             style="@style/WC.CardView.NoPadding"
@@ -371,7 +399,7 @@
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/card_tool_transfer"
+            app:layout_constraintTop_toBottomOf="@id/barrier_row3"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="@id/guideline_center">
 
@@ -416,7 +444,7 @@
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
             android:visibility="gone"
-            app:layout_constraintTop_toBottomOf="@id/card_tool_transfer"
+            app:layout_constraintTop_toBottomOf="@id/barrier_row3"
             app:layout_constraintStart_toEndOf="@id/guideline_center"
             app:layout_constraintEnd_toEndOf="parent">
 

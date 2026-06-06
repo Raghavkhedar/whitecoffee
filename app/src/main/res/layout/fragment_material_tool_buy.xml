@@ -49,6 +49,7 @@
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
+        <!-- Site — free-text entry (daily assignment system removed) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_site"
             style="@style/WC.CardView"
@@ -60,46 +61,55 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
-            <androidx.constraintlayout.widget.ConstraintLayout
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
                 <TextView
-                    android:id="@+id/tv_site_label"
-                    android:layout_width="0dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="SITE"
                     android:textSize="11sp"
                     android:textColor="@color/text_secondary"
                     android:textStyle="bold"
                     android:letterSpacing="0.1"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent"/>
+                    android:layout_marginBottom="10dp"/>
 
                 <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_site"
+                    android:id="@+id/til_site_name"
                     style="@style/WC.TextInputLayout"
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="Select site"
-                    app:endIconMode="dropdown_menu"
-                    app:layout_constraintTop_toBottomOf="@id/tv_site_label"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent">
+                    android:hint="Site Name">
 
-                    <AutoCompleteTextView
-                        android:id="@+id/acv_site"
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_site_name"
                         style="@style/WC.TextInputEditText"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="none"
-                        android:focusable="false"/>
+                        android:inputType="textCapWords"/>
 
                 </com.google.android.material.textfield.TextInputLayout>
 
-            </androidx.constraintlayout.widget.ConstraintLayout>
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_site_id"
+                    style="@style/WC.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="Site ID">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_site_id"
+                        style="@style/WC.TextInputEditText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"/>
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
 

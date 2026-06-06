@@ -72,22 +72,24 @@ class AttendanceRepository @Inject constructor(
         longitude: Double,
         siteId: String = "",
         siteName: String = "",
-        marketName: String = ""
+        marketName: String = "",
+        locationName: String = ""  // office attendance: free-text location entered by user
     ): Result<String> {
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val record = AttendanceRecord(
-                userId      = sessionManager.userId,
-                employeeId  = sessionManager.employeeId,
-                userName    = sessionManager.name,
-                date        = today,
-                type        = type,
-                timestamp   = Timestamp.now(),
-                latitude    = latitude,
-                longitude   = longitude,
-                siteId      = siteId,
-                siteName    = siteName,
-                marketName  = marketName
+                userId       = sessionManager.userId,
+                employeeId   = sessionManager.employeeId,
+                userName     = sessionManager.name,
+                date         = today,
+                type         = type,
+                timestamp    = Timestamp.now(),
+                latitude     = latitude,
+                longitude    = longitude,
+                siteId       = siteId,
+                siteName     = siteName,
+                marketName   = marketName,
+                locationName = locationName
             )
             val ref = collection.add(record.toMap()).await()
             Result.success(ref.id)

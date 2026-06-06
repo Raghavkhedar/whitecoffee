@@ -44,6 +44,8 @@ class AttendanceTimelineAdapter :
                     if (record.siteName.isNotEmpty()) " • ${record.siteName}" else ""
                 AttendanceType.MARKET_IN, AttendanceType.MARKET_OUT ->
                     if (record.marketName.isNotEmpty()) " • ${record.marketName}" else ""
+                AttendanceType.OFFICE_IN, AttendanceType.OFFICE_OUT ->
+                    if (record.locationName.isNotEmpty()) " • ${record.locationName}" else ""
                 else -> ""
             }
             return "$time$extra\n$location"
@@ -57,6 +59,8 @@ class AttendanceTimelineAdapter :
         AttendanceType.SITE_OUT    -> "🏗️ Left Site"
         AttendanceType.MARKET_IN   -> "🛒 Arrived at Market"
         AttendanceType.MARKET_OUT  -> "🛒 Left Market"
+        AttendanceType.OFFICE_IN   -> "🏢 Checked In"
+        AttendanceType.OFFICE_OUT  -> "🏢 Checked Out"
         else -> this
     }
 

@@ -83,7 +83,7 @@
                     android:id="@+id/tv_status_icon"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="⏰"
+                    android:text="&#x23F0;"
                     android:textSize="40sp"
                     android:layout_marginBottom="12dp"/>
 
@@ -111,29 +111,52 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Location input — shown only when NOT checked in -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_location"
+            style="@style/WC.TextInputLayout"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="20dp"
+            android:layout_marginTop="20dp"
+            android:hint="Where are you? (e.g. Office, Client Site ABC)"
+            app:layout_constraintTop_toBottomOf="@id/card_status"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_location"
+                style="@style/WC.TextInputEditText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textCapWords"
+                android:imeOptions="actionDone"/>
+
+        </com.google.android.material.textfield.TextInputLayout>
+
         <!-- Error -->
         <TextView
             android:id="@+id/tv_error"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="12dp"
             android:textSize="13sp"
             android:textColor="#EF4444"
             android:visibility="gone"
             android:text=""
-            app:layout_constraintTop_toBottomOf="@id/card_status"
+            app:layout_constraintTop_toBottomOf="@id/til_location"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 
-        <!-- Action button -->
+        <!-- Action button (Check In / Check Out) -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_action"
             style="@style/WC.Button.Primary"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="16dp"
             android:text="Check In"
             app:layout_constraintTop_toBottomOf="@id/tv_error"
             app:layout_constraintStart_toStartOf="parent"
@@ -150,6 +173,34 @@
             app:indicatorColor="@color/primary_blue"
             app:trackColor="@color/accent_light"
             app:layout_constraintTop_toBottomOf="@id/btn_action"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <!-- Today's Log -->
+        <TextView
+            android:id="@+id/tv_timeline_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="TODAY'S LOG"
+            android:textSize="11sp"
+            android:textColor="@color/text_secondary"
+            android:textStyle="bold"
+            android:letterSpacing="0.1"
+            android:layout_marginHorizontal="20dp"
+            android:layout_marginTop="28dp"
+            android:visibility="gone"
+            app:layout_constraintTop_toBottomOf="@id/progress_bar"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"/>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_timeline"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="20dp"
+            android:layout_marginTop="12dp"
+            android:nestedScrollingEnabled="false"
+            app:layout_constraintTop_toBottomOf="@id/tv_timeline_label"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 

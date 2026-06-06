@@ -45,20 +45,22 @@ data class AttendanceRecord(
     val longitude: Double = 0.0,
     val siteId: String = "",
     val siteName: String = "",
-    val marketName: String = ""
+    val marketName: String = "",
+    val locationName: String = ""  // office check-in/out: free-text location entered by user
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
-        "userId"      to userId,
-        "employeeId"  to employeeId,
-        "userName"    to userName,
-        "date"        to date,
-        "type"        to type,
-        "timestamp"   to timestamp,
-        "latitude"    to latitude,
-        "longitude"   to longitude,
-        "siteId"      to siteId,
-        "siteName"    to siteName,
-        "marketName"  to marketName
+        "userId"       to userId,
+        "employeeId"   to employeeId,
+        "userName"     to userName,
+        "date"         to date,
+        "type"         to type,
+        "timestamp"    to timestamp,
+        "latitude"     to latitude,
+        "longitude"    to longitude,
+        "siteId"       to siteId,
+        "siteName"     to siteName,
+        "marketName"   to marketName,
+        "locationName" to locationName
     )
 
     /** Display time — hh:mm a format from Firestore Timestamp */
@@ -81,9 +83,10 @@ data class AttendanceRecord(
                     timestamp   = doc.getTimestamp("timestamp"),
                     latitude    = doc.getDouble("latitude") ?: 0.0,
                     longitude   = doc.getDouble("longitude") ?: 0.0,
-                    siteId      = doc.getString("siteId") ?: "",
-                    siteName    = doc.getString("siteName") ?: "",
-                    marketName  = doc.getString("marketName") ?: ""
+                    siteId       = doc.getString("siteId") ?: "",
+                    siteName     = doc.getString("siteName") ?: "",
+                    marketName   = doc.getString("marketName") ?: "",
+                    locationName = doc.getString("locationName") ?: ""
                 )
             } catch (e: Exception) {
                 null

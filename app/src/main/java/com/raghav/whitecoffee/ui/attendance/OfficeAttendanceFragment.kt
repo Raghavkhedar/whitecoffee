@@ -11,6 +11,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.databinding.FragmentOfficeAttendanceBinding
 import com.raghav.whitecoffee.ui.attendance.OfficeAttendanceViewModel.OfficeState
@@ -24,6 +25,7 @@ import java.util.Locale
 class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>() {
 
     private val viewModel: OfficeAttendanceViewModel by viewModels()
+    private lateinit var timelineAdapter: AttendanceTimelineAdapter
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -49,17 +51,37 @@ class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>()
         )
         binding.tvDate.text = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date())
         binding.btnBack.setOnClickListener { findNavController().navigateUp() }
+        setupRecyclerView()
         setupActionButton()
         observeViewModel()
+    }
+
+    private fun setupRecyclerView() {
+        timelineAdapter = AttendanceTimelineAdapter()
+        binding.rvTimeline.apply {
+            layoutManager = LinearLayoutManager(requireContext())
+            adapter = timelineAdapter
+        }
     }
 
     private fun setupActionButton() {
         binding.btnAction.setOnClickListener {
             it.isEnabled = false
-            when (viewModel.state.value) {
-                is OfficeState.NotCheckedIn -> viewModel.checkIn()
-                is OfficeState.CheckedIn    -> viewModel.checkOut()
-                else                        -> it.isEnabled = true
+            clearError()
+            when (val currentState = viewModel.state.value) {
+                is OfficeState.NotCheckedIn -> {
+                    val location = binding.etLocation.text?.toString()?.trim() ?: ""
+                    if (location.isBlank()) {
+                        showError("Please enter where you are checking in from.")
+                        it.isEnabled = true
+                        return@setOnClickListener
+                    }
+                    viewModel.checkIn(location)
+                }
+                is OfficeState.CheckedIn -> {
+                    viewModel.checkOut(currentState.locationName)
+                }
+                else -> it.isEnabled = true
             }
         }
     }
@@ -67,46 +89,51 @@ class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>()
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.state.collect { state ->
-                    clearError()
-                    when (state) {
-                        is OfficeState.Loading -> {
-                            binding.progressBar.visibility = View.VISIBLE
-                            binding.btnAction.isEnabled = false
+
+                launch {
+                    viewModel.state.collect { state ->
+                        clearError()
+                        when (state) {
+                            is OfficeState.Loading -> {
+                                binding.progressBar.visibility = View.VISIBLE
+                                binding.btnAction.isEnabled = false
+                            }
+                            is OfficeState.NotCheckedIn -> {
+                                hideLoading()
+                                binding.tvStatusIcon.text = "⏰"
+                                binding.tvStatus.text = "Not checked in"
+                                binding.tvStatusDetail.visibility = View.GONE
+                                binding.tilLocation.visibility = View.VISIBLE
+                                binding.etLocation.isEnabled = true
+                                binding.btnAction.text = "Check In"
+                                binding.btnAction.isEnabled = true
+                                binding.etLocation.text?.clear()
+                            }
+                            is OfficeState.CheckedIn -> {
+                                hideLoading()
+                                binding.tvStatusIcon.text = "✅"
+                                binding.tvStatus.text = "Checked In"
+                                binding.tvStatusDetail.visibility = View.VISIBLE
+                                binding.tvStatusDetail.text =
+                                    "At ${state.locationName}  ·  Since ${state.checkInTime}"
+                                binding.tilLocation.visibility = View.GONE
+                                binding.btnAction.text = "Check Out"
+                                binding.btnAction.isEnabled = true
+                            }
+                            is OfficeState.Error -> {
+                                hideLoading()
+                                binding.btnAction.isEnabled = true
+                                showError(state.message)
+                            }
                         }
-                        is OfficeState.NotCheckedIn -> {
-                            hideLoading()
-                            binding.tvStatusIcon.text = "⏰"
-                            binding.tvStatus.text = "Not checked in"
-                            binding.tvStatusDetail.visibility = View.GONE
-                            binding.btnAction.visibility = View.VISIBLE
-                            binding.btnAction.text = "Check In"
-                            binding.btnAction.isEnabled = true
-                        }
-                        is OfficeState.CheckedIn -> {
-                            hideLoading()
-                            binding.tvStatusIcon.text = "✅"
-                            binding.tvStatus.text = "Checked In"
-                            binding.tvStatusDetail.visibility = View.VISIBLE
-                            binding.tvStatusDetail.text = "Since ${state.checkInTime}"
-                            binding.btnAction.visibility = View.VISIBLE
-                            binding.btnAction.text = "Check Out"
-                            binding.btnAction.isEnabled = true
-                        }
-                        is OfficeState.DayComplete -> {
-                            hideLoading()
-                            binding.tvStatusIcon.text = "🏁"
-                            binding.tvStatus.text = "Day Complete ✓"
-                            binding.tvStatusDetail.visibility = View.VISIBLE
-                            binding.tvStatusDetail.text =
-                                "In: ${state.checkInTime}  ·  Out: ${state.checkOutTime}"
-                            binding.btnAction.visibility = View.GONE
-                        }
-                        is OfficeState.Error -> {
-                            hideLoading()
-                            binding.btnAction.isEnabled = true
-                            showError(state.message)
-                        }
+                    }
+                }
+
+                launch {
+                    viewModel.todayEvents.collect { events ->
+                        timelineAdapter.submitList(events)
+                        binding.tvTimelineLabel.visibility =
+                            if (events.isEmpty()) View.GONE else View.VISIBLE
                     }
                 }
             }

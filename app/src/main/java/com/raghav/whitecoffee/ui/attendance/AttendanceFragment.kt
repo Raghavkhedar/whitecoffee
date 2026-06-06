@@ -7,6 +7,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -17,8 +18,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.AttendanceState
-import com.raghav.whitecoffee.data.model.AttendanceType
-import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentAttendanceBinding
 import com.raghav.whitecoffee.ui.attendance.AttendanceViewModel.ActionState
 import dagger.hilt.android.AndroidEntryPoint
@@ -33,7 +32,6 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
     private val viewModel: AttendanceViewModel by viewModels()
     private lateinit var timelineAdapter: AttendanceTimelineAdapter
 
-    // ── Permission launcher ───────────────────────────────────────────────
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -120,7 +118,6 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
 
-                // Observe attendance state → update UI
                 launch {
                     viewModel.attendanceState.collect { uiState ->
                         when (uiState) {
@@ -132,7 +129,6 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                     }
                 }
 
-                // Observe today's event log → update timeline
                 launch {
                     viewModel.todayEvents.collect { events ->
                         timelineAdapter.submitList(events)
@@ -141,7 +137,6 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                     }
                 }
 
-                // Observe action state → handle dialogs + errors
                 launch {
                     viewModel.actionState.collect { action ->
                         when (action) {
@@ -158,8 +153,9 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                                 resetAllButtons()
                                 viewModel.resetActionState()
                             }
-                            is ActionState.SiteSelectionRequired ->
-                                showSitePickerDialog(action.sites)
+                            // Daily assignment system removed — site is now typed manually
+                            is ActionState.SiteInputRequired ->
+                                showSiteInputDialog()
                             is ActionState.MarketNameRequired ->
                                 showMarketNameDialog(action.currentLat, action.currentLng)
                         }
@@ -175,6 +171,9 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
         hideLoading()
         clearError()
         hideAllButtons()
+
+        // Work card removed — daily assignment system not in use.
+        // To re-enable, restore showWorkCard(state.record.siteName) in SiteCheckedIn branch.
 
         when (state) {
             is AttendanceState.NoRecord -> {
@@ -196,7 +195,6 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                 binding.tvStatusDetail.text = "Since ${state.record.displayTime()}"
                 binding.btnMarketCheckIn.visibility = View.VISIBLE
                 binding.btnSiteCheckOut.visibility = View.VISIBLE
-                showWorkCard(state.record.siteName)
             }
             is AttendanceState.MarketCheckedIn -> {
                 binding.tvStatus.text = "At Market: ${state.record.marketName}"
@@ -216,34 +214,44 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
 
     // ── Dialogs ───────────────────────────────────────────────────────────
 
-    private fun showSitePickerDialog(sites: List<SiteTask>) {
+    // Replaces the old site-picker dropdown (which loaded from daily_assignments).
+    // User types Site Name and Site ID manually — no Firestore lookup, no geofence check.
+    private fun showSiteInputDialog() {
         hideLoading()
-        val siteNames = sites.map { it.name }.toTypedArray()
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 8)
+        }
+        val etSiteName = EditText(requireContext()).apply {
+            hint = "Site Name (e.g. Senken Gurugaon Site)"
+            setPadding(0, 16, 0, 16)
+        }
+        val etSiteId = EditText(requireContext()).apply {
+            hint = "Site ID (e.g. Site-001)"
+            setPadding(0, 16, 0, 16)
+        }
+        container.addView(etSiteName)
+        container.addView(etSiteId)
+
         AlertDialog.Builder(requireContext())
-            .setTitle("Select Site")
-            .setItems(siteNames) { _, index ->
-                viewModel.confirmSiteCheckIn(sites[index])
+            .setTitle("Check In at Site")
+            .setView(container)
+            .setPositiveButton("Check In") { _, _ ->
+                val siteName = etSiteName.text.toString().trim()
+                val siteId   = etSiteId.text.toString().trim()
+                if (siteName.isBlank()) {
+                    viewModel.resetActionState()
+                    resetAllButtons()
+                    showError("Please enter a site name.")
+                } else {
+                    viewModel.confirmSiteCheckIn(siteId, siteName)
+                }
             }
             .setNegativeButton("Cancel") { _, _ ->
                 viewModel.resetActionState()
                 resetAllButtons()
             }
             .show()
-    }
-
-    private fun showWorkCard(siteName: String) {
-        val task = viewModel.getTaskForSite(siteName)
-        val hasWork = task != null && (task.workDescription.isNotBlank() || task.toolsRequired.isNotBlank())
-        if (!hasWork) { hideWorkCard(); return }
-        binding.cardTodayWork.visibility = View.VISIBLE
-        binding.tvWorkDescription.text =
-            task!!.workDescription.ifBlank { "—" }
-        binding.tvToolsRequired.text =
-            task.toolsRequired.ifBlank { "—" }
-    }
-
-    private fun hideWorkCard() {
-        binding.cardTodayWork.visibility = View.GONE
     }
 
     private fun showMarketNameDialog(lat: Double, lng: Double) {
@@ -293,7 +301,6 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
         binding.btnSiteCheckOut.visibility = View.GONE
         binding.btnMarketCheckOut.visibility = View.GONE
         binding.btnHomeCheckOut.visibility = View.GONE
-        hideWorkCard()
     }
 
     private fun resetAllButtons() {
