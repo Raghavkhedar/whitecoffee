@@ -18,7 +18,7 @@ import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
-import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentAttendanceBinding
 import com.raghav.whitecoffee.ui.attendance.AttendanceViewModel.ActionState
 import dagger.hilt.android.AndroidEntryPoint
@@ -196,6 +196,7 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                 binding.tvStatusDetail.text = "Since ${state.record.displayTime()}"
                 binding.btnMarketCheckIn.visibility = View.VISIBLE
                 binding.btnSiteCheckOut.visibility = View.VISIBLE
+                showWorkCard(state.record.siteName)
             }
             is AttendanceState.MarketCheckedIn -> {
                 binding.tvStatus.text = "At Market: ${state.record.marketName}"
@@ -215,7 +216,7 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
 
     // ── Dialogs ───────────────────────────────────────────────────────────
 
-    private fun showSitePickerDialog(sites: List<Site>) {
+    private fun showSitePickerDialog(sites: List<SiteTask>) {
         hideLoading()
         val siteNames = sites.map { it.name }.toTypedArray()
         AlertDialog.Builder(requireContext())
@@ -228,6 +229,21 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                 resetAllButtons()
             }
             .show()
+    }
+
+    private fun showWorkCard(siteName: String) {
+        val task = viewModel.getTaskForSite(siteName)
+        val hasWork = task != null && (task.workDescription.isNotBlank() || task.toolsRequired.isNotBlank())
+        if (!hasWork) { hideWorkCard(); return }
+        binding.cardTodayWork.visibility = View.VISIBLE
+        binding.tvWorkDescription.text =
+            task!!.workDescription.ifBlank { "—" }
+        binding.tvToolsRequired.text =
+            task.toolsRequired.ifBlank { "—" }
+    }
+
+    private fun hideWorkCard() {
+        binding.cardTodayWork.visibility = View.GONE
     }
 
     private fun showMarketNameDialog(lat: Double, lng: Double) {
@@ -277,6 +293,7 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
         binding.btnSiteCheckOut.visibility = View.GONE
         binding.btnMarketCheckOut.visibility = View.GONE
         binding.btnHomeCheckOut.visibility = View.GONE
+        hideWorkCard()
     }
 
     private fun resetAllButtons() {

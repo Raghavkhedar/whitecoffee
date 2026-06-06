@@ -13,7 +13,7 @@ import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.RequestItem
-import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentMaterialToolRequestBinding
 import com.raghav.whitecoffee.databinding.ItemRequestRowBinding
 import dagger.hilt.android.AndroidEntryPoint
@@ -25,8 +25,8 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
     private val viewModel: MaterialToolRequestViewModel by viewModels()
 
     private val itemRows = mutableListOf<ItemRequestRowBinding>()
-    private var selectedSite: Site? = null
-    private var availableSites: List<Site> = emptyList()
+    private var selectedSite: SiteTask? = null
+    private var availableSites: List<SiteTask> = emptyList()
     private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
@@ -110,7 +110,7 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
         }
     }
 
-    private fun setupSiteDropdown(sites: List<Site>) {
+    private fun setupSiteDropdown(sites: List<SiteTask>) {
         availableSites = sites
         val siteNames = sites.map { it.name }
         val adapter = ArrayAdapter(

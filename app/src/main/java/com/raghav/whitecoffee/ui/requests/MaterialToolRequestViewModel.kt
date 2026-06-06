@@ -7,7 +7,7 @@ import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.PhotoUploadManager
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.RequestItem
-import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.data.repository.RequestRepository
 import com.raghav.whitecoffee.data.repository.SiteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,8 +24,8 @@ class MaterialToolRequestViewModel @Inject constructor(
     private val photoUploadManager: PhotoUploadManager
 ) : ViewModel() {
 
-    private val _sitesState = MutableStateFlow<UiState<List<Site>>>(UiState.Loading)
-    val sitesState: StateFlow<UiState<List<Site>>> = _sitesState.asStateFlow()
+    private val _sitesState = MutableStateFlow<UiState<List<SiteTask>>>(UiState.Loading)
+    val sitesState: StateFlow<UiState<List<SiteTask>>> = _sitesState.asStateFlow()
 
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
@@ -49,7 +49,7 @@ class MaterialToolRequestViewModel @Inject constructor(
     }
 
     fun submitRequest(
-        site: Site,
+        site: SiteTask,
         items: List<RequestItem>,
         notes: String,
         photoUris: List<Uri> = emptyList()

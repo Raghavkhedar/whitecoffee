@@ -15,7 +15,7 @@ import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.PurchaseItem
-import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentMaterialToolBuyBinding
 import com.raghav.whitecoffee.databinding.ItemBuyRowBinding
 import dagger.hilt.android.AndroidEntryPoint
@@ -26,7 +26,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
 
     private val viewModel: MaterialToolBuyViewModel by viewModels()
     private val itemRows = mutableListOf<ItemBuyRowBinding>()
-    private var selectedSite: Site? = null
+    private var selectedSite: SiteTask? = null
     private lateinit var photoPickerHelper: PhotoPickerHelper
 
     override fun inflateBinding(
@@ -99,7 +99,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
         }
     }
 
-    private fun setupSiteDropdown(sites: List<Site>) {
+    private fun setupSiteDropdown(sites: List<SiteTask>) {
         val adapter = ArrayAdapter(requireContext(),
             android.R.layout.simple_dropdown_item_1line, sites.map { it.name })
         binding.acvSite.setAdapter(adapter)

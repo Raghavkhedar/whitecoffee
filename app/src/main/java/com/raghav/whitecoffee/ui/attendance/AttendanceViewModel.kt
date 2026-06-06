@@ -8,7 +8,7 @@ import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
-import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.SiteRepository
 import com.raghav.whitecoffee.data.session.SessionManager
@@ -40,8 +40,8 @@ class AttendanceViewModel @Inject constructor(
     private val _actionState = MutableStateFlow<ActionState>(ActionState.Idle)
     val actionState: StateFlow<ActionState> = _actionState.asStateFlow()
 
-    private val _assignedSites = MutableStateFlow<List<Site>>(emptyList())
-    val assignedSites: StateFlow<List<Site>> = _assignedSites.asStateFlow()
+    private val _assignedSites = MutableStateFlow<List<SiteTask>>(emptyList())
+    val assignedSites: StateFlow<List<SiteTask>> = _assignedSites.asStateFlow()
 
     val isOperations: Boolean get() = sessionManager.isOperations
 
@@ -50,7 +50,7 @@ class AttendanceViewModel @Inject constructor(
         data object Loading : ActionState
         data class Error(val message: String) : ActionState
         data object Success : ActionState
-        data class SiteSelectionRequired(val sites: List<Site>) : ActionState
+        data class SiteSelectionRequired(val sites: List<SiteTask>) : ActionState
         data class MarketNameRequired(val currentLat: Double, val currentLng: Double) : ActionState
     }
 
@@ -155,7 +155,7 @@ class AttendanceViewModel @Inject constructor(
 
     // ── Site Check In — Step 2: User picked a site, validate geofence ─────
 
-    fun confirmSiteCheckIn(site: Site) {
+    fun confirmSiteCheckIn(site: SiteTask) {
         viewModelScope.launch {
             _actionState.value = ActionState.Loading
             val location = locationProvider.getCurrentLocation()
@@ -310,6 +310,9 @@ class AttendanceViewModel @Inject constructor(
     fun resetActionState() {
         _actionState.value = ActionState.Idle
     }
+
+    fun getTaskForSite(siteName: String): SiteTask? =
+        _assignedSites.value.firstOrNull { it.name == siteName }
 
     /**
      * Haversine formula — calculates distance in meters between two GPS coordinates.

@@ -4,6 +4,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
 import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
@@ -31,19 +32,53 @@ class SiteRepository @Inject constructor(
     }
 
     /**
-     * Fetches today's assigned sites for the current user from /daily_assignments/{date}_{userId}.
-     * Returns empty list if no assignment exists for today.
+     * Fetches today's assigned sites with work instructions for the current user.
+     * Reads /daily_assignments/{date}_{userId}, then fetches full Site docs for geofencing data.
+     * Supports both new format (sites array) and old format (siteIds array).
      */
-    suspend fun getTodayAssignedSites(): Result<List<Site>> {
+    suspend fun getTodayAssignedSites(): Result<List<SiteTask>> {
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val docId = "${today}_${sessionManager.userId}"
             val doc = firestore.collection("daily_assignments").document(docId).get().await()
             if (!doc.exists()) return Result.success(emptyList())
-            val siteIds = (doc.get("siteIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+
+            // Work details keyed by siteId — populated from new "sites" array format
+            val workDetails = mutableMapOf<String, Pair<String, String>>() // siteId → (work, tools)
+
+            val siteIds: List<String>
+            val sitesArray = doc.get("sites") as? List<*>
+            if (sitesArray != null) {
+                siteIds = sitesArray.filterIsInstance<Map<*, *>>().mapNotNull { map ->
+                    val id = map["siteId"] as? String ?: return@mapNotNull null
+                    workDetails[id] = Pair(
+                        map["workDescription"] as? String ?: "",
+                        map["toolsRequired"] as? String ?: ""
+                    )
+                    id
+                }
+            } else {
+                // Old flat siteIds format — no work details
+                siteIds = (doc.get("siteIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+            }
+
             if (siteIds.isEmpty()) return Result.success(emptyList())
+
             val snapshot = collection.whereIn(FieldPath.documentId(), siteIds).get().await()
-            Result.success(snapshot.documents.mapNotNull { Site.fromDocument(it) })
+            val tasks = snapshot.documents.mapNotNull { siteDoc ->
+                val site = Site.fromDocument(siteDoc) ?: return@mapNotNull null
+                val (work, tools) = workDetails[site.id] ?: Pair("", "")
+                SiteTask(
+                    id              = site.id,
+                    name            = site.name,
+                    latitude        = site.latitude,
+                    longitude       = site.longitude,
+                    geofenceRadius  = site.geofenceRadius,
+                    workDescription = work,
+                    toolsRequired   = tools
+                )
+            }
+            Result.success(tasks)
         } catch (e: Exception) {
             Result.failure(e)
         }

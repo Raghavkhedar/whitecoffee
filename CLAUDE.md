@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 9 End
+### Last Updated: Session 10 End
 
 ---
 
@@ -92,12 +92,13 @@ com.raghav.whitecoffee
 │   │   ├── MaterialToolPurchase.kt      ✅ + PurchaseItem
 │   │   ├── Transfer.kt                  ✅ + TransferItem
 │   │   ├── WorkProgress.kt              ✅
-│   │   └── Site.kt                      ✅
+│   │   ├── Site.kt                      ✅
+│   │   └── SiteTask.kt                  ✅ Site + workDescription + toolsRequired (Session 10)
 │   └── repository/
 │       ├── AuthRepository.kt            ✅
 │       ├── UserRepository.kt            ✅
 │       ├── AttendanceRepository.kt      ✅ sub-collection: users/{uid}/attendance
-│       ├── SiteRepository.kt            ✅ getTodayAssignedSites() reads /daily_assignments
+│       ├── SiteRepository.kt            ✅ getTodayAssignedSites() → List<SiteTask> (Session 10)
 │       └── RequestRepository.kt         ✅ sub-collections under users/{uid}/
 │
 └── ui/
@@ -108,8 +109,8 @@ com.raghav.whitecoffee
     │   ├── HomeFragment.kt              ✅ TESTED
     │   └── HomeViewModel.kt             ✅
     ├── attendance/
-    │   ├── AttendanceFragment.kt        ✅ TESTED (operations — full GPS flow)
-    │   ├── AttendanceViewModel.kt       ✅
+    │   ├── AttendanceFragment.kt        ✅ TESTED (operations — full GPS flow + work card)
+    │   ├── AttendanceViewModel.kt       ✅ uses SiteTask; getTaskForSite() for work card lookup
     │   ├── AttendanceTimelineAdapter.kt ✅
     │   ├── OfficeAttendanceFragment.kt  ✅ Simple check-in/out for office role
     │   └── OfficeAttendanceViewModel.kt ✅ OfficeState: NotCheckedIn/CheckedIn/DayComplete
@@ -136,14 +137,14 @@ com.raghav.whitecoffee
     └── requests/
         ├── PhotoPickerHelper.kt         ✅ Reusable multi-photo picker
         ├── MaterialToolRequestFragment.kt   ✅ + photo support
-        ├── MaterialToolRequestViewModel.kt  ✅ + photo upload
+        ├── MaterialToolRequestViewModel.kt  ✅ + photo upload; uses SiteTask
         ├── MaterialToolBuyFragment.kt       ✅ + photo support
-        ├── MaterialToolBuyViewModel.kt      ✅ + photo upload
+        ├── MaterialToolBuyViewModel.kt      ✅ + photo upload; uses SiteTask
         ├── MaterialTransferFragment.kt      ✅ + photo support
         ├── ToolTransferFragment.kt          ✅ (no photos)
         ├── TransferViewModel.kt             ✅ + photo upload for material transfer
-        ├── WorkProgressFragment.kt          ✅ Step 21 DONE
-        └── WorkProgressViewModel.kt         ✅ Step 21 DONE
+        ├── WorkProgressFragment.kt          ✅ uses SiteTask for site dropdown
+        └── WorkProgressViewModel.kt         ✅ uses SiteTask
 ```
 
 ---
@@ -179,12 +180,22 @@ com.raghav.whitecoffee
 | createdAt | Timestamp | |
 
 ### `/daily_assignments/{date}_{userId}` — Daily Site Assignments
+
+Document ID format: `yyyy-MM-dd_{userId}` e.g. `2026-06-06_abc123`
+Read by `SiteRepository.getTodayAssignedSites()` → returns `List<SiteTask>`.
+
+**New format (Session 10) — use this when writing new assignments:**
 | Field | Type | Notes |
 |---|---|---|
-| siteIds | List\<String\> | Sites assigned for this specific date |
+| sites | List\<Map\> | Array of `{siteId, workDescription, toolsRequired}` |
 
-Document ID format: `yyyy-MM-dd_{userId}` e.g. `2026-06-05_abc123`
-Read by `SiteRepository.getTodayAssignedSites()` — all ViewModels use this instead of a static assignedSiteIds field.
+**Old format (still supported for backward compat):**
+| Field | Type | Notes |
+|---|---|---|
+| siteIds | List\<String\> | Site IDs only — no work details |
+
+`SiteRepository` auto-detects format: checks for `sites` array first, falls back to `siteIds`.
+Work descriptions and tools required appear as a card in AttendanceFragment when user checks into a site.
 
 ### `/users/{userId}/attendance/{eventId}` — Attendance Events
 | Field | Type | Notes |
@@ -413,13 +424,13 @@ else navigate(officeAttendanceFragment)
 
 ## BUILD STATUS
 
-### ✅ DONE (Session 9 complete)
+### ✅ DONE (Session 10 complete)
 - Phase 1: Foundation (Hilt, Firebase, core, DI, location, session, network)
-- Phase 2: Data layer (7 models, 5 repositories)
+- Phase 2: Data layer (8 models, 5 repositories)
 - Phase 3 ALL SCREENS COMPLETE:
   - Login ✅ tested
   - Home ✅ tested (role routing works for both roles)
-  - Attendance (Operations) ✅ full GPS + geofence + timeline
+  - Attendance (Operations) ✅ full GPS + geofence + timeline + today's work card
   - Attendance (Office) ✅ simple check-in/out with GPS
   - M&T Request ✅ (operations only, photo upload)
   - M&T Buy ✅ (both roles, auto grand total + photos)
@@ -433,8 +444,15 @@ else navigate(officeAttendanceFragment)
 - 3 roles: operations / office / admin (admin includes all office capabilities via isOffice)
 - Firestore schema: sub-collections under `/users/{userId}/` + `/daily_assignments/`
 - SessionManager persists to SharedPreferences (survives process kill)
-- Daily site assignment system: `/daily_assignments/{date}_{userId}` replaces static `assignedSiteIds`
+- Daily site assignment system: `/daily_assignments/{date}_{userId}` with `sites` array format
 - nav_graph: 15 destinations wired
+
+### ✅ Session 10 additions:
+- **`SiteTask` model** — combines `Site` (id, name, lat, lng, geofenceRadius) + `workDescription` + `toolsRequired`
+- **`SiteRepository.getTodayAssignedSites()`** now returns `List<SiteTask>` with per-site work details; backward-compatible with old `siteIds` flat format
+- **Today's Work card** in `AttendanceFragment` — shown when operations user is checked in at a site; displays work description and tools required from that day's assignment
+- **All request ViewModels** (`MaterialToolRequestViewModel`, `MaterialToolBuyViewModel`, `WorkProgressViewModel`) updated to use `SiteTask` instead of `Site` for site dropdowns
+- **New `/daily_assignments` format**: `sites: [{siteId, workDescription, toolsRequired}]` array replaces flat `siteIds` list
 
 ### ✅ Admin Web Portal DONE
 `C:\Users\ragha\AndroidStudioProjects\whitecoffee-admin\`
@@ -466,8 +484,9 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 11. **Image compression** — Android Bitmap API, no extra library
 12. **Admin users** — secondary Firebase App instance (admin stays logged in during user creation)
 13. **collectionGroup queries** — for admin/office views that need all users' data
-14. **Daily site assignments** — `/daily_assignments/{date}_{userId}` with `siteIds` field; NOT static `assignedSiteIds` on User. All screens call `SiteRepository.getTodayAssignedSites()`.
+14. **Daily site assignments** — `/daily_assignments/{date}_{userId}` with `sites` array (new) or `siteIds` (old compat). All screens call `SiteRepository.getTodayAssignedSites()` → `List<SiteTask>`.
 15. **No My Submissions screens** — dropped; users do not view submission history in the app. All approvals via admin web portal only.
+16. **SiteTask vs Site** — `Site` is the raw Firestore model (id, name, lat, lng, geofenceRadius). `SiteTask` is the enriched ViewModel model that also carries `workDescription` and `toolsRequired` from the daily assignment. All UI layers use `SiteTask`; `Site` is internal to repositories only.
 
 ---
 
@@ -476,10 +495,13 @@ See: `whitecoffee-admin/DEPLOY.md` for full setup instructions
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. All Phase 3 screens are complete. The app uses a daily
-site assignment system — /daily_assignments/{date}_{userId} with siteIds field.
-User and Site models no longer have assignedSiteIds / assignedUserIds.
-All screens call SiteRepository.getTodayAssignedSites() for site lists.
+Read CLAUDE.md first. All Phase 3 screens are complete (Session 10 done).
+SiteRepository.getTodayAssignedSites() returns List<SiteTask> — SiteTask combines
+Site data with workDescription + toolsRequired from the daily assignment doc.
+daily_assignments now uses "sites" array format: [{siteId, workDescription, toolsRequired}].
+Old "siteIds" flat format still supported for backward compat.
+When checked in at a site, AttendanceFragment shows a "Today's Work" card.
+All request ViewModels use SiteTask (not Site) for site dropdowns.
 Phase 4 work items: Firestore security rules, background geofencing,
 Cloud Functions for Google Sheets export, notifications.
 IMPORTANT: Firestore composite index needed for Leave Approvals:

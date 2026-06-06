@@ -13,7 +13,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
-import com.raghav.whitecoffee.data.model.Site
+import com.raghav.whitecoffee.data.model.SiteTask
 import com.raghav.whitecoffee.databinding.FragmentWorkProgressBinding
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -26,8 +26,8 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
 
     private val viewModel: WorkProgressViewModel by viewModels()
 
-    private var selectedSite: Site? = null
-    private var availableSites: List<Site> = emptyList()
+    private var selectedSite: SiteTask? = null
+    private var availableSites: List<SiteTask> = emptyList()
     private lateinit var photoPickerHelper: PhotoPickerHelper
 
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
@@ -143,7 +143,7 @@ class WorkProgressFragment : BaseFragment<FragmentWorkProgressBinding>() {
         }
     }
 
-    private fun setupSiteDropdown(sites: List<Site>) {
+    private fun setupSiteDropdown(sites: List<SiteTask>) {
         availableSites = sites
         val adapter = ArrayAdapter(
             requireContext(),
