@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────────────────────
+
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return userRole() == 'admin';
+    }
+
+    // ── /users/{userId} — User profiles ──────────────────────────────────
+
+    match /users/{userId} {
+      // Users read/write their own profile; admin reads/writes all
+      allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+      // Only admin can create users (via secondary Firebase app in AddEditUserViewModel)
+      allow create: if isLoggedIn() && isAdmin();
+      // Users can update their own profile; admin can update any
+      allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isLoggedIn() && isAdmin();
+
+      // ── /attendance/{docId} ───────────────────────────────────────────
+      match /attendance/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        allow update, delete: if false; // events are immutable once recorded
+      }
+
+      // ── /material_requests/{docId} ────────────────────────────────────
+      match /material_requests/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        // Allow own user to update photoUrls after doc creation; admin can update status
+        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow delete: if false;
+      }
+
+      // ── /material_purchases/{docId} ───────────────────────────────────
+      match /material_purchases/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow delete: if false;
+      }
+
+      // ── /material_transfers/{docId} ───────────────────────────────────
+      match /material_transfers/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow delete: if false;
+      }
+
+      // ── /tool_transfers/{docId} ───────────────────────────────────────
+      match /tool_transfers/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow delete: if false;
+      }
+
+      // ── /work_progress/{docId} ────────────────────────────────────────
+      match /work_progress/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow delete: if false;
+      }
+
+      // ── /leave_requests/{docId} ───────────────────────────────────────
+      match /leave_requests/{docId} {
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId);
+        // Admin updates status (approved/rejected); user cannot change status
+        allow update: if isLoggedIn() && isAdmin();
+        allow delete: if false;
+      }
+
+      // ── /notifications/{docId} ────────────────────────────────────────
+      match /notifications/{docId} {
+        allow read:   if isLoggedIn() && isOwner(userId);
+        // User's FcmService + admin portal sender can create
+        allow create: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        // User marks as read; admin can also update
+        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow delete: if false;
+      }
+    }
+
+    // ── collectionGroup — leave_requests (admin Leave Approvals screen) ──
+    // Required for LeaveApprovalsViewModel which does collectionGroup("leave_requests")
+    match /{path=**}/leave_requests/{docId} {
+      allow read:   if isLoggedIn() && isAdmin();
+      allow update: if isLoggedIn() && isAdmin();
+    }
+
+    // ── /sent_notifications/{docId} — Notification send log ─────────────
+    match /sent_notifications/{docId} {
+      allow read, write: if isLoggedIn() && isAdmin();
+    }
+
+    // ── /sites/{siteId} — Site management ────────────────────────────────
+    match /sites/{siteId} {
+      allow read:             if isLoggedIn();
+      allow create, update:   if isLoggedIn() && isAdmin();
+      allow delete:           if isLoggedIn() && isAdmin();
+    }
+  }
+}

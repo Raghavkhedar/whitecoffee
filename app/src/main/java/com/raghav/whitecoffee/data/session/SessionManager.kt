@@ -12,9 +12,7 @@ class SessionManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
 
-    private val prefs by lazy {
-        context.getSharedPreferences("wc_session", Context.MODE_PRIVATE)
-    }
+    private val prefs = context.getSharedPreferences("wc_session", Context.MODE_PRIVATE)
 
     // In-memory cache of the current user's Firestore profile fields
     private var _userId: String = ""

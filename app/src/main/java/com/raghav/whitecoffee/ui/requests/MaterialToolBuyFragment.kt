@@ -48,7 +48,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
             fragment           = this,
             thumbnailContainer = binding.containerPhotos,
             scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { }
+            onPhotosChanged    = { viewModel.onPhotosChanged(it) }
         )
         binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
@@ -78,7 +78,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
                 launch {
                     viewModel.submitState.collect { state ->
                         when (state) {
-                            is UiState.Loading -> showLoading()
+                            is UiState.Loading -> showLoading(state.message)
                             is UiState.Success -> { hideLoading(); showSuccessAndExit() }
                             is UiState.Error   -> {
                                 hideLoading()
@@ -114,6 +114,8 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
         rowBinding.etPrice.addTextChangedListener(watcher)
 
         rowBinding.btnRemove.setOnClickListener {
+            rowBinding.etQuantity.removeTextChangedListener(watcher)
+            rowBinding.etPrice.removeTextChangedListener(watcher)
             binding.containerItems.removeView(rowBinding.root)
             itemRows.remove(rowBinding)
             itemRows.forEachIndexed { i, r -> r.tvRowNumber.text = (i + 1).toString() }
@@ -151,7 +153,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
             .setCancelable(false).show()
     }
 
-    private fun showLoading() { binding.progressBar.visibility = View.VISIBLE; binding.btnSubmit.isEnabled = false }
-    private fun hideLoading() { binding.progressBar.visibility = View.GONE }
+    private fun showLoading(message: String = "") { binding.progressBar.visibility = View.VISIBLE; binding.btnSubmit.isEnabled = false; if (message.isNotEmpty()) showError(message) }
+    private fun hideLoading() { binding.progressBar.visibility = View.GONE; binding.tvError.visibility = View.GONE }
     private fun showError(message: String) { binding.tvError.visibility = View.VISIBLE; binding.tvError.text = message }
 }

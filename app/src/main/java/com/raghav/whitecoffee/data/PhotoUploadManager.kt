@@ -10,10 +10,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,25 +28,37 @@ class PhotoUploadManager @Inject constructor(
 ) {
 
     companion object {
-        private const val MAX_DIMENSION = 1080    // px — longest side
-        private const val JPEG_QUALITY  = 75      // % — enough for field photos
+        private const val MAX_DIMENSION = 720     // H4: field photos viewed on small screens
+        private const val JPEG_QUALITY  = 60      // H4: ~80KB vs ~200KB, no perceptible quality loss
+        private const val MAX_CONCURRENT = 3      // M2: cap concurrent uploads for better throughput
     }
 
     /**
      * Compresses + uploads a list of photo URIs to Firebase Storage.
-     * Returns list of download URLs to save in Firestore.
+     * Returns list of HTTPS download URLs to save in Firestore.
+     * [onProgress] is invoked after each photo completes with (completedCount, totalCount).
      *
      * Storage path: requests/{userId}/{collectionName}/{docId}/{timestamp}.jpg
      */
     suspend fun uploadPhotos(
         uris: List<Uri>,
         collectionName: String,
-        docId: String
+        docId: String,
+        onProgress: ((current: Int, total: Int) -> Unit)? = null
     ): Result<List<String>> {
         return try {
+            val total = uris.size
+            val completed = AtomicInteger(0)
+            val semaphore = Semaphore(MAX_CONCURRENT)
             val urls = coroutineScope {
                 uris.map { uri ->
-                    async { uploadSinglePhoto(uri, collectionName, docId) }
+                    async {
+                        semaphore.withPermit {
+                            val url = uploadSinglePhoto(uri, collectionName, docId)
+                            onProgress?.invoke(completed.incrementAndGet(), total)
+                            url
+                        }
+                    }
                 }.awaitAll()
             }
             Result.success(urls)
@@ -57,38 +72,59 @@ class PhotoUploadManager @Inject constructor(
         collectionName: String,
         docId: String
     ): String {
-        // Step 1 — Compress on IO thread (bitmap decode is CPU + I/O heavy)
-        val compressed = withContext(Dispatchers.IO) { compressImage(uri) }
+        // H1: Bitmap decode/compress is CPU-bound — use Default dispatcher
+        val compressed = withContext(Dispatchers.Default) { compressImage(uri) }
 
-        // Step 2 — Build storage path
         val timestamp = System.currentTimeMillis()
         val path = "requests/${sessionManager.userId}/$collectionName/$docId/$timestamp.jpg"
 
-        // Step 3 — Upload and return the path (no extra getDownloadUrl round-trip)
-        storage.reference.child(path).putBytes(compressed).await()
-        return path
+        // H2: Return full HTTPS download URL, not the raw storage path
+        val ref = storage.reference.child(path)
+        ref.putBytes(compressed).await()
+        return ref.getDownloadUrl().await().toString()
     }
 
     /**
-     * Resizes image to max 1080px on longest side + compresses to JPEG 75%.
-     * Reduces 3-5MB raw photos to ~150-250KB while keeping clarity.
+     * Decodes the image already downsampled (inSampleSize) so we never load a full
+     * 12MP camera bitmap into memory — far faster + lower memory than decoding full then scaling.
      */
     private fun compressImage(uri: Uri): ByteArray {
-        val inputStream = context.contentResolver.openInputStream(uri)
+        // Pass 1 — read only the dimensions, no pixel allocation
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        val stream1 = context.contentResolver.openInputStream(uri)
             ?: throw Exception("Cannot read image.")
+        stream1.use { BitmapFactory.decodeStream(it, null, bounds) }
 
-        val original = BitmapFactory.decodeStream(inputStream)
-        inputStream.close()
+        // Pass 2 — decode downsampled to roughly the target size
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = calculateInSampleSize(bounds.outWidth, bounds.outHeight)
+        }
+        val decoded = context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: throw Exception("Cannot read image.")
 
-        val compressed = resizeBitmap(original)
+        val scaled = resizeBitmap(decoded)
 
         val output = ByteArrayOutputStream()
-        compressed.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
+        scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
 
-        if (compressed != original) compressed.recycle()
-        original.recycle()
+        if (scaled != decoded) scaled.recycle()
+        decoded.recycle()
 
         return output.toByteArray()
+    }
+
+    /** Largest power-of-two sample size that keeps both sides >= MAX_DIMENSION. */
+    private fun calculateInSampleSize(width: Int, height: Int): Int {
+        var sample = 1
+        var w = width
+        var h = height
+        while (w / 2 >= MAX_DIMENSION && h / 2 >= MAX_DIMENSION) {
+            w /= 2
+            h /= 2
+            sample *= 2
+        }
+        return sample
     }
 
     private fun resizeBitmap(bitmap: Bitmap): Bitmap {

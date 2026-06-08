@@ -42,26 +42,14 @@ class OfficeAttendanceViewModel @Inject constructor(
     fun loadTodayState() {
         viewModelScope.launch {
             _state.value = OfficeState.Loading
-
-            val result = attendanceRepository.getTodayEvents()
+            val result = attendanceRepository.getTodayData()
             if (result.isFailure) {
                 _state.value = OfficeState.NotCheckedIn
                 return@launch
             }
-
-            val events = result.getOrThrow()
+            val (_, events) = result.getOrThrow()
             _todayEvents.value = events
-
-            // Current state = last event: office_in → CheckedIn, office_out (or none) → NotCheckedIn
-            val lastEvent = events.lastOrNull()
-            _state.value = when {
-                lastEvent?.type == AttendanceType.OFFICE_IN ->
-                    OfficeState.CheckedIn(
-                        locationName = lastEvent.locationName,
-                        checkInTime  = lastEvent.displayTime()
-                    )
-                else -> OfficeState.NotCheckedIn
-            }
+            _state.value = deriveOfficeState(events)
         }
     }
 
@@ -78,10 +66,19 @@ class OfficeAttendanceViewModel @Inject constructor(
                         longitude    = location.longitude,
                         locationName = locationName.trim()
                     )
-                    if (result.isSuccess) loadTodayState()
-                    else _state.value = OfficeState.Error(
-                        result.exceptionOrNull()?.message ?: "Check-in failed. Try again."
-                    )
+                    if (result.isSuccess) {
+                        val newRecord = result.getOrThrow()
+                        val updatedEvents = _todayEvents.value + newRecord
+                        _todayEvents.value = updatedEvents
+                        _state.value = OfficeState.CheckedIn(
+                            locationName = newRecord.locationName,
+                            checkInTime  = newRecord.displayTime()
+                        )
+                    } else {
+                        _state.value = OfficeState.Error(
+                            result.exceptionOrNull()?.message ?: "Check-in failed. Try again."
+                        )
+                    }
                 }
                 is LocationState.GpsDisabled ->
                     _state.value = OfficeState.Error("GPS is disabled. Please enable location services.")
@@ -108,10 +105,15 @@ class OfficeAttendanceViewModel @Inject constructor(
                         longitude    = location.longitude,
                         locationName = locationName
                     )
-                    if (result.isSuccess) loadTodayState()
-                    else _state.value = OfficeState.Error(
-                        result.exceptionOrNull()?.message ?: "Check-out failed. Try again."
-                    )
+                    if (result.isSuccess) {
+                        val updatedEvents = _todayEvents.value + result.getOrThrow()
+                        _todayEvents.value = updatedEvents
+                        _state.value = OfficeState.NotCheckedIn
+                    } else {
+                        _state.value = OfficeState.Error(
+                            result.exceptionOrNull()?.message ?: "Check-out failed. Try again."
+                        )
+                    }
                 }
                 is LocationState.GpsDisabled ->
                     _state.value = OfficeState.Error("GPS is disabled. Please enable location services.")
@@ -122,6 +124,18 @@ class OfficeAttendanceViewModel @Inject constructor(
                 is LocationState.Timeout ->
                     _state.value = OfficeState.Error("Location timed out. Try again.")
             }
+        }
+    }
+
+    private fun deriveOfficeState(events: List<AttendanceRecord>): OfficeState {
+        val lastEvent = events.lastOrNull()
+        return if (lastEvent?.type == AttendanceType.OFFICE_IN) {
+            OfficeState.CheckedIn(
+                locationName = lastEvent.locationName,
+                checkInTime  = lastEvent.displayTime()
+            )
+        } else {
+            OfficeState.NotCheckedIn
         }
     }
 }

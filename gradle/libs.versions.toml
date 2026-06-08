@@ -51,6 +51,7 @@ firebase-auth           = { group = "com.google.firebase", name = "firebase-auth
 firebase-firestore      = { group = "com.google.firebase", name = "firebase-firestore" }
 firebase-analytics      = { group = "com.google.firebase", name = "firebase-analytics" }
 firebase-storage      = { group = "com.google.firebase", name = "firebase-storage" }
+firebase-messaging    = { group = "com.google.firebase", name = "firebase-messaging" }
 
 # ── Coroutines ──
 coroutines-android      = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }

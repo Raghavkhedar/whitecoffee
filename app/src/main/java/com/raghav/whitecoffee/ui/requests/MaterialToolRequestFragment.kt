@@ -47,7 +47,7 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
             fragment           = this,
             thumbnailContainer = binding.containerPhotos,
             scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { }
+            onPhotosChanged    = { viewModel.onPhotosChanged(it) }
         )
         binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
@@ -76,7 +76,7 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
                 launch {
                     viewModel.submitState.collect { state ->
                         when (state) {
-                            is UiState.Loading -> showLoading()
+                            is UiState.Loading -> showLoading(state.message)
                             is UiState.Success -> {
                                 hideLoading()
                                 showSuccessAndExit()
@@ -147,13 +147,15 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
             .show()
     }
 
-    private fun showLoading() {
+    private fun showLoading(message: String = "") {
         binding.progressBar.visibility = View.VISIBLE
         binding.btnSubmit.isEnabled = false
+        if (message.isNotEmpty()) showError(message)
     }
 
     private fun hideLoading() {
         binding.progressBar.visibility = View.GONE
+        binding.tvError.visibility = View.GONE
     }
 
     private fun showError(message: String) {

@@ -58,7 +58,6 @@ class LeaveApprovalsFragment : BaseFragment<FragmentLeaveApprovalsBinding>() {
             }
             .setNegativeButton("Cancel") { _, _ ->
                 viewModel.resetActionState()
-                adapter.notifyDataSetChanged()
             }
             .show()
     }

@@ -5,12 +5,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.raghav.whitecoffee.R
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.databinding.FragmentHomeBinding
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class HomeFragment : BaseFragment<FragmentHomeBinding>() {
@@ -27,12 +29,25 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         setupHeader()
         setupRoleVisibility()
         setupCardListeners()
+        loadBellBadge()
     }
 
     private fun setupHeader() {
-        binding.tvGreeting.text = viewModel.getGreeting()
+        binding.tvGreeting.text = viewModel.greeting
         binding.tvUserName.text = viewModel.userName
         binding.tvRoleBadge.text = viewModel.userRole.replaceFirstChar { it.uppercase() }
+    }
+
+    private fun loadBellBadge() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val count = viewModel.getUnreadCount()
+            if (count > 0) {
+                binding.tvBellBadge.text = if (count > 9) "9+" else count.toString()
+                binding.tvBellBadge.visibility = View.VISIBLE
+            } else {
+                binding.tvBellBadge.visibility = View.GONE
+            }
+        }
     }
 
     private fun setupRoleVisibility() {
@@ -58,12 +73,16 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private fun expandToFullWidth(card: View) {
         val params = card.layoutParams as ConstraintLayout.LayoutParams
+        if (params.endToEnd == ConstraintLayout.LayoutParams.PARENT_ID) return
         params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
         params.marginEnd = (20 * resources.displayMetrics.density).toInt()
         card.layoutParams = params
     }
 
     private fun setupCardListeners() {
+        binding.btnBell.setOnClickListener {
+            findNavController().navigate(R.id.action_homeFragment_to_notificationsFragment)
+        }
         binding.cardAttendance.setOnClickListener {
             if (viewModel.isOperations) {
                 findNavController().navigate(R.id.action_homeFragment_to_attendanceFragment)

@@ -54,6 +54,9 @@
             app:destination="@id/loginFragment"
             app:popUpTo="@id/homeFragment"
             app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_homeFragment_to_notificationsFragment"
+            app:destination="@id/notificationsFragment" />
     </fragment>
 
     <!-- ── Attendance ── -->
@@ -114,11 +117,16 @@
         android:name="com.raghav.whitecoffee.ui.attendance.ApplyLeaveFragment"
         android:label="Apply for Leave" />
 
-    <!-- ── Leave Approvals (office only) ── -->
+    <!-- ── Leave Approvals (admin only) ── -->
     <fragment
         android:id="@+id/leaveApprovalsFragment"
         android:name="com.raghav.whitecoffee.ui.attendance.LeaveApprovalsFragment"
         android:label="Leave Approvals" />
 
+    <!-- ── Notifications ── -->
+    <fragment
+        android:id="@+id/notificationsFragment"
+        android:name="com.raghav.whitecoffee.ui.notifications.NotificationsFragment"
+        android:label="Notifications" />
 
 </navigation>

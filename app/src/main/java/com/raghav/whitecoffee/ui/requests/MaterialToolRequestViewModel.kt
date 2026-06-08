@@ -9,15 +9,13 @@ import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.RequestItem
 import com.raghav.whitecoffee.data.repository.RequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-// SiteRepository + SiteTask removed — site is now entered as free text by the user.
-// To re-enable: add SiteRepository injection, restore _sitesState + loadSites(),
-// change submitRequest() back to accept SiteTask.
 
 @HiltViewModel
 class MaterialToolRequestViewModel @Inject constructor(
@@ -25,8 +23,28 @@ class MaterialToolRequestViewModel @Inject constructor(
     private val photoUploadManager: PhotoUploadManager
 ) : ViewModel() {
 
+    private val collection = "material_requests"
+
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
+
+    // H3 — photos compress + upload in the background as soon as they are picked.
+    private var pendingDocId: String? = null
+    private var uploadJob: Deferred<Result<List<String>>>? = null
+
+    /** Called by the Fragment whenever the photo selection changes. */
+    fun onPhotosChanged(uris: List<Uri>) {
+        uploadJob?.cancel()
+        if (uris.isEmpty()) {
+            uploadJob = null
+            pendingDocId = null
+            return
+        }
+        val docId = pendingDocId ?: requestRepository.newDocId(collection).also { pendingDocId = it }
+        uploadJob = viewModelScope.async {
+            photoUploadManager.uploadPhotos(uris, collection, docId)
+        }
+    }
 
     fun submitRequest(
         siteId: String,
@@ -45,33 +63,47 @@ class MaterialToolRequestViewModel @Inject constructor(
             return
         }
 
-        _submitState.value = UiState.Loading
+        _submitState.value = UiState.Loading()
         viewModelScope.launch {
-            val request = MaterialToolRequest(
-                siteId   = siteId.trim(),
-                siteName = siteName.trim(),
-                items    = items,
-                notes    = notes.trim()
-            )
-            val result = requestRepository.submitMaterialToolRequest(request)
-            if (result.isFailure) {
-                _submitState.value = UiState.Error(
-                    result.exceptionOrNull()?.message ?: "Submission failed. Try again."
+            try {
+                val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                val photoUrls = resolvePhotoUrls(photoUris, docId)
+
+                val request = MaterialToolRequest(
+                    siteId   = siteId.trim(),
+                    siteName = siteName.trim(),
+                    items    = items,
+                    notes    = notes.trim()
                 )
-                return@launch
-            }
-            val docId = result.getOrThrow()
-            if (photoUris.isNotEmpty()) {
-                val uploadResult = photoUploadManager.uploadPhotos(
-                    photoUris, "material_requests", docId
-                )
-                if (uploadResult.isSuccess) {
-                    requestRepository.updatePhotoUrls(
-                        "material_requests", docId, uploadResult.getOrThrow()
-                    )
+                val result = requestRepository.submitMaterialToolRequest(request, docId, photoUrls)
+                _submitState.value = if (result.isSuccess) {
+                    UiState.Success(result.getOrThrow())
+                } else {
+                    UiState.Error(result.exceptionOrNull()?.message ?: "Submission failed. Try again.")
                 }
+            } catch (e: Exception) {
+                _submitState.value = UiState.Error("Photo upload failed: ${e.message}")
+            } finally {
+                uploadJob = null
+                pendingDocId = null
             }
-            _submitState.value = UiState.Success(docId)
+        }
+    }
+
+    /** Awaits the background upload (usually already finished); falls back to inline upload. */
+    private suspend fun resolvePhotoUrls(photoUris: List<Uri>, docId: String): List<String> {
+        val job = uploadJob
+        return when {
+            job != null -> {
+                _submitState.value = UiState.Loading("Finishing photo upload…")
+                job.await().getOrThrow()
+            }
+            photoUris.isNotEmpty() -> {
+                photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
+                    _submitState.value = UiState.Loading("Uploading photo $current of $total…")
+                }.getOrThrow()
+            }
+            else -> emptyList()
         }
     }
 

@@ -9,6 +9,8 @@ import com.raghav.whitecoffee.data.model.Transfer
 import com.raghav.whitecoffee.data.model.TransferItem
 import com.raghav.whitecoffee.data.repository.RequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +28,30 @@ class TransferViewModel @Inject constructor(
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
+    // H3 — photos compress + upload in the background as soon as they are picked.
+    // Each Transfer screen (material / tool) uses its own collection name.
+    private var pendingDocId: String? = null
+    private var pendingCollection: String? = null
+    private var uploadJob: Deferred<Result<List<String>>>? = null
+
+    /** [collection] is "material_transfers" or "tool_transfers", chosen by the calling Fragment. */
+    fun onPhotosChanged(collection: String, uris: List<Uri>) {
+        uploadJob?.cancel()
+        if (uris.isEmpty()) {
+            uploadJob = null
+            pendingDocId = null
+            pendingCollection = null
+            return
+        }
+        val docId = pendingDocId ?: requestRepository.newDocId(collection).also {
+            pendingDocId = it
+            pendingCollection = collection
+        }
+        uploadJob = viewModelScope.async {
+            photoUploadManager.uploadPhotos(uris, collection, docId)
+        }
+    }
+
     fun submitMaterialTransfer(
         fromLocation: String,
         toLocation: String,
@@ -36,28 +62,21 @@ class TransferViewModel @Inject constructor(
         photoUris: List<Uri> = emptyList()
     ) {
         if (!validateInputs(fromLocation, toLocation, transferredBy, receivedBy, items)) return
-        _submitState.value = UiState.Loading
+        _submitState.value = UiState.Loading()
         viewModelScope.launch {
-            val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
-            val result = requestRepository.submitMaterialTransfer(transfer)
-            if (result.isFailure) {
-                _submitState.value = UiState.Error(
-                    result.exceptionOrNull()?.message ?: "Submission failed. Try again."
-                )
-                return@launch
+            try {
+                val collection = "material_transfers"
+                val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                val photoUrls = resolvePhotoUrls(collection, photoUris, docId)
+                val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
+                val result = requestRepository.submitMaterialTransfer(transfer, docId, photoUrls)
+                finish(result)
+            } catch (e: Exception) {
+                _submitState.value = UiState.Error("Photo upload failed: ${e.message}")
+                uploadJob = null
+                pendingDocId = null
+                pendingCollection = null
             }
-            val docId = result.getOrThrow()
-            if (photoUris.isNotEmpty()) {
-                val uploadResult = photoUploadManager.uploadPhotos(
-                    photoUris, "material_transfers", docId
-                )
-                if (uploadResult.isSuccess) {
-                    requestRepository.updatePhotoUrls(
-                        "material_transfers", docId, uploadResult.getOrThrow()
-                    )
-                }
-            }
-            _submitState.value = UiState.Success(docId)
         }
     }
 
@@ -71,28 +90,52 @@ class TransferViewModel @Inject constructor(
         photoUris: List<Uri> = emptyList()
     ) {
         if (!validateInputs(fromLocation, toLocation, transferredBy, receivedBy, items)) return
-        _submitState.value = UiState.Loading
+        _submitState.value = UiState.Loading()
         viewModelScope.launch {
-            val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
-            val result = requestRepository.submitToolTransfer(transfer)
-            if (result.isFailure) {
-                _submitState.value = UiState.Error(
-                    result.exceptionOrNull()?.message ?: "Submission failed. Try again."
-                )
-                return@launch
+            try {
+                val collection = "tool_transfers"
+                val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                val photoUrls = resolvePhotoUrls(collection, photoUris, docId)
+                val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
+                val result = requestRepository.submitToolTransfer(transfer, docId, photoUrls)
+                finish(result)
+            } catch (e: Exception) {
+                _submitState.value = UiState.Error("Photo upload failed: ${e.message}")
+                uploadJob = null
+                pendingDocId = null
+                pendingCollection = null
             }
-            val docId = result.getOrThrow()
-            if (photoUris.isNotEmpty()) {
-                val uploadResult = photoUploadManager.uploadPhotos(
-                    photoUris, "tool_transfers", docId
-                )
-                if (uploadResult.isSuccess) {
-                    requestRepository.updatePhotoUrls(
-                        "tool_transfers", docId, uploadResult.getOrThrow()
-                    )
-                }
+        }
+    }
+
+    private fun finish(result: Result<String>) {
+        _submitState.value = if (result.isSuccess) {
+            UiState.Success(result.getOrThrow())
+        } else {
+            UiState.Error(result.exceptionOrNull()?.message ?: "Submission failed. Try again.")
+        }
+        uploadJob = null
+        pendingDocId = null
+        pendingCollection = null
+    }
+
+    private suspend fun resolvePhotoUrls(
+        collection: String,
+        photoUris: List<Uri>,
+        docId: String
+    ): List<String> {
+        val job = uploadJob
+        return when {
+            job != null -> {
+                _submitState.value = UiState.Loading("Finishing photo upload…")
+                job.await().getOrThrow()
             }
-            _submitState.value = UiState.Success(docId)
+            photoUris.isNotEmpty() -> {
+                photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
+                    _submitState.value = UiState.Loading("Uploading photo $current of $total…")
+                }.getOrThrow()
+            }
+            else -> emptyList()
         }
     }
 
@@ -146,15 +189,6 @@ class TransferViewModel @Inject constructor(
             notes         = notes.trim(),
             transferDate  = today
         )
-    }
-
-    private fun handleResult(result: Result<String>) {
-        _submitState.value = when {
-            result.isSuccess -> UiState.Success(result.getOrThrow())
-            else -> UiState.Error(
-                result.exceptionOrNull()?.message ?: "Submission failed. Try again."
-            )
-        }
     }
 
     fun resetSubmitState() { _submitState.value = UiState.Empty }

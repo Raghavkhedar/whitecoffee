@@ -17,14 +17,14 @@ class LeaveViewModel @Inject constructor(
     private val leaveRepository: LeaveRepository
 ) : ViewModel() {
 
-    private val _leavesState = MutableStateFlow<UiState<List<LeaveRequest>>>(UiState.Loading)
+    private val _leavesState = MutableStateFlow<UiState<List<LeaveRequest>>>(UiState.Loading())
     val leavesState: StateFlow<UiState<List<LeaveRequest>>> = _leavesState.asStateFlow()
 
     init { loadLeaves() }
 
     fun loadLeaves() {
         viewModelScope.launch {
-            _leavesState.value = UiState.Loading
+            _leavesState.value = UiState.Loading()
             val result = leaveRepository.getMyLeaveRequests()
             _leavesState.value = when {
                 result.isSuccess -> {

@@ -8,6 +8,7 @@ import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +30,7 @@ class AttendanceViewModel @Inject constructor(
     private val sessionManager: SessionManager
 ) : ViewModel() {
 
-    private val _attendanceState = MutableStateFlow<UiState<AttendanceState>>(UiState.Loading)
+    private val _attendanceState = MutableStateFlow<UiState<AttendanceState>>(UiState.Loading())
     val attendanceState: StateFlow<UiState<AttendanceState>> = _attendanceState.asStateFlow()
 
     private val _todayEvents = MutableStateFlow<List<AttendanceRecord>>(emptyList())
@@ -56,22 +57,15 @@ class AttendanceViewModel @Inject constructor(
 
     fun loadTodayData() {
         viewModelScope.launch {
-            _attendanceState.value = UiState.Loading
-
-            val stateResult = attendanceRepository.getTodayState()
-            if (stateResult.isFailure) {
+            _attendanceState.value = UiState.Loading()
+            val result = attendanceRepository.getTodayData()
+            if (result.isFailure) {
                 _attendanceState.value = UiState.Error("Failed to load attendance. Try again.")
                 return@launch
             }
-            _attendanceState.value = UiState.Success(stateResult.getOrThrow())
-
-            val eventsResult = attendanceRepository.getTodayEvents()
-            if (eventsResult.isSuccess) {
-                _todayEvents.value = eventsResult.getOrThrow()
-            }
-
-            // DAILY ASSIGNMENT SYSTEM REMOVED — no longer loads assigned sites.
-            // To re-enable, restore: val sitesResult = siteRepository.getTodayAssignedSites()
+            val (state, events) = result.getOrThrow()
+            _attendanceState.value = UiState.Success(state)
+            _todayEvents.value = events
         }
     }
 
@@ -266,10 +260,12 @@ class AttendanceViewModel @Inject constructor(
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private suspend fun handleResult(result: Result<String>) {
+    private fun handleResult(result: Result<AttendanceRecord>) {
         if (result.isSuccess) {
+            val updatedEvents = _todayEvents.value + result.getOrThrow()
+            _todayEvents.value = updatedEvents
+            _attendanceState.value = UiState.Success(deriveAttendanceState(updatedEvents))
             _actionState.value = ActionState.Success
-            loadTodayData()
         } else {
             _actionState.value = ActionState.Error(
                 result.exceptionOrNull()?.message ?: "Something went wrong. Try again."

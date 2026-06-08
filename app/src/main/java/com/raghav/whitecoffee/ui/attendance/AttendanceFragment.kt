@@ -30,7 +30,7 @@ import java.util.Locale
 class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
 
     private val viewModel: AttendanceViewModel by viewModels()
-    private lateinit var timelineAdapter: AttendanceTimelineAdapter
+    private val timelineAdapter by lazy { AttendanceTimelineAdapter() }
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -67,13 +67,11 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
     }
 
     private fun setupHeader() {
-        val dateFormat = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault())
-        binding.tvDate.text = dateFormat.format(Date())
+        binding.tvDate.text = DATE_FORMAT.format(Date())
         binding.btnBack.setOnClickListener { findNavController().navigateUp() }
     }
 
     private fun setupRecyclerView() {
-        timelineAdapter = AttendanceTimelineAdapter()
         binding.rvTimeline.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = timelineAdapter
@@ -310,5 +308,9 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
         binding.btnSiteCheckOut.isEnabled = true
         binding.btnMarketCheckOut.isEnabled = true
         binding.btnHomeCheckOut.isEnabled = true
+    }
+
+    companion object {
+        private val DATE_FORMAT = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault())
     }
 }

@@ -52,7 +52,7 @@ class ApplyLeaveViewModel @Inject constructor(
             return
         }
 
-        _submitState.value = UiState.Loading
+        _submitState.value = UiState.Loading()
         viewModelScope.launch {
             val request = LeaveRequest(
                 leaveType  = leaveType,

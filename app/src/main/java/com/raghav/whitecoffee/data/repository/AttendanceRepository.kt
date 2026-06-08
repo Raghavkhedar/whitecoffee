@@ -2,10 +2,10 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
@@ -24,47 +24,28 @@ class AttendanceRepository @Inject constructor(
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     /**
-     * Fetches all attendance events for today, ordered by timestamp.
-     * Derives the current AttendanceState from the event sequence.
+     * Single query for today's events — returns both the derived state and the full event list.
+     * Replaces the previous getTodayState() + getTodayEvents() dual-query pattern.
      */
-    suspend fun getTodayState(): Result<AttendanceState> {
+    suspend fun getTodayData(): Result<Pair<AttendanceState, List<AttendanceRecord>>> {
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
                 .whereEqualTo("date", today)
                 .get()
                 .await()
-
             val events = snapshot.documents
                 .mapNotNull { AttendanceRecord.fromDocument(it) }
                 .sortedBy { it.timestamp?.seconds ?: 0L }
-            val state = deriveState(events)
-            Result.success(state)
+            Result.success(Pair(deriveAttendanceState(events), events))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     /**
-     * Derives current attendance state from today's event list.
-     * The last event determines the current state.
-     */
-    private fun deriveState(events: List<AttendanceRecord>): AttendanceState {
-        if (events.isEmpty()) return AttendanceState.NoRecord
-        return when (val lastEvent = events.last().type) {
-            AttendanceType.HOME_IN    -> AttendanceState.HomeCheckedIn(events.last())
-            AttendanceType.HOME_OUT   -> AttendanceState.DayComplete
-            AttendanceType.SITE_IN    -> AttendanceState.SiteCheckedIn(events.last())
-            AttendanceType.SITE_OUT   -> AttendanceState.HomeCheckedIn(events.last())
-            AttendanceType.MARKET_IN  -> AttendanceState.MarketCheckedIn(events.last())
-            AttendanceType.MARKET_OUT -> AttendanceState.HomeCheckedIn(events.last())
-            else -> AttendanceState.NoRecord
-        }
-    }
-
-    /**
-     * Records a single attendance event.
-     * Every check-in and check-out calls this — GPS always captured.
+     * Records a single attendance event. Returns the full record with the generated Firestore
+     * document ID so callers can do optimistic state updates without a re-fetch.
      */
     suspend fun recordEvent(
         type: String,
@@ -73,8 +54,8 @@ class AttendanceRepository @Inject constructor(
         siteId: String = "",
         siteName: String = "",
         marketName: String = "",
-        locationName: String = ""  // office attendance: free-text location entered by user
-    ): Result<String> {
+        locationName: String = ""
+    ): Result<AttendanceRecord> {
         return try {
             val today = LocalDate.now().format(dateFormatter)
             val record = AttendanceRecord(
@@ -92,26 +73,7 @@ class AttendanceRepository @Inject constructor(
                 locationName = locationName
             )
             val ref = collection.add(record.toMap()).await()
-            Result.success(ref.id)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Fetches today's full event log — for displaying timeline on screen.
-     */
-    suspend fun getTodayEvents(): Result<List<AttendanceRecord>> {
-        return try {
-            val today = LocalDate.now().format(dateFormatter)
-            val snapshot = collection
-                .whereEqualTo("date", today)
-                .get()
-                .await()
-            val events = snapshot.documents
-                .mapNotNull { AttendanceRecord.fromDocument(it) }
-                .sortedBy { it.timestamp?.seconds ?: 0L }
-            Result.success(events)
+            Result.success(record.copy(id = ref.id))
         } catch (e: Exception) {
             Result.failure(e)
         }

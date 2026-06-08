@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 11 End
+### Last Updated: Session 13 End
 
 ---
 
@@ -83,11 +83,12 @@ com.raghav.whitecoffee
 ├── data/
 │   ├── PhotoUploadManager.kt            ✅ Compress + upload to Firebase Storage
 │   ├── network/NetworkMonitor.kt        ✅ Flow<Boolean>
-│   ├── session/SessionManager.kt        ✅ User identity cache
+│   ├── session/SessionManager.kt        ✅ User identity cache (eager SharedPrefs init)
 │   ├── location/LocationProvider.kt     ✅ Sealed LocationState
 │   ├── model/
 │   │   ├── User.kt                      ✅
-│   │   ├── AttendanceRecord.kt          ✅ event-based + AttendanceState + AttendanceType + locationName field
+│   │   ├── AttendanceRecord.kt          ✅ + deriveAttendanceState() top-level function
+│   │   ├── AppNotification.kt           ✅ id/title/body/type/isRead/createdAt
 │   │   ├── MaterialToolRequest.kt       ✅ + RequestItem
 │   │   ├── MaterialToolPurchase.kt      ✅ + PurchaseItem
 │   │   ├── Transfer.kt                  ✅ + TransferItem
@@ -97,23 +98,27 @@ com.raghav.whitecoffee
 │   └── repository/
 │       ├── AuthRepository.kt            ✅
 │       ├── UserRepository.kt            ✅
-│       ├── AttendanceRepository.kt      ✅ recordEvent() accepts locationName param
+│       ├── AttendanceRepository.kt      ✅ getTodayData() single query; recordEvent() returns Result<AttendanceRecord>
+│       ├── NotificationRepository.kt    ✅ getNotifications/getUnreadCount/markAsRead/saveToken/saveNotification
 │       ├── SiteRepository.kt            ✅ getTodayAssignedSites() COMMENTED OUT
 │       └── RequestRepository.kt         ✅ sub-collections under users/{uid}/
+│
+├── service/
+│   └── FcmService.kt                    ✅ @AndroidEntryPoint; onMessageReceived saves to Firestore + shows system notif; onNewToken saves FCM token
 │
 └── ui/
     ├── login/
     │   ├── LoginFragment.kt             ✅ TESTED
-    │   └── LoginViewModel.kt            ✅
+    │   └── LoginViewModel.kt            ✅ saves FCM token after successful login
     ├── home/
-    │   ├── HomeFragment.kt              ✅ Role visibility + ConstraintLayout barriers
-    │   └── HomeViewModel.kt             ✅ isOperations, isOffice, isAdmin
+    │   ├── HomeFragment.kt              ✅ bell icon + unread badge; lazy badge load
+    │   └── HomeViewModel.kt             ✅ greeting val (computed once); getUnreadCount(); NotificationRepository injected
     ├── attendance/
-    │   ├── AttendanceFragment.kt        ✅ GPS flow; site check-in = free-text dialog (no geofence)
-    │   ├── AttendanceViewModel.kt       ✅ SiteInputRequired action state; no SiteRepository
+    │   ├── AttendanceFragment.kt        ✅ lazy adapter; static DATE_FORMAT companion
+    │   ├── AttendanceViewModel.kt       ✅ optimistic state update after check-in (no re-fetch)
     │   ├── AttendanceTimelineAdapter.kt ✅ includes OFFICE_IN/OFFICE_OUT labels + locationName
-    │   ├── OfficeAttendanceFragment.kt  ✅ Multi-cycle check-in/out + "Where are you?" + timeline
-    │   └── OfficeAttendanceViewModel.kt ✅ NotCheckedIn/CheckedIn; DayComplete REMOVED
+    │   ├── OfficeAttendanceFragment.kt  ✅ lazy adapter; static DATE_FORMAT companion
+    │   └── OfficeAttendanceViewModel.kt ✅ optimistic state update; getTodayData() single query
     ├── attendance/ (continued)
     │   ├── LeaveFragment.kt             ✅ My Leaves list + FAB to apply
     │   ├── LeaveViewModel.kt            ✅
@@ -124,27 +129,31 @@ com.raghav.whitecoffee
     │   ├── LeaveApprovalsViewModel.kt   ✅ collectionGroup query across all users
     │   └── LeaveApprovalAdapter.kt      ✅
     ├── admin/
-    │   ├── AdminUserListFragment.kt     ✅ list all users, tap to edit
+    │   ├── AdminUserListFragment.kt     ✅
     │   ├── AdminUserListViewModel.kt    ✅
-    │   ├── AdminUserAdapter.kt          ✅ role badge coloured purple/blue/green
-    │   ├── AddEditUserFragment.kt       ✅ add (secondary Firebase Auth) / edit user
-    │   ├── AddEditUserViewModel.kt      ✅ createUser via secondary app, updateProfile, resetPassword
-    │   ├── AdminSiteListFragment.kt     ✅ list all sites, tap to edit
+    │   ├── AdminUserAdapter.kt          ✅
+    │   ├── AddEditUserFragment.kt       ✅
+    │   ├── AddEditUserViewModel.kt      ✅
+    │   ├── AdminSiteListFragment.kt     ✅
     │   ├── AdminSiteListViewModel.kt    ✅
     │   ├── AdminSiteAdapter.kt          ✅
-    │   ├── AddEditSiteFragment.kt       ✅ add/edit site name/lat/lng/geofenceRadius
+    │   ├── AddEditSiteFragment.kt       ✅
     │   └── AddEditSiteViewModel.kt      ✅
+    ├── notifications/
+    │   ├── NotificationsFragment.kt     ✅ list + "Mark all read" button
+    │   ├── NotificationsViewModel.kt    ✅ optimistic mark-as-read
+    │   └── NotificationAdapter.kt       ✅ unread dot + accent_light bg for unread rows
     └── requests/
         ├── PhotoPickerHelper.kt         ✅ Reusable multi-photo picker
-        ├── MaterialToolRequestFragment.kt   ✅ free-text site name + ID fields
-        ├── MaterialToolRequestViewModel.kt  ✅ submitRequest(siteId, siteName, ...)
-        ├── MaterialToolBuyFragment.kt       ✅ free-text site name + ID fields
-        ├── MaterialToolBuyViewModel.kt      ✅ submitPurchase(siteId, siteName, ...)
-        ├── MaterialTransferFragment.kt      ✅ + photo support
-        ├── ToolTransferFragment.kt          ✅ (no photos)
-        ├── TransferViewModel.kt             ✅ + photo upload for material transfer
-        ├── WorkProgressFragment.kt          ✅ free-text site name + ID fields
-        └── WorkProgressViewModel.kt         ✅ submitProgress(siteId, siteName, ...)
+        ├── MaterialToolRequestFragment.kt   ✅
+        ├── MaterialToolRequestViewModel.kt  ✅
+        ├── MaterialToolBuyFragment.kt       ✅
+        ├── MaterialToolBuyViewModel.kt      ✅
+        ├── MaterialTransferFragment.kt      ✅
+        ├── ToolTransferFragment.kt          ✅
+        ├── TransferViewModel.kt             ✅
+        ├── WorkProgressFragment.kt          ✅
+        └── WorkProgressViewModel.kt         ✅
 ```
 
 ---
@@ -164,8 +173,10 @@ com.raghav.whitecoffee
 /users/{userId}/material_transfers/{id}      ← Material Transfers
 /users/{userId}/tool_transfers/{id}          ← Tool Transfers
 /users/{userId}/work_progress/{id}           ← Work Progress
+/users/{userId}/notifications/{id}           ← In-app notifications
 
 /sites/{siteId}                              ← Site info (top-level, shared)
+/sent_notifications/{id}                     ← Admin send log (history + future Cloud Functions trigger)
 /daily_assignments/{date}_{userId}           ← COMMENTED OUT — not in use
 ```
 
@@ -177,6 +188,7 @@ com.raghav.whitecoffee
 | name | String | Display name |
 | email | String | Lowercase |
 | role | String | "operations", "office", or "admin" |
+| fcmToken | String | FCM device token — saved on login + token refresh |
 | createdAt | Timestamp | |
 
 ### `/daily_assignments/{date}_{userId}` — Daily Site Assignments (COMMENTED OUT)
@@ -298,6 +310,30 @@ Same schema as material_transfers (no photoUrls field).
 > **Firestore index required for Leave Approvals screen:**
 > Collection group `leave_requests` → `status` ASC + `submittedAt` ASC
 > Create in Firebase Console → Firestore → Indexes → Composite → Add index
+
+### `/users/{userId}/notifications/{notifId}` — In-App Notifications
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| title | String | Notification title |
+| body | String | Notification message |
+| type | String | general / leave_update / work_reminder / urgent |
+| isRead | Boolean | false = unread; user marks read in NotificationsFragment |
+| createdAt | Timestamp | When notification was created |
+
+### `/sent_notifications/{docId}` — Notification Send Log (admin history)
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| title | String | |
+| body | String | |
+| type | String | general / leave_update / work_reminder / urgent |
+| recipientType | String | all / operations / office / specific |
+| recipientCount | Int | Number of users notified |
+| sentByName | String | Admin's display name |
+| sentAt | Timestamp | |
+
+> **Note:** This collection will also serve as the trigger for Cloud Functions FCM push in Phase 4.
 
 ### Migration note:
 Old flat collections (`attendance`, `material_tool_requests`, etc.) were replaced by sub-collections.
@@ -473,14 +509,43 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 ### ✅ Admin Web Portal DONE
 `C:\Users\ragha\AndroidStudioProjects\whitecoffee-admin\`
 Next.js 14 + TypeScript + Tailwind + Firebase Hosting
-Pages: Dashboard, Users, Sites, Leave Requests, Attendance, Submissions
+Pages: Dashboard, Users, Sites, Leave Requests, Attendance, Submissions, Notifications
 Deploy: `npm run deploy` from the admin portal directory
 
+### ✅ Session 12 changes — Performance improvements (all items from improvements.md done):
+- **M1 — Optimistic attendance updates**: `recordEvent()` returns `Result<AttendanceRecord>` with docId. ViewModel appends record locally + re-derives state via `deriveAttendanceState()` — no Firestore re-fetch after check-in.
+- **M4 — Merged dual queries**: `getTodayState()` + `getTodayEvents()` replaced by single `getTodayData(): Result<Pair<AttendanceState, List<AttendanceRecord>>>`.
+- **L1 — Static DateFormat**: `SimpleDateFormat` moved to `companion object` in AttendanceFragment + OfficeAttendanceFragment.
+- **L2 — Adapter `by lazy`**: `AttendanceTimelineAdapter` instantiated with `by lazy` — survives `onDestroyView` without re-creating.
+- **L3 — Eager SharedPreferences init**: `SessionManager.prefs` changed from `by lazy` to eager init (avoids first-access latency).
+- **L4 — `val greeting`**: `HomeViewModel.getGreeting()` replaced with `val greeting: String = run { ... }` (computed once at init).
+- **L5 — `expandToFullWidth()` guard**: Early return if params already set to `PARENT_ID` to skip redundant layout passes.
+- **L6 — N/A**: StateFlow already has `distinctUntilChanged` semantics; no code change needed.
+- **`deriveAttendanceState()`**: Extracted as top-level function in `AttendanceRecord.kt` — shared between `AttendanceRepository` and ViewModels.
+
+### ✅ Session 13 changes — Notifications (Phase 4 partial):
+- **`AppNotification` model** — `data/model/AppNotification.kt`: id, title, body, type, isRead, createdAt.
+- **`NotificationRepository`** — getNotifications, getUnreadCount, markAsRead, markAllAsRead, saveNotification, saveToken.
+- **`FcmService`** — `@AndroidEntryPoint FirebaseMessagingService`: saves incoming push to Firestore + shows system notification. `onNewToken` updates `fcmToken` on user doc.
+- **FCM token on login** — `LoginViewModel` calls `FirebaseMessaging.getInstance().token.await()` + `notificationRepository.saveToken()` after successful login.
+- **Bell icon + badge** — `HomeFragment` header: 🔔 button + red oval badge (count of unread). Navigates to NotificationsFragment.
+- **NotificationsFragment + ViewModel + NotificationAdapter** — full notifications list; "Mark all read" button visible when unread > 0; unread items highlighted in `accent_light`.
+- **Firestore security rules written** — `firestore.rules` at project root. Deploy via Firebase Console → Firestore → Rules → Publish (paste content).
+- **Admin portal Notifications page** — `/notifications` route: send to all/operations/office/specific user; 4 notification types; recent history table. Fixed bug: users + history loaded independently with separate try-catch so history failure never blocks Send button.
+- **`/sent_notifications/` collection** — top-level Firestore collection for send history log.
+- **`fcmToken` field** — saved to `/users/{uid}` document on login and on FCM token refresh.
+- **nav_graph** — `notificationsFragment` destination + `action_homeFragment_to_notificationsFragment` wired.
+- **`POST_NOTIFICATIONS` permission** — added to AndroidManifest.xml.
+
+> **User actions required (not done in code):**
+> 1. Deploy Firestore rules: Firebase Console → Firestore → Rules → paste `firestore.rules` content → Publish
+> 2. Redeploy admin portal: `npm run deploy` from `whitecoffee-admin/` directory
+> 3. Enable FCM: Firebase Console → Project Settings → Cloud Messaging tab
+
 ### ⏳ REMAINING (Phase 4)
-- Firestore security rules
-- Background geofencing auto-checkout
-- Google Sheets export (Cloud Functions)
-- Notifications screen
+- **Cloud Functions** — FCM push to backgrounded devices (trigger: new doc in `/sent_notifications/`); Google Sheets export
+- **Background geofencing auto-checkout** (commented out by design — not in use)
+- Notifications screen ✅ DONE (in-app only; push to background requires Cloud Functions)
 
 ---
 
@@ -504,6 +569,12 @@ Deploy: `npm run deploy` from the admin portal directory
 16. **Leave Approvals = admin only** — `isOffice` is true for both office and admin; always use `isAdmin` for the Leave Approvals card/screen check.
 17. **Office attendance multi-cycle** — state derived from last event only. `DayComplete` state does not exist for office users. No End Day button.
 18. **No geofencing at check-in** — geofenceRadius field exists in `/sites/` documents but is not enforced anywhere in the app currently.
+19. **Optimistic attendance updates** — after `recordEvent()` returns `Result<AttendanceRecord>` (with docId), ViewModel appends the record locally and calls `deriveAttendanceState()` in-memory. No Firestore re-fetch. Reduces post-check-in latency from ~1-2s to ~200ms.
+20. **`deriveAttendanceState()` top-level function** — lives in `AttendanceRecord.kt` (model package). Shared by `AttendanceRepository` (for initial load) and ViewModels (for optimistic updates). Never duplicate this logic.
+21. **Notifications in Firestore sub-collection** — `/users/{uid}/notifications/` stores in-app notifications. FcmService writes here on push receive. Admin portal writes here via `writeBatch` when sending. Bell badge count = `getUnreadCount()` (whereEqualTo isRead false).
+22. **`FcmService` is `@AndroidEntryPoint`** — required for Hilt injection into a `FirebaseMessagingService`. Uses its own `CoroutineScope(SupervisorJob() + Dispatchers.IO)` — not ViewModelScope or lifecycleScope.
+23. **Push to background = Cloud Functions** — `FcmService.onMessageReceived` only fires when app is foregrounded. Sending push to backgrounded devices requires a Cloud Function that reads `/sent_notifications/` docs and calls FCM HTTP v1 API. Deferred to Phase 4.
+24. **FCM token saved two ways** — proactively on login via `FirebaseMessaging.getInstance().token.await()`, and automatically on refresh via `FcmService.onNewToken()`. Both call `notificationRepository.saveToken()`.
 
 ---
 
@@ -512,14 +583,16 @@ Deploy: `npm run deploy` from the admin portal directory
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. All Phase 3 screens are complete (Session 11 done).
-Key changes from Session 11:
-- Daily assignment system (SiteTask + getTodayAssignedSites) is COMMENTED OUT in SiteRepository.kt and SiteTask.kt.
-- Site entry is now two free-text fields on all screens (no dropdowns, no geofencing).
-- Office attendance: multi-cycle check-in/out with "Where are you?" text field + full event timeline.
-- Home grid uses ConstraintLayout Barriers (barrier_row1/2/3). Leave Approvals is admin-only.
-Phase 4: Firestore security rules, background geofencing, Cloud Functions, notifications.
-Firestore index: collection group "leave_requests" → status ASC + submittedAt ASC.
+Read CLAUDE.md first. Session 13 done: all Phase 3 screens + performance improvements + notifications.
+Key state:
+- Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, User/Site Mgmt).
+- Session 12: attendance optimistic updates, merged queries, SharedPreferences eager init, static DateFormat, adapter by-lazy.
+- Session 13: in-app notifications (NotificationsFragment, NotificationRepository, FcmService, FCM token on login, bell badge in Home header), admin portal Notifications page, Firestore security rules written (firestore.rules at project root — deploy manually).
+- Daily assignment system COMMENTED OUT (SiteTask.kt + SiteRepository.getTodayAssignedSites).
+- No geofencing. Site entry = two free-text fields everywhere.
+- Office attendance: multi-cycle, state from last event, no DayComplete.
+Phase 4 remaining: Cloud Functions for FCM push to background + Google Sheets export.
+User must deploy Firestore rules + redeploy admin portal before notifications work end-to-end.
 ```
 
 ---

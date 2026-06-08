@@ -7,8 +7,9 @@ package com.raghav.whitecoffee.core
  */
 sealed interface UiState<out T> {
 
-    /** Initial load or ongoing async operation — show progress indicator. */
-    data object Loading : UiState<Nothing>
+    /** Initial load or ongoing async operation — show progress indicator.
+     *  [message] is non-empty during photo uploads to show "Uploading photo X of Y…" */
+    data class Loading(val message: String = "") : UiState<Nothing>
 
     /** Data fetched successfully — show content. */
     data class Success<T>(val data: T) : UiState<T>

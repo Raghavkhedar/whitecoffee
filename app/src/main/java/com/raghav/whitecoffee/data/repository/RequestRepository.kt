@@ -26,10 +26,20 @@ class RequestRepository @Inject constructor(
     private val toolTransferCol get() = userDoc.collection("tool_transfers")
     private val workProgressCol get() = userDoc.collection("work_progress")
 
+    /**
+     * Generates a document ID locally (no network call). Lets the caller upload photos
+     * to the doc's storage path BEFORE the doc is written, so the photo URLs can be
+     * included in a single write instead of write-then-update.
+     */
+    fun newDocId(collectionName: String): String =
+        userDoc.collection(collectionName).document().id
+
     // ── M&T Request ────────────────────────────────────────────────────────
 
     suspend fun submitMaterialToolRequest(
-        request: MaterialToolRequest
+        request: MaterialToolRequest,
+        docId: String? = null,
+        photoUrls: List<String> = emptyList()
     ): Result<String> {
         return try {
             if (request.items.isEmpty()) {
@@ -39,9 +49,11 @@ class RequestRepository @Inject constructor(
                 userId     = sessionManager.userId,
                 userName   = sessionManager.name,
                 employeeId = sessionManager.employeeId,
+                photoUrls  = photoUrls,
                 submittedAt = Timestamp.now()
             )
-            val ref = mtRequestCol.add(data.toMap()).await()
+            val ref = if (docId != null) mtRequestCol.document(docId) else mtRequestCol.document()
+            ref.set(data.toMap()).await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -63,7 +75,9 @@ class RequestRepository @Inject constructor(
     // ── M&T Purchase ───────────────────────────────────────────────────────
 
     suspend fun submitMaterialToolPurchase(
-        purchase: MaterialToolPurchase
+        purchase: MaterialToolPurchase,
+        docId: String? = null,
+        photoUrls: List<String> = emptyList()
     ): Result<String> {
         return try {
             if (purchase.items.isEmpty()) {
@@ -73,9 +87,11 @@ class RequestRepository @Inject constructor(
                 userId      = sessionManager.userId,
                 userName    = sessionManager.name,
                 employeeId  = sessionManager.employeeId,
+                photoUrls   = photoUrls,
                 submittedAt = Timestamp.now()
             )
-            val ref = mtPurchaseCol.add(data.toMap()).await()
+            val ref = if (docId != null) mtPurchaseCol.document(docId) else mtPurchaseCol.document()
+            ref.set(data.toMap()).await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -96,7 +112,11 @@ class RequestRepository @Inject constructor(
 
     // ── Material Transfer ──────────────────────────────────────────────────
 
-    suspend fun submitMaterialTransfer(transfer: Transfer): Result<String> {
+    suspend fun submitMaterialTransfer(
+        transfer: Transfer,
+        docId: String? = null,
+        photoUrls: List<String> = emptyList()
+    ): Result<String> {
         return try {
             if (transfer.items.isEmpty()) {
                 return Result.failure(Exception("Please add at least one item."))
@@ -105,9 +125,11 @@ class RequestRepository @Inject constructor(
                 userId      = sessionManager.userId,
                 userName    = sessionManager.name,
                 employeeId  = sessionManager.employeeId,
+                photoUrls   = photoUrls,
                 submittedAt = Timestamp.now()
             )
-            val ref = matTransferCol.add(data.toMap()).await()
+            val ref = if (docId != null) matTransferCol.document(docId) else matTransferCol.document()
+            ref.set(data.toMap()).await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -128,7 +150,11 @@ class RequestRepository @Inject constructor(
 
     // ── Tool Transfer ──────────────────────────────────────────────────────
 
-    suspend fun submitToolTransfer(transfer: Transfer): Result<String> {
+    suspend fun submitToolTransfer(
+        transfer: Transfer,
+        docId: String? = null,
+        photoUrls: List<String> = emptyList()
+    ): Result<String> {
         return try {
             if (transfer.items.isEmpty()) {
                 return Result.failure(Exception("Please add at least one item."))
@@ -137,9 +163,11 @@ class RequestRepository @Inject constructor(
                 userId      = sessionManager.userId,
                 userName    = sessionManager.name,
                 employeeId  = sessionManager.employeeId,
+                photoUrls   = photoUrls,
                 submittedAt = Timestamp.now()
             )
-            val ref = toolTransferCol.add(data.toMap()).await()
+            val ref = if (docId != null) toolTransferCol.document(docId) else toolTransferCol.document()
+            ref.set(data.toMap()).await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -160,7 +188,11 @@ class RequestRepository @Inject constructor(
 
     // ── Work Progress ──────────────────────────────────────────────────────
 
-    suspend fun submitWorkProgress(progress: WorkProgress): Result<String> {
+    suspend fun submitWorkProgress(
+        progress: WorkProgress,
+        docId: String? = null,
+        photoUrls: List<String> = emptyList()
+    ): Result<String> {
         return try {
             if (progress.workDescription.isBlank()) {
                 return Result.failure(Exception("Please add a work description."))
@@ -169,9 +201,11 @@ class RequestRepository @Inject constructor(
                 userId      = sessionManager.userId,
                 userName    = sessionManager.name,
                 employeeId  = sessionManager.employeeId,
+                photoUrls   = photoUrls,
                 submittedAt = Timestamp.now()
             )
-            val ref = workProgressCol.add(data.toMap()).await()
+            val ref = if (docId != null) workProgressCol.document(docId) else workProgressCol.document()
+            ref.set(data.toMap()).await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)

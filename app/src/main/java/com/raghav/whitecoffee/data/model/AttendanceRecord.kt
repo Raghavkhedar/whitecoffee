@@ -94,3 +94,17 @@ data class AttendanceRecord(
         }
     }
 }
+
+/** Derives the current AttendanceState from an ordered list of today's events. */
+fun deriveAttendanceState(events: List<AttendanceRecord>): AttendanceState {
+    if (events.isEmpty()) return AttendanceState.NoRecord
+    return when (events.last().type) {
+        AttendanceType.HOME_IN    -> AttendanceState.HomeCheckedIn(events.last())
+        AttendanceType.HOME_OUT   -> AttendanceState.DayComplete
+        AttendanceType.SITE_IN    -> AttendanceState.SiteCheckedIn(events.last())
+        AttendanceType.SITE_OUT   -> AttendanceState.HomeCheckedIn(events.last())
+        AttendanceType.MARKET_IN  -> AttendanceState.MarketCheckedIn(events.last())
+        AttendanceType.MARKET_OUT -> AttendanceState.HomeCheckedIn(events.last())
+        else                      -> AttendanceState.NoRecord
+    }
+}

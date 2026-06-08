@@ -18,7 +18,7 @@ class WhiteCoffeeApp : Application() {
         val settings = FirebaseFirestoreSettings.Builder()
             .setLocalCacheSettings(
                 PersistentCacheSettings.newBuilder()
-                    .setSizeBytes(FirebaseFirestoreSettings.CACHE_SIZE_UNLIMITED)
+                    .setSizeBytes(50L * 1024 * 1024)
                     .build()
             )
             .build()

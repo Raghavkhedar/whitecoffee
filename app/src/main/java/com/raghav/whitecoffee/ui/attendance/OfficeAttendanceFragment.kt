@@ -25,7 +25,7 @@ import java.util.Locale
 class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>() {
 
     private val viewModel: OfficeAttendanceViewModel by viewModels()
-    private lateinit var timelineAdapter: AttendanceTimelineAdapter
+    private val timelineAdapter by lazy { AttendanceTimelineAdapter() }
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -49,7 +49,7 @@ class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>()
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
-        binding.tvDate.text = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date())
+        binding.tvDate.text = DATE_FORMAT.format(Date())
         binding.btnBack.setOnClickListener { findNavController().navigateUp() }
         setupRecyclerView()
         setupActionButton()
@@ -57,7 +57,6 @@ class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>()
     }
 
     private fun setupRecyclerView() {
-        timelineAdapter = AttendanceTimelineAdapter()
         binding.rvTimeline.apply {
             layoutManager = LinearLayoutManager(requireContext())
             adapter = timelineAdapter
@@ -152,5 +151,9 @@ class OfficeAttendanceFragment : BaseFragment<FragmentOfficeAttendanceBinding>()
     private fun clearError() {
         binding.tvError.visibility = View.GONE
         binding.tvError.text = ""
+    }
+
+    companion object {
+        private val DATE_FORMAT = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault())
     }
 }

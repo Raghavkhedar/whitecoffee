@@ -9,15 +9,13 @@ import com.raghav.whitecoffee.data.model.MaterialToolPurchase
 import com.raghav.whitecoffee.data.model.PurchaseItem
 import com.raghav.whitecoffee.data.repository.RequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-// SiteRepository + SiteTask removed — site is now entered as free text by the user.
-// To re-enable: add SiteRepository injection, restore _sitesState + loadSites(),
-// change submitPurchase() back to accept SiteTask.
 
 @HiltViewModel
 class MaterialToolBuyViewModel @Inject constructor(
@@ -25,8 +23,27 @@ class MaterialToolBuyViewModel @Inject constructor(
     private val photoUploadManager: PhotoUploadManager
 ) : ViewModel() {
 
+    private val collection = "material_purchases"
+
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
+
+    // H3 — photos compress + upload in the background as soon as they are picked.
+    private var pendingDocId: String? = null
+    private var uploadJob: Deferred<Result<List<String>>>? = null
+
+    fun onPhotosChanged(uris: List<Uri>) {
+        uploadJob?.cancel()
+        if (uris.isEmpty()) {
+            uploadJob = null
+            pendingDocId = null
+            return
+        }
+        val docId = pendingDocId ?: requestRepository.newDocId(collection).also { pendingDocId = it }
+        uploadJob = viewModelScope.async {
+            photoUploadManager.uploadPhotos(uris, collection, docId)
+        }
+    }
 
     fun submitPurchase(
         siteId: String,
@@ -44,35 +61,48 @@ class MaterialToolBuyViewModel @Inject constructor(
             _submitState.value = UiState.Error("Please fill in all item names and quantities.")
             return
         }
-        _submitState.value = UiState.Loading
+        _submitState.value = UiState.Loading()
         viewModelScope.launch {
-            val grandTotal = items.sumOf { it.totalPrice }
-            val purchase = MaterialToolPurchase(
-                siteId     = siteId.trim(),
-                siteName   = siteName.trim(),
-                items      = items,
-                grandTotal = grandTotal,
-                notes      = notes.trim()
-            )
-            val result = requestRepository.submitMaterialToolPurchase(purchase)
-            if (result.isFailure) {
-                _submitState.value = UiState.Error(
-                    result.exceptionOrNull()?.message ?: "Submission failed. Try again."
+            try {
+                val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                val photoUrls = resolvePhotoUrls(photoUris, docId)
+
+                val grandTotal = items.sumOf { it.totalPrice }
+                val purchase = MaterialToolPurchase(
+                    siteId     = siteId.trim(),
+                    siteName   = siteName.trim(),
+                    items      = items,
+                    grandTotal = grandTotal,
+                    notes      = notes.trim()
                 )
-                return@launch
-            }
-            val docId = result.getOrThrow()
-            if (photoUris.isNotEmpty()) {
-                val uploadResult = photoUploadManager.uploadPhotos(
-                    photoUris, "material_purchases", docId
-                )
-                if (uploadResult.isSuccess) {
-                    requestRepository.updatePhotoUrls(
-                        "material_purchases", docId, uploadResult.getOrThrow()
-                    )
+                val result = requestRepository.submitMaterialToolPurchase(purchase, docId, photoUrls)
+                _submitState.value = if (result.isSuccess) {
+                    UiState.Success(result.getOrThrow())
+                } else {
+                    UiState.Error(result.exceptionOrNull()?.message ?: "Submission failed. Try again.")
                 }
+            } catch (e: Exception) {
+                _submitState.value = UiState.Error("Photo upload failed: ${e.message}")
+            } finally {
+                uploadJob = null
+                pendingDocId = null
             }
-            _submitState.value = UiState.Success(docId)
+        }
+    }
+
+    private suspend fun resolvePhotoUrls(photoUris: List<Uri>, docId: String): List<String> {
+        val job = uploadJob
+        return when {
+            job != null -> {
+                _submitState.value = UiState.Loading("Finishing photo upload…")
+                job.await().getOrThrow()
+            }
+            photoUris.isNotEmpty() -> {
+                photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
+                    _submitState.value = UiState.Loading("Uploading photo $current of $total…")
+                }.getOrThrow()
+            }
+            else -> emptyList()
         }
     }
 

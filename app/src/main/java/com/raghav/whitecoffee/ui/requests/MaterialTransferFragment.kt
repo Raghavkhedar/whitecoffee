@@ -43,7 +43,7 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
             fragment           = this,
             thumbnailContainer = binding.containerPhotos,
             scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { /* no-op: we read uris on submit */ }
+            onPhotosChanged    = { viewModel.onPhotosChanged("material_transfers", it) }
         )
         binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
     }
@@ -70,7 +70,7 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.submitState.collect { state ->
                     when (state) {
-                        is UiState.Loading -> showLoading()
+                        is UiState.Loading -> showLoading(state.message)
                         is UiState.Success -> { hideLoading(); showSuccessAndExit() }
                         is UiState.Error   -> {
                             hideLoading()
@@ -116,7 +116,7 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
             .setCancelable(false).show()
     }
 
-    private fun showLoading() { binding.progressBar.visibility = View.VISIBLE; binding.btnSubmit.isEnabled = false }
-    private fun hideLoading() { binding.progressBar.visibility = View.GONE }
+    private fun showLoading(message: String = "") { binding.progressBar.visibility = View.VISIBLE; binding.btnSubmit.isEnabled = false; if (message.isNotEmpty()) showError(message) }
+    private fun hideLoading() { binding.progressBar.visibility = View.GONE; binding.tvError.visibility = View.GONE }
     private fun showError(msg: String) { binding.tvError.visibility = View.VISIBLE; binding.tvError.text = msg }
 }

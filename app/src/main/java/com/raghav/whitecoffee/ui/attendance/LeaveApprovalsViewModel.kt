@@ -19,7 +19,7 @@ class LeaveApprovalsViewModel @Inject constructor(
     private val sessionManager: SessionManager
 ) : ViewModel() {
 
-    private val _approvalsState = MutableStateFlow<UiState<List<LeaveRequest>>>(UiState.Loading)
+    private val _approvalsState = MutableStateFlow<UiState<List<LeaveRequest>>>(UiState.Loading())
     val approvalsState: StateFlow<UiState<List<LeaveRequest>>> = _approvalsState.asStateFlow()
 
     private val _actionState = MutableStateFlow<UiState<Unit>>(UiState.Empty)
@@ -29,7 +29,7 @@ class LeaveApprovalsViewModel @Inject constructor(
 
     fun loadPending() {
         viewModelScope.launch {
-            _approvalsState.value = UiState.Loading
+            _approvalsState.value = UiState.Loading()
             val result = leaveRepository.getPendingLeaveRequests()
             _approvalsState.value = when {
                 result.isSuccess -> {
@@ -43,7 +43,7 @@ class LeaveApprovalsViewModel @Inject constructor(
 
     fun approve(request: LeaveRequest) {
         viewModelScope.launch {
-            _actionState.value = UiState.Loading
+            _actionState.value = UiState.Loading()
             val result = leaveRepository.approveLeave(
                 targetUserId = request.userId,
                 requestId    = request.id,
@@ -62,7 +62,7 @@ class LeaveApprovalsViewModel @Inject constructor(
 
     fun reject(request: LeaveRequest, comment: String) {
         viewModelScope.launch {
-            _actionState.value = UiState.Loading
+            _actionState.value = UiState.Loading()
             val result = leaveRepository.rejectLeave(
                 targetUserId = request.userId,
                 requestId    = request.id,

@@ -84,7 +84,7 @@ class LocationProvider @Inject constructor(
 
             val locationRequest = LocationRequest.Builder(
                 Priority.PRIORITY_HIGH_ACCURACY,
-                1000L
+                5000L
             )
                 .setMaxUpdates(1)
                 .setMinUpdateDistanceMeters(0f)
