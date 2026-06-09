@@ -142,7 +142,7 @@ class MaterialToolBuyFragment : BaseFragment<FragmentMaterialToolBuyBinding>() {
         val unit  = row.etUnit.text?.toString()?.trim() ?: ""
         val price = row.etPrice.text?.toString()?.toDoubleOrNull() ?: 0.0
         if (name.isBlank() || qty <= 0) return@mapNotNull null
-        PurchaseItem(name, qty.toInt(), unit, price, qty * price)
+        PurchaseItem(name, qty, unit, price, qty * price)
     }
 
     private fun showSuccessAndExit() {

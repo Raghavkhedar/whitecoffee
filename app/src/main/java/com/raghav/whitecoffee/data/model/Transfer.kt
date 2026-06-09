@@ -6,7 +6,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 
 data class TransferItem(
     val itemName: String = "",
-    val quantity: Int = 0,
+    val quantity: Double = 0.0,
     val unit: String = "",
     val condition: String = ""      // e.g. "Good", "Damaged" — important for tools
 ) {
@@ -20,7 +20,7 @@ data class TransferItem(
     companion object {
         fun fromMap(map: Map<*, *>): TransferItem = TransferItem(
             itemName  = map["itemName"] as? String ?: "",
-            quantity  = (map["quantity"] as? Long)?.toInt() ?: 0,
+            quantity  = (map["quantity"] as? Number)?.toDouble() ?: 0.0,
             unit      = map["unit"] as? String ?: "",
             condition = map["condition"] as? String ?: ""
         )

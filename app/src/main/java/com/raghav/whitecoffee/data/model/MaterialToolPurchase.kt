@@ -6,7 +6,7 @@ import com.google.firebase.firestore.DocumentSnapshot
 
 data class PurchaseItem(
     val itemName: String = "",
-    val quantity: Int = 0,
+    val quantity: Double = 0.0,
     val unit: String = "",
     val pricePerUnit: Double = 0.0,
     val totalPrice: Double = 0.0,
@@ -24,7 +24,7 @@ data class PurchaseItem(
     companion object {
         fun fromMap(map: Map<*, *>): PurchaseItem = PurchaseItem(
             itemName     = map["itemName"] as? String ?: "",
-            quantity     = (map["quantity"] as? Long)?.toInt() ?: 0,
+            quantity     = (map["quantity"] as? Number)?.toDouble() ?: 0.0,
             unit         = map["unit"] as? String ?: "",
             pricePerUnit = map["pricePerUnit"] as? Double ?: 0.0,
             totalPrice   = map["totalPrice"] as? Double ?: 0.0,

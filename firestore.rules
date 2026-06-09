@@ -106,6 +106,29 @@ service cloud.firestore {
       allow update: if isLoggedIn() && isAdmin();
     }
 
+    // ── collectionGroup — admin portal Attendance & Submissions screens ──
+    // A per-subcollection match (e.g. /users/{userId}/attendance/{docId}) does NOT
+    // cover collectionGroup() queries that scan across all users — each collection
+    // needs its own top-level {path=**} rule for the admin portal's cross-user reads.
+    match /{path=**}/attendance/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
+    match /{path=**}/material_requests/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
+    match /{path=**}/material_purchases/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
+    match /{path=**}/material_transfers/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
+    match /{path=**}/tool_transfers/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
+    match /{path=**}/work_progress/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
+
     // ── /sent_notifications/{docId} — Notification send log ─────────────
     match /sent_notifications/{docId} {
       allow read, write: if isLoggedIn() && isAdmin();

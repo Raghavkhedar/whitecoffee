@@ -129,7 +129,7 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
             if (name.isBlank() || qtyStr.isBlank()) return@mapNotNull null
             RequestItem(
                 itemName = name,
-                quantity = qtyStr.toIntOrNull() ?: 0,
+                quantity = qtyStr.toDoubleOrNull() ?: 0.0,
                 unit     = unit,
                 notes    = notes
             )

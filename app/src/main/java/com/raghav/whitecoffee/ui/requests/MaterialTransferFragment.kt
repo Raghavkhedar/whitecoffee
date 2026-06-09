@@ -101,7 +101,7 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
 
     private fun collectItems(): List<TransferItem> = itemRows.mapNotNull { row ->
         val name      = row.etItemName.text?.toString()?.trim() ?: return@mapNotNull null
-        val qty       = row.etQuantity.text?.toString()?.toIntOrNull() ?: return@mapNotNull null
+        val qty       = row.etQuantity.text?.toString()?.toDoubleOrNull() ?: return@mapNotNull null
         val unit      = row.etUnit.text?.toString()?.trim() ?: ""
         val condition = row.etCondition.text?.toString()?.trim() ?: ""
         if (name.isBlank() || qty <= 0) return@mapNotNull null
