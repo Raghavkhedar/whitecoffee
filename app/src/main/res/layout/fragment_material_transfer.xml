@@ -11,6 +11,7 @@
         android:layout_height="wrap_content"
         android:paddingBottom="32dp">
 
+        <!-- Header -->
         <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/header"
             android:layout_width="0dp"
@@ -49,10 +50,10 @@
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
-        <!-- Transfer details card -->
+        <!-- ── TRANSFER DETAILS card ── -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_transfer_details"
-            style="@style/WC.CardView"
+            style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
@@ -61,227 +62,275 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
-            <androidx.constraintlayout.widget.ConstraintLayout
+            <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/tv_details_label"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="TRANSFER DETAILS"
-                    android:textSize="12sp"
-                    android:textColor="@color/primary_blue"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.06"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent"/>
+                    android:background="@color/accent_light"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp">
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_from"
-                    style="@style/WC.TextInputLayout"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:hint="From (location/site)"
-                    app:layout_constraintTop_toBottomOf="@id/tv_details_label"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_from"
-                        style="@style/WC.TextInputEditText"
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textCapWords"/>
+                        android:text="TRANSFER DETAILS"
+                        android:textSize="12sp"
+                        android:textColor="@color/primary_blue"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"/>
 
-                </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_to"
-                    style="@style/WC.TextInputLayout"
-                    android:layout_width="0dp"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="To (location/site)"
-                    app:layout_constraintTop_toBottomOf="@id/til_from"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent">
+                    android:orientation="vertical"
+                    android:padding="16dp">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_to"
-                        style="@style/WC.TextInputEditText"
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/til_from"
+                        style="@style/WC.TextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textCapWords"/>
+                        android:hint="From (location/site)">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_from"
+                            style="@style/WC.TextInputEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textCapWords"/>
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_transferred_by"
-                    style="@style/WC.TextInputLayout"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="Transferred by (name)"
-                    app:layout_constraintTop_toBottomOf="@id/til_to"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent">
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_transferred_by"
-                        style="@style/WC.TextInputEditText"
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/til_to"
+                        style="@style/WC.TextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textCapWords"/>
+                        android:layout_marginTop="8dp"
+                        android:hint="To (location/site)">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_to"
+                            style="@style/WC.TextInputEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textCapWords"/>
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_received_by"
-                    style="@style/WC.TextInputLayout"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:hint="Received by (name)"
-                    app:layout_constraintTop_toBottomOf="@id/til_transferred_by"
-                    app:layout_constraintStart_toStartOf="parent"
-                    app:layout_constraintEnd_toEndOf="parent">
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_received_by"
-                        style="@style/WC.TextInputEditText"
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/til_transferred_by"
+                        style="@style/WC.TextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textCapWords"/>
+                        android:layout_marginTop="8dp"
+                        android:hint="Transferred by (name)">
 
-                </com.google.android.material.textfield.TextInputLayout>
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_transferred_by"
+                            style="@style/WC.TextInputEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textCapWords"/>
 
-            </androidx.constraintlayout.widget.ConstraintLayout>
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/til_received_by"
+                        style="@style/WC.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="Received by (name)">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_received_by"
+                            style="@style/WC.TextInputEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textCapWords"/>
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
 
-        <TextView
-            android:id="@+id/tv_items_label"
+        <!-- ── ITEMS card ── -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_items"
+            style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="ITEMS"
-            android:textSize="12sp"
-            android:textColor="@color/primary_blue"
-            android:textStyle="bold"
-            android:letterSpacing="0.06"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="20dp"
-            app:layout_constraintTop_toBottomOf="@id/card_transfer_details"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
-
-        <LinearLayout
-            android:id="@+id/container_items"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="12dp"
-            app:layout_constraintTop_toBottomOf="@id/tv_items_label"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_add_item"
-            style="@style/WC.Button.Outlined"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="8dp"
-            android:text="+ Add Item"
-            app:layout_constraintTop_toBottomOf="@id/container_items"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
-
-        <TextView
-            android:id="@+id/tv_photos_label"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:text="PHOTOS"
-            android:textSize="12sp"
-            android:textColor="@color/primary_blue"
-            android:textStyle="bold"
-            android:letterSpacing="0.06"
             android:layout_marginHorizontal="20dp"
             android:layout_marginTop="16dp"
-            app:layout_constraintTop_toBottomOf="@id/btn_add_item"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
-
-        <HorizontalScrollView
-            android:id="@+id/scroll_photos"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="8dp"
-            android:visibility="gone"
-            android:scrollbars="none"
-            app:layout_constraintTop_toBottomOf="@id/tv_photos_label"
+            app:layout_constraintTop_toBottomOf="@id/card_transfer_details"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
             <LinearLayout
-                android:id="@+id/container_photos"
-                android:layout_width="wrap_content"
-                android:layout_height="80dp"
-                android:orientation="horizontal"
-                android:padding="4dp"/>
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-        </HorizontalScrollView>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@color/accent_light"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_add_photo"
-            style="@style/WC.Button.Outlined"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="8dp"
-            android:text="📷 Add Photos"
-            app:layout_constraintTop_toBottomOf="@id/scroll_photos"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent"/>
+                    <TextView
+                        android:id="@+id/tv_items_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="ITEMS"
+                        android:textSize="12sp"
+                        android:textColor="@color/primary_blue"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"/>
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/til_notes"
-            style="@style/WC.TextInputLayout"
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="12dp">
+
+                    <LinearLayout
+                        android:id="@+id/container_items"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"/>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_add_item"
+                        style="@style/WC.Button.Outlined"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="+ Add Item"/>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- ── ATTACHMENTS & NOTES card ── -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_attachments"
+            style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
             android:layout_marginTop="16dp"
-            android:hint="Additional notes (optional)"
-            app:layout_constraintTop_toBottomOf="@id/btn_add_photo"
+            app:layout_constraintTop_toBottomOf="@id/card_items"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/et_notes"
-                style="@style/WC.TextInputEditText"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
-                android:minLines="2"
-                android:maxLines="4"/>
+                android:orientation="vertical">
 
-        </com.google.android.material.textfield.TextInputLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@color/accent_light"
+                    android:paddingHorizontal="16dp"
+                    android:paddingVertical="12dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="ATTACHMENTS &amp; NOTES"
+                        android:textSize="12sp"
+                        android:textColor="@color/primary_blue"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"/>
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="16dp">
+
+                    <HorizontalScrollView
+                        android:id="@+id/scroll_photos"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone"
+                        android:scrollbars="none"
+                        android:layout_marginBottom="4dp">
+
+                        <LinearLayout
+                            android:id="@+id/container_photos"
+                            android:layout_width="wrap_content"
+                            android:layout_height="80dp"
+                            android:orientation="horizontal"
+                            android:padding="4dp"/>
+
+                    </HorizontalScrollView>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_add_photo"
+                        style="@style/WC.Button.Outlined"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="📷 Add Photos"/>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/til_notes"
+                        style="@style/WC.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:hint="Additional notes (optional)">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_notes"
+                            style="@style/WC.TextInputEditText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textMultiLine"
+                            android:minLines="2"
+                            android:maxLines="4"/>
+
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
 
         <TextView
             android:id="@+id/tv_error"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="16dp"
             android:textSize="13sp"
             android:textColor="#EF4444"
             android:visibility="gone"
             android:text=""
-            app:layout_constraintTop_toBottomOf="@id/til_notes"
+            app:layout_constraintTop_toBottomOf="@id/card_attachments"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -291,7 +340,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginHorizontal="20dp"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="16dp"
             android:text="Submit Transfer"
             app:layout_constraintTop_toBottomOf="@id/tv_error"
             app:layout_constraintStart_toStartOf="parent"
