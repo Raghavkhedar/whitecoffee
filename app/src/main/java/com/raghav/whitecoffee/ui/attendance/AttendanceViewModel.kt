@@ -212,6 +212,8 @@ class AttendanceViewModel @Inject constructor(
     }
 
     // ── Market Check In — Step 2: User entered market name ───────────────
+    // If currently SiteCheckedIn, auto-records site_out first (same GPS coords),
+    // then records market_in. Both events appear in the timeline.
 
     fun confirmMarketCheckIn(marketName: String, latitude: Double, longitude: Double) {
         if (marketName.isBlank()) {
@@ -220,6 +222,28 @@ class AttendanceViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _actionState.value = ActionState.Loading
+
+            val currentState = (_attendanceState.value as? UiState.Success)?.data
+            if (currentState is AttendanceState.SiteCheckedIn) {
+                val siteRecord = currentState.record
+                val siteOutResult = attendanceRepository.recordEvent(
+                    type      = AttendanceType.SITE_OUT,
+                    latitude  = latitude,
+                    longitude = longitude,
+                    siteId    = siteRecord.siteId,
+                    siteName  = siteRecord.siteName
+                )
+                if (siteOutResult.isFailure) {
+                    _actionState.value = ActionState.Error(
+                        siteOutResult.exceptionOrNull()?.message ?: "Failed to auto check-out from site."
+                    )
+                    return@launch
+                }
+                val withSiteOut = _todayEvents.value + siteOutResult.getOrThrow()
+                _todayEvents.value = withSiteOut
+                _attendanceState.value = UiState.Success(deriveAttendanceState(withSiteOut))
+            }
+
             val result = attendanceRepository.recordEvent(
                 type        = AttendanceType.MARKET_IN,
                 latitude    = latitude,
