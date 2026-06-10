@@ -16,7 +16,7 @@
             android:id="@+id/header"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:background="@color/primary_blue"
+            android:background="@drawable/bg_header"
             android:paddingHorizontal="20dp"
             android:paddingTop="52dp"
             android:paddingBottom="24dp"
@@ -131,7 +131,7 @@
             android:id="@+id/card_attendance"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
@@ -156,14 +156,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_attendance"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="Attendance"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_attendance"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Daily check-in / out"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_attendance"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -175,7 +187,7 @@
             android:id="@+id/card_mt_request"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="8dp"
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
@@ -201,14 +213,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_mt_request"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="M&amp;T Request"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_mt_request"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Request materials &amp; tools"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_mt_request"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -231,7 +255,7 @@
             android:id="@+id/card_mt_buy"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
@@ -256,14 +280,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_mt_buy"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="M&amp;T Buy"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_mt_buy"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Log site purchases"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_mt_buy"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -275,7 +311,7 @@
             android:id="@+id/card_material_transfer"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="8dp"
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
@@ -300,14 +336,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_material_transfer"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="Material Transfer"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_material_transfer"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Transfer materials"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_material_transfer"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -328,7 +376,7 @@
             android:id="@+id/card_tool_transfer"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
@@ -353,14 +401,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_tool_transfer"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="Tool Transfer"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_tool_transfer"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Log tool movements"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_tool_transfer"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -372,7 +432,7 @@
             android:id="@+id/card_work_progress"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="8dp"
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
@@ -398,14 +458,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_work_progress"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="Work Progress"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_work_progress"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Daily progress report"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_work_progress"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -428,7 +500,7 @@
             android:id="@+id/card_leave"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="20dp"
             android:layout_marginEnd="8dp"
             android:layout_marginTop="12dp"
@@ -453,14 +525,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_leave"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="Leave"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_leave"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Apply &amp; track leave"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_leave"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 
@@ -472,7 +556,7 @@
             android:id="@+id/card_leave_approvals"
             style="@style/WC.CardView.NoPadding"
             android:layout_width="0dp"
-            android:layout_height="120dp"
+            android:layout_height="130dp"
             android:layout_marginStart="8dp"
             android:layout_marginEnd="20dp"
             android:layout_marginTop="12dp"
@@ -498,14 +582,26 @@
                     app:layout_constraintStart_toStartOf="parent"/>
 
                 <TextView
+                    android:id="@+id/tv_title_leave_approvals"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:text="Leave Approvals"
                     android:textSize="14sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary"
-                    android:layout_marginTop="10dp"
+                    android:layout_marginTop="8dp"
                     app:layout_constraintTop_toBottomOf="@id/icon_leave_approvals"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintEnd_toEndOf="parent"/>
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="Review pending requests"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:layout_marginTop="2dp"
+                    app:layout_constraintTop_toBottomOf="@id/tv_title_leave_approvals"
                     app:layout_constraintStart_toStartOf="parent"
                     app:layout_constraintEnd_toEndOf="parent"/>
 

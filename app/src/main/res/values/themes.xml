@@ -21,7 +21,7 @@
         <item name="colorOnBackground">@color/text_primary</item>
 
         <!-- ── Status bar ── -->
-        <item name="android:statusBarColor">@color/primary_blue</item>
+        <item name="android:statusBarColor">@color/primary_blue_light</item>
         <item name="android:windowLightStatusBar">false</item>
 
         <!-- ── Typography ── -->
@@ -46,7 +46,7 @@
         <item name="android:textColor">@color/white</item>
         <item name="android:textSize">15sp</item>
         <item name="android:letterSpacing">0.02</item>
-        <item name="cornerRadius">10dp</item>
+        <item name="cornerRadius">12dp</item>
         <item name="android:paddingTop">14dp</item>
         <item name="android:paddingBottom">14dp</item>
         <item name="rippleColor">@color/ripple_primary</item>
@@ -57,7 +57,7 @@
         <item name="strokeColor">@color/primary_blue</item>
         <item name="android:textColor">@color/primary_blue</item>
         <item name="android:textSize">15sp</item>
-        <item name="cornerRadius">10dp</item>
+        <item name="cornerRadius">12dp</item>
         <item name="android:paddingTop">14dp</item>
         <item name="android:paddingBottom">14dp</item>
     </style>
@@ -71,7 +71,7 @@
     <!-- Card -->
     <style name="WC.CardView" parent="Widget.MaterialComponents.CardView">
         <item name="cardBackgroundColor">@color/surface</item>
-        <item name="cardCornerRadius">12dp</item>
+        <item name="cardCornerRadius">16dp</item>
         <item name="cardElevation">0dp</item>
         <item name="strokeColor">@color/border</item>
         <item name="strokeWidth">1dp</item>
@@ -90,10 +90,10 @@
         <item name="boxBackgroundColor">@color/input_background</item>
         <item name="hintTextColor">@color/text_secondary</item>
         <item name="android:textColorHint">@color/text_hint</item>
-        <item name="boxCornerRadiusTopStart">10dp</item>
-        <item name="boxCornerRadiusTopEnd">10dp</item>
-        <item name="boxCornerRadiusBottomStart">10dp</item>
-        <item name="boxCornerRadiusBottomEnd">10dp</item>
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
     </style>
 
     <!-- TextInputEditText -->

@@ -4,7 +4,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background"
+    android:background="@drawable/bg_login"
     android:fillViewport="true">
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -17,10 +17,10 @@
         <!-- Logo / Brand mark -->
         <androidx.cardview.widget.CardView
             android:id="@+id/logo_card"
-            android:layout_width="72dp"
-            android:layout_height="72dp"
-            app:cardCornerRadius="20dp"
-            app:cardElevation="0dp"
+            android:layout_width="84dp"
+            android:layout_height="84dp"
+            app:cardCornerRadius="24dp"
+            app:cardElevation="6dp"
             app:cardBackgroundColor="@color/primary_blue"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintStart_toStartOf="parent"
@@ -31,7 +31,7 @@
                 android:layout_height="match_parent"
                 android:text="WC"
                 android:textColor="@color/white"
-                android:textSize="22sp"
+                android:textSize="26sp"
                 android:textStyle="bold"
                 android:gravity="center"/>
 
