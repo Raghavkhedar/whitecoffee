@@ -10,7 +10,6 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.fragment.app.Fragment
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.raghav.whitecoffee.databinding.ItemPhotoThumbnailBinding
 
 /**
@@ -55,12 +54,9 @@ class PhotoPickerHelper(
             false
         )
 
-        // Load thumbnail using Glide
         Glide.with(fragment)
             .load(uri)
             .centerCrop()
-            .diskCacheStrategy(DiskCacheStrategy.NONE)
-            .skipMemoryCache(true)
             .into(thumbBinding.ivThumbnail)
 
         thumbBinding.btnRemove.setOnClickListener {

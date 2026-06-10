@@ -95,10 +95,8 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
             it.isEnabled = false
             val state = (viewModel.attendanceState.value as? UiState.Success)?.data
             val siteRecord = (state as? AttendanceState.SiteCheckedIn)?.record
-            viewModel.siteCheckOut(
-                siteId   = siteRecord?.siteId ?: "",
-                siteName = siteRecord?.siteName ?: ""
-            )
+            if (siteRecord == null) { it.isEnabled = true; return@setOnClickListener }
+            viewModel.siteCheckOut(siteId = siteRecord.siteId, siteName = siteRecord.siteName)
         }
         binding.btnMarketCheckIn.setOnClickListener {
             it.isEnabled = false
@@ -108,7 +106,8 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
             it.isEnabled = false
             val state = (viewModel.attendanceState.value as? UiState.Success)?.data
             val marketRecord = (state as? AttendanceState.MarketCheckedIn)?.record
-            viewModel.marketCheckOut(marketRecord?.marketName ?: "")
+            if (marketRecord == null) { it.isEnabled = true; return@setOnClickListener }
+            viewModel.marketCheckOut(marketRecord.marketName)
         }
     }
 

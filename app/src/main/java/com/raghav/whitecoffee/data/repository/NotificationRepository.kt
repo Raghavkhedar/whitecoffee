@@ -1,5 +1,6 @@
 package com.raghav.whitecoffee.data.repository
 
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.raghav.whitecoffee.data.model.AppNotification
@@ -23,6 +24,7 @@ class NotificationRepository @Inject constructor(
         return try {
             val snapshot = collection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
+                .limit(50)
                 .get()
                 .await()
             Result.success(snapshot.documents.mapNotNull { AppNotification.fromDocument(it) })
@@ -33,11 +35,12 @@ class NotificationRepository @Inject constructor(
 
     suspend fun getUnreadCount(): Result<Int> {
         return try {
-            val snapshot = collection()
+            val result = collection()
                 .whereEqualTo("isRead", false)
-                .get()
+                .count()
+                .get(AggregateSource.SERVER)
                 .await()
-            Result.success(snapshot.size())
+            Result.success(result.count.toInt())
         } catch (e: Exception) {
             Result.failure(e)
         }
