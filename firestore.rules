@@ -97,6 +97,14 @@ service cloud.firestore {
         allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
         allow delete: if false;
       }
+
+      // ── /attendance_status/{date} ─────────────────────────────────────
+      // Written by Cloud Function (Admin SDK) for office/admin users (auto),
+      // and by admin portal for operations users (manual).
+      match /attendance_status/{date} {
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow write: if isLoggedIn() && isAdmin();
+      }
     }
 
     // ── collectionGroup — leave_requests (admin Leave Approvals screen) ──
@@ -128,9 +136,18 @@ service cloud.firestore {
     match /{path=**}/work_progress/{docId} {
       allow read: if isLoggedIn() && isAdmin();
     }
+    match /{path=**}/attendance_status/{date} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if isLoggedIn() && isAdmin();
+    }
 
     // ── /sent_notifications/{docId} — Notification send log ─────────────
     match /sent_notifications/{docId} {
+      allow read, write: if isLoggedIn() && isAdmin();
+    }
+
+    // ── /submission_edits/{docId} — Audit log for admin edits ────────────
+    match /submission_edits/{docId} {
       allow read, write: if isLoggedIn() && isAdmin();
     }
 

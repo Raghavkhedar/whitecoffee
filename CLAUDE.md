@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 13 End
+### Last Updated: Session 15 End
 
 ---
 
@@ -538,14 +538,34 @@ Deploy: `npm run deploy` from the admin portal directory
 - **`POST_NOTIFICATIONS` permission** — added to AndroidManifest.xml.
 
 > **User actions required (not done in code):**
-> 1. Deploy Firestore rules: Firebase Console → Firestore → Rules → paste `firestore.rules` content → Publish
+> ~~1. Deploy Firestore rules~~ ✅ DONE (deployed in Session 14)
 > 2. Redeploy admin portal: `npm run deploy` from `whitecoffee-admin/` directory
 > 3. Enable FCM: Firebase Console → Project Settings → Cloud Messaging tab
 
+### ✅ Session 14 changes — Decimal quantities + Firestore collectionGroup rules:
+- **Decimal quantity support** — `quantity` field changed from `Int` to `Double` in `RequestItem`, `PurchaseItem`, and `TransferItem` models. Users can now enter fractional amounts (e.g. `2.5 kg`).
+- **`fromMap()` updated** — parses quantity as `Number→Double` in all three models (handles both `Long` and `Double` stored in Firestore).
+- **`inputType="numberDecimal"`** — changed from `"number"` in `item_request_row.xml`, `item_buy_row.xml`, `item_transfer_row.xml`.
+- **Fragment quantity parsing** — `toIntOrNull()` → `toDoubleOrNull()` in `MaterialToolRequestFragment`, `MaterialToolBuyFragment`, `MaterialTransferFragment`, `ToolTransferFragment`.
+- **Firestore collectionGroup rules deployed** — added `{path=**}` rules for all 6 sub-collections (attendance, material_requests, material_purchases, material_transfers, tool_transfers, work_progress) so admin portal cross-user reads are not blocked by security rules.
+
+### ✅ Session 15 changes — Google Sheets export (Cloud Functions):
+- **`exportToSheets` Cloud Function** — scheduled daily (`every 24 hours`), exports all 7 collections to separate tabs in one Google Sheet.
+- **Sheet ID**: `1pemb9uSbu-NenE_QSkfPx6842EG1T6Z21isGM5IXrYs`
+- **Service account**: `attendance-sheets-expor@white-coffee-92c27.iam.gserviceaccount.com` — secret stored as `ATTENDANCE_SHEETS_KEY` in Firebase Secret Manager.
+- **7 tabs exported**: Attendance, MT Requests, MT Purchases, Material Transfers, Tool Transfers, Work Progress, Leave Requests.
+- **Write strategy**: clear + rewrite on every run — each daily export is a complete fresh snapshot (no duplicate rows).
+- **Line items flattened**: requests/purchases/transfers write one row per line item for filter/pivot usability.
+- **Auto-creates tabs**: `ensureTab()` creates any missing sheet tab before writing.
+- **Replaced old function**: `exportAttendanceToSheets` (flat collection, attendance only) deleted; `exportToSheets` deployed in its place.
+- Uses `collectionGroup()` for all 7 sub-collections — Admin SDK bypasses Firestore security rules.
+- Timestamps rendered in IST (`Asia/Kolkata`).
+
 ### ⏳ REMAINING (Phase 4)
-- **Cloud Functions** — FCM push to backgrounded devices (trigger: new doc in `/sent_notifications/`); Google Sheets export
+- **Cloud Functions — FCM push** — send push to backgrounded devices (trigger: new doc in `/sent_notifications/`); deferred
 - **Background geofencing auto-checkout** (commented out by design — not in use)
 - Notifications screen ✅ DONE (in-app only; push to background requires Cloud Functions)
+- Google Sheets export ✅ DONE
 
 ---
 
@@ -583,16 +603,18 @@ Deploy: `npm run deploy` from the admin portal directory
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. Session 13 done: all Phase 3 screens + performance improvements + notifications.
+Read CLAUDE.md first. Session 15 done: Google Sheets export via Cloud Functions deployed.
 Key state:
 - Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, User/Site Mgmt).
 - Session 12: attendance optimistic updates, merged queries, SharedPreferences eager init, static DateFormat, adapter by-lazy.
-- Session 13: in-app notifications (NotificationsFragment, NotificationRepository, FcmService, FCM token on login, bell badge in Home header), admin portal Notifications page, Firestore security rules written (firestore.rules at project root — deploy manually).
+- Session 13: in-app notifications (NotificationsFragment, NotificationRepository, FcmService, FCM token on login, bell badge in Home header), admin portal Notifications page, Firestore security rules written.
+- Session 14: quantity changed from Int→Double across all request models + layouts + fragments; Firestore collectionGroup rules deployed.
+- Session 15: Cloud Function exportToSheets deployed — exports 7 collections to separate Google Sheet tabs daily.
 - Daily assignment system COMMENTED OUT (SiteTask.kt + SiteRepository.getTodayAssignedSites).
 - No geofencing. Site entry = two free-text fields everywhere.
 - Office attendance: multi-cycle, state from last event, no DayComplete.
-Phase 4 remaining: Cloud Functions for FCM push to background + Google Sheets export.
-User must deploy Firestore rules + redeploy admin portal before notifications work end-to-end.
+- Firestore rules: DEPLOYED.
+Phase 4 remaining: Cloud Functions FCM push to backgrounded devices only.
 ```
 
 ---
