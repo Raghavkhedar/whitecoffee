@@ -3,17 +3,22 @@ package com.raghav.whitecoffee.ui.requests
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.WorkManager
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.PhotoUploadManager
 import com.raghav.whitecoffee.data.model.Transfer
 import com.raghav.whitecoffee.data.model.TransferItem
+import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.RequestRepository
+import com.raghav.whitecoffee.data.worker.PhotoUploadWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -22,33 +27,36 @@ import javax.inject.Inject
 @HiltViewModel
 class TransferViewModel @Inject constructor(
     private val requestRepository: RequestRepository,
-    private val photoUploadManager: PhotoUploadManager
+    private val photoUploadManager: PhotoUploadManager,
+    private val workManager: WorkManager,
+    networkMonitor: NetworkMonitor
 ) : ViewModel() {
+
+    val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
-    // H3 — photos compress + upload in the background as soon as they are picked.
-    // Each Transfer screen (material / tool) uses its own collection name.
     private var pendingDocId: String? = null
     private var pendingCollection: String? = null
     private var uploadJob: Deferred<Result<List<String>>>? = null
+    private var cacheJob: Deferred<List<String>>? = null
 
-    /** [collection] is "material_transfers" or "tool_transfers", chosen by the calling Fragment. */
     fun onPhotosChanged(collection: String, uris: List<Uri>) {
-        uploadJob?.cancel()
+        uploadJob?.cancel(); cacheJob?.cancel()
         if (uris.isEmpty()) {
-            uploadJob = null
-            pendingDocId = null
-            pendingCollection = null
+            uploadJob = null; cacheJob = null
+            pendingDocId = null; pendingCollection = null
             return
         }
         val docId = pendingDocId ?: requestRepository.newDocId(collection).also {
             pendingDocId = it
             pendingCollection = collection
         }
-        uploadJob = viewModelScope.async {
-            photoUploadManager.uploadPhotos(uris, collection, docId)
+        cacheJob = viewModelScope.async { photoUploadManager.cachePhotos(uris, docId) }
+        if (isOnline.value) {
+            uploadJob = viewModelScope.async { photoUploadManager.uploadPhotos(uris, collection, docId) }
         }
     }
 
@@ -67,15 +75,18 @@ class TransferViewModel @Inject constructor(
             try {
                 val collection = "material_transfers"
                 val docId = pendingDocId ?: requestRepository.newDocId(collection)
-                val photoUrls = resolvePhotoUrls(collection, photoUris, docId)
+                val cachedPaths = try {
+                    cacheJob?.await() ?: if (photoUris.isNotEmpty()) photoUploadManager.cachePhotos(photoUris, docId) else emptyList()
+                } catch (_: Exception) { emptyList() }
+                val photoUrls = resolvePhotoUrls(collection, photoUris, docId) ?: emptyList()
+                val needsRetry = photoUris.isNotEmpty() && photoUrls.isEmpty() && cachedPaths.isNotEmpty()
+
                 val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
                 val result = requestRepository.submitMaterialTransfer(transfer, docId, photoUrls)
-                finish(result)
+                finish(result, collection, docId, needsRetry, cachedPaths)
             } catch (e: Exception) {
-                _submitState.value = UiState.Error("Photo upload failed: ${e.message}")
-                uploadJob = null
-                pendingDocId = null
-                pendingCollection = null
+                _submitState.value = UiState.Error("Submission failed: ${e.message}")
+                clearState()
             }
         }
     }
@@ -95,48 +106,63 @@ class TransferViewModel @Inject constructor(
             try {
                 val collection = "tool_transfers"
                 val docId = pendingDocId ?: requestRepository.newDocId(collection)
-                val photoUrls = resolvePhotoUrls(collection, photoUris, docId)
+                val cachedPaths = try {
+                    cacheJob?.await() ?: if (photoUris.isNotEmpty()) photoUploadManager.cachePhotos(photoUris, docId) else emptyList()
+                } catch (_: Exception) { emptyList() }
+                val photoUrls = resolvePhotoUrls(collection, photoUris, docId) ?: emptyList()
+                val needsRetry = photoUris.isNotEmpty() && photoUrls.isEmpty() && cachedPaths.isNotEmpty()
+
                 val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
                 val result = requestRepository.submitToolTransfer(transfer, docId, photoUrls)
-                finish(result)
+                finish(result, collection, docId, needsRetry, cachedPaths)
             } catch (e: Exception) {
-                _submitState.value = UiState.Error("Photo upload failed: ${e.message}")
-                uploadJob = null
-                pendingDocId = null
-                pendingCollection = null
+                _submitState.value = UiState.Error("Submission failed: ${e.message}")
+                clearState()
             }
         }
     }
 
-    private fun finish(result: Result<String>) {
-        _submitState.value = if (result.isSuccess) {
-            UiState.Success(result.getOrThrow())
+    private fun finish(
+        result: Result<String>,
+        collection: String,
+        docId: String,
+        needsRetry: Boolean,
+        cachedPaths: List<String>
+    ) {
+        if (result.isSuccess) {
+            if (needsRetry) {
+                workManager.enqueue(PhotoUploadWorker.buildRequest(collection, docId, cachedPaths))
+            } else {
+                photoUploadManager.clearCachedPhotos(docId)
+            }
+            _submitState.value = UiState.Success(result.getOrThrow())
         } else {
-            UiState.Error(result.exceptionOrNull()?.message ?: "Submission failed. Try again.")
+            photoUploadManager.clearCachedPhotos(docId)
+            _submitState.value = UiState.Error(result.exceptionOrNull()?.message ?: "Submission failed. Try again.")
         }
-        uploadJob = null
-        pendingDocId = null
-        pendingCollection = null
+        clearState()
+    }
+
+    private fun clearState() {
+        uploadJob = null; cacheJob = null
+        pendingDocId = null; pendingCollection = null
     }
 
     private suspend fun resolvePhotoUrls(
         collection: String,
         photoUris: List<Uri>,
         docId: String
-    ): List<String> {
+    ): List<String>? {
+        if (photoUris.isEmpty()) return emptyList()
         val job = uploadJob
-        return when {
-            job != null -> {
-                _submitState.value = UiState.Loading("Finishing photo upload…")
-                job.await().getOrThrow()
-            }
-            photoUris.isNotEmpty() -> {
-                photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
-                    _submitState.value = UiState.Loading("Uploading photo $current of $total…")
-                }.getOrThrow()
-            }
-            else -> emptyList()
-        }
+        return if (job != null) {
+            _submitState.value = UiState.Loading("Finishing photo upload…")
+            job.await().getOrNull()
+        } else if (isOnline.value) {
+            photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
+                _submitState.value = UiState.Loading("Uploading photo $current of $total…")
+            }.getOrNull()
+        } else null
     }
 
     private fun validateInputs(

@@ -74,6 +74,11 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
+                    viewModel.isOnline.collect { online ->
+                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
+                    }
+                }
+                launch {
                     viewModel.submitState.collect { state ->
                         when (state) {
                             is UiState.Loading -> showLoading(state.message)

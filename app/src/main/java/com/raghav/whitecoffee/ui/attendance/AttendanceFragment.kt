@@ -116,6 +116,12 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
 
                 launch {
+                    viewModel.isOnline.collect { online ->
+                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
+                    }
+                }
+
+                launch {
                     viewModel.attendanceState.collect { uiState ->
                         when (uiState) {
                             is UiState.Loading -> showLoading()

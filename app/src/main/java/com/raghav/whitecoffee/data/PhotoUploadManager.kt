@@ -16,6 +16,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -141,5 +142,56 @@ class PhotoUploadManager @Inject constructor(
         }
 
         return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    }
+
+    // ── WorkManager retry support ──────────────────────────────────────────
+
+    /**
+     * Compresses each URI and writes the JPEG bytes to internal storage so they survive
+     * an app-process kill. Returns the absolute file paths (input to [uploadCachedFiles]).
+     *
+     * Runs on Dispatchers.IO — safe to call from a viewModelScope.async.
+     */
+    suspend fun cachePhotos(uris: List<Uri>, docId: String): List<String> =
+        withContext(Dispatchers.IO) {
+            val dir = File(context.filesDir, "photo_cache/$docId").also { it.mkdirs() }
+            uris.mapIndexed { i, uri ->
+                val bytes = compressImage(uri)
+                val file = File(dir, "$i.jpg")
+                file.writeBytes(bytes)
+                file.absolutePath
+            }
+        }
+
+    /**
+     * Uploads already-compressed JPEG files (written by [cachePhotos]) to Firebase Storage.
+     * Used by [PhotoUploadWorker] — reads from internal storage so no live Uri needed.
+     */
+    suspend fun uploadCachedFiles(
+        filePaths: List<String>,
+        collectionName: String,
+        docId: String
+    ): Result<List<String>> = try {
+        val semaphore = Semaphore(MAX_CONCURRENT)
+        val urls = coroutineScope {
+            filePaths.mapIndexed { i, path ->
+                async {
+                    semaphore.withPermit {
+                        val bytes = withContext(Dispatchers.IO) { File(path).readBytes() }
+                        val storagePath = "requests/${sessionManager.userId}/$collectionName/$docId/${i}_${System.currentTimeMillis()}.jpg"
+                        val ref = storage.reference.child(storagePath)
+                        ref.putBytes(bytes).await()
+                        ref.getDownloadUrl().await().toString()
+                    }
+                }
+            }.awaitAll()
+        }
+        Result.success(urls)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    fun clearCachedPhotos(docId: String) {
+        File(context.filesDir, "photo_cache/$docId").deleteRecursively()
     }
 }

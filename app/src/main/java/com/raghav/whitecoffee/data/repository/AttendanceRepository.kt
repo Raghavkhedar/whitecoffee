@@ -46,6 +46,14 @@ class AttendanceRepository @Inject constructor(
     /**
      * Records a single attendance event. Returns the full record with the generated Firestore
      * document ID so callers can do optimistic state updates without a re-fetch.
+     *
+     * Offline-first: the document reference is created locally and written with set(). Firestore
+     * persists the write to its on-disk cache synchronously and flushes it to the server
+     * automatically on reconnect. We deliberately do NOT await the server round-trip — with
+     * offline persistence enabled (see WhiteCoffeeApp), add()/set().await() never completes while
+     * offline and would hang the check-in spinner indefinitely (stress test #1.1). The write is
+     * durable the moment this returns, so it survives an immediate app kill (stress test #2.3),
+     * and the offline banner signals to the user that the sync is still pending.
      */
     suspend fun recordEvent(
         type: String,
@@ -58,7 +66,9 @@ class AttendanceRepository @Inject constructor(
     ): Result<AttendanceRecord> {
         return try {
             val today = LocalDate.now().format(dateFormatter)
+            val ref = collection.document()
             val record = AttendanceRecord(
+                id           = ref.id,
                 userId       = sessionManager.userId,
                 employeeId   = sessionManager.employeeId,
                 userName     = sessionManager.name,
@@ -72,8 +82,8 @@ class AttendanceRepository @Inject constructor(
                 marketName   = marketName,
                 locationName = locationName
             )
-            val ref = collection.add(record.toMap()).await()
-            Result.success(record.copy(id = ref.id))
+            ref.set(record.toMap())
+            Result.success(record)
         } catch (e: Exception) {
             Result.failure(e)
         }

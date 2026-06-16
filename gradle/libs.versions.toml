@@ -31,6 +31,8 @@ appcompat               = "1.7.0"
 material                = "1.12.0"
 constraintlayout        = "2.2.0"
 activityKtx             = "1.9.3"
+swipeRefreshLayout      = "1.1.0"
+workManager             = "2.9.1"
 
 # ── Testing ──
 junit                   = "4.13.2"
@@ -76,6 +78,10 @@ androidx-appcompat      = { group = "androidx.appcompat", name = "appcompat", ve
 material                = { group = "com.google.android.material", name = "material", version.ref = "material" }
 constraintlayout        = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 androidx-activity-ktx   = { group = "androidx.activity", name = "activity-ktx", version.ref = "activityKtx" }
+swiperefreshlayout      = { group = "androidx.swiperefreshlayout", name = "swiperefreshlayout", version.ref = "swipeRefreshLayout" }
+work-runtime-ktx        = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
+hilt-work               = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltNavigationFragment" }
+hilt-work-compiler      = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltNavigationFragment" }
 
 # ── Testing ──
 junit                   = { group = "junit", name = "junit", version.ref = "junit" }

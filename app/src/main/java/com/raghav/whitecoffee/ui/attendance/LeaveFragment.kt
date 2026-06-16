@@ -33,6 +33,9 @@ class LeaveFragment : BaseFragment<FragmentLeaveBinding>() {
         binding.fabApply.setOnClickListener {
             findNavController().navigate(R.id.action_leaveFragment_to_applyLeaveFragment)
         }
+        binding.swipeRefresh.setColorSchemeResources(R.color.primary_blue)
+        binding.swipeRefresh.setOnRefreshListener { viewModel.loadLeaves() }
+        binding.btnRetry.setOnClickListener { viewModel.loadLeaves() }
         observeViewModel()
     }
 
@@ -45,28 +48,44 @@ class LeaveFragment : BaseFragment<FragmentLeaveBinding>() {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.leavesState.collect { state ->
-                    when (state) {
-                        is UiState.Loading -> {
-                            binding.progressBar.visibility = View.VISIBLE
-                            binding.tvEmpty.visibility = View.GONE
+                launch {
+                    viewModel.isOnline.collect { online ->
+                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
+                    }
+                }
+                launch {
+                    viewModel.leavesState.collect { state ->
+                        when (state) {
+                            is UiState.Loading -> {
+                                if (!binding.swipeRefresh.isRefreshing) {
+                                    binding.progressBar.visibility = View.VISIBLE
+                                }
+                                binding.tvEmpty.visibility = View.GONE
+                                binding.btnRetry.visibility = View.GONE
+                            }
+                            is UiState.Success -> {
+                                binding.progressBar.visibility = View.GONE
+                                binding.swipeRefresh.isRefreshing = false
+                                binding.tvEmpty.visibility = View.GONE
+                                binding.btnRetry.visibility = View.GONE
+                                adapter.submitList(state.data)
+                            }
+                            is UiState.Empty -> {
+                                binding.progressBar.visibility = View.GONE
+                                binding.swipeRefresh.isRefreshing = false
+                                binding.tvEmpty.visibility = View.VISIBLE
+                                binding.btnRetry.visibility = View.GONE
+                                adapter.submitList(emptyList())
+                            }
+                            is UiState.Error -> {
+                                binding.progressBar.visibility = View.GONE
+                                binding.swipeRefresh.isRefreshing = false
+                                binding.tvEmpty.visibility = View.VISIBLE
+                                binding.tvEmpty.text = state.message
+                                binding.btnRetry.visibility = View.VISIBLE
+                            }
+                            else -> {}
                         }
-                        is UiState.Success -> {
-                            binding.progressBar.visibility = View.GONE
-                            binding.tvEmpty.visibility = View.GONE
-                            adapter.submitList(state.data)
-                        }
-                        is UiState.Empty -> {
-                            binding.progressBar.visibility = View.GONE
-                            binding.tvEmpty.visibility = View.VISIBLE
-                            adapter.submitList(emptyList())
-                        }
-                        is UiState.Error -> {
-                            binding.progressBar.visibility = View.GONE
-                            binding.tvEmpty.visibility = View.VISIBLE
-                            binding.tvEmpty.text = state.message
-                        }
-                        else -> {}
                     }
                 }
             }

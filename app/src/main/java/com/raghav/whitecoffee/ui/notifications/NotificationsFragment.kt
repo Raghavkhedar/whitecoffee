@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.raghav.whitecoffee.R
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.databinding.FragmentNotificationsBinding
@@ -35,6 +36,9 @@ class NotificationsFragment : BaseFragment<FragmentNotificationsBinding>() {
         binding.btnMarkAllRead.setOnClickListener { viewModel.markAllAsRead() }
         binding.rvNotifications.layoutManager = LinearLayoutManager(requireContext())
         binding.rvNotifications.adapter = adapter
+        binding.swipeRefresh.setColorSchemeResources(R.color.primary_blue)
+        binding.swipeRefresh.setOnRefreshListener { viewModel.loadNotifications() }
+        binding.btnRetry.setOnClickListener { viewModel.loadNotifications() }
         observeViewModel()
     }
 
@@ -44,29 +48,38 @@ class NotificationsFragment : BaseFragment<FragmentNotificationsBinding>() {
                 viewModel.uiState.collect { state ->
                     when (state) {
                         is UiState.Loading -> {
-                            binding.progressBar.visibility = View.VISIBLE
+                            if (!binding.swipeRefresh.isRefreshing) {
+                                binding.progressBar.visibility = View.VISIBLE
+                            }
                             binding.tvEmpty.visibility = View.GONE
                             binding.btnMarkAllRead.visibility = View.GONE
+                            binding.btnRetry.visibility = View.GONE
                         }
                         is UiState.Success -> {
                             binding.progressBar.visibility = View.GONE
+                            binding.swipeRefresh.isRefreshing = false
                             binding.tvEmpty.visibility = View.GONE
+                            binding.btnRetry.visibility = View.GONE
                             binding.btnMarkAllRead.visibility =
                                 if (state.data.any { !it.isRead }) View.VISIBLE else View.GONE
                             adapter.submitList(state.data)
                         }
                         is UiState.Empty -> {
                             binding.progressBar.visibility = View.GONE
+                            binding.swipeRefresh.isRefreshing = false
                             binding.tvEmpty.visibility = View.VISIBLE
                             binding.tvEmpty.text = "No notifications yet"
                             binding.btnMarkAllRead.visibility = View.GONE
+                            binding.btnRetry.visibility = View.GONE
                             adapter.submitList(emptyList())
                         }
                         is UiState.Error -> {
                             binding.progressBar.visibility = View.GONE
+                            binding.swipeRefresh.isRefreshing = false
                             binding.tvEmpty.visibility = View.VISIBLE
                             binding.tvEmpty.text = state.message
                             binding.btnMarkAllRead.visibility = View.GONE
+                            binding.btnRetry.visibility = View.VISIBLE
                         }
                         else -> {}
                     }

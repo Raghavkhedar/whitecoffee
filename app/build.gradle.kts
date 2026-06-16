@@ -86,6 +86,10 @@ dependencies {
     implementation(libs.material)
     implementation(libs.constraintlayout)
     implementation(libs.androidx.activity.ktx)
+    implementation(libs.swiperefreshlayout)
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
 
     // ── Testing ──
     testImplementation(libs.junit)

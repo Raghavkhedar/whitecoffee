@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Required for showing push notifications on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Needed to request the system battery-optimization exemption dialog (WorkManager reliability) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
     <application
         android:name=".WhiteCoffeeApp"
@@ -36,6 +38,18 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT"/>
             </intent-filter>
         </service>
+
+        <!-- Disable WorkManager's auto-init so Hilt's custom WorkerFactory is used instead.
+             Without this, WorkManager initialises before HiltWorkerFactory is ready and
+             @HiltWorker classes cannot be injected. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                tools:node="remove"/>
+        </provider>
 
     </application>
 

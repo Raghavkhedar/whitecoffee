@@ -1,6 +1,7 @@
 package com.raghav.whitecoffee.di
 
 import android.content.Context
+import androidx.work.WorkManager
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import dagger.Module
@@ -25,4 +26,10 @@ object AppModule {
         @ApplicationContext context: Context
     ): FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
+
+    @Provides
+    @Singleton
+    fun provideWorkManager(
+        @ApplicationContext context: Context
+    ): WorkManager = WorkManager.getInstance(context)
 }

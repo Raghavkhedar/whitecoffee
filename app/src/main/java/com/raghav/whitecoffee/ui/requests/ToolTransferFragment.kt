@@ -68,17 +68,24 @@ class ToolTransferFragment : BaseFragment<FragmentToolTransferBinding>() {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.submitState.collect { state ->
-                    when (state) {
-                        is UiState.Loading -> showLoading(state.message)
-                        is UiState.Success -> { hideLoading(); showSuccessAndExit() }
-                        is UiState.Error   -> {
-                            hideLoading()
-                            showError(state.message)
-                            binding.btnSubmit.isEnabled = true
-                            viewModel.resetSubmitState()
+                launch {
+                    viewModel.isOnline.collect { online ->
+                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
+                    }
+                }
+                launch {
+                    viewModel.submitState.collect { state ->
+                        when (state) {
+                            is UiState.Loading -> showLoading(state.message)
+                            is UiState.Success -> { hideLoading(); showSuccessAndExit() }
+                            is UiState.Error   -> {
+                                hideLoading()
+                                showError(state.message)
+                                binding.btnSubmit.isEnabled = true
+                                viewModel.resetSubmitState()
+                            }
+                            else -> {}
                         }
-                        else -> {}
                     }
                 }
             }

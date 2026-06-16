@@ -1,13 +1,21 @@
 package com.raghav.whitecoffee.ui.home
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.fragment.app.viewModels
-import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
+import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.R
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.databinding.FragmentHomeBinding
@@ -30,6 +38,8 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         setupRoleVisibility()
         setupCardListeners()
         loadBellBadge()
+        observeNetwork()
+        promptBatteryOptimization()
     }
 
     private fun setupHeader() {
@@ -77,6 +87,36 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
         params.marginEnd = (20 * resources.displayMetrics.density).toInt()
         card.layoutParams = params
+    }
+
+    private fun observeNetwork() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.isOnline.collect { online ->
+                    binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
+                }
+            }
+        }
+    }
+
+    private fun promptBatteryOptimization() {
+        val prefs = requireContext().getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("battery_opt_asked", false)) return
+        val pm = requireContext().getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (pm.isIgnoringBatteryOptimizations(requireContext().packageName)) return
+        prefs.edit().putBoolean("battery_opt_asked", true).apply()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Enable background sync")
+            .setMessage("Allow White Coffee to upload photos and sync data in the background, even when the app is closed. This ensures offline submissions upload automatically when your connection returns.")
+            .setPositiveButton("Allow") { _, _ ->
+                startActivity(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:${requireContext().packageName}")
+                    }
+                )
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     private fun setupCardListeners() {

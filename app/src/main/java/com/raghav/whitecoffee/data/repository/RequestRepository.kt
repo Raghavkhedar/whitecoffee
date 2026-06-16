@@ -53,7 +53,7 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) mtRequestCol.document(docId) else mtRequestCol.document()
-            ref.set(data.toMap()).await()
+            ref.set(data.toMap())
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -91,7 +91,7 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) mtPurchaseCol.document(docId) else mtPurchaseCol.document()
-            ref.set(data.toMap()).await()
+            ref.set(data.toMap())
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -129,7 +129,7 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) matTransferCol.document(docId) else matTransferCol.document()
-            ref.set(data.toMap()).await()
+            ref.set(data.toMap())
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -167,7 +167,7 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) toolTransferCol.document(docId) else toolTransferCol.document()
-            ref.set(data.toMap()).await()
+            ref.set(data.toMap())
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -205,7 +205,7 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) workProgressCol.document(docId) else workProgressCol.document()
-            ref.set(data.toMap()).await()
+            ref.set(data.toMap())
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
