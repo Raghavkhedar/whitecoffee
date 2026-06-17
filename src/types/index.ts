@@ -6,7 +6,20 @@ export interface User {
   email: string;
   role: 'operations' | 'office' | 'admin';
   employeeId: string;
+  plBalance?: number;
   createdAt?: Timestamp;
+}
+
+export interface AttendanceStatus {
+  id: string;
+  date: string;
+  userId: string;
+  userName: string;
+  employeeId: string;
+  role: string;
+  status: 'Present' | 'HalfDay' | 'Absent' | 'PL' | 'UPL';
+  markedBy: 'auto' | 'admin';
+  updatedAt?: Timestamp;
 }
 
 // SITE MANAGEMENT — NOT IN USE (no geofencing, no daily assignments).
@@ -71,4 +84,15 @@ export interface AttendanceRecord {
   siteId: string;
   siteName: string;
   marketName: string;
+}
+
+export interface SentNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  recipientType: 'all' | 'operations' | 'office' | 'specific';
+  recipientCount: number;
+  sentByName: string;
+  sentAt?: Timestamp;
 }

@@ -2,15 +2,14 @@
 
 import {
   collection, collectionGroup, doc, getDocs,
-  setDoc, updateDoc, deleteDoc,
-  Timestamp, where, query,
-  // addDoc,  // used only by createSite — re-enable when site management is re-enabled
+  setDoc, updateDoc, deleteDoc, writeBatch,
+  Timestamp, where, query, orderBy, limit,
   // getDoc,  // used only by getDailyAssignments — re-enable when daily assignment system is re-enabled
 } from 'firebase/firestore';
 import { db } from './firebase';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -20,7 +19,7 @@ export async function getAllUsers(): Promise<User[]> {
 }
 
 export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
-  await setDoc(doc(db, 'users', uid), { ...data, createdAt: Timestamp.now() });
+  await setDoc(doc(db, 'users', uid), { ...data, plBalance: 0, createdAt: Timestamp.now() });
 }
 
 export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'id'>>) {
@@ -145,6 +144,79 @@ export async function getAttendanceForDate(date: string): Promise<AttendanceReco
       const tb = (b.timestamp as unknown as { seconds: number })?.seconds ?? 0;
       return ta - tb;
     });
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────
+
+/**
+ * Writes a notification document to each target user's sub-collection and logs
+ * the send event in /sent_notifications for history.
+ * Firestore batch limit is 500 ops — safe for teams up to ~200 users.
+ */
+export async function sendNotification(
+  userIds: string[],
+  title: string,
+  body: string,
+  type: string,
+  senderName: string,
+  recipientType: SentNotification['recipientType']
+): Promise<void> {
+  const batch  = writeBatch(db);
+  const sentAt = Timestamp.now();
+
+  // Write one notification doc per recipient
+  for (const userId of userIds) {
+    const notifRef = doc(collection(db, 'users', userId, 'notifications'));
+    batch.set(notifRef, { title, body, type, isRead: false, createdAt: sentAt });
+  }
+
+  // Log the send event for history
+  const logRef = doc(collection(db, 'sent_notifications'));
+  batch.set(logRef, {
+    title,
+    body,
+    type,
+    recipientType,
+    recipientCount: userIds.length,
+    sentByName: senderName,
+    sentAt,
+  });
+
+  await batch.commit();
+}
+
+export async function getSentNotifications(count = 20): Promise<SentNotification[]> {
+  const q    = query(collection(db, 'sent_notifications'), orderBy('sentAt', 'desc'), limit(count));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as SentNotification));
+}
+
+// ── Attendance Status ─────────────────────────────────────────────────────
+
+// month is 1-indexed (1 = January)
+export async function getAttendanceStatusForMonth(year: number, month: number): Promise<AttendanceStatus[]> {
+  const monthStr  = `${year}-${String(month).padStart(2, '0')}`;
+  const startDate = `${monthStr}-01`;
+  const endDate   = `${monthStr}-31`; // safe upper bound for any month
+  const q = query(
+    collectionGroup(db, 'attendance_status'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AttendanceStatus));
+}
+
+export async function setAttendanceStatus(
+  userId: string,
+  date: string,
+  data: Omit<AttendanceStatus, 'id' | 'updatedAt'>
+): Promise<void> {
+  await setDoc(
+    doc(db, 'users', userId, 'attendance_status', date),
+    { ...data, updatedAt: Timestamp.now() },
+    { merge: true }
+  );
 }
 
 // ── Dashboard Stats ───────────────────────────────────────────────────────

@@ -1,0 +1,11 @@
+.next/
+out/
+node_modules/
+functions/node_modules/
+.env.local
+*.log
+.firebase/
+.agents/
+functions/.env
+skills-lock.json
+tsconfig.tsbuildinfo

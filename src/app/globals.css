@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #F0F4F8;
+  color: #0D1B2A;
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-outline {
+    @apply border border-primary text-primary px-4 py-2 rounded-lg font-medium hover:bg-accent-light transition-colors;
+  }
+  .btn-danger {
+    @apply bg-red-500 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-600 transition-colors disabled:opacity-50;
+  }
+  .btn-success {
+    @apply bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50;
+  }
+  .card {
+    @apply bg-white rounded-xl border border-border p-6 shadow-sm;
+  }
+  .input {
+    @apply w-full border border-border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary;
+  }
+  .label {
+    @apply block text-xs font-bold text-text-secondary uppercase tracking-wide mb-1.5;
+  }
+  .badge-pending  { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700; }
+  .badge-approved { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700; }
+  .badge-rejected { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700; }
+  .badge-admin    { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700; }
+  .badge-office   { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700; }
+  .badge-ops      { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700; }
+}
