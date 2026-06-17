@@ -11,11 +11,13 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import com.raghav.whitecoffee.MainViewModel
 import com.raghav.whitecoffee.R
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.databinding.FragmentHomeBinding
@@ -26,6 +28,7 @@ import kotlinx.coroutines.launch
 class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private val viewModel: HomeViewModel by viewModels()
+    private val mainViewModel: MainViewModel by activityViewModels()
 
     override fun inflateBinding(
         inflater: LayoutInflater,
@@ -152,7 +155,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             findNavController().navigate(R.id.action_homeFragment_to_leaveApprovalsFragment)
         }
         binding.btnLogout.setOnClickListener {
-            viewModel.logout()
+            mainViewModel.logout()
             findNavController().navigate(R.id.action_homeFragment_to_loginFragment)
         }
     }

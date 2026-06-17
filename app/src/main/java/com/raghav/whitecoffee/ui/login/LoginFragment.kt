@@ -4,11 +4,13 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
+import com.raghav.whitecoffee.MainViewModel
 import com.raghav.whitecoffee.R
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
@@ -20,6 +22,7 @@ import kotlinx.coroutines.launch
 class LoginFragment : BaseFragment<FragmentLoginBinding>() {
 
     private val viewModel: LoginViewModel by viewModels()
+    private val mainViewModel: MainViewModel by activityViewModels()
 
     override fun inflateBinding(
         inflater: LayoutInflater,
@@ -103,9 +106,8 @@ class LoginFragment : BaseFragment<FragmentLoginBinding>() {
     }
 
     private fun navigateToHome() {
-        findNavController().navigate(
-            R.id.action_loginFragment_to_homeFragment
-        )
+        mainViewModel.onLoginSuccess()
+        findNavController().navigate(R.id.action_loginFragment_to_homeFragment)
     }
 
     override fun onDestroyView() {

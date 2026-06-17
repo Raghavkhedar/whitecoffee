@@ -5,6 +5,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.raghav.whitecoffee.data.model.User
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.tasks.await
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -41,13 +42,20 @@ class AuthRepository @Inject constructor(
             val user = User.fromDocument(doc)
                 ?: return Result.failure(Exception("User profile not found. Contact your administrator."))
 
-            // Step 3 — Populate SessionManager so every screen has instant access
+            // Step 3 — Generate a unique session token, write to Firestore (fire-and-forget),
+            // and cache locally. Any other device holding a different token will be kicked out.
+            val sessionToken = UUID.randomUUID().toString()
+            firestore.collection("users").document(user.id)
+                .update("activeSessionToken", sessionToken)
+
+            // Step 4 — Populate SessionManager so every screen has instant access
             sessionManager.saveSession(
-                userId     = user.id,
-                name       = user.name,
-                email      = user.email,
-                role       = user.role,
-                employeeId = user.employeeId
+                userId       = user.id,
+                name         = user.name,
+                email        = user.email,
+                role         = user.role,
+                employeeId   = user.employeeId,
+                sessionToken = sessionToken
             )
 
             Result.success(user)
