@@ -57,6 +57,9 @@
         <action
             android:id="@+id/action_homeFragment_to_notificationsFragment"
             app:destination="@id/notificationsFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_regularizationFragment"
+            app:destination="@id/regularizationFragment" />
     </fragment>
 
     <!-- ── Attendance ── -->
@@ -128,5 +131,11 @@
         android:id="@+id/notificationsFragment"
         android:name="com.raghav.whitecoffee.ui.notifications.NotificationsFragment"
         android:label="Notifications" />
+
+    <!-- ── Attendance Regularization ── -->
+    <fragment
+        android:id="@+id/regularizationFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.RegularizationFragment"
+        android:label="Regularization" />
 
 </navigation>

@@ -154,6 +154,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         binding.cardLeaveApprovals.setOnClickListener {
             findNavController().navigate(R.id.action_homeFragment_to_leaveApprovalsFragment)
         }
+        binding.cardRegularization.setOnClickListener {
+            findNavController().navigate(R.id.action_homeFragment_to_regularizationFragment)
+        }
         binding.btnLogout.setOnClickListener {
             mainViewModel.logout()
             findNavController().navigate(R.id.action_homeFragment_to_loginFragment)

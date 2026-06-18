@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 15 End
+### Last Updated: Session 21 End
 
 ---
 
@@ -89,6 +89,8 @@ com.raghav.whitecoffee
 │   │   ├── User.kt                      ✅
 │   │   ├── AttendanceRecord.kt          ✅ + deriveAttendanceState() top-level function
 │   │   ├── AppNotification.kt           ✅ id/title/body/type/isRead/createdAt
+│   │   ├── AttendanceStatusRecord.kt    ✅ Model for attendance_status subcollection
+│   │   ├── RegularizationRequest.kt     ✅ date/originalStatus/reason/status/approvedBy/approverComment
 │   │   ├── MaterialToolRequest.kt       ✅ + RequestItem
 │   │   ├── MaterialToolPurchase.kt      ✅ + PurchaseItem
 │   │   ├── Transfer.kt                  ✅ + TransferItem
@@ -101,7 +103,8 @@ com.raghav.whitecoffee
 │       ├── AttendanceRepository.kt      ✅ getTodayData() single query; recordEvent() returns Result<AttendanceRecord>
 │       ├── NotificationRepository.kt    ✅ getNotifications/getUnreadCount/markAsRead/saveToken/saveNotification
 │       ├── SiteRepository.kt            ✅ getTodayAssignedSites() COMMENTED OUT
-│       └── RequestRepository.kt         ✅ sub-collections under users/{uid}/
+│       ├── RequestRepository.kt         ✅ sub-collections under users/{uid}/
+│       └── RegularizationRepository.kt  ✅ getMonthAttendanceStatus/getMyRequests/submitRequest
 │
 ├── service/
 │   └── FcmService.kt                    ✅ @AndroidEntryPoint; onMessageReceived saves to Firestore + shows system notif; onNewToken saves FCM token
@@ -127,7 +130,10 @@ com.raghav.whitecoffee
     │   ├── ApplyLeaveViewModel.kt       ✅ auto-calculates total days
     │   ├── LeaveApprovalsFragment.kt    ✅ admin only — approve/reject with dialog
     │   ├── LeaveApprovalsViewModel.kt   ✅ collectionGroup query across all users
-    │   └── LeaveApprovalAdapter.kt      ✅
+    │   ├── LeaveApprovalAdapter.kt      ✅
+    │   ├── RegularizationFragment.kt    ✅ month selector + inline apply dialog
+    │   ├── RegularizationViewModel.kt   ✅ merged flagged days + requests
+    │   └── RegularizationAdapter.kt     ✅
     ├── admin/
     │   ├── AdminUserListFragment.kt     ✅
     │   ├── AdminUserListViewModel.kt    ✅
@@ -168,17 +174,37 @@ com.raghav.whitecoffee
 ```
 /users/{userId}                              ← User profile document
 /users/{userId}/attendance/{eventId}         ← Attendance events
+/users/{userId}/attendance_status/{date}     ← Daily attendance status (auto-computed by Cloud Function)
 /users/{userId}/material_requests/{id}       ← M&T Requests
 /users/{userId}/material_purchases/{id}      ← M&T Purchases
 /users/{userId}/material_transfers/{id}      ← Material Transfers
 /users/{userId}/tool_transfers/{id}          ← Tool Transfers
 /users/{userId}/work_progress/{id}           ← Work Progress
 /users/{userId}/notifications/{id}           ← In-app notifications
+/users/{userId}/leave_requests/{id}          ← Leave requests
+/users/{userId}/regularization_requests/{id} ← Attendance regularization requests
 
 /sites/{siteId}                              ← Site info (top-level, shared)
-/sent_notifications/{id}                     ← Admin send log (history + future Cloud Functions trigger)
+/sent_notifications/{id}                     ← Admin send log (history + Cloud Functions FCM trigger)
 /daily_assignments/{date}_{userId}           ← COMMENTED OUT — not in use
 ```
+
+### `/users/{userId}/attendance_status/{date}` — Daily Attendance Status
+| Field | Type | Notes |
+|---|---|---|
+| date | String | yyyy-MM-dd (also used as document ID) |
+| userId | String | Denormalized |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| role | String | operations / office / admin |
+| status | String | Present / HalfDay / Absent / PL / UPL |
+| markedBy | String | auto (Cloud Function) / admin (manual override) / backfill |
+| updatedAt | Timestamp | |
+
+> Auto-computed nightly at 23:59 IST by `computeDailyAttendanceStatus` Cloud Function for ALL users.
+> Operations: Present if home_in before 10:00 and home_out after 18:00; HalfDay otherwise.
+> Office/Admin: Present if office_in before 10:00 and office_out after 18:00; HalfDay otherwise.
+> No events + approved leave → PL (if plBalance > 0) or UPL. No events + no leave → Absent.
 
 ### `/users/{userId}` — User Profile
 | Field | Type | Notes |
@@ -188,6 +214,7 @@ com.raghav.whitecoffee
 | name | String | Display name |
 | email | String | Lowercase |
 | role | String | "operations", "office", or "admin" |
+| salaryRate | Double | ₹/day — set via admin portal, used in Employee Dashboard Sheets export |
 | fcmToken | String | FCM device token — saved on login + token refresh |
 | createdAt | Timestamp | |
 
@@ -303,6 +330,22 @@ Same schema as material_transfers (no photoUrls field).
 | reason | String | |
 | status | String | pending / approved / rejected |
 | approvedBy | String | Manager's name |
+| approverComment | String | Rejection reason |
+| submittedAt | Timestamp | |
+| reviewedAt | Timestamp | |
+
+### `/users/{userId}/regularization_requests/{requestId}` — Regularization Requests
+| Field | Type | Notes |
+|---|---|---|
+| id | String | DocumentId |
+| userId | String | Denormalized — needed for collectionGroup path resolution |
+| userName | String | Denormalized |
+| employeeId | String | Denormalized |
+| date | String | yyyy-MM-dd — the day being regularized |
+| originalStatus | String | HalfDay / Absent — what the system auto-marked |
+| reason | String | Employee's explanation |
+| status | String | pending / approved / rejected |
+| approvedBy | String | Admin's name |
 | approverComment | String | Rejection reason |
 | submittedAt | Timestamp | |
 | reviewedAt | Timestamp | |
@@ -561,11 +604,41 @@ Deploy: `npm run deploy` from the admin portal directory
 - Uses `collectionGroup()` for all 7 sub-collections — Admin SDK bypasses Firestore security rules.
 - Timestamps rendered in IST (`Asia/Kolkata`).
 
+### ✅ Session 20 changes — Employee Dashboard fix + salary rates in admin portal:
+- **`computeDailyAttendanceStatus` fixed** — was only processing office/admin users, now processes ALL users. Operations users use `home_in`/`home_out` events (was `office_in`/`office_out`). Same Present/HalfDay/PL/UPL/Absent time-based logic for all roles.
+- **Firestore index bug fixed** — `collectionGroup("leave_requests").where("status", "==", "approved")` required a missing collection group index. Removed `.where()` filter; status now filtered in code to avoid index requirement.
+- **`salaryRate` field on user doc** — `Double`, set via admin portal Users page. Cloud Function reads `user.salaryRate` directly from Firestore instead of parsing it from the Google Sheet.
+- **Admin portal Users page updated** — new "Salary Rate (₹/day)" input field in add/edit modal + "Salary Rate" column in user table. Saved to Firestore on create and update.
+- **`User` type updated** — added `salaryRate?: number` to `src/types/index.ts`.
+- **`backfillAttendanceStatus` HTTP function** — one-time function to generate `attendance_status` records for all users for all days in the current month. **DELETE after running.**
+- **Employee Dashboard tab** — now auto-populates from `attendance_status` sub-collection data (MTD summary per user: days present, half-days, leaves, salary due, conveyance, total due).
+- **Google Sheet tabs** — 9 tabs: Employee Dashboard, Conveyance, Attendance, MT Requests, MT Purchases, Material Transfers, Tool Transfers, Work Progress, Leave Requests.
+
+### ✅ Session 21 changes — Attendance Regularization:
+- **Regularization workflow** — employees see HalfDay/Absent days in the app, submit a reason, admin approves/rejects in the admin portal. Approved requests flip `attendance_status` from HalfDay/Absent → Present.
+- **`AttendanceStatusRecord.kt`** — new model for reading `attendance_status` subcollection in the Android app (previously only written by Cloud Functions).
+- **`RegularizationRequest.kt`** — new model: date, originalStatus, reason, status, approvedBy, approverComment.
+- **`RegularizationRepository.kt`** — `getMonthAttendanceStatus()` reads HalfDay/Absent days, `getMyRequests()` reads existing requests, `submitRequest()` creates new request with duplicate prevention.
+- **`RegularizationFragment.kt` + `RegularizationViewModel.kt` + `RegularizationAdapter.kt`** — single-screen approach: month selector, list of flagged days, inline dialog for reason submission.
+- **Home screen card** — "Regularization" card added in Row 5 (full width, visible to all roles) with `barrier_row4` after Leave cards.
+- **Admin portal `/regularization` page** — new tab: status filter buttons, month picker, table with approve/reject. Approval uses `writeBatch` to atomically update both `regularization_requests` and `attendance_status`.
+- **`computeDailyAttendanceStatus` Cloud Function updated** — now skips users whose `attendance_status` has `markedBy === "admin"` (prevents overwriting approved regularizations nightly).
+- **`regularizationReminder` Cloud Function** — scheduled 25th of each month at 10 AM IST, emails admin via SendGrid about pending requests + creates in-app notification.
+- **Firestore rules updated** — `regularization_requests` subcollection rules (employee: read + create, admin: read + update) + collectionGroup rule for admin cross-user access.
+- **nav_graph** — `regularizationFragment` destination + action from homeFragment wired.
+- **SendGrid removed** — monthly reminder only creates in-app notifications (no email dependency).
+
+> **User actions required:**
+> 1. Deploy Firestore rules: paste `firestore.rules` content in Firebase Console → Firestore → Rules → Publish
+> 2. Deploy Cloud Functions: `firebase deploy --only functions` from `whitecoffee-admin/` directory
+> 3. Redeploy admin portal: `npm run deploy` from `whitecoffee-admin/` directory
+
 ### ⏳ REMAINING (Phase 4)
 - **Cloud Functions — FCM push** — send push to backgrounded devices (trigger: new doc in `/sent_notifications/`); deferred
 - **Background geofencing auto-checkout** (commented out by design — not in use)
 - Notifications screen ✅ DONE (in-app only; push to background requires Cloud Functions)
 - Google Sheets export ✅ DONE
+- **TODO**: Delete `backfillAttendanceStatus` function after running it once
 
 ---
 
@@ -595,6 +668,12 @@ Deploy: `npm run deploy` from the admin portal directory
 22. **`FcmService` is `@AndroidEntryPoint`** — required for Hilt injection into a `FirebaseMessagingService`. Uses its own `CoroutineScope(SupervisorJob() + Dispatchers.IO)` — not ViewModelScope or lifecycleScope.
 23. **Push to background = Cloud Functions** — `FcmService.onMessageReceived` only fires when app is foregrounded. Sending push to backgrounded devices requires a Cloud Function that reads `/sent_notifications/` docs and calls FCM HTTP v1 API. Deferred to Phase 4.
 24. **FCM token saved two ways** — proactively on login via `FirebaseMessaging.getInstance().token.await()`, and automatically on refresh via `FcmService.onNewToken()`. Both call `notificationRepository.saveToken()`.
+25. **Salary rate in Firestore** — `salaryRate` (₹/day) stored on `/users/{uid}` doc, set via admin portal. Cloud Function `exportToSheets` reads it from the user doc directly (not from the Google Sheet). Imprest is still manually entered in the sheet and preserved across exports.
+26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Operations use `home_in`/`home_out`, office/admin use `office_in`/`office_out`. Same time thresholds: in before 10:00 + out after 18:00 = Present, otherwise HalfDay.
+27. **Regularization = employee-initiated, admin-approved** — employee submits reason per flagged day, admin approves/rejects in admin portal only (no Android admin screen). Approval atomically updates both `regularization_requests` and `attendance_status` via `writeBatch`.
+28. **Admin overrides protected** — `computeDailyAttendanceStatus` skips any user whose `attendance_status` doc has `markedBy === "admin"`. This prevents nightly auto-compute from overwriting approved regularizations.
+29. **Duplicate prevention** — `RegularizationRepository.submitRequest()` checks for existing pending/approved request for the same date before creating a new one.
+30. **Monthly in-app reminder** — `regularizationReminder` Cloud Function runs on the 25th, creates in-app notification for all admin users about pending regularization requests. No email dependency (SendGrid removed).
 
 ---
 
@@ -603,17 +682,15 @@ Deploy: `npm run deploy` from the admin portal directory
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. Session 15 done: Google Sheets export via Cloud Functions deployed.
+Read CLAUDE.md first. Session 21 done: Attendance Regularization feature.
 Key state:
-- Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, User/Site Mgmt).
-- Session 12: attendance optimistic updates, merged queries, SharedPreferences eager init, static DateFormat, adapter by-lazy.
-- Session 13: in-app notifications (NotificationsFragment, NotificationRepository, FcmService, FCM token on login, bell badge in Home header), admin portal Notifications page, Firestore security rules written.
-- Session 14: quantity changed from Int→Double across all request models + layouts + fragments; Firestore collectionGroup rules deployed.
-- Session 15: Cloud Function exportToSheets deployed — exports 7 collections to separate Google Sheet tabs daily.
+- Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, User/Site Mgmt, Regularization).
+- Session 21: Attendance Regularization — employees see flagged days (HalfDay/Absent), submit reason, admin approves/rejects in admin portal. Approved flips attendance_status to Present. Cloud Function skips admin overrides. Monthly email reminder via SendGrid.
+- Google Sheet: 9 tabs (Employee Dashboard, Conveyance, Attendance, MT Requests/Purchases, Material/Tool Transfers, Work Progress, Leave Requests).
 - Daily assignment system COMMENTED OUT (SiteTask.kt + SiteRepository.getTodayAssignedSites).
 - No geofencing. Site entry = two free-text fields everywhere.
 - Office attendance: multi-cycle, state from last event, no DayComplete.
-- Firestore rules: DEPLOYED.
+- Firestore rules: need re-deploy with regularization_requests rules.
 Phase 4 remaining: Cloud Functions FCM push to backgrounded devices only.
 ```
 
