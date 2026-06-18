@@ -1,6 +1,7 @@
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { google } = require("googleapis");
@@ -8,9 +9,9 @@ const { google } = require("googleapis");
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
 
-const SHEETS_KEY = defineSecret("ATTENDANCE_SHEETS_KEY");
-const MAPS_KEY   = defineSecret("MAPS_API_KEY");
-const SHEET_ID   = "1pemb9uSbu-NenE_QSkfPx6842EG1T6Z21isGM5IXrYs";
+const SHEETS_KEY   = defineSecret("ATTENDANCE_SHEETS_KEY");
+const MAPS_KEY     = defineSecret("MAPS_API_KEY");
+const SHEET_ID     = "1pemb9uSbu-NenE_QSkfPx6842EG1T6Z21isGM5IXrYs";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONVEYANCE RATE — change this number to update the rate for all employees
@@ -96,7 +97,7 @@ exports.accrueMonthlyLeave = onSchedule(
   }
 );
 
-// ── Daily Attendance Status — 23:59 IST, office/admin users only ─────────────
+// ── Daily Attendance Status — 23:59 IST, ALL users ──────────────────────────
 exports.computeDailyAttendanceStatus = onSchedule(
   { schedule: "59 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300 },
   async () => {
@@ -106,7 +107,6 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
     const usersSnap   = await db.collection("users").get();
     const allUsers    = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const officeUsers = allUsers.filter((u) => u.role === "office" || u.role === "admin");
 
     const attendSnap = await db.collectionGroup("attendance").where("date", "==", today).get();
     const eventsByUser = new Map();
@@ -116,22 +116,34 @@ exports.computeDailyAttendanceStatus = onSchedule(
       eventsByUser.get(d.userId).push(d);
     });
 
-    const leavesSnap = await db.collectionGroup("leave_requests").where("status", "==", "approved").get();
+    const leavesSnap = await db.collectionGroup("leave_requests").get();
     const leavesToday = new Map();
     leavesSnap.docs.forEach((doc) => {
       const d = doc.data();
-      if (d.fromDate <= today && d.toDate >= today) leavesToday.set(d.userId, d);
+      if (d.status === "approved" && d.fromDate <= today && d.toDate >= today) leavesToday.set(d.userId, d);
+    });
+
+    // Skip users whose attendance_status was manually set by admin (regularization approvals)
+    const existingStatusSnap = await db.collectionGroup("attendance_status")
+      .where("date", "==", today).get();
+    const adminOverrides = new Set();
+    existingStatusSnap.docs.forEach((doc) => {
+      const d = doc.data();
+      if (d.markedBy === "admin") adminOverrides.add(d.userId);
     });
 
     const batch        = db.batch();
     const plDeductions = [];
 
-    for (const user of officeUsers) {
+    for (const user of allUsers) {
+      if (adminOverrides.has(user.id)) continue;
       const events = (eventsByUser.get(user.id) || []).sort(
         (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
       );
-      const checkIns  = events.filter((e) => e.type === "office_in");
-      const checkOuts = events.filter((e) => e.type === "office_out");
+
+      const isOps = user.role === "operations";
+      const checkIns  = events.filter((e) => e.type === (isOps ? "home_in"   : "office_in"));
+      const checkOuts = events.filter((e) => e.type === (isOps ? "home_out"  : "office_out"));
       let status;
 
       if (checkIns.length > 0) {
@@ -167,7 +179,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
     for (const uid of plDeductions) {
       await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
     }
-    console.log(`computeDailyAttendanceStatus: ${officeUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
+    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
   }
 );
 
@@ -420,9 +432,8 @@ exports.exportToSheets = onSchedule(
     {
       const TAB = TABS.EMPLOYEE_DASHBOARD;
 
-      // Read existing sheet to preserve manually-entered Salary Rate and Imprest
-      const salaryRateMap = new Map(); // employeeId → rate
-      const imprestMap    = new Map(); // employeeId → imprest
+      // Read existing sheet to preserve manually-entered Imprest (salary rate now comes from Firestore)
+      const imprestMap = new Map(); // employeeId → imprest
       try {
         const existing = await sheets.spreadsheets.values.get({
           spreadsheetId: SHEET_ID,
@@ -434,12 +445,11 @@ exports.exportToSheets = onSchedule(
           if (!r || !r[2] || r[0] === "CF BAL" || r[0] === "TOTAL") continue;
           const empId = String(r[2]).trim();
           if (empId) {
-            salaryRateMap.set(empId, parseFloat(r[6]) || 0);
             imprestMap.set(empId, parseFloat(r[9]) || 0);
           }
         }
       } catch (_) {
-        // Tab doesn't exist yet — start fresh, all rates default to 0
+        // Tab doesn't exist yet — start fresh
       }
 
       const header = [
@@ -466,7 +476,7 @@ exports.exportToSheets = onSchedule(
         const daysNP   = ua.present + ua.halfDay * 0.5 + ua.pl;
         const leaves   = ua.pl + ua.upl; // all leave types shown together
 
-        const salaryRate = salaryRateMap.get(empId) || 0;
+        const salaryRate = user.salaryRate || 0;
         const salaryDue  = parseFloat((daysNP * salaryRate).toFixed(2));
 
         // Conveyance: operations only, from conveyanceByUserId built in section 8
@@ -572,5 +582,143 @@ exports.sendPushNotification = onDocumentCreated(
       console.log(`sendPushNotification: chunk ${Math.floor(i / CHUNK) + 1} — ${response.successCount}/${chunk.length} delivered`);
     }
     console.log(`sendPushNotification: done — ${totalSuccess}/${tokens.length} tokens reached`);
+  }
+);
+
+// ── One-time Backfill — DELETE after running ─────────────────────────────────
+// Hit this URL once in your browser to backfill attendance_status for the
+// current month (June 1 → today). Then delete this function and redeploy.
+exports.backfillAttendanceStatus = onRequest(
+  { timeoutSeconds: 540 },
+  async (req, res) => {
+    const db = admin.firestore();
+    const nowIST     = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const year       = nowIST.getFullYear();
+    const month      = nowIST.getMonth(); // 0-indexed
+    const todayDate  = nowIST.getDate();
+    const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    const todayStr   = nowIST.toISOString().slice(0, 10);
+
+    const usersSnap = await db.collection("users").get();
+    const allUsers  = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const attendSnap = await db.collectionGroup("attendance")
+      .where("date", ">=", monthStart)
+      .where("date", "<=", todayStr)
+      .get();
+
+    const eventsByUserDate = new Map();
+    attendSnap.docs.forEach((doc) => {
+      const d   = doc.data();
+      const key = `${d.userId}__${d.date}`;
+      if (!eventsByUserDate.has(key)) eventsByUserDate.set(key, []);
+      eventsByUserDate.get(key).push(d);
+    });
+
+    const leavesSnap  = await db.collectionGroup("leave_requests").get();
+    const approvedLeaves = leavesSnap.docs.map((d) => d.data()).filter((d) => d.status === "approved");
+
+    let totalWrites = 0;
+    let batch = db.batch();
+    let batchCount = 0;
+
+    for (let day = 1; day <= todayDate; day++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+      const leavesToday = new Map();
+      approvedLeaves.forEach((d) => {
+        if (d.fromDate <= dateStr && d.toDate >= dateStr) leavesToday.set(d.userId, d);
+      });
+
+      for (const user of allUsers) {
+        const key    = `${user.id}__${dateStr}`;
+        const events = (eventsByUserDate.get(key) || []).sort(
+          (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
+        );
+
+        const isOps     = user.role === "operations";
+        const checkIns  = events.filter((e) => e.type === (isOps ? "home_in" : "office_in"));
+        const checkOuts = events.filter((e) => e.type === (isOps ? "home_out" : "office_out"));
+        let status;
+
+        if (checkIns.length > 0) {
+          const firstIn   = checkIns[0];
+          const lastOut   = checkOuts.length > 0 ? checkOuts[checkOuts.length - 1] : null;
+          const inMinutes = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+          const lateIn    = inMinutes > 10 * 60;
+          let earlyOut    = true;
+          if (lastOut) {
+            const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
+            earlyOut = outMinutes < 18 * 60;
+          }
+          status = lateIn || earlyOut ? "HalfDay" : "Present";
+        } else {
+          const leave = leavesToday.get(user.id);
+          if (leave) {
+            status = (user.plBalance || 0) > 0 ? "PL" : "UPL";
+          } else {
+            status = "Absent";
+          }
+        }
+
+        batch.set(db.doc(`users/${user.id}/attendance_status/${dateStr}`), {
+          date: dateStr, userId: user.id, userName: user.name || "",
+          employeeId: user.employeeId || "", role: user.role || "", status,
+          markedBy: "backfill", updatedAt: admin.firestore.Timestamp.now(),
+        });
+        batchCount++;
+        totalWrites++;
+
+        if (batchCount >= 490) {
+          await batch.commit();
+          batch = db.batch();
+          batchCount = 0;
+        }
+      }
+    }
+
+    if (batchCount > 0) await batch.commit();
+    console.log(`backfillAttendanceStatus: ${totalWrites} records written for ${todayDate} days × ${allUsers.length} users`);
+    res.json({ success: true, records: totalWrites, days: todayDate, users: allUsers.length });
+  }
+);
+
+// ── Monthly Regularization Reminder — 25th of each month, 10 AM IST ─────────
+exports.regularizationReminder = onSchedule(
+  { schedule: "0 10 25 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120 },
+  async () => {
+    const db = admin.firestore();
+
+    const snap = await db.collectionGroup("regularization_requests").get();
+    const pending = snap.docs
+      .map((d) => d.data())
+      .filter((r) => r.status === "pending");
+
+    if (pending.length === 0) {
+      console.log("regularizationReminder: no pending requests, skipping");
+      return;
+    }
+
+    const adminsSnap = await db.collection("users").where("role", "==", "admin").get();
+    if (adminsSnap.empty) {
+      console.log("regularizationReminder: no admin users found");
+      return;
+    }
+
+    const notifBatch = db.batch();
+    adminsSnap.docs.forEach((adminDoc) => {
+      const notifRef = db.collection("users").doc(adminDoc.id)
+        .collection("notifications").doc();
+      notifBatch.set(notifRef, {
+        title: "Regularization Review Pending",
+        body: `${pending.length} attendance regularization request(s) need your review.`,
+        type: "work_reminder",
+        isRead: false,
+        createdAt: admin.firestore.Timestamp.now(),
+      });
+    });
+    await notifBatch.commit();
+
+    console.log(`regularizationReminder: notified ${adminsSnap.size} admin(s) about ${pending.length} pending requests`);
   }
 );

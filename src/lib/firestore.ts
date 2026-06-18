@@ -9,7 +9,7 @@ import {
 import { db } from './firebase';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -19,7 +19,8 @@ export async function getAllUsers(): Promise<User[]> {
 }
 
 export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
-  await setDoc(doc(db, 'users', uid), { ...data, plBalance: 0, createdAt: Timestamp.now() });
+  const { salaryRate, ...rest } = data;
+  await setDoc(doc(db, 'users', uid), { ...rest, salaryRate: salaryRate || 0, plBalance: 0, createdAt: Timestamp.now() });
 }
 
 export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'id'>>) {
@@ -128,6 +129,44 @@ export async function rejectLeave(
 ) {
   await updateDoc(
     doc(db, 'users', userId, 'leave_requests', requestId),
+    { status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }
+  );
+}
+
+// ── Regularization Requests ───────────────────────────────────────────────
+
+export async function getAllRegularizationRequests(status?: string): Promise<RegularizationRequest[]> {
+  const snap = await getDocs(collectionGroup(db, 'regularization_requests'));
+  const all  = snap.docs.map(d => ({ id: d.id, ...d.data() } as RegularizationRequest));
+  const filtered = status ? all.filter(r => r.status === status) : all;
+  return filtered.sort((a, b) => {
+    const ta = (a.submittedAt as unknown as { seconds: number })?.seconds ?? 0;
+    const tb = (b.submittedAt as unknown as { seconds: number })?.seconds ?? 0;
+    return status === 'pending' ? ta - tb : tb - ta;
+  });
+}
+
+export async function approveRegularization(
+  userId: string, requestId: string, date: string, approverName: string
+) {
+  const batch = writeBatch(db);
+  batch.update(
+    doc(db, 'users', userId, 'regularization_requests', requestId),
+    { status: 'approved', approvedBy: approverName, reviewedAt: Timestamp.now() }
+  );
+  batch.set(
+    doc(db, 'users', userId, 'attendance_status', date),
+    { status: 'Present', markedBy: 'admin', updatedAt: Timestamp.now() },
+    { merge: true }
+  );
+  await batch.commit();
+}
+
+export async function rejectRegularization(
+  userId: string, requestId: string, approverName: string, comment: string
+) {
+  await updateDoc(
+    doc(db, 'users', userId, 'regularization_requests', requestId),
     { status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }
   );
 }

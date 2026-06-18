@@ -14,8 +14,8 @@ function RoleBadge({ role }: { role: string }) {
   return <span className={cls}>{role}</span>;
 }
 
-const EMPTY_FORM: { name: string; email: string; password: string; employeeId: string; role: Role } =
-  { name: '', email: '', password: '', employeeId: '', role: 'operations' };
+const EMPTY_FORM: { name: string; email: string; password: string; employeeId: string; role: Role; salaryRate: string } =
+  { name: '', email: '', password: '', employeeId: '', role: 'operations', salaryRate: '' };
 
 export default function UsersPage() {
   const [users, setUsers]       = useState<User[]>([]);
@@ -50,7 +50,7 @@ export default function UsersPage() {
 
   function openEdit(u: User) {
     setEditing(u);
-    setForm({ name: u.name ?? '', email: u.email ?? '', password: '', employeeId: u.employeeId ?? '', role: (u.role as Role) ?? 'operations' });
+    setForm({ name: u.name ?? '', email: u.email ?? '', password: '', employeeId: u.employeeId ?? '', role: (u.role as Role) ?? 'operations', salaryRate: u.salaryRate ? String(u.salaryRate) : '' });
     setFormError('');
     setShowModal(true);
   }
@@ -62,8 +62,9 @@ export default function UsersPage() {
     if (!editing && form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
     setSaving(true);
     try {
+      const salaryRate = form.salaryRate ? parseFloat(form.salaryRate) : 0;
       if (editing) {
-        await updateUserProfile(editing.id, { name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim() });
+        await updateUserProfile(editing.id, { name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(), salaryRate });
       } else {
         const secondary = initializeApp(firebaseConfig, `create_${Date.now()}`);
         const secAuth   = getAuth(secondary);
@@ -77,7 +78,7 @@ export default function UsersPage() {
         }
         await createUserProfile(uid, {
           name: form.name.trim(), email: form.email.trim().toLowerCase(),
-          role: form.role, employeeId: form.employeeId.trim(),
+          role: form.role, employeeId: form.employeeId.trim(), salaryRate,
         });
       }
       setShowModal(false);
@@ -139,7 +140,7 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead className="bg-background border-b border-border">
               <tr>
-                {['Name', 'Email', 'Employee ID', 'Role', ''].map(h => (
+                {['Name', 'Email', 'Employee ID', 'Role', 'Salary Rate', ''].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-bold text-text-secondary uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -151,6 +152,7 @@ export default function UsersPage() {
                   <td className="px-4 py-3 text-text-secondary">{u.email}</td>
                   <td className="px-4 py-3 text-text-secondary">{u.employeeId || '—'}</td>
                   <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
+                  <td className="px-4 py-3 text-text-secondary">{u.salaryRate ? `₹${u.salaryRate}` : '—'}</td>
                   <td className="px-4 py-3">
                     <button className="text-primary text-xs font-medium hover:underline" onClick={() => openEdit(u)}>Edit</button>
                   </td>
@@ -181,6 +183,8 @@ export default function UsersPage() {
                   {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
                 </select>
               </div>
+
+              <div><label className="label">Salary Rate (₹/day)</label><input className="input" type="number" step="any" min="0" value={form.salaryRate} onChange={e => setForm(f => ({ ...f, salaryRate: e.target.value }))} placeholder="e.g. 800" /></div>
 
               {formError && <p className="text-red-500 text-sm">{formError}</p>}
 

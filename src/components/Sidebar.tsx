@@ -11,7 +11,8 @@ const NAV = [
   // { href: '/sites',             icon: '🏗️', label: 'Sites' },
   // DAILY ASSIGNMENT SYSTEM — NOT IN USE. Re-enable by uncommenting this line and the page/types/firestore functions.
   // { href: '/daily-assignments', icon: '📅', label: 'Daily Assignments' },
-  { href: '/leaves',        icon: '🏖️', label: 'Leave Requests' },
+  { href: '/leaves',          icon: '🏖️', label: 'Leave Requests' },
+  { href: '/regularization', icon: '🕐', label: 'Regularization' },
   { href: '/attendance',    icon: '📋', label: 'Attendance' },
   { href: '/submissions',   icon: '📝', label: 'Submissions' },
   { href: '/notifications', icon: '🔔', label: 'Notifications' },

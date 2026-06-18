@@ -6,6 +6,7 @@ export interface User {
   email: string;
   role: 'operations' | 'office' | 'admin';
   employeeId: string;
+  salaryRate?: number;
   plBalance?: number;
   createdAt?: Timestamp;
 }
@@ -63,6 +64,21 @@ export interface LeaveRequest {
   fromDate: string;
   toDate: string;
   totalDays: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy: string;
+  approverComment: string;
+  submittedAt?: Timestamp;
+  reviewedAt?: Timestamp;
+}
+
+export interface RegularizationRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  employeeId: string;
+  date: string;
+  originalStatus: string;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
   approvedBy: string;
