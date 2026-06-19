@@ -21,32 +21,36 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_header"
-        android:paddingHorizontal="20dp"
+        android:paddingHorizontal="16dp"
         android:paddingTop="52dp"
-        android:paddingBottom="20dp"
+        android:paddingBottom="18dp"
         app:layout_constraintTop_toBottomOf="@id/offline_banner"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <ImageView
             android:id="@+id/btn_back"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
             android:src="@android:drawable/ic_menu_revert"
             android:tint="@color/white"
-            android:padding="8dp"
+            android:padding="9dp"
+            android:background="@drawable/bg_header_back_btn"
             android:clickable="true"
             android:focusable="true"
             app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintStart_toStartOf="parent"/>
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"/>
 
         <TextView
+            android:id="@+id/tv_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:text="Notifications"
-            android:textSize="20sp"
+            android:textSize="19sp"
             android:textStyle="bold"
             android:textColor="@color/white"
+            android:letterSpacing="-0.02"
             android:layout_marginStart="12dp"
             app:layout_constraintTop_toTopOf="@id/btn_back"
             app:layout_constraintBottom_toBottomOf="@id/btn_back"
@@ -55,10 +59,10 @@
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <!-- Mark All Read button -->
+    <!-- Mark All Read -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_mark_all_read"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
+        style="@style/WC.Button.Text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Mark all as read"
@@ -81,7 +85,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent"/>
 
-    <!-- Empty / Error state -->
+    <!-- Empty state -->
     <TextView
         android:id="@+id/tv_empty"
         android:layout_width="wrap_content"
@@ -97,7 +101,7 @@
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_retry"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
+        style="@style/WC.Button.Text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Retry"
@@ -107,7 +111,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 
-    <!-- Notifications list -->
+    <!-- List -->
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipe_refresh"
         android:layout_width="0dp"
@@ -121,7 +125,9 @@
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rv_notifications"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"/>
+            android:layout_height="match_parent"
+            android:padding="14dp"
+            android:clipToPadding="false"/>
 
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 

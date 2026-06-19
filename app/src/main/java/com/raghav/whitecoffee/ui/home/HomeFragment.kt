@@ -10,7 +10,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
-import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -42,6 +42,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         setupCardListeners()
         loadBellBadge()
         observeNetwork()
+        observeTodayStatus()
         promptBatteryOptimization()
     }
 
@@ -49,6 +50,14 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         binding.tvGreeting.text = viewModel.greeting
         binding.tvUserName.text = viewModel.userName
         binding.tvRoleBadge.text = viewModel.userRole.replaceFirstChar { it.uppercase() }
+        setupTodayCard()
+    }
+
+    private fun setupTodayCard() {
+        val now = java.util.Calendar.getInstance()
+        binding.tvTodayDay.text = java.text.SimpleDateFormat("EEEE", java.util.Locale.getDefault()).format(now.time)
+        binding.tvTodayDateNum.text = now.get(java.util.Calendar.DAY_OF_MONTH).toString()
+        binding.tvTodayMonth.text = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault()).format(now.time)
     }
 
     private fun loadBellBadge() {
@@ -64,32 +73,12 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
     }
 
     private fun setupRoleVisibility() {
-        // Operations-only cards
         binding.cardMtRequest.visibility =
             if (viewModel.isOperations) View.VISIBLE else View.GONE
         binding.cardWorkProgress.visibility =
             if (viewModel.isOperations) View.VISIBLE else View.GONE
-        // Leave Approvals: admin only (office role does NOT approve leaves in the app)
         binding.cardLeaveApprovals.visibility =
             if (viewModel.isAdmin) View.VISIBLE else View.GONE
-
-        // For non-operations users, expand lone cards to full width
-        // (their partner card is GONE so they'd otherwise sit at half-width)
-        if (!viewModel.isOperations) {
-            expandToFullWidth(binding.cardAttendance)   // M&T Request is gone
-            expandToFullWidth(binding.cardToolTransfer) // Work Progress is gone
-        }
-        if (!viewModel.isAdmin) {
-            expandToFullWidth(binding.cardLeave)        // Leave Approvals is gone
-        }
-    }
-
-    private fun expandToFullWidth(card: View) {
-        val params = card.layoutParams as ConstraintLayout.LayoutParams
-        if (params.endToEnd == ConstraintLayout.LayoutParams.PARENT_ID) return
-        params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
-        params.marginEnd = (20 * resources.displayMetrics.density).toInt()
-        card.layoutParams = params
     }
 
     private fun observeNetwork() {
@@ -100,6 +89,47 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                 }
             }
         }
+    }
+
+    private fun observeTodayStatus() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.todayStatus.collect { status ->
+                    when (status) {
+                        is TodayAttendanceStatus.Loading -> {
+                            binding.tvTodayAttStatus.text = "Loading…"
+                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_hint))
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
+                        }
+                        is TodayAttendanceStatus.NotCheckedIn -> {
+                            binding.tvTodayAttStatus.text = "Not checked in"
+                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_rejected))
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
+                        }
+                        is TodayAttendanceStatus.CheckedIn -> {
+                            binding.tvTodayAttStatus.text = status.label
+                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_approved))
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_checked_in)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_green_bg)
+                        }
+                        is TodayAttendanceStatus.DayComplete -> {
+                            binding.tvTodayAttStatus.text = "Day complete"
+                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_blue))
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_checked_in)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_green_bg)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.loadTodayAttendance()
+        loadBellBadge()
     }
 
     private fun promptBatteryOptimization() {

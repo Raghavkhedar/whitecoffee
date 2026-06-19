@@ -1,4 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="#1A5FAF"/>
-</shape>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Base: midnight -->
+    <path android:fillColor="#05091A"
+        android:pathData="M0,0h108v108H0z"/>
+
+    <!-- Gradient layer: deep navy glow from center-bottom -->
+    <path android:fillColor="#0D1836"
+        android:pathData="M0,30 Q54,0 108,30 L108,108 L0,108 Z"/>
+
+    <!-- Gradient layer: navy accent at bottom -->
+    <path android:fillColor="#1A2F72"
+        android:pathData="M0,65 Q54,45 108,65 L108,108 L0,108 Z"/>
+
+    <!-- Subtle blue glow spot -->
+    <path android:fillColor="#223B8A"
+        android:fillAlpha="0.4"
+        android:pathData="M54,80 m-30,0 a30,25 0 1,0 60,0 a30,25 0 1,0 -60,0"/>
+
+</vector>

@@ -3,13 +3,20 @@
     <!-- WhiteCoffee is light-only. Force light theme even on dark mode devices. -->
     <style name="Theme.WhiteCoffee" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="colorPrimary">@color/primary_blue</item>
-        <item name="colorPrimaryDark">@color/primary_blue_dark</item>
-        <item name="colorPrimaryVariant">@color/primary_blue_dark</item>
+        <item name="colorPrimaryDark">@color/midnight</item>
+        <item name="colorPrimaryVariant">@color/navy</item>
         <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/violet</item>
+        <item name="colorSecondaryVariant">@color/navy</item>
+        <item name="colorOnSecondary">@color/white</item>
         <item name="android:colorBackground">@color/background</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorOnSurface">@color/text_primary</item>
-        <item name="android:statusBarColor">@color/primary_blue</item>
+        <item name="colorOnBackground">@color/text_primary</item>
+        <item name="android:statusBarColor">@color/midnight</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="materialCardViewStyle">@style/WC.CardView</item>
+        <item name="materialButtonStyle">@style/WC.Button.Primary</item>
+        <item name="textInputStyle">@style/WC.TextInputLayout</item>
     </style>
 </resources>

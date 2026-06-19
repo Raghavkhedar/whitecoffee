@@ -1,39 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ── Primary Brand ── -->
-    <color name="primary_blue">#1A5FAF</color>
-    <color name="primary_blue_dark">#174F93</color>
-    <color name="primary_blue_light">#2272CC</color>
+
+    <!-- ── Brand Gradient Stops ── -->
+    <color name="midnight">#05091A</color>
+    <color name="deep">#0D1836</color>
+    <color name="navy">#1A2F72</color>
+
+    <!-- ── Primary Accent ── -->
+    <color name="primary_blue">#3B82F6</color>
+    <color name="primary_blue_dark">#0D1836</color>
+    <color name="primary_blue_light">#1A2F72</color>
+    <color name="violet">#7C3AED</color>
 
     <!-- ── Backgrounds ── -->
-    <color name="background">#F0F4F8</color>
+    <color name="background">#ECEFFE</color>
     <color name="surface">#FFFFFF</color>
-    <color name="input_background">#F7FAFD</color>
+    <color name="input_background">#FAFBFF</color>
 
-    <!-- ── Borders & Dividers ── -->
-    <color name="border">#C8D6E8</color>
+    <!-- ── Borders ── -->
+    <color name="border">#E0E4F8</color>
 
     <!-- ── Text ── -->
-    <color name="text_primary">#0D1B2A</color>
-    <color name="text_secondary">#6B7E94</color>
-    <color name="text_hint">#A8BBCC</color>
+    <color name="text_primary">#050B20</color>
+    <color name="text_secondary">#3A4470</color>
+    <color name="text_hint">#8591BD</color>
     <color name="text_on_primary">#FFFFFF</color>
+    <color name="header_text_sub">#A0BEFF</color>
 
-    <!-- ── Accent ── -->
-    <color name="accent_light">#EBF2FB</color>
+    <!-- ── Accent Light ── -->
+    <color name="accent_light">#EEF2FF</color>
 
-    <!-- ── Status Colors ── -->
-    <color name="status_pending">#F59E0B</color>
-    <color name="status_approved">#10B981</color>
-    <color name="status_rejected">#EF4444</color>
+    <!-- ── Status ── -->
+    <color name="status_pending">#D97706</color>
+    <color name="status_approved">#059669</color>
+    <color name="status_rejected">#E11D48</color>
     <color name="status_pending_bg">#FEF3C7</color>
     <color name="status_approved_bg">#D1FAE5</color>
-    <color name="status_rejected_bg">#FEE2E2</color>
+    <color name="status_rejected_bg">#FFE4E6</color>
+    <color name="status_pending_text">#92400E</color>
+    <color name="status_approved_text">#065F46</color>
+    <color name="status_rejected_text">#9F1239</color>
+
+    <!-- ── Module Icon Gradients ── -->
+    <color name="mod_attendance_start">#1E3A8A</color>
+    <color name="mod_attendance_end">#3B82F6</color>
+    <color name="mod_mt_request_start">#9A3412</color>
+    <color name="mod_mt_request_end">#F97316</color>
+    <color name="mod_mt_buy_start">#064E3B</color>
+    <color name="mod_mt_buy_end">#10B981</color>
+    <color name="mod_mat_transfer_start">#4C1D95</color>
+    <color name="mod_mat_transfer_end">#8B5CF6</color>
+    <color name="mod_tool_transfer_start">#164E63</color>
+    <color name="mod_tool_transfer_end">#06B6D4</color>
+    <color name="mod_work_progress_start">#78350F</color>
+    <color name="mod_work_progress_end">#FBBF24</color>
+    <color name="mod_leave_start">#881337</color>
+    <color name="mod_leave_end">#F43F5E</color>
+    <color name="mod_leave_approval_start">#064E3B</color>
+    <color name="mod_leave_approval_end">#34D399</color>
 
     <!-- ── Utility ── -->
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
     <color name="transparent">#00000000</color>
-    <color name="ripple_primary">#1A1A5FAF</color>
-    <color name="divider">#E8EDF2</color>
+    <color name="ripple_primary">#1A3B82F6</color>
+    <color name="divider">#EEF0FF</color>
+
 </resources>
