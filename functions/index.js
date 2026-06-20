@@ -123,13 +123,17 @@ exports.computeDailyAttendanceStatus = onSchedule(
     });
 
     // Skip users whose attendance_status was manually set by admin (regularization approvals)
-    const existingStatusSnap = await db.collectionGroup("attendance_status")
-      .where("date", "==", today).get();
+    // Read per-user docs directly to avoid needing a collectionGroup index on date.
     const adminOverrides = new Set();
-    existingStatusSnap.docs.forEach((doc) => {
-      const d = doc.data();
-      if (d.markedBy === "admin") adminOverrides.add(d.userId);
+    const priorStatus    = new Map(); // userId → status already recorded for today
+    const statusChecks = allUsers.map(async (user) => {
+      const statusDoc = await db.doc(`users/${user.id}/attendance_status/${today}`).get();
+      if (statusDoc.exists) {
+        if (statusDoc.data().markedBy === "admin") adminOverrides.add(user.id);
+        priorStatus.set(user.id, statusDoc.data().status);
+      }
     });
+    await Promise.all(statusChecks);
 
     const batch        = db.batch();
     const plDeductions = [];
@@ -160,8 +164,14 @@ exports.computeDailyAttendanceStatus = onSchedule(
         const leave   = leavesToday.get(user.id);
         if (leave) {
           const balance = user.plBalance || 0;
-          if (balance > 0) { status = "PL"; plDeductions.push(user.id); }
-          else               status = "UPL";
+          if (balance > 0) {
+            status = "PL";
+            // Only deduct when today wasn't already counted as PL, so a re-run
+            // (manual trigger / retry) doesn't decrement the balance twice.
+            if (priorStatus.get(user.id) !== "PL") plDeductions.push(user.id);
+          } else {
+            status = "UPL";
+          }
         } else {
           status = "Absent";
         }
@@ -427,7 +437,7 @@ exports.exportToSheets = onSchedule(
         const results = await Promise.all(batch.map(async ([key, events]) => {
           const userId = key.split("__")[0];
           const user   = opsUsers.get(userId) || {};
-          const ratePerKm = rateValues[user.conveyanceRateType] || CONVEYANCE_RATE_FALLBACK;
+          const ratePerKm = rateValues[user.conveyanceRateType] || rateValues[1] || CONVEYANCE_RATE_FALLBACK;
           let totalKm  = 0;
           for (let j = 0; j < events.length - 1; j++) {
             const a = resolveCoords(events[j], user);
