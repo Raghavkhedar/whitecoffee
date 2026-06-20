@@ -20,15 +20,34 @@ service cloud.firestore {
       return userRole() == 'admin';
     }
 
+    // Returns true if the write touches ONLY the given fields (and no others).
+    function changedKeysWithin(allowed) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
+    }
+
+    // True if a create payload does NOT assert an approved/rejected status.
+    // Submission docs (material_*, tool_transfers, work_progress) omit `status`
+    // entirely on create; an owner may only ever create work that is unreviewed.
+    // Without this, an owner could self-approve by writing status:"approved" at
+    // create time (the update rules already block flipping status post-create).
+    function createdUnreviewed() {
+      return !('status' in request.resource.data)
+             || request.resource.data.status == 'pending';
+    }
+
     // ── /users/{userId} — User profiles ──────────────────────────────────
 
     match /users/{userId} {
       // Users read/write their own profile; admin reads/writes all
       allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-      // Only admin can create users (via secondary Firebase app in AddEditUserViewModel)
+      // Only admin can create users (via secondary Firebase app in UserRepository)
       allow create: if isLoggedIn() && isAdmin();
-      // Users can update their own profile; admin can update any
-      allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+      // Admin can update any field. A user may update ONLY their own session/FCM
+      // token fields — never role/salaryRate/etc. (prevents self-promotion to admin).
+      allow update: if isLoggedIn() && (
+        isAdmin() ||
+        (isOwner(userId) && changedKeysWithin(['activeSessionToken', 'fcmToken']))
+      );
       allow delete: if isLoggedIn() && isAdmin();
 
       // ── /attendance/{docId} ───────────────────────────────────────────
@@ -41,48 +60,67 @@ service cloud.firestore {
       // ── /material_requests/{docId} ────────────────────────────────────
       match /material_requests/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
-        // Allow own user to update photoUrls after doc creation; admin can update status
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        // Owner may ONLY patch photoUrls (post-upload); admin can update status etc.
+        // Without this restriction an owner could flip their own status to "approved".
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+        );
         allow delete: if false;
       }
 
       // ── /material_purchases/{docId} ───────────────────────────────────
       match /material_purchases/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+        );
         allow delete: if false;
       }
 
       // ── /material_transfers/{docId} ───────────────────────────────────
       match /material_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+        );
         allow delete: if false;
       }
 
       // ── /tool_transfers/{docId} ───────────────────────────────────────
       match /tool_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+        );
         allow delete: if false;
       }
 
       // ── /work_progress/{docId} ────────────────────────────────────────
       match /work_progress/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+        );
         allow delete: if false;
       }
 
       // ── /leave_requests/{docId} ───────────────────────────────────────
       match /leave_requests/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
+        // Must be created pending — a self-approved leave would otherwise be
+        // counted as PL by the nightly computeDailyAttendanceStatus function.
+        allow create: if isLoggedIn() && isOwner(userId)
+                      && request.resource.data.status == 'pending';
         // Admin updates status (approved/rejected); user cannot change status
         allow update: if isLoggedIn() && isAdmin();
         allow delete: if false;
@@ -109,7 +147,10 @@ service cloud.firestore {
       // ── /regularization_requests/{docId} ──────────────────────────────
       match /regularization_requests/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        allow create: if isLoggedIn() && isOwner(userId);
+        // Must be created pending — only an admin approval may flip the linked
+        // attendance_status to Present (done via writeBatch in the admin portal).
+        allow create: if isLoggedIn() && isOwner(userId)
+                      && request.resource.data.status == 'pending';
         allow update: if isLoggedIn() && isAdmin();
         allow delete: if false;
       }
@@ -167,6 +208,18 @@ service cloud.firestore {
       allow read:             if isLoggedIn();
       allow create, update:   if isLoggedIn() && isAdmin();
       allow delete:           if isLoggedIn() && isAdmin();
+    }
+
+    // ── /config/{docId} — App configuration (conveyance rates, etc.) ────
+    match /config/{docId} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if isLoggedIn() && isAdmin();
+    }
+
+    // ── /conveyance/{docId} — Monthly conveyance records ────────────────
+    match /conveyance/{docId} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if isLoggedIn() && isAdmin();
     }
   }
 }
