@@ -41,8 +41,8 @@ export default function RegularizationPage() {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
   const [adminName, setAdminName]   = useState('Admin');
-  const [rejectModal, setRejectModal] = useState<RegularizationRequest | null>(null);
-  const [rejectComment, setRejectComment] = useState('');
+  const [actionModal, setActionModal] = useState<{ req: RegularizationRequest; type: 'approve' | 'reject' } | null>(null);
+  const [actionComment, setActionComment] = useState('');
   const [actioning, setActioning]   = useState('');
 
   useEffect(() => {
@@ -70,24 +70,20 @@ export default function RegularizationPage() {
 
   useEffect(() => { load(); }, [filter, month]);
 
-  async function handleApprove(req: RegularizationRequest) {
+  async function handleAction() {
+    if (!actionModal) return;
+    const { req, type } = actionModal;
     setActioning(req.id);
     try {
-      await approveRegularization(req.userId, req.id, req.date, adminName);
+      if (type === 'approve') {
+        await approveRegularization(req.userId, req.id, req.date, adminName, actionComment);
+      } else {
+        await rejectRegularization(req.userId, req.id, adminName, actionComment);
+      }
+      setActionModal(null);
+      setActionComment('');
       await load();
-    } catch { setError('Approval failed.'); }
-    setActioning('');
-  }
-
-  async function handleReject() {
-    if (!rejectModal) return;
-    setActioning(rejectModal.id);
-    try {
-      await rejectRegularization(rejectModal.userId, rejectModal.id, adminName, rejectComment);
-      setRejectModal(null);
-      setRejectComment('');
-      await load();
-    } catch { setError('Rejection failed.'); }
+    } catch { setError(`${type === 'approve' ? 'Approval' : 'Rejection'} failed.`); }
     setActioning('');
   }
 
@@ -166,7 +162,7 @@ export default function RegularizationPage() {
                   <td className="px-4 py-3 text-text-secondary max-w-xs">
                     <p className="truncate">{r.reason}</p>
                     {r.approverComment && (
-                      <p className="text-xs text-red-500 mt-0.5">&ldquo;{r.approverComment}&rdquo;</p>
+                      <p className={`text-xs mt-0.5 ${r.status === 'rejected' ? 'text-red-500' : 'text-green-600'}`}>&ldquo;{r.approverComment}&rdquo;</p>
                     )}
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
@@ -175,12 +171,12 @@ export default function RegularizationPage() {
                       <div className="flex gap-2">
                         <button className="btn-success text-xs py-1 px-3"
                           disabled={actioning === r.id}
-                          onClick={() => handleApprove(r)}>
+                          onClick={() => { setActionModal({ req: r, type: 'approve' }); setActionComment(''); }}>
                           Approve
                         </button>
                         <button className="btn-danger text-xs py-1 px-3"
                           disabled={actioning === r.id}
-                          onClick={() => { setRejectModal(r); setRejectComment(''); }}>
+                          onClick={() => { setActionModal({ req: r, type: 'reject' }); setActionComment(''); }}>
                           Reject
                         </button>
                       </div>
@@ -196,26 +192,33 @@ export default function RegularizationPage() {
         )}
       </div>
 
-      {/* Reject modal */}
-      {rejectModal && (
+      {actionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-text-primary mb-2">Reject Regularization</h2>
+            <h2 className="text-lg font-bold text-text-primary mb-2">
+              {actionModal.type === 'approve' ? 'Approve' : 'Reject'} Regularization
+            </h2>
             <p className="text-text-secondary text-sm mb-4">
-              {rejectModal.userName} &mdash; {rejectModal.date} ({rejectModal.originalStatus})
+              {actionModal.req.userName} &mdash; {actionModal.req.date} ({actionModal.req.originalStatus})
             </p>
-            <label className="label">Reason for rejection</label>
+            <label className="label">
+              {actionModal.type === 'approve' ? 'Reason for approval' : 'Reason for rejection'}
+            </label>
             <textarea
               className="input min-h-[80px]"
-              value={rejectComment}
-              onChange={e => setRejectComment(e.target.value)}
+              value={actionComment}
+              onChange={e => setActionComment(e.target.value)}
               placeholder="Enter reason…"
             />
             <div className="flex gap-3 mt-4">
-              <button className="btn-danger flex-1" onClick={handleReject} disabled={!!actioning}>
-                Reject
+              <button
+                className={`${actionModal.type === 'approve' ? 'btn-success' : 'btn-danger'} flex-1`}
+                onClick={handleAction}
+                disabled={!!actioning}
+              >
+                {actionModal.type === 'approve' ? 'Approve' : 'Reject'}
               </button>
-              <button className="btn-outline flex-1" onClick={() => setRejectModal(null)}>
+              <button className="btn-outline flex-1" onClick={() => setActionModal(null)}>
                 Cancel
               </button>
             </div>

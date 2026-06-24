@@ -1,6 +1,7 @@
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { google } = require("googleapis");
@@ -149,17 +150,20 @@ exports.computeDailyAttendanceStatus = onSchedule(
       const checkOuts = events.filter((e) => e.type === (isOps ? "home_out"  : "office_out"));
       let status;
 
-      if (checkIns.length > 0) {
+      if (checkIns.length > 0 && checkOuts.length > 0) {
         const firstIn  = checkIns[0];
-        const lastOut  = checkOuts.length > 0 ? checkOuts[checkOuts.length - 1] : null;
-        const inMinutes = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-        const lateIn    = inMinutes > 10 * 60;
-        let earlyOut    = true;
-        if (lastOut) {
-          const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-          earlyOut = outMinutes < 18 * 60;
-        }
-        status = lateIn || earlyOut ? "HalfDay" : "Present";
+        const lastOut  = checkOuts[checkOuts.length - 1];
+        const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+        const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
+        const lateIn     = inMinutes > 10 * 60;
+        const earlyOut   = outMinutes < 18 * 60;
+        const hoursWorked = (outMinutes - inMinutes) / 60;
+
+        if (lateIn && earlyOut) status = "HalfDay";
+        else if (hoursWorked < 6) status = "SL";
+        else status = "Present";
+      } else if (checkIns.length > 0 || checkOuts.length > 0) {
+        status = "SLNF";
       } else {
         const leave   = leavesToday.get(user.id);
         if (leave) {
@@ -228,11 +232,13 @@ exports.exportToSheets = onSchedule(
       const d = doc.data();
       if (d.date < monthStart || d.date > today) return;
       if (!userAttendanceMTD.has(d.userId))
-        userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, pl: 0, upl: 0, absent: 0 });
+        userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, upl: 0, absent: 0 });
       const ua = userAttendanceMTD.get(d.userId);
       switch (d.status) {
         case "Present":  ua.present++;  break;
         case "HalfDay":  ua.halfDay++;  break;
+        case "SL":       ua.sl++;       break;
+        case "SLNF":     ua.slnf++;     break;
         case "PL":       ua.pl++;       break;
         case "UPL":      ua.upl++;      break;
         case "Absent":   ua.absent++;   break;
@@ -529,8 +535,7 @@ exports.exportToSheets = onSchedule(
         const empId    = user.employeeId || "";
         const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, pl: 0, upl: 0, absent: 0 };
 
-        // Days NP: Present(1) + HalfDay(0.5) + PL(1, paid leave) — UPL and Absent = 0
-        const daysNP   = ua.present + ua.halfDay * 0.5 + ua.pl;
+        const daysNP   = ua.present + ua.sl * 0.75 + ua.halfDay * 0.5 + ua.slnf * 0.5 + ua.pl - ua.absent;
         const leaves   = ua.pl + ua.upl; // all leave types shown together
 
         const salaryRate = user.salaryRate || 0;
@@ -681,3 +686,78 @@ exports.regularizationReminder = onSchedule(
     console.log(`regularizationReminder: notified ${adminsSnap.size} admin(s) about ${pending.length} pending requests`);
   }
 );
+
+// ── Employee Logout — auto check-out from everywhere + home_out ──────────────
+exports.onEmployeeLogout = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Must be signed in.");
+
+  const db  = admin.firestore();
+  const now = admin.firestore.Timestamp.now();
+  const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const today  = nowIST.toISOString().slice(0, 10);
+
+  const userDoc = await db.doc(`users/${uid}`).get();
+  if (!userDoc.exists) throw new HttpsError("not-found", "User profile not found.");
+  const user = userDoc.data();
+
+  const attendSnap = await db.collection(`users/${uid}/attendance`)
+    .where("date", "==", today).get();
+  const events = attendSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const inTypes  = new Set(events.filter((e) => e.type.endsWith("_in")).map((e) => e.type));
+  const outTypes = new Set(events.filter((e) => e.type.endsWith("_out")).map((e) => e.type));
+
+  const batch = db.batch();
+  let wrote = 0;
+
+  for (const inType of inTypes) {
+    const outType = inType.replace("_in", "_out");
+    if (outTypes.has(outType)) continue;
+
+    const lastIn = events
+      .filter((e) => e.type === inType)
+      .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0))[0];
+
+    const ref = db.collection(`users/${uid}/attendance`).doc();
+    batch.set(ref, {
+      userId: uid,
+      userName: user.name || "",
+      employeeId: user.employeeId || "",
+      date: today,
+      type: outType,
+      timestamp: now,
+      latitude: lastIn?.latitude || 0,
+      longitude: lastIn?.longitude || 0,
+      siteId: lastIn?.siteId || "",
+      siteName: lastIn?.siteName || "",
+      marketName: lastIn?.marketName || "",
+      autoLogout: true,
+    });
+    wrote++;
+  }
+
+  if (!outTypes.has("home_out") && !inTypes.has("home_out")) {
+    const homeIn = events.find((e) => e.type === "home_in");
+    const ref = db.collection(`users/${uid}/attendance`).doc();
+    batch.set(ref, {
+      userId: uid,
+      userName: user.name || "",
+      employeeId: user.employeeId || "",
+      date: today,
+      type: "home_out",
+      timestamp: now,
+      latitude: user.homeLat || homeIn?.latitude || 0,
+      longitude: user.homeLng || homeIn?.longitude || 0,
+      siteId: "",
+      siteName: "",
+      marketName: "",
+      autoLogout: true,
+    });
+    wrote++;
+  }
+
+  if (wrote > 0) await batch.commit();
+  console.log(`onEmployeeLogout: ${uid} — ${wrote} auto-checkout event(s) for ${today}`);
+  return { success: true, eventsCreated: wrote };
+});

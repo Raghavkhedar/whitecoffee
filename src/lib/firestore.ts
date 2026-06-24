@@ -158,12 +158,12 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
 }
 
 export async function approveRegularization(
-  userId: string, requestId: string, date: string, approverName: string
+  userId: string, requestId: string, date: string, approverName: string, comment: string
 ) {
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
-    { status: 'approved', approvedBy: approverName, reviewedAt: Timestamp.now() }
+    { status: 'approved', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }
   );
   batch.set(
     doc(db, 'users', userId, 'attendance_status', date),

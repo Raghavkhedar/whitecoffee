@@ -38,6 +38,26 @@ Required Firestore composite indexes (must be created in Firebase Console):
 - `attendance`: `date` ASC + `timestamp` ASC
 - `material_requests`: `submittedAt` DESC
 
+## Attendance Status Logic
+
+The `computeDailyAttendanceStatus` Cloud Function (runs 23:59 IST) determines daily status per employee. Working hours: 10:00 AM – 6:00 PM IST.
+
+| Status | Condition | Salary (days) |
+|--------|-----------|---------------|
+| Present | Check-in by 10 AM AND check-out after 6 PM | 1 |
+| Short Leave (SL) | Has both events, total hours worked < 6 | 0.75 |
+| Half Day | Late in (after 10) AND early out (before 6) | 0.5 |
+| SLNF (Log Not Found) | Missing check-in or check-out | 0.5 |
+| PL (Paid Leave) | Approved leave, has PL balance | 1 |
+| UPL (Unpaid Leave) | Approved leave, no balance | 0 |
+| Absent | No events, no approved leave | -1 (2-day penalty) |
+
+**Days NP formula**: `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL - absent`
+
+**Salary**: `daysNP × salaryRate`
+
+PL balance: +1 accrued on 1st of each month (`accrueMonthlyLeave`), -1 deducted per PL day used.
+
 ## Styling Conventions
 
 Global component classes are defined in `src/app/globals.css`: `.btn-primary`, `.btn-outline`, `.btn-danger`, `.btn-success`, `.card`, `.input`, `.label`, `.badge-*`. Use these instead of inline Tailwind for interactive elements.

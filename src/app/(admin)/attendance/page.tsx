@@ -8,6 +8,8 @@ const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const STATUS_STYLES: Record<string, string> = {
   Present:  'bg-green-100 text-green-700 border-green-200',
   HalfDay:  'bg-yellow-100 text-yellow-700 border-yellow-200',
+  SL:       'bg-amber-100 text-amber-700 border-amber-200',
+  SLNF:     'bg-gray-100 text-gray-700 border-gray-200',
   Absent:   'bg-red-100 text-red-700 border-red-200',
   PL:       'bg-blue-100 text-blue-700 border-blue-200',
   UPL:      'bg-orange-100 text-orange-700 border-orange-200',
@@ -16,6 +18,8 @@ const STATUS_STYLES: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   Present: 'Present',
   HalfDay: 'Half Day',
+  SL:      'Short Leave',
+  SLNF:    'Log Not Found',
   Absent:  'Absent',
   PL:      'PL',
   UPL:     'UPL',
@@ -30,34 +34,31 @@ function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-// Derives Present/HalfDay from raw events when Cloud Function hasn't run yet.
-// Returns null if there are no events (can't determine Absent/PL/UPL client-side).
 function deriveStatusFromEvents(userEvents: AttendanceRecord[]): AttendanceStatus['status'] | null {
   const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
   const checkIns  = userEvents.filter(e => e.type === 'office_in').sort((a, b) => ts(a) - ts(b));
   const checkOuts = userEvents.filter(e => e.type === 'office_out').sort((a, b) => ts(a) - ts(b));
-  if (checkIns.length === 0) return null;
+  if (checkIns.length === 0 && checkOuts.length === 0) return null;
+
+  if (checkIns.length === 0 || checkOuts.length === 0) return 'SLNF';
+
+  const toIST = (d: Date) => new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
 
   const firstInDate = checkIns[0].timestamp?.toDate();
-  if (!firstInDate) return null;
+  const lastOutDate = checkOuts[checkOuts.length - 1].timestamp?.toDate();
+  if (!firstInDate || !lastOutDate) return 'SLNF';
 
-  // Use UTC+5:30 offset to get IST time regardless of browser timezone
-  const toIST = (d: Date) => new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
-  const inIST = toIST(firstInDate);
-  const inMinutes = inIST.getUTCHours() * 60 + inIST.getUTCMinutes();
-  const lateIn = inMinutes > 10 * 60; // after 10:00 AM
+  const inIST  = toIST(firstInDate);
+  const outIST = toIST(lastOutDate);
+  const inMinutes  = inIST.getUTCHours() * 60 + inIST.getUTCMinutes();
+  const outMinutes = outIST.getUTCHours() * 60 + outIST.getUTCMinutes();
+  const lateIn     = inMinutes > 10 * 60;
+  const earlyOut   = outMinutes < 18 * 60;
+  const hoursWorked = (outMinutes - inMinutes) / 60;
 
-  let earlyOut = true; // no checkout = half day condition
-  if (checkOuts.length > 0) {
-    const lastOutDate = checkOuts[checkOuts.length - 1].timestamp?.toDate();
-    if (lastOutDate) {
-      const outIST = toIST(lastOutDate);
-      const outMinutes = outIST.getUTCHours() * 60 + outIST.getUTCMinutes();
-      earlyOut = outMinutes < 18 * 60; // before 6:00 PM
-    }
-  }
-
-  return lateIn || earlyOut ? 'HalfDay' : 'Present';
+  if (lateIn && earlyOut) return 'HalfDay';
+  if (hoursWorked < 6) return 'SL';
+  return 'Present';
 }
 
 export default function AttendancePage() {
@@ -127,15 +128,17 @@ export default function AttendancePage() {
 
   function getDaySummary(date: string) {
     const dayMap = statusByDate.get(date);
-    if (!dayMap) return { present: 0, halfDay: 0, absent: 0, leave: 0 };
-    let present = 0, halfDay = 0, absent = 0, leave = 0;
+    if (!dayMap) return { present: 0, halfDay: 0, sl: 0, slnf: 0, absent: 0, leave: 0 };
+    let present = 0, halfDay = 0, sl = 0, slnf = 0, absent = 0, leave = 0;
     dayMap.forEach(s => {
       if (s.status === 'Present')  present++;
       else if (s.status === 'HalfDay') halfDay++;
+      else if (s.status === 'SL') sl++;
+      else if (s.status === 'SLNF') slnf++;
       else if (s.status === 'Absent')  absent++;
       else if (s.status === 'PL' || s.status === 'UPL') leave++;
     });
-    return { present, halfDay, absent, leave };
+    return { present, halfDay, sl, slnf, absent, leave };
   }
 
   async function handleOpsStatus(user: User, date: string, newStatus: AttendanceStatus['status']) {
@@ -185,10 +188,13 @@ export default function AttendancePage() {
     return map;
   }, [users, selectedDayMap, selectedEvents, eventsLoading]);
 
-  const totalPresent = Array.from(effectiveStatuses.values()).filter(s => s === 'Present').length;
-  const totalHalf    = Array.from(effectiveStatuses.values()).filter(s => s === 'HalfDay').length;
-  const totalAbsent  = Array.from(effectiveStatuses.values()).filter(s => s === 'Absent').length;
-  const totalLeave   = Array.from(effectiveStatuses.values()).filter(s => s === 'PL' || s === 'UPL').length;
+  const statusValues = Array.from(effectiveStatuses.values());
+  const totalPresent = statusValues.filter(s => s === 'Present').length;
+  const totalHalf    = statusValues.filter(s => s === 'HalfDay').length;
+  const totalSL      = statusValues.filter(s => s === 'SL').length;
+  const totalSLNF    = statusValues.filter(s => s === 'SLNF').length;
+  const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
+  const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'UPL').length;
 
   const selectedDateDisplay = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -250,7 +256,7 @@ export default function AttendancePage() {
               const isToday   = ds === todayStr;
               const isSelected = ds === selectedDate;
               const summary   = getDaySummary(ds);
-              const hasData   = summary.present + summary.halfDay + summary.absent + summary.leave > 0;
+              const hasData   = summary.present + summary.halfDay + summary.sl + summary.slnf + summary.absent + summary.leave > 0;
 
               return (
                 <button
@@ -280,6 +286,16 @@ export default function AttendancePage() {
                           {summary.halfDay}H
                         </span>
                       )}
+                      {summary.sl > 0 && (
+                        <span className="text-[9px] leading-tight bg-amber-100 text-amber-700 rounded px-1 py-0.5">
+                          {summary.sl}SL
+                        </span>
+                      )}
+                      {summary.slnf > 0 && (
+                        <span className="text-[9px] leading-tight bg-gray-100 text-gray-700 rounded px-1 py-0.5">
+                          {summary.slnf}?
+                        </span>
+                      )}
                       {summary.absent > 0 && (
                         <span className="text-[9px] leading-tight bg-red-100 text-red-700 rounded px-1 py-0.5">
                           {summary.absent}A
@@ -301,10 +317,12 @@ export default function AttendancePage() {
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-border">
           {[
-            { label: 'P = Present',   cls: 'bg-green-100 text-green-700' },
-            { label: 'H = Half Day',  cls: 'bg-yellow-100 text-yellow-700' },
-            { label: 'A = Absent',    cls: 'bg-red-100 text-red-700' },
-            { label: 'L = PL / UPL', cls: 'bg-blue-100 text-blue-700' },
+            { label: 'P = Present',       cls: 'bg-green-100 text-green-700' },
+            { label: 'H = Half Day',      cls: 'bg-yellow-100 text-yellow-700' },
+            { label: 'SL = Short Leave',  cls: 'bg-amber-100 text-amber-700' },
+            { label: '? = Log Not Found', cls: 'bg-gray-100 text-gray-700' },
+            { label: 'A = Absent',        cls: 'bg-red-100 text-red-700' },
+            { label: 'L = PL / UPL',     cls: 'bg-blue-100 text-blue-700' },
           ].map(({ label, cls }) => (
             <span key={label} className={`text-xs px-2 py-0.5 rounded font-medium ${cls}`}>
               {label}
@@ -326,10 +344,12 @@ export default function AttendancePage() {
           {/* Summary chips */}
           <div className="flex flex-wrap gap-2">
             {[
-              { count: totalPresent, label: 'Present',  cls: 'bg-green-50 text-green-700 border border-green-200' },
-              { count: totalHalf,    label: 'Half Day', cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
-              { count: totalAbsent,  label: 'Absent',   cls: 'bg-red-50 text-red-700 border border-red-200' },
-              { count: totalLeave,   label: 'On Leave', cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
+              { count: totalPresent, label: 'Present',       cls: 'bg-green-50 text-green-700 border border-green-200' },
+              { count: totalHalf,    label: 'Half Day',      cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
+              { count: totalSL,      label: 'Short Leave',   cls: 'bg-amber-50 text-amber-700 border border-amber-200' },
+              { count: totalSLNF,    label: 'Log Not Found', cls: 'bg-gray-50 text-gray-700 border border-gray-200' },
+              { count: totalAbsent,  label: 'Absent',        cls: 'bg-red-50 text-red-700 border border-red-200' },
+              { count: totalLeave,   label: 'On Leave',      cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
             ].map(({ count, label, cls }) => (
               <span key={label} className={`text-xs px-2.5 py-1 rounded-lg font-medium ${cls}`}>
                 {count} {label}
@@ -411,6 +431,9 @@ export default function AttendancePage() {
                             >
                               <option value="">— Not Marked —</option>
                               <option value="Present">Present</option>
+                              <option value="HalfDay">Half Day</option>
+                              <option value="SL">Short Leave</option>
+                              <option value="SLNF">Log Not Found</option>
                               <option value="Absent">Absent</option>
                               <option value="PL">PL (Paid Leave)</option>
                               <option value="UPL">UPL (Unpaid Leave)</option>
@@ -433,7 +456,14 @@ export default function AttendancePage() {
                           {eventsLoading ? '…' : firstIn ? formatTime(firstIn.timestamp as Parameters<typeof formatTime>[0]) : '—'}
                         </td>
                         <td className="py-3 pr-4 text-text-secondary text-xs">
-                          {eventsLoading ? '…' : lastOut ? formatTime(lastOut.timestamp as Parameters<typeof formatTime>[0]) : '—'}
+                          {eventsLoading ? '…' : lastOut ? (
+                            <span className="inline-flex items-center gap-1">
+                              {formatTime(lastOut.timestamp as Parameters<typeof formatTime>[0])}
+                              {lastOut.autoLogout && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-200 font-medium">auto</span>
+                              )}
+                            </span>
+                          ) : '—'}
                         </td>
                         <td className="py-3 text-text-secondary text-xs">
                           {user.plBalance !== undefined ? (

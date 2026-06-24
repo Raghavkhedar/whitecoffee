@@ -21,7 +21,7 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'Absent' | 'PL' | 'UPL';
+  status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'UPL';
   markedBy: 'auto' | 'admin';
   updatedAt?: Timestamp;
 }
@@ -103,6 +103,7 @@ export interface AttendanceRecord {
   siteId: string;
   siteName: string;
   marketName: string;
+  autoLogout?: boolean;
 }
 
 export interface SentNotification {
