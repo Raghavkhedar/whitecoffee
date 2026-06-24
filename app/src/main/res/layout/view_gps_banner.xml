@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/gps_banner"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#FECACA"
+    android:paddingHorizontal="16dp"
+    android:paddingVertical="10dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:visibility="gone">
+
+    <TextView
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Location is turned off — attendance requires GPS"
+        android:textSize="13sp"
+        android:textColor="#991B1B" />
+
+    <TextView
+        android:id="@+id/btn_gps_enable"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Turn On"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="#991B1B"
+        android:background="?attr/selectableItemBackground"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="4dp" />
+
+</LinearLayout>

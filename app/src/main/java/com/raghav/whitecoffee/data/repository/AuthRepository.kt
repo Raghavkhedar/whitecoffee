@@ -42,8 +42,11 @@ class AuthRepository @Inject constructor(
             val user = User.fromDocument(doc)
                 ?: return Result.failure(Exception("User profile not found. Contact your administrator."))
 
-            // Step 3 — Generate a unique session token, write to Firestore (fire-and-forget),
-            // and cache locally. Any other device holding a different token will be kicked out.
+            // Step 3 — Generate a unique session token, write to Firestore, and cache locally.
+            // Any other device holding a different token will be kicked out.
+            // NOTE: deliberately NOT awaited. With Firestore offline persistence a write Task
+            // only completes on server ack, so awaiting here would hang/fail offline logins.
+            // The local SDK queues it and syncs when connectivity returns (offline-first design).
             val sessionToken = UUID.randomUUID().toString()
             firestore.collection("users").document(user.id)
                 .update("activeSessionToken", sessionToken)

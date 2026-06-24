@@ -2,7 +2,9 @@ package com.raghav.whitecoffee.ui.attendance
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -17,11 +19,13 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
+import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.databinding.FragmentAttendanceBinding
 import com.raghav.whitecoffee.ui.attendance.AttendanceViewModel.ActionState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -31,6 +35,9 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
 
     private val viewModel: AttendanceViewModel by viewModels()
     private val timelineAdapter by lazy { AttendanceTimelineAdapter() }
+
+    @Inject
+    lateinit var locationProvider: LocationProvider
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -51,10 +58,16 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
         super.onViewCreated(view, savedInstanceState)
 
         requestLocationPermission()
+        setupGpsBanner()
         setupHeader()
         setupRecyclerView()
         setupClickListeners()
         observeViewModel()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkGpsStatus()
     }
 
     private fun requestLocationPermission() {
@@ -64,6 +77,18 @@ class AttendanceFragment : BaseFragment<FragmentAttendanceBinding>() {
                 Manifest.permission.ACCESS_COARSE_LOCATION
             )
         )
+    }
+
+    private fun setupGpsBanner() {
+        binding.gpsBanner.root.findViewById<View>(com.raghav.whitecoffee.R.id.btn_gps_enable)
+            .setOnClickListener {
+                startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            }
+    }
+
+    private fun checkGpsStatus() {
+        binding.gpsBanner.root.visibility =
+            if (locationProvider.isGpsEnabled()) View.GONE else View.VISIBLE
     }
 
     private fun setupHeader() {

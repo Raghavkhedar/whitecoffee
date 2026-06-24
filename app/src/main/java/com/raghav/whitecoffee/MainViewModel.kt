@@ -1,46 +1,57 @@
 package com.raghav.whitecoffee
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.raghav.whitecoffee.data.location.LocationProvider
+import com.raghav.whitecoffee.data.location.LocationState
+import com.raghav.whitecoffee.data.model.AttendanceState
+import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.AuthRepository
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val attendanceRepository: AttendanceRepository,
+    private val locationProvider: LocationProvider
 ) : ViewModel() {
 
     private val _sessionInvalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val sessionInvalidated: SharedFlow<Unit> = _sessionInvalidated.asSharedFlow()
 
+    private val _logoutInProgress = MutableStateFlow(false)
+    val logoutInProgress: StateFlow<Boolean> = _logoutInProgress.asStateFlow()
+
+    private val _logoutComplete = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val logoutComplete: SharedFlow<Unit> = _logoutComplete.asSharedFlow()
+
     private var listenerRegistration: ListenerRegistration? = null
 
-    /**
-     * Call on app startup (handles the "already logged in / process killed" case).
-     * Restores session from cache if needed, then starts the monitor.
-     */
     fun startMonitorIfLoggedIn() {
         if (authRepository.isLoggedIn()) startMonitor()
     }
 
-    /**
-     * Call right after a successful login to start monitoring.
-     */
     fun onLoginSuccess() = startMonitor()
 
     private fun startMonitor() {
         val uid        = sessionManager.userId
         val localToken = sessionManager.sessionToken
         if (uid.isEmpty() || localToken.isEmpty()) return
-        if (listenerRegistration != null) return  // already monitoring
+        if (listenerRegistration != null) return
 
         listenerRegistration = firestore.collection("users").document(uid)
             .addSnapshotListener { snapshot, error ->
@@ -52,10 +63,93 @@ class MainViewModel @Inject constructor(
             }
     }
 
+    fun logoutWithAutoCheckout() {
+        if (_logoutInProgress.value) return
+        _logoutInProgress.value = true
+        viewModelScope.launch {
+            try {
+                autoCheckout()
+            } catch (_: Exception) { }
+            logout()
+            _logoutInProgress.value = false
+            _logoutComplete.tryEmit(Unit)
+        }
+    }
+
     fun logout() {
         listenerRegistration?.remove()
         listenerRegistration = null
         authRepository.logout()
+    }
+
+    private suspend fun autoCheckout() {
+        val result = attendanceRepository.getTodayData()
+        if (result.isFailure) return
+        val (state, events) = result.getOrThrow()
+
+        val location = locationProvider.getCurrentLocation()
+        if (location !is LocationState.Success) return
+
+        if (sessionManager.isOperations) {
+            autoCheckoutOperations(state, location)
+        } else {
+            autoCheckoutOffice(events, location)
+        }
+    }
+
+    private suspend fun autoCheckoutOperations(state: AttendanceState, loc: LocationState.Success) {
+        when (state) {
+            is AttendanceState.SiteCheckedIn -> {
+                attendanceRepository.recordEvent(
+                    type = AttendanceType.SITE_OUT,
+                    latitude = loc.latitude, longitude = loc.longitude,
+                    siteId = state.record.siteId, siteName = state.record.siteName
+                )
+                attendanceRepository.recordEvent(
+                    type = AttendanceType.HOME_OUT,
+                    latitude = loc.latitude, longitude = loc.longitude
+                )
+            }
+            is AttendanceState.MarketCheckedIn -> {
+                attendanceRepository.recordEvent(
+                    type = AttendanceType.MARKET_OUT,
+                    latitude = loc.latitude, longitude = loc.longitude,
+                    marketName = state.record.marketName
+                )
+                attendanceRepository.recordEvent(
+                    type = AttendanceType.HOME_OUT,
+                    latitude = loc.latitude, longitude = loc.longitude
+                )
+            }
+            is AttendanceState.HomeCheckedIn -> {
+                attendanceRepository.recordEvent(
+                    type = AttendanceType.HOME_OUT,
+                    latitude = loc.latitude, longitude = loc.longitude
+                )
+            }
+            else -> { }
+        }
+    }
+
+    private suspend fun autoCheckoutOffice(events: List<com.raghav.whitecoffee.data.model.AttendanceRecord>, loc: LocationState.Success) {
+        val hasHomeIn = events.any { it.type == AttendanceType.HOME_IN }
+        val hasHomeOut = events.any { it.type == AttendanceType.HOME_OUT }
+        if (!hasHomeIn || hasHomeOut) return
+
+        val lastOffice = events.lastOrNull {
+            it.type == AttendanceType.OFFICE_IN || it.type == AttendanceType.OFFICE_OUT
+        }
+        if (lastOffice?.type == AttendanceType.OFFICE_IN) {
+            attendanceRepository.recordEvent(
+                type = AttendanceType.OFFICE_OUT,
+                latitude = loc.latitude, longitude = loc.longitude,
+                locationName = lastOffice.locationName
+            )
+        }
+        attendanceRepository.recordEvent(
+            type = AttendanceType.HOME_OUT,
+            latitude = loc.latitude, longitude = loc.longitude
+        )
     }
 
     override fun onCleared() {

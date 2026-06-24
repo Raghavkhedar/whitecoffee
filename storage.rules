@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Firebase Storage security rules for White Coffee.
+// Photos are uploaded by PhotoUploadManager to:
+//   requests/{userId}/{collectionName}/{docId}/{file}.jpg
+//
+// Deploy: paste into Firebase Console → Storage → Rules → Publish,
+// or `firebase deploy --only storage` if this file is wired in firebase.json.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isLoggedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isLoggedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Field-operations photo evidence — owner writes their own tree, owner+admin read.
+    match /requests/{userId}/{allPaths=**} {
+      allow read: if isLoggedIn() && (request.auth.uid == userId || isAdmin());
+
+      // Owner-only writes, capped at 10 MB and images only (uploads are pre-compressed to ~80 KB).
+      allow write: if isLoggedIn()
+                   && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+
+      // Immutable evidence — no client deletes.
+      allow delete: if false;
+    }
+
+    // Deny everything else by default.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 21 End
+### Last Updated: Session 22 End
 
 ---
 
@@ -134,17 +134,11 @@ com.raghav.whitecoffee
     │   ├── RegularizationFragment.kt    ✅ month selector + inline apply dialog
     │   ├── RegularizationViewModel.kt   ✅ merged flagged days + requests
     │   └── RegularizationAdapter.kt     ✅
-    ├── admin/
-    │   ├── AdminUserListFragment.kt     ✅
-    │   ├── AdminUserListViewModel.kt    ✅
-    │   ├── AdminUserAdapter.kt          ✅
-    │   ├── AddEditUserFragment.kt       ✅
-    │   ├── AddEditUserViewModel.kt      ✅
-    │   ├── AdminSiteListFragment.kt     ✅
-    │   ├── AdminSiteListViewModel.kt    ✅
-    │   ├── AdminSiteAdapter.kt          ✅
-    │   ├── AddEditSiteFragment.kt       ✅
-    │   └── AddEditSiteViewModel.kt      ✅
+    │   (NOTE: there is NO ui/admin/ package in the Android app. User & Site
+    │    management are handled ONLY in the Next.js admin web portal. The
+    │    UserRepository.createUser/updateUserProfile/getAllUsers/sendPasswordResetEmail
+    │    methods exist but are currently unused — kept for a possible future in-app
+    │    admin screen.)
     ├── notifications/
     │   ├── NotificationsFragment.kt     ✅ list + "Mark all read" button
     │   ├── NotificationsViewModel.kt    ✅ optimistic mark-as-read
@@ -412,8 +406,8 @@ accent_light:     #EBF2FB  — icon backgrounds
 | Work Progress | ✅ Visible | ❌ Hidden | ❌ Hidden |
 | Leave (apply + my history) | ✅ | ✅ | ✅ |
 | Leave Approvals | ❌ Hidden | ❌ Hidden | ✅ Admin only |
-| User Management | ❌ | ❌ | ✅ |
-| Site Management | ❌ | ❌ | ✅ |
+| User Management | ❌ | ❌ | ✅ Web portal only (not in Android app) |
+| Site Management | ❌ | ❌ | ✅ Web portal only (not in Android app) |
 
 Role checked via `sessionManager.isOperations` / `sessionManager.isOffice` / `sessionManager.isAdmin`
 
@@ -439,15 +433,20 @@ NoRecord → HomeCheckedIn → SiteCheckedIn ←→ MarketCheckedIn
 - Site check-in: shows dialog with two free-text fields (Site Name + Site ID) — **NO geofencing**
 - No site picker dropdown — user manually enters site name and ID
 
-### Office users — multi-cycle (OfficeAttendanceFragment + OfficeAttendanceViewModel)
-Event types: `office_in`, `office_out`
+### Office users — Home→Office→Home sequential day (OfficeAttendanceFragment + OfficeAttendanceViewModel)
+Event types: `office_in`, `office_out`, `home_in`, `home_out` (Session 22)
 
-State machine: `NotCheckedIn ↔ CheckedIn` (repeatable — no DayComplete, no End Day button)
-- GPS captured on both events
-- "Where are you?" free-text field — user enters location name (stored as `locationName` in Firestore)
-- Multiple check-in/out cycles per day supported (sales team use case)
-- Full event timeline shown below the action button
-- State derived from the last event only: last `office_in` → CheckedIn; otherwise NotCheckedIn
+State machine (5 phases): `NotStarted → DayStarted ↔ InOffice → DayEnded`
+- **NotStarted** (no home_in) → button: `🏠 Start Day — Home In` (GPS only, no location note)
+- **DayStarted** (home_in done, not in office) → two buttons: `🏢 Office Check In` (+ "Where are you?") AND `🏠 End Day — Home Out`
+- **InOffice** (last office event = office_in) → button: `🏢 Office Check Out` (cycles back to DayStarted — multi-cycle office)
+- **DayEnded** (home_out done) → no buttons, "Day complete"
+- **Home In / Home Out**: ONCE per day, GPS + timestamp ONLY. Recorded for data only —
+  do NOT feed conveyance (ops-only) or attendance_status (office uses office_in/out thresholds).
+- Home Out is hidden mid-office-session (must office-check-out before ending the day).
+- Office check-in/out: still multi-cycle with "Where are you?" free-text `locationName`.
+- `deriveOfficeState()` uses home_in/home_out as once-per-day gates; office_in/out cycle between them.
+- Full event timeline shown below the buttons (AttendanceTimelineAdapter already labels home events).
 
 ### HomeFragment routing:
 ```kotlin
@@ -466,7 +465,7 @@ Site dropdowns have been removed. Users manually enter:
 Both fields are plain `TextInputEditText` widgets. Site Name is required; Site ID is optional.
 Applies to: M&T Request, M&T Buy, Work Progress, AttendanceFragment site check-in dialog.
 
-The `/sites/{siteId}` Firestore collection still exists for admin site management (AddEditSiteFragment).
+The `/sites/{siteId}` Firestore collection still exists for admin site management (web portal only).
 It is NOT used as a dropdown source anywhere in the app currently.
 
 ---
@@ -533,8 +532,8 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
   - Work Progress ✅ (operations only, free-text site, photos)
   - Leave (apply + my history) ✅ (both roles)
   - Leave Approvals ✅ (admin only)
-  - User Management ✅ (admin)
-  - Site Management ✅ (admin)
+  - User Management ✅ (admin — WEB PORTAL ONLY, no Android screen)
+  - Site Management ✅ (admin — WEB PORTAL ONLY, no Android screen)
 - 3 roles: operations / office / admin
 - SessionManager persists to SharedPreferences (survives process kill)
 - nav_graph: 15 destinations wired
@@ -610,7 +609,7 @@ Deploy: `npm run deploy` from the admin portal directory
 - **`salaryRate` field on user doc** — `Double`, set via admin portal Users page. Cloud Function reads `user.salaryRate` directly from Firestore instead of parsing it from the Google Sheet.
 - **Admin portal Users page updated** — new "Salary Rate (₹/day)" input field in add/edit modal + "Salary Rate" column in user table. Saved to Firestore on create and update.
 - **`User` type updated** — added `salaryRate?: number` to `src/types/index.ts`.
-- **`backfillAttendanceStatus` HTTP function** — one-time function to generate `attendance_status` records for all users for all days in the current month. **DELETE after running.**
+- **`backfillAttendanceStatus` HTTP function** — one-time function to generate `attendance_status` records for all users for all days in the current month. ✅ Ran + deleted from the project (no longer in source).
 - **Employee Dashboard tab** — now auto-populates from `attendance_status` sub-collection data (MTD summary per user: days present, half-days, leaves, salary due, conveyance, total due).
 - **Google Sheet tabs** — 9 tabs: Employee Dashboard, Conveyance, Attendance, MT Requests, MT Purchases, Material Transfers, Tool Transfers, Work Progress, Leave Requests.
 
@@ -629,16 +628,34 @@ Deploy: `npm run deploy` from the admin portal directory
 - **SendGrid removed** — monthly reminder only creates in-app notifications (no email dependency).
 
 > **User actions required:**
-> 1. Deploy Firestore rules: paste `firestore.rules` content in Firebase Console → Firestore → Rules → Publish
+> 1. ~~Deploy Firestore rules~~ ✅ DONE (Session 22 — deployed via firebase CLI)
 > 2. Deploy Cloud Functions: `firebase deploy --only functions` from `whitecoffee-admin/` directory
 > 3. Redeploy admin portal: `npm run deploy` from `whitecoffee-admin/` directory
+
+### ✅ Session 22 changes — Security hardening + Office Home In/Out:
+
+**Security audit & Firestore/Storage rules (DEPLOYED via firebase CLI to `white-coffee-92c27`):**
+- **Privilege-escalation fix #1** — `/users/{userId}` update was `isOwner || isAdmin` with NO field restriction → any user could set their own `role: "admin"` or inflate `salaryRate`. Now owner may change ONLY `['activeSessionToken', 'fcmToken']`; everything else is admin-only. Added `changedKeysWithin()` rules helper.
+- **Privilege-escalation fix #2** — `material_requests/material_purchases/material_transfers/tool_transfers/work_progress` update allowed owner to flip their own `status` to "approved" (self-approval of expenses). Now owner may change ONLY `['photoUrls']`; status changes are admin-only. (`leave_requests`/`regularization_requests` were already correct.)
+- **`storage.rules` CREATED** (none existed in-repo) — `requests/{userId}/**`: owner-only writes (image-only, <10 MB), owner+admin reads, default-deny elsewhere, no client deletes.
+- **`firebase.json` + `.firebaserc` CREATED** in the Android repo (project `white-coffee-92c27`) so this repo can deploy its own rules: `firebase deploy --only firestore:rules,storage`. (Needs `JAVA_HOME` set, e.g. Android Studio's `jbr`.)
+- **Backup hardening** — `backup_rules.xml` + `data_extraction_rules.xml` now exclude `wc_session.xml` (identity + session token) from cloud backup + device transfer.
+- **R8 enabled for release** — `isMinifyEnabled = true` + `isShrinkResources = true` with keep rules in `proguard-rules.pro` for data models / Firestore / coroutines. **Must smoke-test a release build on-device before shipping.**
+- **AuthRepository note** — `activeSessionToken` write is deliberately NOT awaited (offline-first; awaiting hangs offline logins). Comment added so it isn't "fixed" wrongly.
+- **Doc correction** — there is NO `ui/admin/` package in the Android app. User & Site management are WEB-PORTAL ONLY. `UserRepository.createUser/updateUserProfile/getAllUsers/sendPasswordResetEmail` exist but are currently UNUSED (kept for a possible future in-app admin screen).
+
+**Office Home In/Out feature (BUILD SUCCESSFUL — `:app:compileDebugKotlin`):**
+- Office attendance reworked from `NotCheckedIn ↔ CheckedIn` to a 5-phase Home→Office→Home day (see ATTENDANCE LOGIC section). New `home_in`/`home_out` events for office users: ONCE per day, GPS-only, data-only (no conveyance/attendance_status impact).
+- `OfficeAttendanceViewModel.kt` — new `OfficeState` (NotStarted/DayStarted/InOffice/DayEnded/Error), `homeIn()`/`homeOut()`, `deriveOfficeState()` gate logic.
+- `OfficeAttendanceFragment.kt` — per-phase button dispatch + state rendering.
+- `fragment_office_attendance.xml` — added outlined `btn_home_out` (End Day).
+- NOT done (optional follow-up): Home screen "today status" card still derives office status from last event only — shows "Not checked in" after home_in/home_out. Cosmetic.
 
 ### ⏳ REMAINING (Phase 4)
 - **Cloud Functions — FCM push** — send push to backgrounded devices (trigger: new doc in `/sent_notifications/`); deferred
 - **Background geofencing auto-checkout** (commented out by design — not in use)
 - Notifications screen ✅ DONE (in-app only; push to background requires Cloud Functions)
 - Google Sheets export ✅ DONE
-- **TODO**: Delete `backfillAttendanceStatus` function after running it once
 
 ---
 
@@ -660,7 +677,7 @@ Deploy: `npm run deploy` from the admin portal directory
 14. **Daily site assignments COMMENTED OUT** — `SiteRepository.getTodayAssignedSites()` and `SiteTask` class are commented. Site entry is manual free-text in all screens. Re-enable via comments in `SiteRepository.kt` and `SiteTask.kt`.
 15. **No My Submissions screens** — dropped; users do not view submission history in the app. All approvals via admin web portal only.
 16. **Leave Approvals = admin only** — `isOffice` is true for both office and admin; always use `isAdmin` for the Leave Approvals card/screen check.
-17. **Office attendance multi-cycle** — state derived from last event only. `DayComplete` state does not exist for office users. No End Day button.
+17. **Office attendance = Home→Office→Home (Session 22)** — 5-phase day: NotStarted → DayStarted ↔ InOffice → DayEnded. Home In/Out are once-per-day GPS-only gates recorded for DATA ONLY (no conveyance/attendance_status impact). Office in/out still multi-cycle between the home gates. `deriveOfficeState()` keys on home_in/home_out as gates. (Replaces the old `NotCheckedIn ↔ CheckedIn` last-event-only model.)
 18. **No geofencing at check-in** — geofenceRadius field exists in `/sites/` documents but is not enforced anywhere in the app currently.
 19. **Optimistic attendance updates** — after `recordEvent()` returns `Result<AttendanceRecord>` (with docId), ViewModel appends the record locally and calls `deriveAttendanceState()` in-memory. No Firestore re-fetch. Reduces post-check-in latency from ~1-2s to ~200ms.
 20. **`deriveAttendanceState()` top-level function** — lives in `AttendanceRecord.kt` (model package). Shared by `AttendanceRepository` (for initial load) and ViewModels (for optimistic updates). Never duplicate this logic.
@@ -674,6 +691,9 @@ Deploy: `npm run deploy` from the admin portal directory
 28. **Admin overrides protected** — `computeDailyAttendanceStatus` skips any user whose `attendance_status` doc has `markedBy === "admin"`. This prevents nightly auto-compute from overwriting approved regularizations.
 29. **Duplicate prevention** — `RegularizationRepository.submitRequest()` checks for existing pending/approved request for the same date before creating a new one.
 30. **Monthly in-app reminder** — `regularizationReminder` Cloud Function runs on the 25th, creates in-app notification for all admin users about pending regularization requests. No email dependency (SendGrid removed).
+31. **Firestore rules = field-level least privilege (Session 22)** — owner-update rules NEVER use a bare `isOwner` allow. Owner may only patch a whitelisted set of fields (`changedKeysWithin([...])`): user doc → `activeSessionToken`/`fcmToken`; request/purchase/transfer/work_progress docs → `photoUrls`. Status/role/salary changes are admin-only. Never widen these without a matching app write.
+32. **No in-app admin user/site screens** — User & Site management are WEB-PORTAL ONLY. There is no `ui/admin/` package. `UserRepository` admin methods exist but are unused.
+33. **Office home events are data-only** — `home_in`/`home_out` for office users are recorded purely for record-keeping. Conveyance is operations-only; `computeDailyAttendanceStatus` for office keys on office_in/out. Never wire office home events into pay/status logic.
 
 ---
 
@@ -682,16 +702,15 @@ Deploy: `npm run deploy` from the admin portal directory
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. Session 21 done: Attendance Regularization feature.
+Read CLAUDE.md first. Session 22 done: Security hardening + Office Home In/Out.
 Key state:
-- Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, User/Site Mgmt, Regularization).
-- Session 21: Attendance Regularization — employees see flagged days (HalfDay/Absent), submit reason, admin approves/rejects in admin portal. Approved flips attendance_status to Present. Cloud Function skips admin overrides. Monthly email reminder via SendGrid.
-- Google Sheet: 9 tabs (Employee Dashboard, Conveyance, Attendance, MT Requests/Purchases, Material/Tool Transfers, Work Progress, Leave Requests).
-- Daily assignment system COMMENTED OUT (SiteTask.kt + SiteRepository.getTodayAssignedSites).
-- No geofencing. Site entry = two free-text fields everywhere.
-- Office attendance: multi-cycle, state from last event, no DayComplete.
-- Firestore rules: need re-deploy with regularization_requests rules.
-Phase 4 remaining: Cloud Functions FCM push to backgrounded devices only.
+- Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, Regularization). User/Site mgmt = WEB PORTAL ONLY (no ui/admin in app).
+- Session 22 security: Firestore + Storage rules deployed (field-level least privilege — owner can't self-promote to admin or self-approve requests). storage.rules + firebase.json + .firebaserc created in repo. R8 enabled for release (needs on-device smoke test). Backup excludes wc_session.
+- Session 22 feature: office attendance now Home→Office→Home (5 phases). home_in/home_out for office = once/day, GPS-only, DATA ONLY (no conveyance/attendance_status impact).
+- Session 21: Attendance Regularization — flagged days → reason → admin approves in portal → flips attendance_status to Present.
+- Google Sheet: 9 tabs. Conveyance = ops-only, road-distance via Maps Distance Matrix × per-employee ₹/km rate.
+- Daily assignment system COMMENTED OUT. No geofencing. Site entry = two free-text fields.
+Phase 4 remaining: Cloud Functions FCM push to backgrounded devices.
 ```
 
 ---

@@ -139,7 +139,7 @@ class LocationProvider @Inject constructor(
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-    private fun isGpsEnabled(): Boolean {
+    fun isGpsEnabled(): Boolean {
         val locationManager =
             context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)

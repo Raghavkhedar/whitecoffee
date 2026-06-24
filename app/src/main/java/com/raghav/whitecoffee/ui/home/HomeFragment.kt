@@ -16,6 +16,7 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.MainViewModel
 import com.raghav.whitecoffee.R
@@ -43,6 +44,7 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         loadBellBadge()
         observeNetwork()
         observeTodayStatus()
+        observeLogout()
         promptBatteryOptimization()
     }
 
@@ -114,11 +116,23 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                             binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_checked_in)
                             binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_green_bg)
                         }
+                        is TodayAttendanceStatus.CheckedOut -> {
+                            binding.tvTodayAttStatus.text = status.label
+                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_pending))
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
+                        }
                         is TodayAttendanceStatus.DayComplete -> {
                             binding.tvTodayAttStatus.text = "Day complete"
                             binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_blue))
                             binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_checked_in)
                             binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_green_bg)
+                        }
+                        is TodayAttendanceStatus.Error -> {
+                            binding.tvTodayAttStatus.text = "Could not load"
+                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_hint))
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
                         }
                     }
                 }
@@ -130,6 +144,22 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
         super.onResume()
         viewModel.loadTodayAttendance()
         loadBellBadge()
+    }
+
+    private fun observeLogout() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                mainViewModel.logoutComplete.collect {
+                    findNavController().navigate(
+                        R.id.loginFragment,
+                        null,
+                        NavOptions.Builder()
+                            .setPopUpTo(R.id.nav_graph, true)
+                            .build()
+                    )
+                }
+            }
+        }
     }
 
     private fun promptBatteryOptimization() {
@@ -188,8 +218,9 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
             findNavController().navigate(R.id.action_homeFragment_to_regularizationFragment)
         }
         binding.btnLogout.setOnClickListener {
-            mainViewModel.logout()
-            findNavController().navigate(R.id.action_homeFragment_to_loginFragment)
+            binding.btnLogout.isEnabled = false
+            binding.btnLogout.text = "Signing out…"
+            mainViewModel.logoutWithAutoCheckout()
         }
     }
 }

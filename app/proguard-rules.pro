@@ -12,10 +12,24 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve line numbers for readable release crash traces, but hide the original
+# source file name.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ── Firestore data models ────────────────────────────────────────────────
+# These data classes are (de)serialized to/from Firestore. We map manually via
+# fromDocument()/toMap(), but keep them + their members intact so any reflective
+# path (and @DocumentId / @PropertyName annotations) survives R8 shrinking.
+-keep class com.raghav.whitecoffee.data.model.** { *; }
+-keepclassmembers class com.raghav.whitecoffee.data.model.** {
+    <init>(...);
+    <fields>;
+}
+
+# Firebase Firestore custom-object annotations.
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-keepnames class com.google.firebase.firestore.** { *; }
+
+# Kotlin coroutines internals occasionally accessed reflectively.
+-keepnames class kotlinx.coroutines.** { *; }

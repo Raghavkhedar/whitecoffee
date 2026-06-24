@@ -111,8 +111,11 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
         val qty       = row.etQuantity.text?.toString()?.toDoubleOrNull() ?: return@mapNotNull null
         val unit      = row.etUnit.text?.toString()?.trim() ?: ""
         val condition = row.etCondition.text?.toString()?.trim() ?: ""
+        val spec1     = row.etSpec1.text?.toString()?.trim() ?: ""
+        val spec2     = row.etSpec2.text?.toString()?.trim() ?: ""
+        val make      = row.etMake.text?.toString()?.trim() ?: ""
         if (name.isBlank() || qty <= 0) return@mapNotNull null
-        TransferItem(name, qty, unit, condition)
+        TransferItem(name, qty, unit, condition, spec1, spec2, make)
     }
 
     private fun showSuccessAndExit() {

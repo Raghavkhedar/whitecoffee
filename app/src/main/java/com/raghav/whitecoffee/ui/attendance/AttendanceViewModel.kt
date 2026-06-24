@@ -150,27 +150,33 @@ class AttendanceViewModel @Inject constructor(
     // ── Site Check In — Step 2: User typed site name + ID, record event ───
     // Geofence validation removed — user checks in from wherever they are.
 
-    fun confirmSiteCheckIn(siteId: String, siteName: String) = submitEvent {
-        _actionState.value = ActionState.Loading
-        when (val location = locationProvider.getCurrentLocation()) {
-            is LocationState.Success -> {
-                val result = attendanceRepository.recordEvent(
-                    type      = AttendanceType.SITE_IN,
-                    latitude  = location.latitude,
-                    longitude = location.longitude,
-                    siteId    = siteId.trim(),
-                    siteName  = siteName.trim()
-                )
-                handleResult(result)
+    fun confirmSiteCheckIn(siteId: String, siteName: String) {
+        if (siteName.isBlank()) {
+            _actionState.value = ActionState.Error("Please enter the site name.")
+            return
+        }
+        submitEvent {
+            _actionState.value = ActionState.Loading
+            when (val location = locationProvider.getCurrentLocation()) {
+                is LocationState.Success -> {
+                    val result = attendanceRepository.recordEvent(
+                        type      = AttendanceType.SITE_IN,
+                        latitude  = location.latitude,
+                        longitude = location.longitude,
+                        siteId    = siteId.trim(),
+                        siteName  = siteName.trim()
+                    )
+                    handleResult(result)
+                }
+                is LocationState.GpsDisabled ->
+                    _actionState.value = ActionState.Error("GPS is disabled.")
+                is LocationState.PermissionDenied ->
+                    _actionState.value = ActionState.Error("Location permission denied.")
+                is LocationState.LowAccuracy ->
+                    _actionState.value = ActionState.Error("Location accuracy too low. Move to open area.")
+                is LocationState.Timeout ->
+                    _actionState.value = ActionState.Error("Location timed out. Try again.")
             }
-            is LocationState.GpsDisabled ->
-                _actionState.value = ActionState.Error("GPS is disabled.")
-            is LocationState.PermissionDenied ->
-                _actionState.value = ActionState.Error("Location permission denied.")
-            is LocationState.LowAccuracy ->
-                _actionState.value = ActionState.Error("Location accuracy too low. Move to open area.")
-            is LocationState.Timeout ->
-                _actionState.value = ActionState.Error("Location timed out. Try again.")
         }
     }
 
@@ -233,6 +239,9 @@ class AttendanceViewModel @Inject constructor(
             _actionState.value = ActionState.Loading
 
             val currentState = (_attendanceState.value as? UiState.Success)?.data
+            val previousEvents = _todayEvents.value
+            val previousState = _attendanceState.value
+
             if (currentState is AttendanceState.SiteCheckedIn) {
                 val siteRecord = currentState.record
                 val siteOutResult = attendanceRepository.recordEvent(
@@ -248,7 +257,7 @@ class AttendanceViewModel @Inject constructor(
                     )
                     return@submitEvent
                 }
-                val withSiteOut = _todayEvents.value + siteOutResult.getOrThrow()
+                val withSiteOut = previousEvents + siteOutResult.getOrThrow()
                 _todayEvents.value = withSiteOut
                 _attendanceState.value = UiState.Success(deriveAttendanceState(withSiteOut))
             }
@@ -259,6 +268,14 @@ class AttendanceViewModel @Inject constructor(
                 longitude   = longitude,
                 marketName  = marketName.trim()
             )
+            if (result.isFailure && currentState is AttendanceState.SiteCheckedIn) {
+                _todayEvents.value = previousEvents
+                _attendanceState.value = previousState
+                _actionState.value = ActionState.Error(
+                    result.exceptionOrNull()?.message ?: "Failed to check in to market. Site check-out was reverted."
+                )
+                return@submitEvent
+            }
             handleResult(result)
         }
     }

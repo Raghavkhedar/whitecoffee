@@ -37,12 +37,13 @@ class RegularizationRepository @Inject constructor(
     suspend fun getMyRequests(yearMonth: String): Result<List<RegularizationRequest>> {
         return try {
             val snapshot = regCol
-                .orderBy("submittedAt", Query.Direction.DESCENDING)
+                .whereGreaterThanOrEqualTo("date", "$yearMonth-01")
+                .whereLessThanOrEqualTo("date", "$yearMonth-31")
+                .orderBy("date", Query.Direction.ASCENDING)
                 .get()
                 .await()
             val filtered = snapshot.documents
                 .mapNotNull { RegularizationRequest.fromDocument(it) }
-                .filter { it.date.startsWith(yearMonth) }
             Result.success(filtered)
         } catch (e: Exception) {
             Result.failure(e)

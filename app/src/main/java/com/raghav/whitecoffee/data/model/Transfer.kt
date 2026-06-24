@@ -8,13 +8,19 @@ data class TransferItem(
     val itemName: String = "",
     val quantity: Double = 0.0,
     val unit: String = "",
-    val condition: String = ""      // e.g. "Good", "Damaged" — important for tools
+    val condition: String = "",
+    val spec1: String = "",
+    val spec2: String = "",
+    val make: String = ""
 ) {
     fun toMap(): Map<String, Any> = mapOf(
         "itemName"  to itemName,
         "quantity"  to quantity,
         "unit"      to unit,
-        "condition" to condition
+        "condition" to condition,
+        "spec1"     to spec1,
+        "spec2"     to spec2,
+        "make"      to make
     )
 
     companion object {
@@ -22,7 +28,10 @@ data class TransferItem(
             itemName  = map["itemName"] as? String ?: "",
             quantity  = (map["quantity"] as? Number)?.toDouble() ?: 0.0,
             unit      = map["unit"] as? String ?: "",
-            condition = map["condition"] as? String ?: ""
+            condition = map["condition"] as? String ?: "",
+            spec1     = map["spec1"] as? String ?: "",
+            spec2     = map["spec2"] as? String ?: "",
+            make      = map["make"] as? String ?: ""
         )
     }
 }
@@ -56,6 +65,9 @@ data class Transfer(
             "Quantity"       to item.quantity,
             "Unit"           to item.unit,
             "Condition"      to item.condition,
+            "Spec 1"         to item.spec1,
+            "Spec 2"         to item.spec2,
+            "Make"           to item.make,
             "Transfer Date"  to transferDate,
             "Notes"          to notes,
             "Submitted At"   to (submittedAt?.toDate()?.toString() ?: "")

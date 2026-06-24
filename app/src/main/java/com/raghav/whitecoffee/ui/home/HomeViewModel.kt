@@ -22,7 +22,9 @@ sealed interface TodayAttendanceStatus {
     data object Loading : TodayAttendanceStatus
     data object NotCheckedIn : TodayAttendanceStatus
     data class CheckedIn(val label: String) : TodayAttendanceStatus
+    data class CheckedOut(val label: String) : TodayAttendanceStatus
     data object DayComplete : TodayAttendanceStatus
+    data object Error : TodayAttendanceStatus
 }
 
 @HiltViewModel
@@ -63,7 +65,7 @@ class HomeViewModel @Inject constructor(
             _todayStatus.value = TodayAttendanceStatus.Loading
             val result = attendanceRepository.getTodayData()
             if (result.isFailure) {
-                _todayStatus.value = TodayAttendanceStatus.NotCheckedIn
+                _todayStatus.value = TodayAttendanceStatus.Error
                 return@launch
             }
             val (state, events) = result.getOrThrow()
@@ -80,16 +82,12 @@ class HomeViewModel @Inject constructor(
                 if (lastEvent?.type == AttendanceType.OFFICE_IN) {
                     TodayAttendanceStatus.CheckedIn("Checked in")
                 } else if (events.isNotEmpty() && lastEvent?.type == AttendanceType.OFFICE_OUT) {
-                    TodayAttendanceStatus.CheckedIn("Last: checked out")
+                    TodayAttendanceStatus.CheckedOut("Last: checked out")
                 } else {
                     TodayAttendanceStatus.NotCheckedIn
                 }
             }
         }
-    }
-
-    fun logout() {
-        sessionManager.clearSession()
     }
 
     suspend fun getUnreadCount(): Int =
