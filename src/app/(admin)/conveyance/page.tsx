@@ -11,6 +11,7 @@ export default function ConveyancePage() {
   const [records, setRecords] = useState<ConveyanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -26,14 +27,19 @@ export default function ConveyancePage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const filteredRecords = useMemo(
+    () => employeeFilter ? records.filter(r => r.userId === employeeFilter) : records,
+    [records, employeeFilter],
+  );
+
   const sorted = useMemo(
-    () => [...records].sort((a, b) => a.date.localeCompare(b.date) || a.userName.localeCompare(b.userName)),
-    [records],
+    () => [...filteredRecords].sort((a, b) => a.date.localeCompare(b.date) || a.userName.localeCompare(b.userName)),
+    [filteredRecords],
   );
 
   const summary = useMemo(() => {
     const map = new Map<string, { userName: string; employeeId: string; totalKm: number; totalConveyance: number; days: number }>();
-    records.forEach(r => {
+    filteredRecords.forEach(r => {
       const entry = map.get(r.userId) || { userName: r.userName, employeeId: r.employeeId, totalKm: 0, totalConveyance: 0, days: 0 };
       entry.totalKm += r.totalKm;
       entry.totalConveyance += r.conveyance;
@@ -61,12 +67,24 @@ export default function ConveyancePage() {
         <p className="text-text-secondary text-sm mt-1">Monthly conveyance records computed by the Cloud Function</p>
       </div>
 
-      {/* Month picker */}
+      {/* Month picker + employee filter */}
       <div className="card mb-6">
         <div className="flex items-center justify-between">
           <button onClick={() => changeMonth(-1)} className="p-2 rounded-lg text-text-secondary hover:bg-background hover:text-text-primary transition-colors text-lg leading-none">‹</button>
           <h2 className="text-base font-semibold text-text-primary">{monthLabel}</h2>
           <button onClick={() => changeMonth(1)} className="p-2 rounded-lg text-text-secondary hover:bg-background hover:text-text-primary transition-colors text-lg leading-none">›</button>
+        </div>
+        <div className="mt-3 pt-3 border-t border-border">
+          <select
+            value={employeeFilter}
+            onChange={e => setEmployeeFilter(e.target.value)}
+            className="input text-sm !py-2 min-w-[180px]"
+          >
+            <option value="">All Employees</option>
+            {Array.from(new Map(records.map(r => [r.userId, r.userName]))).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
+          </select>
         </div>
       </div>
 

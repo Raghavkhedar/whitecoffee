@@ -44,6 +44,7 @@ export default function RegularizationPage() {
   const [actionModal, setActionModal] = useState<{ req: RegularizationRequest; type: 'approve' | 'reject' } | null>(null);
   const [actionComment, setActionComment] = useState('');
   const [actioning, setActioning]   = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -88,6 +89,7 @@ export default function RegularizationPage() {
   }
 
   const FILTERS: Filter[] = ['pending', 'approved', 'rejected', 'all'];
+  const filteredRequests = employeeFilter ? requests.filter(r => r.userId === employeeFilter) : requests;
 
   return (
     <div>
@@ -109,8 +111,8 @@ export default function RegularizationPage() {
           className="btn-outline text-sm py-1 px-3">&rarr;</button>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-6">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {FILTERS.map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
@@ -121,9 +123,16 @@ export default function RegularizationPage() {
             {f}
           </button>
         ))}
-        <span className="ml-auto text-sm text-text-secondary self-center">
-          {requests.length} request{requests.length !== 1 ? 's' : ''}
-        </span>
+        <select
+          value={employeeFilter}
+          onChange={e => setEmployeeFilter(e.target.value)}
+          className="ml-auto input text-sm !py-2 min-w-[180px]"
+        >
+          <option value="">All Employees</option>
+          {Array.from(new Map(requests.map(r => [r.userId, r.userName]))).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => (
+            <option key={id} value={id}>{name}</option>
+          ))}
+        </select>
       </div>
 
       {error && (
@@ -135,7 +144,7 @@ export default function RegularizationPage() {
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-secondary">Loading&hellip;</div>
-        ) : requests.length === 0 ? (
+        ) : filteredRequests.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">
             No {filter === 'all' ? '' : filter} regularization requests for {formatMonthLabel(month)}.
           </div>
@@ -151,7 +160,7 @@ export default function RegularizationPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {requests.map(r => (
+              {filteredRequests.map(r => (
                 <tr key={r.id} className="hover:bg-background transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-primary">{r.userName}</div>

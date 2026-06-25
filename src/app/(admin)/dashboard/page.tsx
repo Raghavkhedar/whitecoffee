@@ -1,8 +1,17 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getDashboardStats, getConveyanceConfig, setConveyanceConfig } from '@/lib/firestore';
+import { getDashboardStats, getConveyanceConfig, setConveyanceConfig, getAllUsers, getAttendanceForDate } from '@/lib/firestore';
+import type { User, AttendanceRecord } from '@/types';
 
 interface Stats { totalUsers: number; totalSites: number; pendingLeaves: number; todayCheckIns: number; }
+
+interface LiveStatus {
+  user: User;
+  checkedIn: boolean;
+  location: string;
+  inTime: Date | null;
+  type: 'office' | 'site';
+}
 
 const STAT_CARDS = [
   { key: 'totalUsers',    icon: '👥', label: 'Total Employees', color: 'bg-blue-50 border-blue-200' },
@@ -22,6 +31,9 @@ export default function DashboardPage() {
   const [ratesSaving, setRatesSaving]   = useState(false);
   const [ratesMsg, setRatesMsg]     = useState('');
 
+  const [liveStatuses, setLiveStatuses] = useState<LiveStatus[]>([]);
+  const [liveLoading, setLiveLoading]   = useState(true);
+
   useEffect(() => {
     getDashboardStats()
       .then(setStats)
@@ -32,6 +44,36 @@ export default function DashboardPage() {
       .then(c => { setRate1(c.rate1 ? String(c.rate1) : ''); setRate2(c.rate2 ? String(c.rate2) : ''); })
       .catch((err: unknown) => setRatesMsg(err instanceof Error ? err.message : String(err)))
       .finally(() => setRatesLoading(false));
+
+    const todayDate = new Date().toISOString().split('T')[0];
+    Promise.all([getAllUsers(), getAttendanceForDate(todayDate)])
+      .then(([users, events]) => {
+        const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+        const statuses: LiveStatus[] = users.map(user => {
+          const isOps = user.role === 'operations';
+          const userEvents = events.filter(e => e.userId === user.id).sort((a, b) => ts(a) - ts(b));
+
+          const inType  = isOps ? 'site_in'  : 'office_in';
+          const outType = isOps ? 'site_out' : 'office_out';
+          const ins  = userEvents.filter(e => e.type === inType);
+          const outs = userEvents.filter(e => e.type === outType);
+
+          const lastIn  = ins.length > 0 ? ins[ins.length - 1] : null;
+          const lastOut = outs.length > 0 ? outs[outs.length - 1] : null;
+          const checkedIn = lastIn != null && (lastOut == null || ts(lastIn) > ts(lastOut));
+
+          return {
+            user,
+            checkedIn,
+            location: checkedIn && lastIn ? (lastIn.siteName || lastIn.marketName || 'Office') : '',
+            inTime: checkedIn && lastIn?.timestamp ? lastIn.timestamp.toDate() : null,
+            type: isOps ? 'site' : 'office',
+          };
+        });
+        setLiveStatuses(statuses);
+      })
+      .catch(console.error)
+      .finally(() => setLiveLoading(false));
   }, []);
 
   async function saveRates() {
@@ -78,6 +120,70 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      {/* Live Attendance */}
+      <div className="mt-8 card">
+        <h2 className="font-bold text-text-primary mb-4">Live Attendance</h2>
+        {liveLoading ? (
+          <div className="text-text-secondary text-sm">Loading…</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Name</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Role</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Status</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Location</th>
+                  <th className="text-left py-2.5 font-medium text-text-secondary">Since</th>
+                </tr>
+              </thead>
+              <tbody>
+                {liveStatuses
+                  .sort((a, b) => {
+                    if (a.checkedIn !== b.checkedIn) return a.checkedIn ? -1 : 1;
+                    return a.user.name.localeCompare(b.user.name);
+                  })
+                  .map(s => (
+                    <tr key={s.user.id} className="border-b border-border/40 hover:bg-background/60 transition-colors">
+                      <td className="py-2.5 pr-4 font-medium text-text-primary">{s.user.name}</td>
+                      <td className="py-2.5 pr-4">
+                        <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                          s.user.role === 'operations'
+                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                            : s.user.role === 'admin'
+                            ? 'bg-red-50 text-red-700 border-red-200'
+                            : 'bg-sky-50 text-sky-700 border-sky-200'
+                        }`}>
+                          {s.user.role}
+                        </span>
+                      </td>
+                      <td className="py-2.5 pr-4">
+                        {s.checkedIn ? (
+                          <span className="text-xs px-2.5 py-1 rounded border font-medium bg-green-100 text-green-700 border-green-200">
+                            Checked In
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2.5 py-1 rounded border font-medium bg-gray-100 text-gray-500 border-gray-200">
+                            Not Checked In
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-4 text-text-secondary text-xs">
+                        {s.checkedIn ? s.location : '—'}
+                      </td>
+                      <td className="py-2.5 text-text-secondary text-xs">
+                        {s.checkedIn && s.inTime
+                          ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="card">

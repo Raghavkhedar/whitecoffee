@@ -22,6 +22,7 @@ export default function LeavesPage() {
   const [rejectModal, setRejectModal] = useState<LeaveRequest | null>(null);
   const [rejectComment, setRejectComment] = useState('');
   const [actioning, setActioning] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -66,6 +67,7 @@ export default function LeavesPage() {
   }
 
   const FILTERS: Filter[] = ['pending', 'approved', 'rejected', 'all'];
+  const filteredLeaves = employeeFilter ? leaves.filter(l => l.userId === employeeFilter) : leaves;
 
   return (
     <div>
@@ -74,14 +76,24 @@ export default function LeavesPage() {
         <p className="text-text-secondary text-sm mt-1">{leaves.length} records</p>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-6">
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {FILTERS.map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${filter === f ? 'bg-primary text-white' : 'bg-white border border-border text-text-secondary hover:border-primary hover:text-primary'}`}>
             {f}
           </button>
         ))}
+        <select
+          value={employeeFilter}
+          onChange={e => setEmployeeFilter(e.target.value)}
+          className="ml-auto input text-sm !py-2 min-w-[180px]"
+        >
+          <option value="">All Employees</option>
+          {Array.from(new Map(leaves.map(l => [l.userId, l.userName]))).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => (
+            <option key={id} value={id}>{name}</option>
+          ))}
+        </select>
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
@@ -89,7 +101,7 @@ export default function LeavesPage() {
       <div className="card p-0 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-secondary">Loading…</div>
-        ) : leaves.length === 0 ? (
+        ) : filteredLeaves.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No {filter === 'all' ? '' : filter} leave requests.</div>
         ) : (
           <table className="w-full text-sm">
@@ -101,7 +113,7 @@ export default function LeavesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {leaves.map(l => (
+              {filteredLeaves.map(l => (
                 <tr key={l.id} className="hover:bg-background transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-primary">{l.userName}</div>

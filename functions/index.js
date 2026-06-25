@@ -47,6 +47,21 @@ function ts(timestamp) {
   return timestamp.toDate().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 }
 
+// Parse a "HH:MM" 24h string into minutes-from-midnight; fallback if invalid.
+function toMinutes(hhmm, fallback) {
+  if (!hhmm || typeof hhmm !== "string") return fallback;
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return fallback;
+  return h * 60 + m;
+}
+
+function timeIST(timestamp) {
+  if (!timestamp) return "";
+  return timestamp.toDate().toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
 function getHourIST(timestamp) {
   if (!timestamp) return -1;
   const istMs = timestamp.toDate().getTime() + 5.5 * 60 * 60 * 1000;
@@ -57,6 +72,15 @@ function getMinuteIST(timestamp) {
   if (!timestamp) return 0;
   const istMs = timestamp.toDate().getTime() + 5.5 * 60 * 60 * 1000;
   return new Date(istMs).getUTCMinutes();
+}
+
+// Resolve the owning user id for an exported doc, whether it's a top-level doc
+// (carries a userId field) or a subcollection doc under users/{uid}/...
+function uidOf(doc) {
+  const d = doc.data();
+  if (d.userId) return d.userId;
+  const parent = doc.ref.parent.parent;
+  return parent ? parent.id : "";
 }
 
 async function ensureTab(sheets, tabName) {
@@ -134,7 +158,28 @@ exports.computeDailyAttendanceStatus = onSchedule(
         priorStatus.set(user.id, statusDoc.data().status);
       }
     });
-    await Promise.all(statusChecks);
+
+    // Operations have variable shifts: admin sets a planned start/end per day.
+    // Status is evaluated against that window. No plan → day left unmarked.
+    const plannedHours = new Map(); // userId → { startTime, endTime }
+    const planChecks = allUsers
+      .filter((u) => u.role === "operations")
+      .map(async (user) => {
+        const planDoc = await db.doc(`users/${user.id}/planned_hours/${today}`).get();
+        if (planDoc.exists) {
+          const p = planDoc.data();
+          if (p.startTime && p.endTime) plannedHours.set(user.id, p);
+        }
+      });
+
+    await Promise.all([...statusChecks, ...planChecks]);
+
+    // Skip Sundays — no status written, no penalty
+    const todayDate = new Date(today + "T00:00:00+05:30");
+    if (todayDate.getDay() === 0) {
+      console.log(`computeDailyAttendanceStatus: skipping Sunday ${today}`);
+      return;
+    }
 
     const batch        = db.batch();
     const plDeductions = [];
@@ -146,26 +191,39 @@ exports.computeDailyAttendanceStatus = onSchedule(
       );
 
       const isOps = user.role === "operations";
-      const checkIns  = events.filter((e) => e.type === (isOps ? "home_in"   : "office_in"));
-      const checkOuts = events.filter((e) => e.type === (isOps ? "home_out"  : "office_out"));
+      const plan  = plannedHours.get(user.id);
+      const leave = leavesToday.get(user.id);
+
+      // Operations need a planned shift to be auto-evaluated. With no plan and
+      // no approved leave, leave the day unmarked (admin must enter a plan).
+      if (isOps && !plan && !leave) continue;
+
+      // Working window: office is fixed 10:00–18:00; operations use the planned
+      // start/end the admin entered for the day.
+      const startMin = isOps ? toMinutes(plan?.startTime, 10 * 60) : 10 * 60;
+      const endMin   = isOps ? toMinutes(plan?.endTime,   18 * 60) : 18 * 60;
+
+      // Operations: in/out come from the first site they reached and the last
+      // site they left (site_in / site_out). Office: office_in / office_out.
+      const checkIns  = events.filter((e) => e.type === (isOps ? "site_in"   : "office_in"));
+      const checkOuts = events.filter((e) => e.type === (isOps ? "site_out"  : "office_out"));
       let status;
 
       if (checkIns.length > 0 && checkOuts.length > 0) {
-        const firstIn  = checkIns[0];
-        const lastOut  = checkOuts[checkOuts.length - 1];
-        const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-        const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-        const lateIn     = inMinutes > 10 * 60;
-        const earlyOut   = outMinutes < 18 * 60;
-        const hoursWorked = (outMinutes - inMinutes) / 60;
+      const firstIn  = checkIns[0];
+      const lastOut  = checkOuts[checkOuts.length - 1];
+      const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+      const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
+      const lateMinutes  = Math.max(0, inMinutes - startMin);
+        const earlyMinutes = Math.max(0, endMin - outMinutes);
+        const offMinutes   = lateMinutes + earlyMinutes;
 
-        if (lateIn && earlyOut) status = "HalfDay";
-        else if (hoursWorked < 6) status = "SL";
-        else status = "Present";
+        if (offMinutes === 0) status = "Present";
+        else if (offMinutes <= 120) status = "SL";
+        else status = "HalfDay";
       } else if (checkIns.length > 0 || checkOuts.length > 0) {
         status = "SLNF";
       } else {
-        const leave   = leavesToday.get(user.id);
         if (leave) {
           const balance = user.plBalance || 0;
           if (balance > 0) {
@@ -209,13 +267,20 @@ exports.exportToSheets = onSchedule(
     const now        = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const today      = now.toISOString().slice(0, 10);
-    const daysPassed = now.getDate();
+    // Count working days (Mon–Sat, excluding Sundays) passed in the month
+    let daysPassed = 0;
+    for (let d = 1; d <= now.getDate(); d++) {
+      const dt = new Date(now.getFullYear(), now.getMonth(), d);
+      if (dt.getDay() !== 0) daysPassed++;
+    }
     const monthLabel = now.toLocaleString("en-IN", { month: "long", year: "numeric" });
 
     // ── All users (shared across sections) ────────────────────────────
     const allUsersSnap = await db.collection("users").get();
     const allUsersData = allUsersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const userRoleMap  = new Map(allUsersData.map((u) => [u.id, u.role || ""]));
+    const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
+    const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));
 
     // ── userId__date → DailyStatus (for Attendance tab) ───────────────
     const statusSnap = await db.collectionGroup("attendance_status").get();
@@ -231,6 +296,9 @@ exports.exportToSheets = onSchedule(
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
       if (d.date < monthStart || d.date > today) return;
+      // Skip Sundays — they are not working days
+      const dayOfWeek = new Date(d.date + "T00:00:00+05:30").getDay();
+      if (dayOfWeek === 0) return;
       if (!userAttendanceMTD.has(d.userId))
         userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, upl: 0, absent: 0 });
       const ua = userAttendanceMTD.get(d.userId);
@@ -245,27 +313,52 @@ exports.exportToSheets = onSchedule(
       }
     });
 
-    // ── 1. Attendance ─────────────────────────────────────────────────
+    // ── 1. Attendance — one row per employee per day ──────────────────
+    // In/Out times: office uses office_in/office_out; operations uses the
+    // first site reached (site_in) and the last site left (site_out).
     {
       const snap   = await db.collectionGroup("attendance").get();
       const header = [
-        "Date", "Employee Name", "Employee ID", "Type", "Timestamp",
-        "Site ID", "Site Name", "Market Name", "Location Name", "Latitude", "Longitude",
+        "Date", "Employee Name", "Employee ID", "Role",
+        "In Time", "In Location", "Out Time", "Out Location",
         "OT", "Daily Status",
       ];
-      const rows = snap.docs.map((doc) => {
-        const d    = doc.data();
-        const role = userRoleMap.get(d.userId) || "";
-        const isOT = role === "operations" && d.type === "site_out" && getHourIST(d.timestamp) >= 18;
+
+      // Group all events by employee + date.
+      const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
+      snap.docs.forEach((doc) => {
+        const d   = doc.data();
+        const uid = uidOf(doc);
+        const key = `${uid}__${d.date || ""}`;
+        if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
+        groups.get(key).events.push(d);
+      });
+
+      const rows = [...groups.values()].map(({ uid, date, events }) => {
+        events.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+        const role  = userRoleMap.get(uid) || "";
+        const isOps = role === "operations";
+
+        const ins   = events.filter((e) => e.type === (isOps ? "site_in"  : "office_in"));
+        const outs  = events.filter((e) => e.type === (isOps ? "site_out" : "office_out"));
+        const firstIn = ins[0];
+        const lastOut = outs[outs.length - 1];
+
+        const locOf = (e) => !e ? "" : (isOps ? (e.siteName || "Site") : (e.locationName || "Office"));
+        const isOT  = isOps && lastOut && getHourIST(lastOut.timestamp) >= 18;
+
         return [
-          d.date || "", d.userName || "", d.employeeId || "", d.type || "", ts(d.timestamp),
-          d.siteId || "", d.siteName || "", d.marketName || "", d.locationName || "",
-          d.latitude || "", d.longitude || "",
+          date,
+          userNameMap.get(uid) ?? "",
+          userEmpIdMap.get(uid) ?? "",
+          role,
+          timeIST(firstIn?.timestamp), locOf(firstIn),
+          timeIST(lastOut?.timestamp), locOf(lastOut),
           isOT ? "Yes" : "",
-          statusMap.get(`${d.userId}__${d.date}`) || "",
+          statusMap.get(`${uid}__${date}`) || "",
         ];
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[4].localeCompare(b[4]));
+      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
       await writeTab(sheets, TABS.ATTENDANCE, [header, ...rows]);
       console.log(`Attendance: ${rows.length} rows`);
     }
@@ -282,7 +375,8 @@ exports.exportToSheets = onSchedule(
         const d      = doc.data();
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
-        const base   = [ts(d.submittedAt), d.status || "", d.userName || "", d.employeeId || "", d.siteId || "", d.siteName || ""];
+        const uid    = uidOf(doc);
+        const base   = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos]));
       });
@@ -304,7 +398,8 @@ exports.exportToSheets = onSchedule(
         const d      = doc.data();
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
-        const base   = [ts(d.submittedAt), d.status || "", d.userName || "", d.employeeId || "", d.siteId || "", d.siteName || ""];
+        const uid    = uidOf(doc);
+        const base   = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos]));
       });
@@ -326,7 +421,8 @@ exports.exportToSheets = onSchedule(
         const d      = doc.data();
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
-        const base   = [ts(d.submittedAt), d.status || "", d.userName || "", d.employeeId || "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        const uid    = uidOf(doc);
+        const base   = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos]));
       });
@@ -347,7 +443,8 @@ exports.exportToSheets = onSchedule(
       snap.docs.forEach((doc) => {
         const d    = doc.data();
         const items = Array.isArray(d.items) ? d.items : [];
-        const base  = [ts(d.submittedAt), d.status || "", d.userName || "", d.employeeId || "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        const uid   = uidOf(doc);
+        const base  = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || ""]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""]));
       });
@@ -361,8 +458,9 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("work_progress").get();
       const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Hours Worked", "Work Description", "Status", "Submitted At", "Photo URLs"];
       const rows   = snap.docs.map((doc) => {
-        const d = doc.data();
-        return [d.date || "", d.userName || "", d.employeeId || "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", d.status || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
+        const d   = doc.data();
+        const uid = uidOf(doc);
+        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", d.status || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
       await writeTab(sheets, TABS.WORK_PROGRESS, [header, ...rows]);
@@ -374,8 +472,9 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("leave_requests").get();
       const header = ["Submitted At", "Status", "Employee Name", "Employee ID", "Leave Type", "From Date", "To Date", "Total Days", "Reason", "Approved By", "Approver Comment", "Reviewed At"];
       const rows   = snap.docs.map((doc) => {
-        const d = doc.data();
-        return [ts(d.submittedAt), d.status || "", d.userName || "", d.employeeId || "", d.leaveType || "", d.fromDate || "", d.toDate || "", d.totalDays || "", d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
+        const d   = doc.data();
+        const uid = uidOf(doc);
+        return [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", d.totalDays || "", d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
       await writeTab(sheets, TABS.LEAVE_REQUESTS, [header, ...rows]);
@@ -533,7 +632,7 @@ exports.exportToSheets = onSchedule(
 
       sortedUsers.forEach((user) => {
         const empId    = user.employeeId || "";
-        const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, pl: 0, upl: 0, absent: 0 };
+        const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, upl: 0, absent: 0 };
 
         const daysNP   = ua.present + ua.sl * 0.75 + ua.halfDay * 0.5 + ua.slnf * 0.5 + ua.pl - ua.absent;
         const leaves   = ua.pl + ua.upl; // all leave types shown together
@@ -557,13 +656,13 @@ exports.exportToSheets = onSchedule(
           user.name || "",
           empId,
           daysPassed,
-          leaves || "",
-          daysNP || "",
-          salaryRate || "",
-          salaryDue || "",
-          covy || "",
-          imprest || "",
-          totalDue || "",
+          leaves,
+          daysNP,
+          salaryRate,
+          salaryDue,
+          covy,
+          imprest,
+          totalDue,
         ]);
       });
 

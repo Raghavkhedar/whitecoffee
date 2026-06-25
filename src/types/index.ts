@@ -90,6 +90,15 @@ export interface RegularizationRequest {
   reviewedAt?: Timestamp;
 }
 
+export interface PlannedHours {
+  id: string;
+  userId: string;
+  date: string;       // "yyyy-MM-dd"
+  startTime: string;  // "HH:MM" 24h
+  endTime: string;    // "HH:MM" 24h
+  updatedAt?: Timestamp;
+}
+
 export interface AttendanceRecord {
   id: string;
   userId: string;

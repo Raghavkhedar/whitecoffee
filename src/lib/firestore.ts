@@ -8,7 +8,7 @@ import {
 import { db } from './firebase';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -267,6 +267,35 @@ export async function setAttendanceStatus(
   await setDoc(
     doc(db, 'users', userId, 'attendance_status', date),
     { ...data, updatedAt: Timestamp.now() },
+    { merge: true }
+  );
+}
+
+// ── Planned Hours (operations shift windows) ──────────────────────────────
+
+// month is 1-indexed (1 = January)
+export async function getPlannedHoursForMonth(year: number, month: number): Promise<PlannedHours[]> {
+  const monthStr  = `${year}-${String(month).padStart(2, '0')}`;
+  const startDate = `${monthStr}-01`;
+  const endDate   = `${monthStr}-31`; // safe upper bound for any month
+  const q = query(
+    collectionGroup(db, 'planned_hours'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as PlannedHours));
+}
+
+export async function setPlannedHours(
+  userId: string,
+  date: string,
+  startTime: string,
+  endTime: string
+): Promise<void> {
+  await setDoc(
+    doc(db, 'users', userId, 'planned_hours', date),
+    { userId, date, startTime, endTime, updatedAt: Timestamp.now() },
     { merge: true }
   );
 }

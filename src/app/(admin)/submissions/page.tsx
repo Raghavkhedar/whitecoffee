@@ -285,6 +285,7 @@ export default function SubmissionsPage() {
   const [error, setError]     = useState('');
   const [viewing, setViewing] = useState<Row | null>(null);
   const [editing, setEditing] = useState<Row | null>(null);
+  const [employeeFilter, setEmployeeFilter] = useState('');
 
   async function load(col: CollectionKey) {
     setLoading(true);
@@ -333,6 +334,7 @@ export default function SubmissionsPage() {
   }
 
   const activeLabel = COLLECTIONS.find(c => c.key === active)?.label ?? active;
+  const filteredRows = employeeFilter ? rows.filter(r => String(r.userName ?? '') === employeeFilter) : rows;
 
   return (
     <div>
@@ -341,21 +343,31 @@ export default function SubmissionsPage() {
         <p className="text-text-secondary text-sm mt-1">All form submissions from field teams</p>
       </div>
 
-      <div className="flex gap-2 mb-6 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2 mb-6">
         {COLLECTIONS.map(c => (
-          <button key={c.key} onClick={() => setActive(c.key)}
+          <button key={c.key} onClick={() => { setActive(c.key); setEmployeeFilter(''); }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${active === c.key ? 'bg-primary text-white' : 'bg-white border border-border text-text-secondary hover:border-primary hover:text-primary'}`}>
             {c.icon} {c.label}
           </button>
         ))}
+        <select
+          value={employeeFilter}
+          onChange={e => setEmployeeFilter(e.target.value)}
+          className="ml-auto input text-sm !py-2 min-w-[180px]"
+        >
+          <option value="">All Employees</option>
+          {Array.from(new Map(rows.map(r => [String(r.userName ?? ''), String(r.userName ?? '')]))).filter(([n]) => n).sort((a, b) => a[0].localeCompare(b[0])).map(([name]) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
 
       <div className="card p-0 overflow-hidden overflow-x-auto">
-        {!loading && rows.length > 0 && (
+        {!loading && filteredRows.length > 0 && (
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background">
-            <span className="text-xs text-text-secondary font-medium">{rows.length} submission{rows.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs text-text-secondary font-medium">{filteredRows.length} submission{filteredRows.length !== 1 ? 's' : ''}</span>
             <button onClick={downloadExcel} className="btn-outline text-xs py-1.5 px-3 flex items-center gap-1.5">
               ⬇ Download Excel
             </button>
@@ -364,7 +376,7 @@ export default function SubmissionsPage() {
 
         {loading ? (
           <div className="p-8 text-center text-text-secondary">Loading…</div>
-        ) : rows.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No submissions found.</div>
         ) : (
           <table className="w-full text-sm min-w-[700px]">
@@ -376,7 +388,7 @@ export default function SubmissionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {rows.map(row => (
+              {filteredRows.map(row => (
                 <tr key={row.id} className="hover:bg-background transition-colors">
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-primary">{String(row.userName ?? '—')}</div>

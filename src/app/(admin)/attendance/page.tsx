@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, setAttendanceStatus } from '@/lib/firestore';
-import type { User, AttendanceRecord, AttendanceStatus } from '@/types';
+import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours } from '@/lib/firestore';
+import type { User, AttendanceRecord, AttendanceStatus, PlannedHours } from '@/types';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -34,11 +34,33 @@ function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function deriveStatusFromEvents(userEvents: AttendanceRecord[]): AttendanceStatus['status'] | null {
+function hhmmToMinutes(s: string | undefined, fallback: number): number {
+  if (!s) return fallback;
+  const [h, m] = s.split(':').map(Number);
+  return Number.isNaN(h) || Number.isNaN(m) ? fallback : h * 60 + m;
+}
+
+// Mirrors the computeDailyAttendanceStatus Cloud Function for live (pre-23:59) display.
+// Office/admin: fixed 10:00–18:00 window, office_in/office_out events.
+// Operations: planned shift window (required), first site_in / last site_out events.
+function deriveStatus(
+  role: string,
+  userEvents: AttendanceRecord[],
+  date: string,
+  planned?: PlannedHours,
+): AttendanceStatus['status'] | null {
+  const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+  if (dayOfWeek === 0) return null; // Sunday — no status
+
+  const isOps = role === 'operations';
+  if (isOps && (!planned?.startTime || !planned?.endTime)) return null; // no plan → unmarked
+
   const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
-  const checkIns  = userEvents.filter(e => e.type === 'office_in').sort((a, b) => ts(a) - ts(b));
-  const checkOuts = userEvents.filter(e => e.type === 'office_out').sort((a, b) => ts(a) - ts(b));
-  if (checkIns.length === 0 && checkOuts.length === 0) return null;
+  const inType  = isOps ? 'site_in'  : 'office_in';
+  const outType = isOps ? 'site_out' : 'office_out';
+  const checkIns  = userEvents.filter(e => e.type === inType).sort((a, b) => ts(a) - ts(b));
+  const checkOuts = userEvents.filter(e => e.type === outType).sort((a, b) => ts(a) - ts(b));
+  if (checkIns.length === 0 && checkOuts.length === 0) return 'Absent';
 
   if (checkIns.length === 0 || checkOuts.length === 0) return 'SLNF';
 
@@ -52,13 +74,15 @@ function deriveStatusFromEvents(userEvents: AttendanceRecord[]): AttendanceStatu
   const outIST = toIST(lastOutDate);
   const inMinutes  = inIST.getUTCHours() * 60 + inIST.getUTCMinutes();
   const outMinutes = outIST.getUTCHours() * 60 + outIST.getUTCMinutes();
-  const lateIn     = inMinutes > 10 * 60;
-  const earlyOut   = outMinutes < 18 * 60;
-  const hoursWorked = (outMinutes - inMinutes) / 60;
+  const startMin   = isOps ? hhmmToMinutes(planned?.startTime, 10 * 60) : 10 * 60;
+  const endMin     = isOps ? hhmmToMinutes(planned?.endTime,   18 * 60) : 18 * 60;
+  const lateMinutes  = Math.max(0, inMinutes - startMin);
+  const earlyMinutes = Math.max(0, endMin - outMinutes);
+  const offMinutes   = lateMinutes + earlyMinutes;
 
-  if (lateIn && earlyOut) return 'HalfDay';
-  if (hoursWorked < 6) return 'SL';
-  return 'Present';
+  if (offMinutes === 0) return 'Present';
+  if (offMinutes <= 120) return 'SL';
+  return 'HalfDay';
 }
 
 export default function AttendancePage() {
@@ -71,11 +95,15 @@ export default function AttendancePage() {
   const [users, setUsers]               = useState<User[]>([]);
   // date → userId → AttendanceStatus
   const [statusByDate, setStatusByDate] = useState<Map<string, Map<string, AttendanceStatus>>>(new Map());
+  // date → userId → PlannedHours (operations shift windows)
+  const [plannedByDate, setPlannedByDate] = useState<Map<string, Map<string, PlannedHours>>>(new Map());
   const [selectedEvents, setSelectedEvents] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading]           = useState(true);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [saving, setSaving]             = useState<Record<string, boolean>>({});
   const [saveError, setSaveError]       = useState('');
+  const [dirtyPlans, setDirtyPlans]     = useState<Set<string>>(new Set());
+  const [employeeFilter, setEmployeeFilter] = useState('');
 
   const year  = viewDate.getFullYear();
   const month = viewDate.getMonth(); // 0-indexed
@@ -100,6 +128,19 @@ export default function AttendancePage() {
     } catch (err) {
       // attendance_status collection may be empty on first load — not an error
       console.warn('Could not load attendance status (may be empty):', err);
+    }
+
+    try {
+      const planned = await getPlannedHoursForMonth(year, month + 1);
+      const map = new Map<string, Map<string, PlannedHours>>();
+      planned.forEach(p => {
+        if (!map.has(p.date)) map.set(p.date, new Map());
+        map.get(p.date)!.set(p.userId, p);
+      });
+      setPlannedByDate(map);
+    } catch (err) {
+      // planned_hours collection may be empty on first load — not an error
+      console.warn('Could not load planned hours (may be empty):', err);
     }
 
     setLoading(false);
@@ -141,37 +182,42 @@ export default function AttendancePage() {
     return { present, halfDay, sl, slnf, absent, leave };
   }
 
-  async function handleOpsStatus(user: User, date: string, newStatus: AttendanceStatus['status']) {
-    const key = `${user.id}__${date}`;
+  function handlePlannedChange(user: User, date: string, field: 'start' | 'end', value: string) {
+    const key      = `${user.id}__${date}`;
+    const current  = plannedByDate.get(date)?.get(user.id);
+    const startTime = field === 'start' ? value : (current?.startTime || '');
+    const endTime   = field === 'end'   ? value : (current?.endTime   || '');
+
+    setPlannedByDate(prev => {
+      const next   = new Map(prev);
+      const dayMap = new Map(next.get(date) || new Map<string, PlannedHours>());
+      dayMap.set(user.id, { id: date, userId: user.id, date, startTime, endTime });
+      next.set(date, dayMap);
+      return next;
+    });
+
+    setDirtyPlans(prev => new Set(prev).add(key));
+  }
+
+  async function savePlanned(userId: string, date: string) {
+    const key     = `${userId}__${date}`;
+    const planned = plannedByDate.get(date)?.get(userId);
+    if (!planned?.startTime || !planned?.endTime) return;
+
     setSaving(prev => ({ ...prev, [key]: true }));
     setSaveError('');
     try {
-      const statusData: Omit<AttendanceStatus, 'id' | 'updatedAt'> = {
-        date,
-        userId:     user.id,
-        userName:   user.name,
-        employeeId: user.employeeId || '',
-        role:       'operations',
-        status:     newStatus,
-        markedBy:   'admin',
-      };
-      await setAttendanceStatus(user.id, date, statusData);
-      setStatusByDate(prev => {
-        const next = new Map(prev);
-        if (!next.has(date)) next.set(date, new Map());
-        const dayMap = new Map(next.get(date)!);
-        dayMap.set(user.id, { id: date, ...statusData });
-        next.set(date, dayMap);
-        return next;
-      });
+      await setPlannedHours(userId, date, planned.startTime, planned.endTime);
+      setDirtyPlans(prev => { const next = new Set(prev); next.delete(key); return next; });
     } catch (err) {
-      setSaveError('Failed to save. Please try again.');
+      setSaveError('Failed to save planned hours. Please try again.');
       console.error(err);
     }
     setSaving(prev => ({ ...prev, [key]: false }));
   }
 
-  const selectedDayMap = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
+  const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
+  const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
 
   // Merge stored (Cloud Function) statuses with client-side derived statuses for the summary chips
   const effectiveStatuses = useMemo(() => {
@@ -180,13 +226,18 @@ export default function AttendancePage() {
       const stored = selectedDayMap.get(user.id)?.status;
       if (stored) {
         map.set(user.id, stored);
-      } else if (user.role !== 'operations' && !eventsLoading) {
-        const derived = deriveStatusFromEvents(selectedEvents.filter(e => e.userId === user.id));
+      } else if (!eventsLoading) {
+        const derived = deriveStatus(
+          user.role,
+          selectedEvents.filter(e => e.userId === user.id),
+          selectedDate,
+          selectedPlanMap.get(user.id),
+        );
         if (derived) map.set(user.id, derived);
       }
     });
     return map;
-  }, [users, selectedDayMap, selectedEvents, eventsLoading]);
+  }, [users, selectedDayMap, selectedPlanMap, selectedEvents, eventsLoading]);
 
   const statusValues = Array.from(effectiveStatuses.values());
   const totalPresent = statusValues.filter(s => s === 'Present').length;
@@ -206,7 +257,7 @@ export default function AttendancePage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary">Attendance Management</h1>
         <p className="text-text-secondary text-sm mt-1">
-          Calendar view · Office/admin status is auto-computed · Operations status is set manually
+          Calendar view · Office/admin status auto-computed (10:00–18:00) · Operations status computed from the planned shift you set per day
         </p>
       </div>
 
@@ -358,6 +409,19 @@ export default function AttendancePage() {
           </div>
         </div>
 
+        <div className="mb-4">
+          <select
+            value={employeeFilter}
+            onChange={e => setEmployeeFilter(e.target.value)}
+            className="input text-sm !py-2 min-w-[180px]"
+          >
+            <option value="">All Employees</option>
+            {[...users].sort((a, b) => a.name.localeCompare(b.name)).map(u => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        </div>
+
         {saveError && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
             {saveError}
@@ -374,14 +438,16 @@ export default function AttendancePage() {
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Name</th>
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Emp ID</th>
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Role</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Planned Shift</th>
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Status</th>
-                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Check In</th>
-                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Check Out</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">First In / Out</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Last In / Out</th>
                   <th className="text-left py-2.5 font-medium text-text-secondary">PL Balance</th>
                 </tr>
               </thead>
               <tbody>
                 {[...users]
+                  .filter(u => !employeeFilter || u.id === employeeFilter)
                   .sort((a, b) => {
                     const roleOrder: Record<string, number> = { office: 0, admin: 1, operations: 2 };
                     return (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3) || a.name.localeCompare(b.name);
@@ -392,13 +458,20 @@ export default function AttendancePage() {
                     const isOps      = user.role === 'operations';
                     const saveKey    = `${user.id}__${selectedDate}`;
                     const isSaving   = saving[saveKey] || false;
+                    const isDirty    = dirtyPlans.has(saveKey);
 
                     const userEvents   = eventsLoading ? [] : selectedEvents.filter(e => e.userId === user.id);
-                    const firstIn      = userEvents.find(e => e.type.endsWith('_in'));
-                    const lastOut      = [...userEvents].reverse().find(e => e.type.endsWith('_out'));
-                    // For office/admin: derive status from events when Cloud Function hasn't run yet
-                    const derivedStatus = !isOps && !status && !eventsLoading
-                      ? deriveStatusFromEvents(userEvents)
+                    const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+
+                    const officeIns  = userEvents.filter(e => e.type === 'office_in').sort((a, b) => ts(a) - ts(b));
+                    const officeOuts = userEvents.filter(e => e.type === 'office_out').sort((a, b) => ts(a) - ts(b));
+                    const siteIns    = userEvents.filter(e => e.type === 'site_in').sort((a, b) => ts(a) - ts(b));
+                    const siteOuts   = userEvents.filter(e => e.type === 'site_out').sort((a, b) => ts(a) - ts(b));
+                    const planned      = selectedPlanMap.get(user.id);
+                    const hasPlan      = !!(planned?.startTime && planned?.endTime);
+                    // Derive status live from events (+ planned window for ops) until the Cloud Function runs
+                    const derivedStatus = !status && !eventsLoading
+                      ? deriveStatus(user.role, userEvents, selectedDate, planned)
                       : null;
                     const displayStatus = status ?? derivedStatus;
 
@@ -419,26 +492,38 @@ export default function AttendancePage() {
                         </td>
                         <td className="py-3 pr-4">
                           {isOps ? (
-                            <select
-                              value={status || ''}
-                              onChange={e => {
-                                if (e.target.value) {
-                                  handleOpsStatus(user, selectedDate, e.target.value as AttendanceStatus['status']);
-                                }
-                              }}
-                              disabled={isSaving || selectedDate > todayStr}
-                              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50 min-w-[130px]"
-                            >
-                              <option value="">— Not Marked —</option>
-                              <option value="Present">Present</option>
-                              <option value="HalfDay">Half Day</option>
-                              <option value="SL">Short Leave</option>
-                              <option value="SLNF">Log Not Found</option>
-                              <option value="Absent">Absent</option>
-                              <option value="PL">PL (Paid Leave)</option>
-                              <option value="UPL">UPL (Unpaid Leave)</option>
-                            </select>
-                          ) : displayStatus ? (
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="time"
+                                value={planned?.startTime || ''}
+                                onChange={e => handlePlannedChange(user, selectedDate, 'start', e.target.value)}
+                                disabled={isSaving || selectedDate > todayStr}
+                                className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50"
+                              />
+                              <span className="text-text-secondary text-xs">–</span>
+                              <input
+                                type="time"
+                                value={planned?.endTime || ''}
+                                onChange={e => handlePlannedChange(user, selectedDate, 'end', e.target.value)}
+                                disabled={isSaving || selectedDate > todayStr}
+                                className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50"
+                              />
+                              {isDirty && (
+                                <button
+                                  onClick={() => savePlanned(user.id, selectedDate)}
+                                  disabled={isSaving || !planned?.startTime || !planned?.endTime}
+                                  className="btn-primary !py-1 !px-2.5 !text-xs disabled:opacity-50"
+                                >
+                                  {isSaving ? 'Saving…' : 'Save'}
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-text-secondary">10:00 – 18:00</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {displayStatus ? (
                             <div className="flex items-center gap-1.5">
                               <span className={`text-xs px-2.5 py-1 rounded border font-medium ${STATUS_STYLES[displayStatus] || 'bg-background text-text-secondary border-border'}`}>
                                 {STATUS_LABEL[displayStatus] || displayStatus}
@@ -447,23 +532,60 @@ export default function AttendancePage() {
                                 <span className="text-[10px] text-text-secondary italic">live</span>
                               )}
                             </div>
+                          ) : isOps && !hasPlan ? (
+                            <span className="text-xs text-text-secondary italic">Set plan</span>
                           ) : (
                             <span className="text-xs text-text-secondary italic">No data</span>
                           )}
-                          {isSaving && <span className="ml-2 text-xs text-text-secondary">Saving…</span>}
                         </td>
                         <td className="py-3 pr-4 text-text-secondary text-xs">
-                          {eventsLoading ? '…' : firstIn ? formatTime(firstIn.timestamp as Parameters<typeof formatTime>[0]) : '—'}
+                          {eventsLoading ? '…' : isOps ? (
+                            siteIns[0] ? (
+                              <div>
+                                <span>{formatTime(siteIns[0].timestamp as Parameters<typeof formatTime>[0])}</span>
+                                <span className="mx-1">–</span>
+                                <span>{siteOuts[0] ? formatTime(siteOuts[0].timestamp as Parameters<typeof formatTime>[0]) : '—'}</span>
+                                {siteOuts[0]?.autoLogout && (
+                                  <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-200 font-medium">auto</span>
+                                )}
+                                <div className="text-[10px] text-text-secondary/70 mt-0.5">{siteIns[0].siteName || siteIns[0].marketName || ''}</div>
+                              </div>
+                            ) : '—'
+                          ) : (
+                            officeIns[0] ? (
+                              <span>
+                                {formatTime(officeIns[0].timestamp as Parameters<typeof formatTime>[0])}
+                                <span className="mx-1">–</span>
+                                {officeOuts[0] ? (
+                                  <span className="inline-flex items-center gap-1">
+                                    {formatTime(officeOuts[0].timestamp as Parameters<typeof formatTime>[0])}
+                                    {officeOuts[0].autoLogout && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-200 font-medium">auto</span>
+                                    )}
+                                  </span>
+                                ) : '—'}
+                              </span>
+                            ) : '—'
+                          )}
                         </td>
                         <td className="py-3 pr-4 text-text-secondary text-xs">
-                          {eventsLoading ? '…' : lastOut ? (
-                            <span className="inline-flex items-center gap-1">
-                              {formatTime(lastOut.timestamp as Parameters<typeof formatTime>[0])}
-                              {lastOut.autoLogout && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-200 font-medium">auto</span>
-                              )}
-                            </span>
-                          ) : '—'}
+                          {eventsLoading ? '…' : isOps ? (
+                            siteIns.length > 1 ? (
+                              <div>
+                                <span>{formatTime(siteIns[siteIns.length - 1].timestamp as Parameters<typeof formatTime>[0])}</span>
+                                <span className="mx-1">–</span>
+                                <span>{siteOuts.length > 0 ? formatTime(siteOuts[siteOuts.length - 1].timestamp as Parameters<typeof formatTime>[0]) : '—'}</span>
+                                {siteOuts.length > 0 && siteOuts[siteOuts.length - 1].autoLogout && (
+                                  <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-200 font-medium">auto</span>
+                                )}
+                                <div className="text-[10px] text-text-secondary/70 mt-0.5">{siteIns[siteIns.length - 1].siteName || siteIns[siteIns.length - 1].marketName || ''}</div>
+                              </div>
+                            ) : (
+                              <span className="text-text-secondary/50">—</span>
+                            )
+                          ) : (
+                            <span className="text-text-secondary/50">—</span>
+                          )}
                         </td>
                         <td className="py-3 text-text-secondary text-xs">
                           {user.plBalance !== undefined ? (
