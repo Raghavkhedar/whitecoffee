@@ -2,8 +2,6 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import com.raghav.whitecoffee.data.model.AttendanceStatusRecord
 import com.raghav.whitecoffee.data.model.RegularizationRequest
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.tasks.await
@@ -18,33 +16,16 @@ class RegularizationRepository @Inject constructor(
     private val userDoc get() = firestore.collection("users").document(sessionManager.userId)
     private val regCol  get() = userDoc.collection("regularization_requests")
 
-    suspend fun getMonthAttendanceStatus(yearMonth: String): Result<List<AttendanceStatusRecord>> {
-        return try {
-            val snapshot = userDoc.collection("attendance_status")
-                .whereGreaterThanOrEqualTo("date", "$yearMonth-01")
-                .whereLessThanOrEqualTo("date", "$yearMonth-31")
-                .get()
-                .await()
-            val flagged = snapshot.documents
-                .mapNotNull { AttendanceStatusRecord.fromDocument(it) }
-                .filter { it.status == "HalfDay" || it.status == "Absent" }
-            Result.success(flagged)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getMyRequests(yearMonth: String): Result<List<RegularizationRequest>> {
+    suspend fun getRequestForDate(date: String): Result<RegularizationRequest?> {
         return try {
             val snapshot = regCol
-                .whereGreaterThanOrEqualTo("date", "$yearMonth-01")
-                .whereLessThanOrEqualTo("date", "$yearMonth-31")
-                .orderBy("date", Query.Direction.ASCENDING)
+                .whereEqualTo("date", date)
                 .get()
                 .await()
-            val filtered = snapshot.documents
+            val request = snapshot.documents
                 .mapNotNull { RegularizationRequest.fromDocument(it) }
-            Result.success(filtered)
+                .firstOrNull()
+            Result.success(request)
         } catch (e: Exception) {
             Result.failure(e)
         }

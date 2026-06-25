@@ -50,7 +50,6 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
 
     private fun setupHeader() {
         binding.tvGreeting.text = viewModel.greeting
-        binding.tvUserName.text = viewModel.userName
         binding.tvRoleBadge.text = viewModel.userRole.replaceFirstChar { it.uppercase() }
         setupTodayCard()
     }
@@ -103,36 +102,44 @@ class HomeFragment : BaseFragment<FragmentHomeBinding>() {
                             binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_hint))
                             binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
                             binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
+                            binding.tvTodayLocation.visibility = View.GONE
+                            binding.tvTodaySince.visibility = View.GONE
                         }
                         is TodayAttendanceStatus.NotCheckedIn -> {
                             binding.tvTodayAttStatus.text = "Not checked in"
                             binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_rejected))
                             binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
                             binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
+                            binding.tvTodayLocation.visibility = View.GONE
+                            binding.tvTodaySince.visibility = View.GONE
                         }
-                        is TodayAttendanceStatus.CheckedIn -> {
-                            binding.tvTodayAttStatus.text = status.label
+                        is TodayAttendanceStatus.Present -> {
+                            binding.tvTodayAttStatus.text = "Present"
                             binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_approved))
                             binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_checked_in)
                             binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_green_bg)
+                            binding.tvTodayLocation.text = status.location
+                            binding.tvTodayLocation.visibility = View.VISIBLE
+                            binding.tvTodaySince.text = "Since ${status.since}"
+                            binding.tvTodaySince.visibility = View.VISIBLE
                         }
-                        is TodayAttendanceStatus.CheckedOut -> {
-                            binding.tvTodayAttStatus.text = status.label
+                        is TodayAttendanceStatus.HalfDay -> {
+                            binding.tvTodayAttStatus.text = "Half Day"
                             binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.status_pending))
-                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
-                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
-                        }
-                        is TodayAttendanceStatus.DayComplete -> {
-                            binding.tvTodayAttStatus.text = "Day complete"
-                            binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.primary_blue))
-                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_checked_in)
-                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_green_bg)
+                            binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_halfday)
+                            binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_amber_bg)
+                            binding.tvTodayLocation.text = status.location
+                            binding.tvTodayLocation.visibility = View.VISIBLE
+                            binding.tvTodaySince.text = "Since ${status.since}"
+                            binding.tvTodaySince.visibility = View.VISIBLE
                         }
                         is TodayAttendanceStatus.Error -> {
                             binding.tvTodayAttStatus.text = "Could not load"
                             binding.tvTodayAttStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.text_hint))
                             binding.layoutTodayStatus.setBackgroundResource(R.drawable.bg_today_status_not_in)
                             binding.dotTodayStatus.setBackgroundResource(R.drawable.badge_red_bg)
+                            binding.tvTodayLocation.visibility = View.GONE
+                            binding.tvTodaySince.visibility = View.GONE
                         }
                     }
                 }

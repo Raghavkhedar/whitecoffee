@@ -37,11 +37,10 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
         super.onViewCreated(view, savedInstanceState)
         setupRecyclerView()
         binding.btnBack.setOnClickListener { findNavController().navigateUp() }
-        binding.btnPrevMonth.setOnClickListener { viewModel.prevMonth() }
-        binding.btnNextMonth.setOnClickListener { viewModel.nextMonth() }
+        binding.tvTodayLabel.text = viewModel.todayLabel
         binding.swipeRefresh.setColorSchemeResources(R.color.primary_blue)
-        binding.swipeRefresh.setOnRefreshListener { viewModel.loadMonth() }
-        binding.btnRetry.setOnClickListener { viewModel.loadMonth() }
+        binding.swipeRefresh.setOnRefreshListener { viewModel.loadToday() }
+        binding.btnRetry.setOnClickListener { viewModel.loadToday() }
         observeViewModel()
     }
 
@@ -60,11 +59,6 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
                     }
                 }
                 launch {
-                    viewModel.selectedMonth.collect { ym ->
-                        binding.tvMonthLabel.text = formatMonthLabel(ym)
-                    }
-                }
-                launch {
                     viewModel.daysState.collect { state ->
                         when (state) {
                             is UiState.Loading -> {
@@ -73,7 +67,6 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
                                 }
                                 binding.tvEmpty.visibility = View.GONE
                                 binding.btnRetry.visibility = View.GONE
-                                binding.tvSummary.visibility = View.GONE
                             }
                             is UiState.Success -> {
                                 binding.progressBar.visibility = View.GONE
@@ -81,18 +74,13 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
                                 binding.tvEmpty.visibility = View.GONE
                                 binding.btnRetry.visibility = View.GONE
                                 adapter.submitList(state.data)
-                                val count = state.data.size
-                                binding.tvSummary.text =
-                                    "$count flagged day${if (count != 1) "s" else ""}"
-                                binding.tvSummary.visibility = View.VISIBLE
                             }
                             is UiState.Empty -> {
                                 binding.progressBar.visibility = View.GONE
                                 binding.swipeRefresh.isRefreshing = false
                                 binding.tvEmpty.visibility = View.VISIBLE
-                                binding.tvEmpty.text = "No flagged days this month."
+                                binding.tvEmpty.text = "Today's attendance is on track — no action needed."
                                 binding.btnRetry.visibility = View.GONE
-                                binding.tvSummary.visibility = View.GONE
                                 adapter.submitList(emptyList())
                             }
                             is UiState.Error -> {
@@ -101,7 +89,6 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
                                 binding.tvEmpty.visibility = View.VISIBLE
                                 binding.tvEmpty.text = state.message
                                 binding.btnRetry.visibility = View.VISIBLE
-                                binding.tvSummary.visibility = View.GONE
                             }
                             is UiState.Offline -> {
                                 binding.progressBar.visibility = View.GONE
@@ -109,7 +96,6 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
                                 binding.tvEmpty.visibility = View.VISIBLE
                                 binding.tvEmpty.text = "You are offline."
                                 binding.btnRetry.visibility = View.VISIBLE
-                                binding.tvSummary.visibility = View.GONE
                             }
                         }
                     }
@@ -163,16 +149,5 @@ class RegularizationFragment : BaseFragment<FragmentRegularizationBinding>() {
     companion object {
         private val INPUT_FORMAT   = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         private val DISPLAY_FORMAT = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
-        private val MONTH_PARSE    = SimpleDateFormat("yyyy-MM", Locale.getDefault())
-        private val MONTH_DISPLAY  = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-
-        private fun formatMonthLabel(ym: String): String {
-            return try {
-                val parsed = MONTH_PARSE.parse(ym)
-                parsed?.let { MONTH_DISPLAY.format(it) } ?: ym
-            } catch (e: Exception) {
-                ym
-            }
-        }
     }
 }

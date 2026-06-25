@@ -36,7 +36,7 @@ class AttendanceRepository @Inject constructor(
                 .await()
             val events = snapshot.documents
                 .mapNotNull { AttendanceRecord.fromDocument(it) }
-                .sortedBy { it.timestamp?.seconds ?: 0L }
+                .sortedBy { it.timestamp?.toDate()?.time ?: 0L }
             Result.success(Pair(deriveAttendanceState(events), events))
         } catch (e: Exception) {
             Result.failure(e)
