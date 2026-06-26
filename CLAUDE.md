@@ -29,7 +29,7 @@ No test framework is configured.
 - `users/` — employee profiles with `role` field (`admin`, `office`, `operations`)
 - `sites/` — geofenced work locations with GPS coordinates
 - `users/{uid}/leave_requests/` — subcollection per user
-- `users/{uid}/attendance/` — check-in/out events per user
+- `users/{uid}/attendance/` — check-in/out events per user. Ops `site_in`/`site_out` events carry a free-text `siteName` typed at check-in; the `siteId` field is filled in later by an admin from the **Site IDs** page (`updateAttendanceSiteId`).
 - `users/{uid}/attendance_status/{date}` — computed daily status per user (written by `computeDailyAttendanceStatus`)
 - `users/{uid}/planned_hours/{date}` — admin-set planned shift window for operations employees (`startTime`/`endTime` as `"HH:MM"`). Drives ops status; office is fixed 10–18.
 - `users/{uid}/material_requests/` — M&T form submissions per user
@@ -57,11 +57,11 @@ The `computeDailyAttendanceStatus` Cloud Function (runs 23:59 IST) determines da
 | SLNF (Log Not Found) | Missing check-in or check-out | 0.5 |
 | PL (Paid Leave) | Approved leave, has PL balance | 1 |
 | UPL (Unpaid Leave) | Approved leave, no balance | 0 |
-| Absent | No events, no approved leave (ops: only when a plan exists) | -1 (2-day penalty) |
+| Absent | No events, no approved leave (ops: only when a plan exists) | -2 (2-day penalty) |
 
 Statuses written by the function carry `markedBy: 'auto'`; docs with `markedBy: 'admin'` (regularization approvals) are skipped on recompute. The attendance page derives status live (client-side, mirroring this logic) until the nightly run writes it.
 
-**Days NP formula**: `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL - absent`
+**Days NP formula**: `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL - absent×2` (UPL is unpaid → contributes 0)
 
 **Salary**: `daysNP × salaryRate`
 
@@ -72,7 +72,8 @@ PL balance: +1 accrued on 1st of each month (`accrueMonthlyLeave`), -1 deducted 
 The `exportToSheets` Cloud Function (runs 16:30 UTC = 22:00 IST) writes all data to a Google Sheet (`SHEET_ID` in `functions/index.js`) via a service account (`ATTENDANCE_SHEETS_KEY` secret), one tab per data type.
 
 - **Always resolve employee Name/ID from the live `users` collection**, not the value stored on each doc. Submission/attendance docs snapshot `userName`/`employeeId` at creation, so edits in the Users tab won't reflect unless looked up live. Use the `uidOf(doc)` helper + `userNameMap`/`userEmpIdMap` (keyed by uid). `uidOf` reads the doc's `userId` field, falling back to the parent path for subcollection docs.
-- **Attendance tab** is a per-employee/day summary (not per-event): In Time / In Location / Out Time / Out Location. Office uses office in/out; operations uses first `site_in` / last `site_out`.
+- **Attendance tab** is a per-employee/day summary (not per-event): In Time / In Location / Site ID / Out Time / Out Location / All Activity. Office uses office in/out; operations uses first `site_in` / last `site_out`. Rows are built from the union of attendance events **and** computed status docs, so Absent / PL / UPL / SLNF days (which have no check-in events) still appear with their status. The **All Activity** column is the full chronological log of every check-in/out with the resolved Site ID in brackets.
+- **Employee Dashboard tab** breaks Days NP into per-status columns (Present / SL / Half Day / SLNF / PL / UPL / Absent) before the Days NP total. Manually-entered **Imprest** is preserved across runs by locating columns by header name (not fixed index), so the layout can change without losing data.
 
 ## Styling Conventions
 

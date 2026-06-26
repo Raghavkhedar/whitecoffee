@@ -315,6 +315,13 @@ export async function setConveyanceConfig(rate1: number, rate2: number): Promise
   await setDoc(doc(db, 'config', 'conveyance'), { rate1, rate2 });
 }
 
+// ── Site ID entry ────────────────────────────────────────────────────────
+// Ops type the site name at check-in but leave Site ID blank. Admin fills the
+// Site ID directly onto each individual attendance entry from the portal.
+export async function updateAttendanceSiteId(userId: string, eventId: string, siteId: string): Promise<void> {
+  await updateDoc(doc(db, 'users', userId, 'attendance', eventId), { siteId: siteId.trim() });
+}
+
 // ── Conveyance Records ──────────────────────────────────────────────────
 
 export async function getConveyanceForMonth(month: string): Promise<ConveyanceRecord[]> {

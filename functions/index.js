@@ -256,7 +256,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
 // ── Daily Sheets Export ───────────────────────────────────────────────────────
 exports.exportToSheets = onSchedule(
-  { schedule: "30 16 * * *", secrets: ["ATTENDANCE_SHEETS_KEY", "MAPS_API_KEY"], timeoutSeconds: 540 },
+  { schedule: "30 16 * * *", secrets: ["ATTENDANCE_SHEETS_KEY", "MAPS_API_KEY"], timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     const keyJson = JSON.parse(SHEETS_KEY.value());
     const auth    = new google.auth.GoogleAuth({ credentials: keyJson, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
@@ -320,8 +320,8 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("attendance").get();
       const header = [
         "Date", "Employee Name", "Employee ID", "Role",
-        "In Time", "In Location", "Out Time", "Out Location",
-        "OT", "Daily Status",
+        "In Time", "In Location", "Site ID", "Out Time", "Out Location",
+        "All Activity", "OT", "Daily Status",
       ];
 
       // Group all events by employee + date.
@@ -334,17 +334,38 @@ exports.exportToSheets = onSchedule(
         groups.get(key).events.push(d);
       });
 
-      const rows = [...groups.values()].map(({ uid, date, events }) => {
-        events.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+      // Build a row for every employee/day that has EITHER attendance events
+      // OR a computed status doc — so Absent / PL / UPL / SLNF days (which have
+      // no check-in events) still appear with their status.
+      const allKeys = new Set([...groups.keys(), ...statusMap.keys()]);
+      const rows = [...allKeys].map((key) => {
+        const group = groups.get(key);
+        const sep   = key.lastIndexOf("__");
+        const uid   = group ? group.uid  : key.slice(0, sep);
+        const date  = group ? group.date : key.slice(sep + 2);
         const role  = userRoleMap.get(uid) || "";
         const isOps = role === "operations";
 
-        const ins   = events.filter((e) => e.type === (isOps ? "site_in"  : "office_in"));
-        const outs  = events.filter((e) => e.type === (isOps ? "site_out" : "office_out"));
-        const firstIn = ins[0];
-        const lastOut = outs[outs.length - 1];
-
         const locOf = (e) => !e ? "" : (isOps ? (e.siteName || "Site") : (e.locationName || "Office"));
+        // Site ID is filled in per-entry by the admin (Site IDs page) on the attendance doc.
+        const siteIdOf = (e) => (isOps && e) ? (e.siteId || "") : "";
+
+        let firstIn, lastOut, allActivity = "";
+        if (group) {
+          group.events.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+          firstIn = group.events.filter((e) => e.type === (isOps ? "site_in"  : "office_in"))[0];
+          const outs = group.events.filter((e) => e.type === (isOps ? "site_out" : "office_out"));
+          lastOut = outs[outs.length - 1];
+
+          // Full chronological log of every check-in / check-out and site visited,
+          // with the resolved Site ID in brackets when one is mapped.
+          allActivity = group.events.map((e) => {
+            const inOut = (e.type || "").endsWith("_in") ? "In" : "Out";
+            const id    = siteIdOf(e);
+            return `${inOut} ${timeIST(e.timestamp)} — ${locOf(e)}${id ? ` [${id}]` : ""}`;
+          }).join("\n");
+        }
+
         const isOT  = isOps && lastOut && getHourIST(lastOut.timestamp) >= 18;
 
         return [
@@ -352,8 +373,9 @@ exports.exportToSheets = onSchedule(
           userNameMap.get(uid) ?? "",
           userEmpIdMap.get(uid) ?? "",
           role,
-          timeIST(firstIn?.timestamp), locOf(firstIn),
+          timeIST(firstIn?.timestamp), locOf(firstIn), siteIdOf(firstIn),
           timeIST(lastOut?.timestamp), locOf(lastOut),
+          allActivity,
           isOT ? "Yes" : "",
           statusMap.get(`${uid}__${date}`) || "",
         ];
@@ -594,20 +616,24 @@ exports.exportToSheets = onSchedule(
     {
       const TAB = TABS.EMPLOYEE_DASHBOARD;
 
-      // Read existing sheet to preserve manually-entered Imprest (salary rate now comes from Firestore)
+      // Read existing sheet to preserve manually-entered Imprest (salary rate now comes from Firestore).
+      // Locate columns by header name so this survives layout changes (e.g. added NP-breakdown columns).
       const imprestMap = new Map(); // employeeId → imprest
       try {
         const existing = await sheets.spreadsheets.values.get({
           spreadsheetId: SHEET_ID,
-          range: `${TAB}!A:K`,
+          range: `${TAB}!A:Z`,
         });
         const existingRows = existing.data.values || [];
-        for (let i = 1; i < existingRows.length; i++) {
-          const r = existingRows[i];
-          if (!r || !r[2] || r[0] === "CF BAL" || r[0] === "TOTAL") continue;
-          const empId = String(r[2]).trim();
-          if (empId) {
-            imprestMap.set(empId, parseFloat(r[9]) || 0);
+        const hdr        = existingRows[0] || [];
+        const empIdCol   = hdr.indexOf("EMP ID");
+        const imprestCol = hdr.findIndex((h) => String(h).toLowerCase().startsWith("imprest"));
+        if (empIdCol !== -1 && imprestCol !== -1) {
+          for (let i = 1; i < existingRows.length; i++) {
+            const r = existingRows[i];
+            if (!r || !r[empIdCol] || r[0] === "CF BAL" || r[0] === "TOTAL") continue;
+            const empId = String(r[empIdCol]).trim();
+            if (empId) imprestMap.set(empId, parseFloat(r[imprestCol]) || 0);
           }
         }
       } catch (_) {
@@ -615,8 +641,9 @@ exports.exportToSheets = onSchedule(
       }
 
       const header = [
-        "Date", "EMP Name", "EMP ID",
-        "Days Passed in Month", "Leaves", "Days NP",
+        "Date", "EMP Name", "EMP ID", "Days Passed in Month",
+        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "SLNF (×0.5)", "PL (×1)", "UPL (×0)", "Absent (×-2)",
+        "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
         "Covy Due (approx avg)", "Imprest Due MTD", "TOTAL DUE",
       ];
@@ -634,7 +661,8 @@ exports.exportToSheets = onSchedule(
         const empId    = user.employeeId || "";
         const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, upl: 0, absent: 0 };
 
-        const daysNP   = ua.present + ua.sl * 0.75 + ua.halfDay * 0.5 + ua.slnf * 0.5 + ua.pl - ua.absent;
+        // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. UPL = unpaid, contributes 0.
+        const daysNP   = ua.present + ua.sl * 0.75 + ua.halfDay * 0.5 + ua.slnf * 0.5 + ua.pl - ua.absent * 2;
         const leaves   = ua.pl + ua.upl; // all leave types shown together
 
         const salaryRate = user.salaryRate || 0;
@@ -656,6 +684,7 @@ exports.exportToSheets = onSchedule(
           user.name || "",
           empId,
           daysPassed,
+          ua.present, ua.sl, ua.halfDay, ua.slnf, ua.pl, ua.upl, ua.absent,
           leaves,
           daysNP,
           salaryRate,
@@ -666,11 +695,19 @@ exports.exportToSheets = onSchedule(
         ]);
       });
 
+      // Build a blank summary row of the right width, with a label first and a value in the last column.
+      const summaryRow = (label, lastVal) => {
+        const row = new Array(header.length).fill("");
+        row[0] = label;
+        row[header.length - 1] = lastVal;
+        return row;
+      };
+
       // CF BAL row — carry-forward leave balance per employee (total in last col)
-      const cfBalRow  = ["CF BAL", "", "", "", "", "", "", "", "", "", grandCfBal];
+      const cfBalRow  = summaryRow("CF BAL", grandCfBal);
 
       // TOTAL row — grand total of all dues
-      const totalRow  = ["TOTAL", "", "", "", "", "", "", "", "", "", grandTotal];
+      const totalRow  = summaryRow("TOTAL", grandTotal);
 
       await writeTab(sheets, TAB, [header, ...empRows, cfBalRow, totalRow]);
       console.log(`Employee Dashboard: ${empRows.length} employees, total due ₹${grandTotal}`);
