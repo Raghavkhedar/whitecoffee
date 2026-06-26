@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler) // Compose compiler plugin (Kotlin 2.0+)
     alias(libs.plugins.ksp)           // KSP must come before Hilt
     alias(libs.plugins.hilt)
     alias(libs.plugins.google.services)
@@ -45,8 +46,10 @@ android {
     }
 
     // Enable ViewBinding — required for BaseFragment pattern
+    // Compose enabled alongside Views — screens migrate one at a time via ComposeView interop.
     buildFeatures {
         viewBinding = true
+        compose = true
     }
 }
 
@@ -79,6 +82,17 @@ dependencies {
 
     // ── Fragment ──
     implementation(libs.fragment.ktx)
+
+    // ── Compose (Android-only; BoM keeps all Compose libs version-aligned) ──
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    debugImplementation(libs.compose.ui.tooling)
 
     // ── Location ──
     implementation(libs.play.services.location)

@@ -6,7 +6,10 @@
 
 ## WHAT YOU ARE BUILDING
 A **Field Operations Management Android App** called **White Coffee** for **Senken Engineering**.
-- Platform: Android (Kotlin, XML Views, NOT Compose)
+- Platform: Android (Kotlin). **Hybrid UI (Session 25):** mostly XML Views; Jetpack Compose
+  now ENABLED and adopted incrementally via `ComposeView` interop (Login is the first Compose
+  screen). NOT Compose Multiplatform — Android-only Jetpack Compose. New screens may be Compose;
+  existing XML screens stay as-is until migrated one at a time.
 - Package: `com.raghav.whitecoffee`
 - Project folder: `C:\Users\ragha\AndroidStudioProjects\WhiteCoffee2`
 - Backend: Firebase Auth + Firestore + Storage (Blaze plan)
