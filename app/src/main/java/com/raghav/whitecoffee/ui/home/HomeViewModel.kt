@@ -55,11 +55,17 @@ class HomeViewModel @Inject constructor(
     private val _todayStatus = MutableStateFlow<TodayAttendanceStatus>(TodayAttendanceStatus.Loading)
     val todayStatus: StateFlow<TodayAttendanceStatus> = _todayStatus.asStateFlow()
 
+    private val _unreadCount = MutableStateFlow(0)
+    val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
+
     init {
         loadTodayAttendance()
     }
 
     fun loadTodayAttendance() {
+        viewModelScope.launch {
+            _unreadCount.value = notificationRepository.getUnreadCount().getOrDefault(0)
+        }
         viewModelScope.launch {
             _todayStatus.value = TodayAttendanceStatus.Loading
             val result = attendanceRepository.getTodayData()
@@ -147,6 +153,4 @@ class HomeViewModel @Inject constructor(
         return Calendar.getInstance().apply { time = date }.get(Calendar.HOUR_OF_DAY)
     }
 
-    suspend fun getUnreadCount(): Int =
-        notificationRepository.getUnreadCount().getOrDefault(0)
 }
