@@ -1,26 +1,26 @@
 package com.raghav.whitecoffee.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,34 +31,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.raghav.whitecoffee.ui.theme.IconTile
+import com.raghav.whitecoffee.ui.theme.Ms
+import com.raghav.whitecoffee.ui.theme.MsIcon
+import com.raghav.whitecoffee.ui.theme.StatusBadge
+import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTile
+import com.raghav.whitecoffee.ui.theme.WcTiles
+import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// ── Palette (mirrors colors.xml) ─────────────────────────────────────────────
-private val Midnight    = Color(0xFF05091A)
-private val Deep        = Color(0xFF0D1836)
-private val Navy        = Color(0xFF1A2F72)
-private val ScreenBg    = Color(0xFFF4F6FB)   // slightly warmer neutral, more minimal
-private val Surface     = Color(0xFFFFFFFF)
-private val TextPrimary = Color(0xFF050B20)
-private val TextSecond  = Color(0xFF3A4470)
-private val TextHint    = Color(0xFF8591BD)
-private val HeaderSub   = Color(0xFFA0BEFF)
-private val Border      = Color(0xFFE8EBF6)
-private val GreenText   = Color(0xFF059669)
-private val GreenBg     = Color(0xFFD1FAE5)
-private val AmberText   = Color(0xFFD97706)
-private val AmberBg     = Color(0xFFFEF3C7)
-private val RedText     = Color(0xFFE11D48)
-private val RedBg       = Color(0xFFFFE4E6)
-
-// Each tab is one solid flat color — deep, rich, no gradients.
 private data class ModuleItem(
     val label: String,
-    val emoji: String,
-    val color: Color,
-    val onClick: () -> Unit
+    val sub: String,
+    val icon: String,
+    val tile: WcTile,
+    val onClick: () -> Unit,
 )
 
 @Composable
@@ -83,72 +73,70 @@ fun HomeScreen(
     onLeaveClick: () -> Unit,
     onLeaveApprovalsClick: () -> Unit,
     onRegularizationClick: () -> Unit,
-) {
+) = WhiteCoffeeTheme {
     val modules = buildList {
-        add(ModuleItem("Attendance",        "📋", Color(0xFF1E3A8A), onAttendanceClick))
-        if (isOperations)
-        add(ModuleItem("M&T Request",       "🔧", Color(0xFFC2410C), onMtRequestClick))
-        add(ModuleItem("M&T Buy",           "🛒", Color(0xFF065F46), onMtBuyClick))
-        add(ModuleItem("Material Transfer", "📦", Color(0xFF5B21B6), onMaterialTransferClick))
-        add(ModuleItem("Tool Transfer",     "🔨", Color(0xFF155E75), onToolTransferClick))
-        if (isOperations)
-        add(ModuleItem("Work Progress",     "📊", Color(0xFF92400E), onWorkProgressClick))
-        add(ModuleItem("Leave",             "🗓", Color(0xFF9F1239), onLeaveClick))
-        if (isAdmin)
-        add(ModuleItem("Leave Approvals",   "✅", Color(0xFF064E3B), onLeaveApprovalsClick))
-        add(ModuleItem("Regularization",    "🕐", Color(0xFF3730A3), onRegularizationClick))
+        add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTiles.Attendance, onAttendanceClick))
+        if (isOperations) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTiles.MtRequest, onMtRequestClick))
+        add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTiles.MtBuy, onMtBuyClick))
+        add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTiles.MaterialXfer, onMaterialTransferClick))
+        add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTiles.ToolXfer, onToolTransferClick))
+        if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTiles.Work, onWorkProgressClick))
+        add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTiles.Leave, onLeaveClick))
+        if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTiles.Approvals, onLeaveApprovalsClick))
+        add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTiles.Regularization, onRegularizationClick))
     }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(ScreenBg),
-        contentPadding = PaddingValues(bottom = 40.dp)
+            .background(WcColors.ScreenBg)
+            .verticalScroll(rememberScrollState()),
     ) {
-        if (!isOnline) {
-            item { OfflineBannerBar() }
-        }
-        item {
-            HomeHeader(
-                greeting     = greeting,
-                userName     = userName,
-                userRole     = userRole,
-                unreadCount  = unreadCount,
-                isLoggingOut = isLoggingOut,
-                onBellClick  = onBellClick,
-                onLogout     = onLogout
-            )
-        }
-        item {
+        if (!isOnline) OfflineBannerBar()
+
+        HomeHeader(greeting, userName, userRole, unreadCount, isLoggingOut, onBellClick, onLogout)
+
+        // Everything after the header is lifted up to overlap it (design's -40 margin).
+        Column(modifier = Modifier.offset(y = (-40).dp)) {
             TodayStatusCard(
                 todayStatus = todayStatus,
-                modifier    = Modifier
-                    .padding(horizontal = 18.dp)
-                    .padding(top = 20.dp)
+                isOperations = isOperations,
+                modifier = Modifier.padding(horizontal = 18.dp),
             )
-        }
-        item {
+
+            // ── Quick actions ──
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                ActionButton("Check in", Ms.schedule, WcColors.Primary, Color.White, Modifier.weight(1f), onAttendanceClick)
+                ActionButton("Apply leave", Ms.event, WcColors.Accent, WcColors.OnAccent, Modifier.weight(1f), onLeaveClick)
+            }
+
             Text(
                 "MODULES",
-                color     = TextHint,
-                fontSize  = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp,
-                modifier  = Modifier
-                    .padding(horizontal = 22.dp)
-                    .padding(top = 24.dp, bottom = 10.dp)
+                color = WcColors.TextMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.4.sp,
+                modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 10.dp),
             )
-        }
-        item {
-            ModuleList(
-                modules  = modules,
-                modifier = Modifier.padding(horizontal = 18.dp)
-            )
+
+            // ── Module grid (2 columns) ──
+            Column(
+                modifier = Modifier.padding(horizontal = 18.dp).padding(bottom = 34.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                modules.chunked(2).forEach { rowItems ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        rowItems.forEach { ModuleCard(it, Modifier.weight(1f)) }
+                        if (rowItems.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 }
-
-// ── Header ────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun HomeHeader(
@@ -158,157 +146,105 @@ private fun HomeHeader(
     unreadCount: Int,
     isLoggingOut: Boolean,
     onBellClick: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
 ) {
-    Box(
+    val initials = userName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase()
+    val roleLabel = when (userRole.lowercase()) {
+        "admin" -> "Administrator"
+        "office" -> "Office / Sales"
+        else -> "Operations Team"
+    }
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Midnight, Deep, Navy)))
-            .padding(horizontal = 20.dp)
-            .padding(top = 52.dp, bottom = 24.dp)
+            .background(Brush.verticalGradient(listOf(WcColors.HeaderTop, WcColors.HeaderBottom)))
+            .padding(start = 20.dp, end = 20.dp, top = 54.dp, bottom = 62.dp),
     ) {
-        // Left: greeting + name + role badge
-        Column(modifier = Modifier.align(Alignment.TopStart).padding(end = 112.dp)) {
-            Text("$greeting,", color = HeaderSub, fontSize = 13.sp)
-            Spacer(Modifier.height(3.dp))
-            Text(
-                userName,
-                color      = Color.White,
-                fontSize   = 21.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                userRole.replaceFirstChar { it.uppercase() },
-                color      = Color.White,
-                fontSize   = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.5.sp,
-                modifier   = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White.copy(alpha = 0.12f))
-                    .padding(horizontal = 12.dp, vertical = 5.dp)
-            )
-        }
-
-        // Right: bell + logout
-        Row(
-            modifier = Modifier.align(Alignment.TopEnd),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            BellButton(unreadCount = unreadCount, onClick = onBellClick)
-            Spacer(Modifier.width(2.dp))
-            TextButton(onClick = { if (!isLoggingOut) onLogout() }) {
-                Text(
-                    if (isLoggingOut) "Signing out…" else "Logout",
-                    color    = HeaderSub,
-                    fontSize = 13.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun BellButton(unreadCount: Int, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Text("🔔", fontSize = 20.sp)
-        if (unreadCount > 0) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier
-                    .size(16.dp)
-                    .align(Alignment.TopEnd)
-                    .clip(CircleShape)
-                    .background(RedText),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    if (unreadCount > 9) "9+" else unreadCount.toString(),
-                    color    = Color.White,
-                    fontSize = 9.sp
-                )
+                modifier = Modifier.size(46.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) { Text(initials, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold) }
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f)) {
+                Text(greeting, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
             }
+            // Logout
+            Box(
+                modifier = Modifier.size(44.dp).clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .clickable(enabled = !isLoggingOut) { onLogout() },
+                contentAlignment = Alignment.Center,
+            ) { MsIcon(Ms.logout, 21.sp, Color.White) }
+            Spacer(Modifier.width(10.dp))
+            // Bell
+            Box(
+                modifier = Modifier.size(44.dp).clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .clickable { onBellClick() },
+                contentAlignment = Alignment.Center,
+            ) {
+                MsIcon(Ms.notifications, 22.sp, Color.White)
+                if (unreadCount > 0) {
+                    Box(
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 7.dp, end = 8.dp)
+                            .size(16.dp).clip(CircleShape).background(Color(0xFFFF5A5F))
+                            .border(1.5.dp, WcColors.HeaderTop, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(if (unreadCount > 9) "9+" else unreadCount.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold) }
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.clip(RoundedCornerShape(99.dp)).background(Color.White.copy(alpha = 0.12f))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MsIcon(Ms.verified_user, 14.sp, WcColors.HeaderSub)
+            Spacer(Modifier.width(6.dp))
+            Text(roleLabel, color = Color(0xFFEAFFFE), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp)
         }
     }
 }
-
-// ── Today status card ─────────────────────────────────────────────────────────
 
 @Composable
 private fun TodayStatusCard(
     todayStatus: TodayAttendanceStatus,
-    modifier: Modifier = Modifier
+    isOperations: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    val now       = Date()
-    val dayName   = SimpleDateFormat("EEEE", Locale.getDefault()).format(now)
-    val dateNum   = SimpleDateFormat("d", Locale.getDefault()).format(now)
+    val now = Date()
+    val dayName = SimpleDateFormat("EEEE", Locale.getDefault()).format(now)
+    val dateNum = SimpleDateFormat("d", Locale.getDefault()).format(now)
     val monthYear = SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(now)
 
-    Card(
-        modifier  = modifier.fillMaxWidth(),
-        shape     = RoundedCornerShape(18.dp),
-        colors    = CardDefaults.cardColors(containerColor = Surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(WcColors.Surface)
+            .border(1.dp, WcColors.BorderSoft, RoundedCornerShape(22.dp))
+            .padding(18.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Date
-            Column(modifier = Modifier.weight(1f)) {
-                Text(dayName, color = TextHint, fontSize = 11.sp)
-                Text(
-                    dateNum,
-                    color      = TextPrimary,
-                    fontSize   = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = 36.sp
-                )
-                Text(
-                    monthYear,
-                    color    = TextSecond,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(dayName, color = WcColors.TextMuted, fontSize = 11.sp)
+                Text(dateNum, color = Color(0xFF0B0F0F), fontSize = 33.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 35.sp)
+                Text(monthYear, color = WcColors.TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
             }
-
-            // Divider
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .height(52.dp)
-                    .background(Border)
-            )
-
+            Box(Modifier.width(1.dp).height(54.dp).background(WcColors.Divider))
             Spacer(Modifier.width(18.dp))
-
-            // Status
             Column(horizontalAlignment = Alignment.End) {
-                Text("Today", color = TextHint, fontSize = 10.sp, letterSpacing = 0.4.sp)
+                Text("TODAY", color = WcColors.TextMuted, fontSize = 10.sp, letterSpacing = 0.4.sp)
                 Spacer(Modifier.height(7.dp))
                 AttendanceStatusChip(todayStatus)
-
                 val location = (todayStatus as? TodayAttendanceStatus.Present)?.location
                     ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.location
-                val since = (todayStatus as? TodayAttendanceStatus.Present)?.since?.let { "Since $it" }
-                    ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.since?.let { "Since $it" }
-
-                if (location != null) {
-                    Text(location, color = TextSecond, fontSize = 10.sp,
-                        modifier = Modifier.padding(top = 5.dp))
-                }
-                if (since != null) {
-                    Text(since, color = TextHint, fontSize = 10.sp,
-                        modifier = Modifier.padding(top = 2.dp))
-                }
+                val since = (todayStatus as? TodayAttendanceStatus.Present)?.since
+                    ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.since
+                if (location != null) Text(location, color = WcColors.TextSecondary, fontSize = 10.5.sp, modifier = Modifier.padding(top = 6.dp))
+                if (since != null) Text("Since $since", color = WcColors.TextMuted, fontSize = 10.5.sp, modifier = Modifier.padding(top = 1.dp))
             }
         }
     }
@@ -316,112 +252,66 @@ private fun TodayStatusCard(
 
 @Composable
 private fun AttendanceStatusChip(status: TodayAttendanceStatus) {
-    val chipBg: Color; val chipFg: Color; val dotColor: Color; val label: String
-    when (status) {
-        is TodayAttendanceStatus.Present      -> { chipBg = GreenBg; chipFg = GreenText; dotColor = GreenText; label = "Present" }
-        is TodayAttendanceStatus.HalfDay      -> { chipBg = AmberBg; chipFg = AmberText; dotColor = AmberText; label = "Half Day" }
-        is TodayAttendanceStatus.NotCheckedIn -> { chipBg = RedBg;   chipFg = RedText;   dotColor = RedText;   label = "Not checked in" }
-        is TodayAttendanceStatus.Loading      -> { chipBg = Border;  chipFg = TextHint;  dotColor = TextHint;  label = "Loading…" }
-        is TodayAttendanceStatus.Error        -> { chipBg = RedBg;   chipFg = RedText;   dotColor = RedText;   label = "Error" }
+    val (bg, fg, label) = when (status) {
+        is TodayAttendanceStatus.Present -> Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Present")
+        is TodayAttendanceStatus.HalfDay -> Triple(WcColors.WarnBg, WcColors.WarnFg, "Half Day")
+        is TodayAttendanceStatus.NotCheckedIn -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Not checked in")
+        is TodayAttendanceStatus.Loading -> Triple(WcColors.Border, WcColors.TextMuted, "Loading…")
+        is TodayAttendanceStatus.Error -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Error")
     }
+    StatusBadge(label, bg, fg)
+}
+
+@Composable
+private fun ActionButton(text: String, icon: String, bg: Color, fg: Color, modifier: Modifier, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(chipBg)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = modifier.height(48.dp).clip(RoundedCornerShape(14.dp)).background(bg).clickable { onClick() },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(dotColor))
-        Spacer(Modifier.width(5.dp))
-        Text(label, color = chipFg, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        MsIcon(icon, 19.sp, fg)
+        Spacer(Modifier.width(7.dp))
+        Text(text, color = fg, fontSize = 13.5.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
-// ── Module list ───────────────────────────────────────────────────────────────
-
 @Composable
-private fun ModuleList(modules: List<ModuleItem>, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        modules.forEach { module ->
-            ModuleTab(module = module)
+private fun ModuleCard(module: ModuleItem, modifier: Modifier) {
+    Column(
+        modifier = modifier
+            .heightIn(min = 118.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(WcColors.Surface)
+            .border(1.dp, WcColors.BorderSoft, RoundedCornerShape(20.dp))
+            .clickable { module.onClick() }
+            .padding(15.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        IconTile(module.icon, module.tile, size = 46, radius = 15, iconSize = 24)
+        Column {
+            Text(module.label, color = WcColors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 17.sp)
+            Text(module.sub, color = WcColors.TextHint, fontSize = 11.5.sp, modifier = Modifier.padding(top = 3.dp))
         }
     }
 }
 
 @Composable
-private fun ModuleTab(module: ModuleItem) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(module.color)
-            .clickable { module.onClick() }
-            .padding(horizontal = 18.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(module.emoji, fontSize = 20.sp)
-        Spacer(Modifier.width(14.dp))
-        Text(
-            module.label,
-            color      = Color.White,
-            fontSize   = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier   = Modifier.weight(1f)
-        )
-        Text(
-            "›",
-            color    = Color.White.copy(alpha = 0.55f),
-            fontSize = 22.sp
-        )
-    }
-}
-
-// ── Offline banner ────────────────────────────────────────────────────────────
-
-@Composable
 private fun OfflineBannerBar() {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF78350F))
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            "No internet connection",
-            color      = Color.White,
-            fontSize   = 13.sp,
-            fontWeight = FontWeight.Medium
-        )
-    }
+        modifier = Modifier.fillMaxWidth().background(Color(0xFF78350F)).padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text("No internet connection", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
 }
-
-// ── Preview ───────────────────────────────────────────────────────────────────
 
 @Preview(showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
     HomeScreen(
-        greeting              = "Good morning",
-        userName              = "Raghav Khedar",
-        userRole              = "operations",
-        todayStatus           = TodayAttendanceStatus.Present("At Home", "8:30 AM"),
-        isOperations          = true,
-        isAdmin               = false,
-        isOnline              = true,
-        unreadCount           = 2,
-        isLoggingOut          = false,
-        onBellClick           = {},
-        onLogout              = {},
-        onAttendanceClick     = {},
-        onMtRequestClick      = {},
-        onMtBuyClick          = {},
-        onMaterialTransferClick = {},
-        onToolTransferClick   = {},
-        onWorkProgressClick   = {},
-        onLeaveClick          = {},
-        onLeaveApprovalsClick = {},
-        onRegularizationClick = {}
+        greeting = "Good morning", userName = "Raghav Khedar", userRole = "operations",
+        todayStatus = TodayAttendanceStatus.Present("At Home", "8:30 AM"),
+        isOperations = true, isAdmin = false, isOnline = true, unreadCount = 2, isLoggingOut = false,
+        onBellClick = {}, onLogout = {}, onAttendanceClick = {}, onMtRequestClick = {}, onMtBuyClick = {},
+        onMaterialTransferClick = {}, onToolTransferClick = {}, onWorkProgressClick = {}, onLeaveClick = {},
+        onLeaveApprovalsClick = {}, onRegularizationClick = {},
     )
 }

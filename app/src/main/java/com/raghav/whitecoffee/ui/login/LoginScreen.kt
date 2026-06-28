@@ -15,11 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -31,9 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -45,31 +42,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.User
-
-// Palette mirrors res/values/colors.xml so the Compose screen matches the rest of the app exactly.
-private val Midnight = Color(0xFF05091A)
-private val Deep = Color(0xFF0D1836)
-private val Navy = Color(0xFF1A2F72)
-private val ScreenBg = Color(0xFFECEFFE)
-private val Surface = Color(0xFFFFFFFF)
-private val PrimaryBlue = Color(0xFF3B82F6)
-private val TextPrimary = Color(0xFF050B20)
-private val TextHint = Color(0xFF8591BD)
-private val HeaderSub = Color(0xFFA0BEFF)
-private val ErrorRed = Color(0xFFE11D48)
+import com.raghav.whitecoffee.ui.theme.DefaultTextStyle
+import com.raghav.whitecoffee.ui.theme.Ms
+import com.raghav.whitecoffee.ui.theme.MsIcon
+import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
+import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
 /**
- * Login screen rebuilt in Jetpack Compose (pilot for the UI modernisation).
+ * Login screen — Material 3 teal redesign.
  *
- * Pure UI: it holds only the email/password text state locally and reports taps upward via
- * [onLogin]. All real logic (validation, Firebase auth, FCM token) stays in LoginViewModel —
- * this composable just reads the same UiState the old XML screen did.
+ * Pure UI: holds only email/password text locally and reports taps upward via [onLogin].
+ * All real logic (validation, Firebase auth, FCM token) stays in LoginViewModel.
  */
 @Composable
 fun LoginScreen(
     uiState: UiState<User>,
-    onLogin: (email: String, password: String) -> Unit
-) {
+    onLogin: (email: String, password: String) -> Unit,
+) = WhiteCoffeeTheme {
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
@@ -78,45 +68,49 @@ fun LoginScreen(
     val errorMessage = (uiState as? UiState.Error)?.message
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = PrimaryBlue,
-        cursorColor = PrimaryBlue,
-        focusedLabelColor = PrimaryBlue,
-        unfocusedLabelColor = TextHint
+        focusedBorderColor = WcColors.Primary,
+        unfocusedBorderColor = WcColors.Border,
+        cursorColor = WcColors.Primary,
+        focusedContainerColor = WcColors.Surface,
+        unfocusedContainerColor = WcColors.Surface,
     )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(ScreenBg)
-            .verticalScroll(rememberScrollState())
+            .background(WcColors.ScreenBg)
+            .verticalScroll(rememberScrollState()),
     ) {
-
-        // ── Dark hero header ──
+        // ── Dark teal hero header ──
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Midnight, Deep, Navy)))
-                .padding(top = 72.dp, bottom = 72.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(WcColors.HeaderTop, WcColors.LoginMid, WcColors.LoginBottom)
+                    )
+                )
+                .padding(top = 104.dp, bottom = 92.dp)
                 .padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier
                     .size(84.dp)
                     .clip(RoundedCornerShape(26.dp))
                     .background(Color.White.copy(alpha = 0.13f)),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
-                Text("WC", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Text("WC", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp)
             }
             Spacer(Modifier.height(20.dp))
-            Text("White Coffee", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("White Coffee", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(7.dp))
             Text(
                 "Senken Engineering · Field Operations",
-                color = HeaderSub,
+                color = WcColors.HeaderSub,
                 fontSize = 13.sp,
-                textAlign = TextAlign.Center
+                textAlign = TextAlign.Center,
             )
         }
 
@@ -125,101 +119,80 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
-                .offset(y = (-24).dp),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                .offset(y = (-32).dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = WcColors.Surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         ) {
-            Column(Modifier.padding(22.dp)) {
-
-                Text("Welcome back", color = TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.padding(24.dp)) {
+                Text("Welcome back", color = WcColors.TextPrimary, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(4.dp))
-                Text("Sign in with your company credentials", color = TextHint, fontSize = 13.sp)
-                Spacer(Modifier.height(24.dp))
+                Text("Sign in with your company credentials", color = WcColors.TextSecondary, fontSize = 13.5.sp)
+                Spacer(Modifier.height(22.dp))
 
+                Text("Email address", color = WcColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Email address") },
+                    placeholder = { Text("you@senken.in", color = WcColors.TextHint, fontSize = 15.sp) },
+                    leadingIcon = { MsIcon(Ms.mail, 20.sp, WcColors.Primary) },
                     singleLine = true,
                     enabled = !isLoading,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    shape = RoundedCornerShape(12.dp),
+                    textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcColors.TextPrimary),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                    shape = RoundedCornerShape(14.dp),
                     colors = fieldColors,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(16.dp))
 
+                Text("Password", color = WcColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    placeholder = { Text("••••••••", color = WcColors.TextHint, fontSize = 15.sp) },
+                    leadingIcon = { MsIcon(Ms.lock, 20.sp, WcColors.TextHint) },
                     singleLine = true,
                     enabled = !isLoading,
-                    visualTransformation = if (passwordVisible) VisualTransformation.None
-                    else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = { if (!isLoading) onLogin(email.trim(), password) }
-                    ),
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcColors.TextPrimary),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (!isLoading) onLogin(email.trim(), password) }),
                     trailingIcon = {
                         TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Text(
-                                if (passwordVisible) "Hide" else "Show",
-                                color = TextHint,
-                                fontSize = 12.sp
-                            )
+                            Text(if (passwordVisible) "Hide" else "Show", color = WcColors.Primary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                         }
                     },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = fieldColors,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 if (errorMessage != null) {
                     Spacer(Modifier.height(10.dp))
-                    Text(errorMessage, color = ErrorRed, fontSize = 13.sp)
+                    Text(errorMessage, color = WcColors.DangerFg, fontSize = 13.sp)
                 }
 
-                Spacer(Modifier.height(20.dp))
-
-                Button(
+                Spacer(Modifier.height(24.dp))
+                WcPrimaryButton(
+                    text = "Sign In",
+                    icon = Ms.arrow_forward,
                     onClick = { onLogin(email.trim(), password) },
                     enabled = !isLoading,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            color = Color.White,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    } else {
-                        Text("Sign In  →", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+                    loading = isLoading,
+                )
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(26.dp))
         Text(
             "Senken Engineering © 2025",
-            color = TextHint,
+            color = WcColors.TextHint,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 32.dp)
+            modifier = Modifier.fillMaxWidth().padding(bottom = 36.dp),
         )
     }
 }

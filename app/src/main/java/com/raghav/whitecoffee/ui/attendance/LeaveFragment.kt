@@ -1,95 +1,99 @@
-package com.raghav.whitecoffee.ui.attendance
+﻿package com.raghav.whitecoffee.ui.attendance
 
+import android.app.DatePickerDialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
-import androidx.recyclerview.widget.LinearLayoutManager
-import com.raghav.whitecoffee.R
-import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
-import com.raghav.whitecoffee.databinding.FragmentLeaveBinding
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
+import java.util.Calendar
 
+/** Leave — Compose host with Apply/History tabs. Uses both [LeaveViewModel] and [ApplyLeaveViewModel]. */
 @AndroidEntryPoint
-class LeaveFragment : BaseFragment<FragmentLeaveBinding>() {
+class LeaveFragment : Fragment() {
 
-    private val viewModel: LeaveViewModel by viewModels()
-    private lateinit var adapter: LeaveRequestAdapter
+    private val leaveViewModel: LeaveViewModel by viewModels()
+    private val applyViewModel: ApplyLeaveViewModel by viewModels()
 
-    override fun inflateBinding(inflater: LayoutInflater, container: ViewGroup?) =
-        FragmentLeaveBinding.inflate(inflater, container, false)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            val leavesState by leaveViewModel.leavesState.collectAsStateWithLifecycle()
+            val applyState by applyViewModel.submitState.collectAsStateWithLifecycle()
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        setupRecyclerView()
-        binding.btnBack.setOnClickListener { findNavController().navigateUp() }
-        binding.fabApply.setOnClickListener {
-            findNavController().navigate(R.id.action_leaveFragment_to_applyLeaveFragment)
-        }
-        binding.swipeRefresh.setColorSchemeResources(R.color.primary_blue)
-        binding.swipeRefresh.setOnRefreshListener { viewModel.loadLeaves() }
-        binding.btnRetry.setOnClickListener { viewModel.loadLeaves() }
-        observeViewModel()
-    }
+            var fromDate by remember { mutableStateOf("") }
+            var toDate by remember { mutableStateOf("") }
+            var joiningDate by remember { mutableStateOf("") }
+            var emergencyContact by remember { mutableStateOf("") }
+            var placeOfVisit by remember { mutableStateOf("") }
 
-    private fun setupRecyclerView() {
-        adapter = LeaveRequestAdapter()
-        binding.rvLeaves.layoutManager = LinearLayoutManager(requireContext())
-        binding.rvLeaves.adapter = adapter
-    }
+            val totalDays = if (fromDate.isNotBlank() && toDate.isNotBlank())
+                applyViewModel.calculateDays(fromDate, toDate) else 0
 
-    private fun observeViewModel() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.isOnline.collect { online ->
-                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
-                    }
-                }
-                launch {
-                    viewModel.leavesState.collect { state ->
-                        when (state) {
-                            is UiState.Loading -> {
-                                if (!binding.swipeRefresh.isRefreshing) {
-                                    binding.progressBar.visibility = View.VISIBLE
-                                }
-                                binding.tvEmpty.visibility = View.GONE
-                                binding.btnRetry.visibility = View.GONE
-                            }
-                            is UiState.Success -> {
-                                binding.progressBar.visibility = View.GONE
-                                binding.swipeRefresh.isRefreshing = false
-                                binding.tvEmpty.visibility = View.GONE
-                                binding.btnRetry.visibility = View.GONE
-                                adapter.submitList(state.data)
-                            }
-                            is UiState.Empty -> {
-                                binding.progressBar.visibility = View.GONE
-                                binding.swipeRefresh.isRefreshing = false
-                                binding.tvEmpty.visibility = View.VISIBLE
-                                binding.btnRetry.visibility = View.GONE
-                                adapter.submitList(emptyList())
-                            }
-                            is UiState.Error -> {
-                                binding.progressBar.visibility = View.GONE
-                                binding.swipeRefresh.isRefreshing = false
-                                binding.tvEmpty.visibility = View.VISIBLE
-                                binding.tvEmpty.text = state.message
-                                binding.btnRetry.visibility = View.VISIBLE
-                            }
-                            else -> {}
-                        }
-                    }
+            LaunchedEffect(applyState) {
+                if (applyState is UiState.Success) {
+                    leaveViewModel.loadLeaves()
+                    fromDate = ""
+                    toDate = ""
+                    joiningDate = ""
+                    emergencyContact = ""
+                    placeOfVisit = ""
                 }
             }
+
+            LeaveScreen(
+                leavesState = leavesState,
+                applyState = applyState,
+                applicantName = applyViewModel.userName,
+                fromDate = fromDate,
+                toDate = toDate,
+                joiningDate = joiningDate,
+                emergencyContact = emergencyContact,
+                placeOfVisit = placeOfVisit,
+                totalDays = totalDays,
+                error = (applyState as? UiState.Error)?.message,
+                onBack = { findNavController().navigateUp() },
+                onPickFrom = { showDatePicker { fromDate = it } },
+                onPickTo = { showDatePicker { toDate = it } },
+                onPickJoiningDate = { showDatePicker { joiningDate = it } },
+                onEmergencyContactChange = { emergencyContact = it },
+                onPlaceOfVisitChange = { placeOfVisit = it },
+                onSubmit = { reason ->
+                    applyViewModel.submit(
+                        fromDate = fromDate,
+                        toDate = toDate,
+                        joiningDate = joiningDate,
+                        emergencyContact = emergencyContact,
+                        placeOfVisit = placeOfVisit,
+                        reason = reason,
+                    )
+                },
+            )
         }
     }
 
+    private fun showDatePicker(onDate: (String) -> Unit) {
+        val cal = Calendar.getInstance()
+        DatePickerDialog(
+            requireContext(),
+            { _, year, month, day -> onDate(String.format("%04d-%02d-%02d", year, month + 1, day)) },
+            cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH),
+        ).show()
+    }
 }

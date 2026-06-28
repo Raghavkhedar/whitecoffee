@@ -1,121 +1,73 @@
 package com.raghav.whitecoffee.ui.requests
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
-import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
-import com.raghav.whitecoffee.data.model.TransferItem
-import com.raghav.whitecoffee.databinding.FragmentMaterialTransferBinding
-import com.raghav.whitecoffee.databinding.ItemTransferRowBinding
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
+/** Material Transfer — Compose host. Logic stays in [TransferViewModel]. */
 @AndroidEntryPoint
-class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>() {
+class MaterialTransferFragment : Fragment() {
 
     private val viewModel: TransferViewModel by viewModels()
-    private val itemRows = mutableListOf<ItemTransferRowBinding>()
-    private lateinit var photoPickerHelper: PhotoPickerHelper
 
-    override fun inflateBinding(
+    override fun onCreateView(
         inflater: LayoutInflater,
-        container: ViewGroup?
-    ): FragmentMaterialTransferBinding =
-        FragmentMaterialTransferBinding.inflate(inflater, container, false)
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+            val submit by viewModel.submitState.collectAsStateWithLifecycle()
+            var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
+            val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy")) }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        setupPhotoHelper()
-        setupClickListeners()
-        observeViewModel()
-        addItemRow()
-    }
-
-    private fun setupPhotoHelper() {
-        photoPickerHelper = PhotoPickerHelper(
-            fragment           = this,
-            thumbnailContainer = binding.containerPhotos,
-            scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { viewModel.onPhotosChanged("material_transfers", it) }
-        )
-        binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
-    }
-
-    private fun setupClickListeners() {
-        binding.btnBack.setOnClickListener { findNavController().navigateUp() }
-        binding.btnAddItem.setOnClickListener { addItemRow() }
-        binding.btnSubmit.setOnClickListener {
-            it.isEnabled = false
-            viewModel.submitMaterialTransfer(
-                fromLocation  = binding.etFrom.text?.toString() ?: "",
-                toLocation    = binding.etTo.text?.toString() ?: "",
-                transferredBy = binding.etTransferredBy.text?.toString() ?: "",
-                receivedBy    = binding.etReceivedBy.text?.toString() ?: "",
-                items         = collectItems(),
-                notes         = binding.etNotes.text?.toString() ?: "",
-                photoUris     = photoPickerHelper.getSelectedUris()
-            )
-        }
-    }
-
-    private fun observeViewModel() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.isOnline.collect { online ->
-                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
-                    }
-                }
-                launch {
-                    viewModel.submitState.collect { state ->
-                        when (state) {
-                            is UiState.Loading -> showLoading(state.message)
-                            is UiState.Success -> { hideLoading(); showSuccessAndExit() }
-                            is UiState.Error   -> {
-                                hideLoading()
-                                showError(state.message)
-                                binding.btnSubmit.isEnabled = true
-                                viewModel.resetSubmitState()
-                            }
-                            else -> {}
-                        }
-                    }
+            val picker = rememberLauncherForActivityResult(
+                ActivityResultContracts.PickMultipleVisualMedia(10)
+            ) { uris ->
+                if (uris.isNotEmpty()) {
+                    photos = (photos + uris).distinct()
+                    viewModel.onPhotosChanged("material_transfers", photos)
                 }
             }
-        }
-    }
 
-    private fun addItemRow() {
-        val rowBinding = ItemTransferRowBinding.inflate(
-            LayoutInflater.from(requireContext()), binding.containerItems, false)
-        rowBinding.tvRowNumber.text = (itemRows.size + 1).toString()
-        rowBinding.btnRemove.setOnClickListener {
-            binding.containerItems.removeView(rowBinding.root)
-            itemRows.remove(rowBinding)
-            itemRows.forEachIndexed { i, r -> r.tvRowNumber.text = (i + 1).toString() }
-        }
-        if (itemRows.isEmpty()) rowBinding.btnRemove.visibility = View.INVISIBLE
-        itemRows.add(rowBinding)
-        binding.containerItems.addView(rowBinding.root)
-    }
+            LaunchedEffect(submit) { if (submit is UiState.Success) showSuccessAndExit() }
 
-    private fun collectItems(): List<TransferItem> = itemRows.mapNotNull { row ->
-        val name      = row.etItemName.text?.toString()?.trim() ?: return@mapNotNull null
-        val qty       = row.etQuantity.text?.toString()?.toDoubleOrNull() ?: return@mapNotNull null
-        val unit      = row.etUnit.text?.toString()?.trim() ?: ""
-        val condition = row.etCondition.text?.toString()?.trim() ?: ""
-        val spec1     = row.etSpec1.text?.toString()?.trim() ?: ""
-        val spec2     = row.etSpec2.text?.toString()?.trim() ?: ""
-        val make      = row.etMake.text?.toString()?.trim() ?: ""
-        if (name.isBlank() || qty <= 0) return@mapNotNull null
-        TransferItem(name, qty, unit, condition, spec1, spec2, make)
+            TransferScreen(
+                isTool = false,
+                todayDate = today,
+                isOnline = isOnline,
+                submitting = submit is UiState.Loading,
+                error = (submit as? UiState.Error)?.message,
+                photos = photos,
+                onBack = { findNavController().navigateUp() },
+                onAddPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onRemovePhoto = { photos = photos - it; viewModel.onPhotosChanged("material_transfers", photos) },
+                onSubmit = { from, to, by, recv, items, notes ->
+                    viewModel.submitMaterialTransfer(from, to, by, recv, items, notes, photos)
+                },
+            )
+        }
     }
 
     private fun showSuccessAndExit() {
@@ -125,8 +77,4 @@ class MaterialTransferFragment : BaseFragment<FragmentMaterialTransferBinding>()
             .setPositiveButton("OK") { _, _ -> findNavController().navigateUp() }
             .setCancelable(false).show()
     }
-
-    private fun showLoading(message: String = "") { binding.progressBar.visibility = View.VISIBLE; binding.btnSubmit.isEnabled = false; if (message.isNotEmpty()) showError(message) }
-    private fun hideLoading() { binding.progressBar.visibility = View.GONE; binding.tvError.visibility = View.GONE }
-    private fun showError(msg: String) { binding.tvError.visibility = View.VISIBLE; binding.tvError.text = msg }
 }

@@ -94,10 +94,12 @@ class ApplyLeaveFragment : BaseFragment<FragmentApplyLeaveBinding>() {
             it.isEnabled = false
             binding.tvError.visibility = View.GONE
             viewModel.submit(
-                leaveType = selectedLeaveType,
-                fromDate  = binding.etFromDate.text?.toString() ?: "",
-                toDate    = binding.etToDate.text?.toString() ?: "",
-                reason    = binding.etReason.text?.toString() ?: ""
+                fromDate         = binding.etFromDate.text?.toString() ?: "",
+                toDate           = binding.etToDate.text?.toString() ?: "",
+                joiningDate      = "",
+                emergencyContact = "",
+                placeOfVisit     = "",
+                reason           = binding.etReason.text?.toString() ?: ""
             )
         }
     }

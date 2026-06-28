@@ -16,6 +16,7 @@ data class RegularizationRequest(
     val status: String = "pending",
     val approvedBy: String = "",
     val approverComment: String = "",
+    val approvedStatus: String = "",
     val submittedAt: Timestamp? = null,
     val reviewedAt: Timestamp? = null
 ) {
@@ -29,6 +30,7 @@ data class RegularizationRequest(
         "status"          to status,
         "approvedBy"      to approvedBy,
         "approverComment" to approverComment,
+        "approvedStatus"  to approvedStatus,
         "submittedAt"     to submittedAt,
         "reviewedAt"      to reviewedAt
     )
@@ -47,6 +49,7 @@ data class RegularizationRequest(
                     status          = doc.getString("status") ?: "pending",
                     approvedBy      = doc.getString("approvedBy") ?: "",
                     approverComment = doc.getString("approverComment") ?: "",
+                    approvedStatus  = doc.getString("approvedStatus") ?: "",
                     submittedAt     = doc.getTimestamp("submittedAt"),
                     reviewedAt      = doc.getTimestamp("reviewedAt")
                 )

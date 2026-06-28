@@ -1,142 +1,72 @@
 package com.raghav.whitecoffee.ui.requests
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
-import com.raghav.whitecoffee.core.BaseFragment
 import com.raghav.whitecoffee.core.UiState
-import com.raghav.whitecoffee.data.model.RequestItem
-import com.raghav.whitecoffee.databinding.FragmentMaterialToolRequestBinding
-import com.raghav.whitecoffee.databinding.ItemRequestRowBinding
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 
-// SiteTask / dropdown removed — site is now two free-text fields (Site Name + Site ID).
-// To re-enable: restore ArrayAdapter dropdown, import SiteTask, restore sitesState observer.
-
+/** M&T Request — Compose host. Logic stays in [MaterialToolRequestViewModel]. */
 @AndroidEntryPoint
-class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBinding>() {
+class MaterialToolRequestFragment : Fragment() {
 
     private val viewModel: MaterialToolRequestViewModel by viewModels()
 
-    private val itemRows = mutableListOf<ItemRequestRowBinding>()
-    private lateinit var photoPickerHelper: PhotoPickerHelper
-
-    override fun inflateBinding(
+    override fun onCreateView(
         inflater: LayoutInflater,
-        container: ViewGroup?
-    ): FragmentMaterialToolRequestBinding =
-        FragmentMaterialToolRequestBinding.inflate(inflater, container, false)
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = ComposeView(requireContext()).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+        setContent {
+            val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+            val submit by viewModel.submitState.collectAsStateWithLifecycle()
+            var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
+            var localError by remember { mutableStateOf<String?>(null) }
 
-    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        super.onViewCreated(view, savedInstanceState)
-        setupPhotoHelper()
-        setupClickListeners()
-        observeViewModel()
-        addItemRow()
-    }
-
-    private fun setupPhotoHelper() {
-        photoPickerHelper = PhotoPickerHelper(
-            fragment           = this,
-            thumbnailContainer = binding.containerPhotos,
-            scrollView         = binding.scrollPhotos,
-            onPhotosChanged    = { viewModel.onPhotosChanged(it) }
-        )
-        binding.btnAddPhoto.setOnClickListener { photoPickerHelper.launch() }
-    }
-
-    private fun setupClickListeners() {
-        binding.btnBack.setOnClickListener { findNavController().navigateUp() }
-        binding.btnAddItem.setOnClickListener { addItemRow() }
-
-        binding.btnSubmit.setOnClickListener {
-            val siteName = binding.etSiteName.text?.toString()?.trim() ?: ""
-            val siteId   = binding.etSiteId.text?.toString()?.trim() ?: ""
-            if (siteName.isBlank()) {
-                showError("Please enter the site name.")
-                return@setOnClickListener
-            }
-            it.isEnabled = false
-            val items = collectItems()
-            val notes = binding.etNotes.text?.toString() ?: ""
-            viewModel.submitRequest(siteId, siteName, items, notes, photoPickerHelper.getSelectedUris())
-        }
-    }
-
-    private fun observeViewModel() {
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                launch {
-                    viewModel.isOnline.collect { online ->
-                        binding.offlineBanner.root.visibility = if (online) View.GONE else View.VISIBLE
-                    }
-                }
-                launch {
-                    viewModel.submitState.collect { state ->
-                        when (state) {
-                            is UiState.Loading -> showLoading(state.message)
-                            is UiState.Success -> {
-                                hideLoading()
-                                showSuccessAndExit()
-                            }
-                            is UiState.Error -> {
-                                hideLoading()
-                                showError(state.message)
-                                binding.btnSubmit.isEnabled = true
-                                viewModel.resetSubmitState()
-                            }
-                            else -> {}
-                        }
-                    }
+            val picker = rememberLauncherForActivityResult(
+                ActivityResultContracts.PickMultipleVisualMedia(10)
+            ) { uris ->
+                if (uris.isNotEmpty()) {
+                    photos = (photos + uris).distinct()
+                    viewModel.onPhotosChanged(photos)
                 }
             }
-        }
-    }
 
-    private fun addItemRow() {
-        val rowBinding = ItemRequestRowBinding.inflate(
-            LayoutInflater.from(requireContext()),
-            binding.containerItems,
-            false
-        )
-        val rowNumber = itemRows.size + 1
-        rowBinding.tvRowNumber.text = rowNumber.toString()
+            LaunchedEffect(submit) { if (submit is UiState.Success) showSuccessAndExit() }
 
-        rowBinding.btnRemove.setOnClickListener {
-            binding.containerItems.removeView(rowBinding.root)
-            itemRows.remove(rowBinding)
-            itemRows.forEachIndexed { index, row ->
-                row.tvRowNumber.text = (index + 1).toString()
-            }
-        }
-
-        if (itemRows.isEmpty()) {
-            rowBinding.btnRemove.visibility = View.INVISIBLE
-        }
-
-        itemRows.add(rowBinding)
-        binding.containerItems.addView(rowBinding.root)
-    }
-
-    private fun collectItems(): List<RequestItem> {
-        return itemRows.mapNotNull { row ->
-            val name = row.etItemName.text?.toString()?.trim() ?: return@mapNotNull null
-            val qtyStr = row.etQuantity.text?.toString()?.trim() ?: return@mapNotNull null
-            val unit = row.etUnit.text?.toString()?.trim() ?: ""
-            val notes = row.etNotes.text?.toString()?.trim() ?: ""
-            if (name.isBlank() || qtyStr.isBlank()) return@mapNotNull null
-            RequestItem(
-                itemName = name,
-                quantity = qtyStr.toDoubleOrNull() ?: 0.0,
-                unit     = unit,
-                notes    = notes
+            MaterialToolRequestScreen(
+                isOnline = isOnline,
+                submitting = submit is UiState.Loading,
+                error = localError ?: (submit as? UiState.Error)?.message,
+                photos = photos,
+                onBack = { findNavController().navigateUp() },
+                onAddPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onRemovePhoto = { photos = photos - it; viewModel.onPhotosChanged(photos) },
+                onSubmit = { siteId, siteName, items, notes ->
+                    if (siteName.isBlank()) {
+                        localError = "Please enter the site name."
+                    } else {
+                        localError = null
+                        viewModel.submitRequest(siteId, siteName, items, notes, photos)
+                    }
+                },
             )
         }
     }
@@ -145,26 +75,8 @@ class MaterialToolRequestFragment : BaseFragment<FragmentMaterialToolRequestBind
         android.app.AlertDialog.Builder(requireContext())
             .setTitle("Request Submitted ✓")
             .setMessage("Your M&T request has been submitted successfully.")
-            .setPositiveButton("OK") { _, _ ->
-                findNavController().navigateUp()
-            }
+            .setPositiveButton("OK") { _, _ -> findNavController().navigateUp() }
             .setCancelable(false)
             .show()
-    }
-
-    private fun showLoading(message: String = "") {
-        binding.progressBar.visibility = View.VISIBLE
-        binding.btnSubmit.isEnabled = false
-        if (message.isNotEmpty()) showError(message)
-    }
-
-    private fun hideLoading() {
-        binding.progressBar.visibility = View.GONE
-        binding.tvError.visibility = View.GONE
-    }
-
-    private fun showError(message: String) {
-        binding.tvError.visibility = View.VISIBLE
-        binding.tvError.text = message
     }
 }

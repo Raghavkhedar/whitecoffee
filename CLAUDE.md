@@ -1,15 +1,17 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 22 End
+### Last Updated: Session 27 End
 
 ---
 
 ## WHAT YOU ARE BUILDING
 A **Field Operations Management Android App** called **White Coffee** for **Senken Engineering**.
-- Platform: Android (Kotlin). **Hybrid UI (Session 25):** mostly XML Views; Jetpack Compose
-  now ENABLED and adopted incrementally via `ComposeView` interop (Login is the first Compose
-  screen). NOT Compose Multiplatform — Android-only Jetpack Compose. New screens may be Compose;
-  existing XML screens stay as-is until migrated one at a time.
+- Platform: Android (Kotlin). **UI = Jetpack Compose (Session 27):** ALL 12 screens are now
+  Compose with a Material 3 "teal" redesign. Each Fragment is a thin `ComposeView` host;
+  ViewModels/repositories/nav-graph/Hilt/Firestore are unchanged — only the UI layer was rebuilt.
+  NOT Compose Multiplatform — Android-only Jetpack Compose. Shared design system lives in
+  `ui/theme/` (see DESIGN SYSTEM section). Old XML layouts + RecyclerView adapters + the
+  View-based `PhotoPickerHelper` + `ApplyLeaveFragment` remain on disk but are now DEAD CODE.
 - Package: `com.raghav.whitecoffee`
 - Project folder: `C:\Users\ragha\AndroidStudioProjects\WhiteCoffee2`
 - Backend: Firebase Auth + Firestore + Storage (Blaze plan)
@@ -203,6 +205,16 @@ com.raghav.whitecoffee
 > Office/Admin: Present if office_in before 10:00 and office_out after 18:00; HalfDay otherwise.
 > No events + approved leave → PL (if plBalance > 0) or UPL. No events + no leave → Absent.
 
+> **HalfDay vs "short leave" — there is NO short-leave concept (known gap).** HalfDay is derived
+> purely from punch TIMES (late in / early out); no employee intent is attached. Leave is
+> whole-day ONLY — `LeaveType` has just Sick/Casual/Annual/Unpaid and `LeaveRequest.totalDays`
+> is an `Int`; there is no half-day flag, hourly leave, or "short leave" type anywhere. So an
+> approved early departure is indistinguishable from slacking — both auto-mark HalfDay. The only
+> recourse is **Regularization** (admin approval flips HalfDay→Present, all-or-nothing) or a
+> full-day Leave. To truly support it would require a half-day flag on `LeaveRequest` (or a new
+> Short-Leave type) + a new `attendance_status` value + changes to `computeDailyAttendanceStatus`
+> (Cloud Function lives in the `whitecoffee-admin` repo, not here).
+
 ### `/users/{userId}` — User Profile
 | Field | Type | Notes |
 |---|---|---|
@@ -381,19 +393,54 @@ Delete old flat collections from Firestore Console — they only contain test da
 
 ---
 
-## COLOR PALETTE (Professional Blue — never deviate)
+## COLOR PALETTE (Material 3 Teal — Session 27, never deviate)
+
+The Compose UI uses the teal M3 palette defined in `ui/theme/Color.kt` (`WcColors`). Do NOT
+add hardcoded colors — reference `WcColors` / `WcTiles`.
 
 ```
-primary_blue:     #1A5FAF  — buttons, headers
-background:       #F0F4F8  — screen backgrounds
-surface:          #FFFFFF  — cards
-input_background: #F7FAFD  — text fields
-border:           #C8D6E8  — card borders
-text_primary:     #0D1B2A  — main text
-text_secondary:   #6B7E94  — labels
-text_hint:        #A8BBCC  — placeholders
-accent_light:     #EBF2FB  — icon backgrounds
+primary:        #006A71  — buttons, active states
+primary_dark:   #00474C  — deep accent / grand-total bar
+screen_bg:      #F4F9F9  — screen backgrounds
+surface:        #FFFFFF  — cards
+border:         #E2E9E9  — input/card outline
+text_primary:   #101414  — main text
+text_secondary: #5A6566  — labels
+text_muted:     #8591A0  — placeholders / meta
+accent:         #CDE7EC  — secondary button bg
+header grad:    #00363B → #00585E  — dark teal hero headers
+status: Present/approved #C7F0D2/#0A5132 · Pending #FCEFC7/#8A6700 · Rejected #FFDAD6/#BA1A1A
 ```
+
+> NOTE: the old `res/values/colors.xml` (blue) is NOT yet reconciled and is only used by any
+> leftover XML chrome — the live Compose UI is entirely teal via `WcColors`.
+
+---
+
+## DESIGN SYSTEM (Compose — `ui/theme/`, Session 27)
+
+Single source of truth for the Material 3 UI. Build every new screen from these.
+- `Color.kt` — `WcColors` (palette) + `WcTile`/`WcTiles` (per-module icon-tile bg/fg).
+- `Type.kt` — `Manrope` FontFamily (`res/font/manrope_400..800.ttf`) + `MaterialSymbols` font + `WcTypography`.
+- `MsIcons.kt` — `object Ms` (icon name → PUA codepoint string) + `MsIcon(Ms.x, sizeSp, tint)`.
+  Icons come from a **subset** font `res/font/material_symbols.ttf` (~10.6 KB, 49 glyphs).
+  To add an icon, re-subset the full Material Symbols Rounded font by Unicode codepoints
+  (fonttools: `varLib.instancer` to pin wght=400/FILL=0, then `subset --unicodes=...`) and add a
+  `const val` to `Ms`. (`location_on`'s glyph is named `place`, codepoint `e0c8`.)
+- `Theme.kt` — `WhiteCoffeeTheme {}` (call at top of each `*Screen`).
+- `Components.kt` — `WcTopBar`, `WcPrimaryButton`, `WcField`, `ReadOnlyFieldBox`, `WcCard`,
+  `IconTile`, `StatusBadge`, `AddItemButton`, `RemovableItemRow`, `EmptyState`, `InfoBanner`,
+  `SectionLabel`/`FieldLabel`.
+
+**Screen host pattern:** Fragment extends plain `Fragment` (not BaseFragment); `onCreateView`
+returns a `ComposeView` (DisposeOnViewTreeLifecycleDestroyed) that collects ViewModel flows via
+`collectAsStateWithLifecycle` and renders a stateless `*Screen` composable. Android dialogs
+(DatePicker, site/market/reject/regularize-reason AlertDialogs) stay in the Fragment, triggered
+via callbacks. Photos: `rememberLauncherForActivityResult(PickMultipleVisualMedia)` + Glide
+thumbnails in an `AndroidView`.
+
+> Build note: the bundled Android Studio JBR is broken (`...\jbr\bin` missing `lib\jvm.cfg`).
+> Command-line Gradle needs a real JDK 17: set `JAVA_HOME` + pass `-Dorg.gradle.java.home=<jdk>`.
 
 ---
 
@@ -653,6 +700,31 @@ Deploy: `npm run deploy` from the admin portal directory
 - `OfficeAttendanceFragment.kt` — per-phase button dispatch + state rendering.
 - `fragment_office_attendance.xml` — added outlined `btn_home_out` (End Day).
 - NOT done (optional follow-up): Home screen "today status" card still derives office status from last event only — shows "Not checked in" after home_in/home_out. Cosmetic.
+
+### ✅ Sessions 23–26 (summary — header had lagged at Session 22):
+- **S23:** `TransferItem` gained `spec1` / `spec2` / `make` fields.
+- **S24:** Live "today" status on the Home card derived from events (not `attendance_status`); regularization scoped to today.
+- **S25:** Jetpack Compose ENABLED (interop); Login rebuilt in Compose (`LoginScreen.kt`).
+- **S26:** Home/Dashboard rebuilt in Compose (`HomeScreen.kt`).
+
+### ✅ Session 27 changes — Full Material 3 "teal" Compose redesign (ALL screens):
+- **Imported** the Claude Design project "White Coffee – M3 Redesign" and implemented it across the app.
+- **All 12 screens migrated to Compose** (were XML except Login/Home): Attendance (ops + office),
+  M&T Request, M&T Buy, Material Transfer, Tool Transfer, Work Progress, Leave, Leave Approvals,
+  Notifications, Regularization. Each is a thin `ComposeView` host; **ViewModels, repositories,
+  nav-graph, Hilt, and Firestore logic are unchanged** — only the UI layer was rebuilt.
+- **New `ui/theme/` design system** (see DESIGN SYSTEM section): teal palette, Manrope font,
+  Material Symbols icon subset, reusable components.
+- **Leave is now ONE tabbed screen** (Apply / History) hosting both `LeaveViewModel` +
+  `ApplyLeaveViewModel`. `ApplyLeaveFragment` is now unreachable.
+- **Dead code left in place (not deleted):** old XML layouts, RecyclerView adapters
+  (`LeaveRequestAdapter`, `LeaveApprovalAdapter`, `RegularizationAdapter`, `NotificationAdapter`,
+  `AttendanceTimelineAdapter`), the View-based `PhotoPickerHelper`, and `ApplyLeaveFragment`.
+- **Photo picking is Compose-native** (`PickMultipleVisualMedia` + Glide thumbnails via `AndroidView`).
+- **Fonts added** to `res/font/`: Manrope (5 weights) + `material_symbols.ttf` (subset, 10.6 KB).
+- **Build:** `:app:assembleDebug` SUCCESSFUL (21 MB debug APK, fonts confirmed packaged).
+  ⚠️ Runtime/on-device walkthrough per role NOT yet done — verify submits write to Firestore
+  and Material Symbols render (no tofu) before shipping.
 
 ### ⏳ REMAINING (Phase 4)
 - **Cloud Functions — FCM push** — send push to backgrounded devices (trigger: new doc in `/sent_notifications/`); deferred
