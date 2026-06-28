@@ -11,7 +11,20 @@ setGlobalOptions({ maxInstances: 10 });
 
 const SHEETS_KEY   = defineSecret("ATTENDANCE_SHEETS_KEY");
 const MAPS_KEY     = defineSecret("MAPS_API_KEY");
-const SHEET_ID     = "1pemb9uSbu-NenE_QSkfPx6842EG1T6Z21isGM5IXrYs";
+// Sheet1: Employee Dashboard, Leave Requests, Conveyance
+const SHEET_ID_1 = "1Qwi1-H13OEAQmVWVf2VRahpG8NiUIDow-QQKQKWh57M";
+// Sheet2: Attendance
+const SHEET_ID_2 = "1Te3esJocJvBYp9r2yFyB9lp4onKJUSy4Hobe3LkBzYM";
+// Sheet3: MT Requests
+const SHEET_ID_3 = "10l2g55q_yPrirjD71u70D6K_9seED6NOjCadJ0kgeIU";
+// Sheet4: MT Purchases
+const SHEET_ID_4 = "1Gc1mRffcjEmZnk6aeOVf3eTcNCk1qfeTdsnkk5-OFdE";
+// Sheet5: Material Transfers
+const SHEET_ID_5 = "1Hy4GJ57Cn-uln7k3xXtJxI6Ka_VofDbJz1XYGqs2qGY";
+// Sheet6: Tool Transfers
+const SHEET_ID_6 = "1Ar1d7kNwgOB5w6MSGX40MAXorR9dpzr3oN72Wa-JQE4";
+// Sheet7: Work Progress
+const SHEET_ID_7 = "1c2JtarmbteClXaADF666WYEGNmx4CozM7EKo7bcteKE";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -83,23 +96,23 @@ function uidOf(doc) {
   return parent ? parent.id : "";
 }
 
-async function ensureTab(sheets, tabName) {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+async function ensureTab(sheets, spreadsheetId, tabName) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const exists = meta.data.sheets.some((s) => s.properties.title === tabName);
   if (!exists) {
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID,
+      spreadsheetId,
       requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
     });
   }
 }
 
-async function writeTab(sheets, tabName, rows) {
-  await ensureTab(sheets, tabName);
-  await sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range: tabName });
+async function writeTab(sheets, spreadsheetId, tabName, rows) {
+  await ensureTab(sheets, spreadsheetId, tabName);
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: tabName });
   if (rows.length === 0) return;
   await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
+    spreadsheetId,
     range: `${tabName}!A1`,
     valueInputOption: "RAW",
     requestBody: { values: rows },
@@ -381,7 +394,7 @@ exports.exportToSheets = onSchedule(
         ];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      await writeTab(sheets, TABS.ATTENDANCE, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...rows]);
       console.log(`Attendance: ${rows.length} rows`);
     }
 
@@ -403,7 +416,7 @@ exports.exportToSheets = onSchedule(
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos]));
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, TABS.REQUESTS, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_3, TABS.REQUESTS, [header, ...rows]);
       console.log(`MT Requests: ${rows.length} rows`);
     }
 
@@ -426,7 +439,7 @@ exports.exportToSheets = onSchedule(
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos]));
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, TABS.PURCHASES, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows]);
       console.log(`MT Purchases: ${rows.length} rows`);
     }
 
@@ -449,7 +462,7 @@ exports.exportToSheets = onSchedule(
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos]));
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, TABS.MATERIAL_TRANSFERS, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows]);
       console.log(`Material Transfers: ${rows.length} rows`);
     }
 
@@ -471,7 +484,7 @@ exports.exportToSheets = onSchedule(
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""]));
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, TABS.TOOL_TRANSFERS, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows]);
       console.log(`Tool Transfers: ${rows.length} rows`);
     }
 
@@ -485,7 +498,7 @@ exports.exportToSheets = onSchedule(
         return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", d.status || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, TABS.WORK_PROGRESS, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_7, TABS.WORK_PROGRESS, [header, ...rows]);
       console.log(`Work Progress: ${rows.length} rows`);
     }
 
@@ -499,7 +512,7 @@ exports.exportToSheets = onSchedule(
         return [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", d.totalDays || "", d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, TABS.LEAVE_REQUESTS, [header, ...rows]);
+      await writeTab(sheets, SHEET_ID_1, TABS.LEAVE_REQUESTS, [header, ...rows]);
       console.log(`Leave Requests: ${rows.length} rows`);
     }
 
@@ -608,7 +621,7 @@ exports.exportToSheets = onSchedule(
       }
 
       const header = ["Date", "Employee Name", "Employee ID", "Route", "Total KM", "Conveyance (₹)", "Rate"];
-      await writeTab(sheets, TABS.CONVEYANCE, [header, ...allRows.map(r => r.slice(0, 7))]);
+      await writeTab(sheets, SHEET_ID_1, TABS.CONVEYANCE, [header, ...allRows.map(r => r.slice(0, 7))]);
       console.log(`Conveyance: ${allRows.length} rows`);
     }
 
@@ -621,7 +634,7 @@ exports.exportToSheets = onSchedule(
       const imprestMap = new Map(); // employeeId → imprest
       try {
         const existing = await sheets.spreadsheets.values.get({
-          spreadsheetId: SHEET_ID,
+          spreadsheetId: SHEET_ID_1,
           range: `${TAB}!A:Z`,
         });
         const existingRows = existing.data.values || [];
@@ -709,7 +722,7 @@ exports.exportToSheets = onSchedule(
       // TOTAL row — grand total of all dues
       const totalRow  = summaryRow("TOTAL", grandTotal);
 
-      await writeTab(sheets, TAB, [header, ...empRows, cfBalRow, totalRow]);
+      await writeTab(sheets, SHEET_ID_1, TAB, [header, ...empRows, cfBalRow, totalRow]);
       console.log(`Employee Dashboard: ${empRows.length} employees, total due ₹${grandTotal}`);
     }
 

@@ -5,7 +5,8 @@ import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 const NAV = [
-  { href: '/dashboard', icon: '📊', label: 'Dashboard' },
+  { href: '/dashboard',           icon: '📊', label: 'Dashboard' },
+  { href: '/employee-dashboard', icon: '👤', label: 'Emp Dashboard' },
   { href: '/users',     icon: '👥', label: 'Users' },
   // SITES — NOT IN USE (no daily assignment system, no geofencing). Re-enable with sites/page.tsx + firestore site functions + Site type.
   // { href: '/sites',             icon: '🏗️', label: 'Sites' },

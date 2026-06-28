@@ -158,16 +158,17 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
 }
 
 export async function approveRegularization(
-  userId: string, requestId: string, date: string, approverName: string, comment: string
+  userId: string, requestId: string, date: string, approverName: string,
+  comment: string, approvedStatus: string, userName = '', employeeId = ''
 ) {
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
-    { status: 'approved', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }
+    { status: 'approved', approvedBy: approverName, approverComment: comment, approvedStatus, reviewedAt: Timestamp.now() }
   );
   batch.set(
     doc(db, 'users', userId, 'attendance_status', date),
-    { status: 'Present', markedBy: 'admin', updatedAt: Timestamp.now() },
+    { date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin', updatedAt: Timestamp.now() },
     { merge: true }
   );
   await batch.commit();
@@ -285,6 +286,28 @@ export async function getPlannedHoursForMonth(year: number, month: number): Prom
   );
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as PlannedHours));
+}
+
+export async function getPlannedHoursForDateRange(start: string, end: string): Promise<PlannedHours[]> {
+  const q = query(
+    collectionGroup(db, 'planned_hours'),
+    where('date', '>=', start),
+    where('date', '<=', end)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as PlannedHours));
+}
+
+export async function getAttendanceForDateRange(start: string, end: string): Promise<AttendanceRecord[]> {
+  const snap = await getDocs(collectionGroup(db, 'attendance'));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AttendanceRecord))
+    .filter(r => r.date >= start && r.date <= end)
+    .sort((a, b) => {
+      const ta = (a.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+      const tb = (b.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+      return ta - tb;
+    });
 }
 
 export async function setPlannedHours(

@@ -8,6 +8,7 @@ export interface User {
   employeeId: string;
   salaryRate?: number;
   plBalance?: number;
+  woBalance?: number;
   homeLat?: number;
   homeLng?: number;
   conveyanceRateType?: 1 | 2;
@@ -86,6 +87,7 @@ export interface RegularizationRequest {
   status: 'pending' | 'approved' | 'rejected';
   approvedBy: string;
   approverComment: string;
+  approvedStatus?: string;
   submittedAt?: Timestamp;
   reviewedAt?: Timestamp;
 }

@@ -8,6 +8,8 @@ import type { RegularizationRequest } from '@/types';
 
 type Filter = 'pending' | 'approved' | 'rejected' | 'all';
 
+const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'PL', 'UPL'] as const;
+
 function StatusBadge({ status }: { status: string }) {
   const cls = status === 'approved' ? 'badge-approved' : status === 'rejected' ? 'badge-rejected' : 'badge-pending';
   return <span className={cls}>{status}</span>;
@@ -16,6 +18,18 @@ function StatusBadge({ status }: { status: string }) {
 function OriginalBadge({ status }: { status: string }) {
   const bg = status === 'Absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700';
   return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${bg}`}>{status}</span>;
+}
+
+function ApprovedStatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    Present:  'bg-green-100 text-green-700',
+    HalfDay:  'bg-amber-100 text-amber-700',
+    Absent:   'bg-red-100 text-red-700',
+    PL:       'bg-blue-100 text-blue-700',
+    UPL:      'bg-purple-100 text-purple-700',
+  };
+  const cls = colors[status] ?? 'bg-gray-100 text-gray-600';
+  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>→ {status}</span>;
 }
 
 function currentYearMonth() {
@@ -35,16 +49,17 @@ function offsetMonth(ym: string, offset: number) {
 }
 
 export default function RegularizationPage() {
-  const [requests, setRequests]     = useState<RegularizationRequest[]>([]);
-  const [filter, setFilter]         = useState<Filter>('pending');
-  const [month, setMonth]           = useState(currentYearMonth());
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState('');
-  const [adminName, setAdminName]   = useState('Admin');
+  const [requests, setRequests]       = useState<RegularizationRequest[]>([]);
+  const [filter, setFilter]           = useState<Filter>('pending');
+  const [month, setMonth]             = useState(currentYearMonth());
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState('');
+  const [adminName, setAdminName]     = useState('Admin');
   const [actionModal, setActionModal] = useState<{ req: RegularizationRequest; type: 'approve' | 'reject' } | null>(null);
-  const [actionComment, setActionComment] = useState('');
-  const [actioning, setActioning]   = useState('');
-  const [employeeFilter, setEmployeeFilter] = useState('');
+  const [actionComment, setActionComment]     = useState('');
+  const [approvedStatus, setApprovedStatus]   = useState<string>('Present');
+  const [actioning, setActioning]     = useState('');
+  const [employeeFilter, setEmployeeFilter]   = useState('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -61,8 +76,7 @@ export default function RegularizationPage() {
     setError('');
     try {
       const data = await getAllRegularizationRequests(filter === 'all' ? undefined : filter);
-      const filtered = data.filter(r => r.date.startsWith(month));
-      setRequests(filtered);
+      setRequests(data.filter(r => r.date.startsWith(month)));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -71,22 +85,33 @@ export default function RegularizationPage() {
 
   useEffect(() => { load(); }, [filter, month]);
 
+  function openModal(req: RegularizationRequest, type: 'approve' | 'reject') {
+    setActionModal({ req, type });
+    setActionComment('');
+    setApprovedStatus('Present');
+  }
+
   async function handleAction() {
     if (!actionModal) return;
     const { req, type } = actionModal;
     setActioning(req.id);
     try {
       if (type === 'approve') {
-        await approveRegularization(req.userId, req.id, req.date, adminName, actionComment);
+        await approveRegularization(req.userId, req.id, req.date, adminName, actionComment, approvedStatus, req.userName, req.employeeId);
       } else {
         await rejectRegularization(req.userId, req.id, adminName, actionComment);
       }
       setActionModal(null);
       setActionComment('');
       await load();
-    } catch { setError(`${type === 'approve' ? 'Approval' : 'Rejection'} failed.`); }
+    } catch {
+      setError(`${type === 'approve' ? 'Approval' : 'Rejection'} failed.`);
+    }
     setActioning('');
   }
+
+  const isApproveDisabled = !!actioning || actionComment.trim() === '';
+  const isRejectDisabled  = !!actioning || actionComment.trim() === '';
 
   const FILTERS: Filter[] = ['pending', 'approved', 'rejected', 'all'];
   const filteredRequests = employeeFilter ? requests.filter(r => r.userId === employeeFilter) : requests;
@@ -102,13 +127,11 @@ export default function RegularizationPage() {
 
       {/* Month selector */}
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => setMonth(offsetMonth(month, -1))}
-          className="btn-outline text-sm py-1 px-3">&larr;</button>
+        <button onClick={() => setMonth(offsetMonth(month, -1))} className="btn-outline text-sm py-1 px-3">&larr;</button>
         <span className="text-lg font-semibold text-text-primary min-w-[160px] text-center">
           {formatMonthLabel(month)}
         </span>
-        <button onClick={() => setMonth(offsetMonth(month, 1))}
-          className="btn-outline text-sm py-1 px-3">&rarr;</button>
+        <button onClick={() => setMonth(offsetMonth(month, 1))} className="btn-outline text-sm py-1 px-3">&rarr;</button>
       </div>
 
       {/* Filters */}
@@ -129,16 +152,16 @@ export default function RegularizationPage() {
           className="ml-auto input text-sm !py-2 min-w-[180px]"
         >
           <option value="">All Employees</option>
-          {Array.from(new Map(requests.map(r => [r.userId, r.userName]))).sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => (
-            <option key={id} value={id}>{name}</option>
-          ))}
+          {Array.from(new Map(requests.map(r => [r.userId, r.userName])))
+            .sort((a, b) => a[1].localeCompare(b[1]))
+            .map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
         </select>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-          {error}
-        </div>
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>
       )}
 
       <div className="card p-0 overflow-hidden">
@@ -152,10 +175,8 @@ export default function RegularizationPage() {
           <table className="w-full text-sm">
             <thead className="bg-background border-b border-border">
               <tr>
-                {['Employee', 'Date', 'Original', 'Reason', 'Status', ''].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-bold text-text-secondary uppercase tracking-wide">
-                    {h}
-                  </th>
+                {['Employee', 'Date', 'Original', 'Outcome', 'Reason / Comment', 'Status', ''].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-bold text-text-secondary uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -168,29 +189,35 @@ export default function RegularizationPage() {
                   </td>
                   <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{r.date}</td>
                   <td className="px-4 py-3"><OriginalBadge status={r.originalStatus} /></td>
+                  <td className="px-4 py-3">
+                    {r.status === 'approved' && r.approvedStatus
+                      ? <ApprovedStatusBadge status={r.approvedStatus} />
+                      : <span className="text-text-secondary text-xs">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-text-secondary max-w-xs">
                     <p className="truncate">{r.reason}</p>
                     {r.approverComment && (
-                      <p className={`text-xs mt-0.5 ${r.status === 'rejected' ? 'text-red-500' : 'text-green-600'}`}>&ldquo;{r.approverComment}&rdquo;</p>
+                      <p className={`text-xs mt-0.5 italic ${r.status === 'rejected' ? 'text-red-500' : 'text-green-600'}`}>
+                        &ldquo;{r.approverComment}&rdquo;
+                      </p>
                     )}
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
                   <td className="px-4 py-3">
-                    {r.status === 'pending' && (
+                    {r.status === 'pending' ? (
                       <div className="flex gap-2">
                         <button className="btn-success text-xs py-1 px-3"
                           disabled={actioning === r.id}
-                          onClick={() => { setActionModal({ req: r, type: 'approve' }); setActionComment(''); }}>
+                          onClick={() => openModal(r, 'approve')}>
                           Approve
                         </button>
                         <button className="btn-danger text-xs py-1 px-3"
                           disabled={actioning === r.id}
-                          onClick={() => { setActionModal({ req: r, type: 'reject' }); setActionComment(''); }}>
+                          onClick={() => openModal(r, 'reject')}>
                           Reject
                         </button>
                       </div>
-                    )}
-                    {r.status !== 'pending' && (
+                    ) : (
                       <span className="text-xs text-text-secondary">{r.approvedBy}</span>
                     )}
                   </td>
@@ -204,26 +231,48 @@ export default function RegularizationPage() {
       {actionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-text-primary mb-2">
+            <h2 className="text-lg font-bold text-text-primary mb-1">
               {actionModal.type === 'approve' ? 'Approve' : 'Reject'} Regularization
             </h2>
-            <p className="text-text-secondary text-sm mb-4">
-              {actionModal.req.userName} &mdash; {actionModal.req.date} ({actionModal.req.originalStatus})
+            <p className="text-text-secondary text-sm mb-5">
+              <span className="font-semibold text-text-primary">{actionModal.req.userName}</span>
+              &ensp;&mdash;&ensp;{actionModal.req.date}
+              &ensp;&middot;&ensp;Auto-marked: <span className="font-semibold">{actionModal.req.originalStatus}</span>
             </p>
-            <label className="label">
-              {actionModal.type === 'approve' ? 'Reason for approval' : 'Reason for rejection'}
-            </label>
-            <textarea
-              className="input min-h-[80px]"
-              value={actionComment}
-              onChange={e => setActionComment(e.target.value)}
-              placeholder="Enter reason…"
-            />
-            <div className="flex gap-3 mt-4">
+
+            {actionModal.type === 'approve' && (
+              <div className="mb-4">
+                <label className="label">Set attendance status to</label>
+                <select
+                  className="input mt-1"
+                  value={approvedStatus}
+                  onChange={e => setApprovedStatus(e.target.value)}
+                >
+                  {ATTENDANCE_STATUSES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mb-1">
+              <label className="label">
+                {actionModal.type === 'approve' ? 'Reason for approval' : 'Reason for rejection'}
+                <span className="text-red-500 ml-1">*</span>
+              </label>
+              <textarea
+                className="input mt-1 min-h-[80px]"
+                value={actionComment}
+                onChange={e => setActionComment(e.target.value)}
+                placeholder="Enter reason…"
+              />
+            </div>
+
+            <div className="flex gap-3 mt-5">
               <button
                 className={`${actionModal.type === 'approve' ? 'btn-success' : 'btn-danger'} flex-1`}
                 onClick={handleAction}
-                disabled={!!actioning}
+                disabled={actionModal.type === 'approve' ? isApproveDisabled : isRejectDisabled}
               >
                 {actionModal.type === 'approve' ? 'Approve' : 'Reject'}
               </button>
