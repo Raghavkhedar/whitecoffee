@@ -47,22 +47,29 @@ Additional confirmed points:
 - Missed-punch (SLNF) days are fixed via the **regularization flow (to be built)**. If OT was
   offsetting a shortage and the punch is missing, the shortage stays unaffected (OT didn't happen).
 
-## The core formula (CONFIRM exact)
+## The core formula (FINAL — corrected 2026-06-29)
 
-Pre-declared OT widens the *expected-out* for shortage purposes, but the over-plan portion is
-still credited as OT:
+**Declared OT is a pre-approval ceiling, NOT an obligation.** It only decides whether worked
+surplus is auto-approved or needs admin review. Shortage is always measured against the **plain
+shift** — declaring OT never creates extra shortage when the employee leaves early.
 
 ```
-expected   = planned + declaredOT
-shortage   = max(0, expected − actual)
-OT(auto)   = min(declaredOT, max(0, actual − planned))
-OT(pending → needs admin approval) = max(0, actual − expected)
+surplus     = max(0, actual − planned)
+shortage    = max(0, planned − actual)            # vs the plain shift, never vs planned+declared
+OT(auto)    = min(surplus, declaredOT)             # pre-authorized → no review
+OT(pending → needs admin review) = max(0, surplus − declaredOT)
 ```
 
-Worked example — planned 10:00–18:00 (480), declared +30 → expected 510:
-- out 18:30 (510): OT +30, shortage 0 ✓
-- out 18:15 (495): OT +15, shortage 15 ✓ ("15 min shortage left")
-- out 19:00 (540): OT +30 auto, **+30 new pending request** ✓
+Worked example — planned 10:00–18:00 (480), declared +30:
+- out 18:30 (510): surplus 30 → OT +30 auto, shortage 0 ✓
+- out 18:15 (495): surplus 15 → OT +15 auto, shortage 0. (In the "offset a pre-existing 30-min
+  shortage" story, the "15 left" is the residual of that prior balance netted monthly: −30 + 15 = −15.) ✓
+- out 19:00 (540): surplus 60 → OT +30 auto, **+30 pending review** ✓
+- out 17:45 (465): actual < planned → shortage 15, OT 0 ✓
+
+> **Superseded:** an earlier draft used `shortage = max(0, (planned+declaredOT) − actual)`,
+> treating declared OT as an obligation. That breaks the offset example (pre-existing shortage
+> wouldn't reduce) and double-penalizes early departure. Do not use it.
 
 ## Decisions (LOCKED 2026-06-29)
 
@@ -133,14 +140,25 @@ or it lapses (does not auto-credit).
 **Dependency:** the "shortage only after regularize-to-Present" rule needs the **regularization
 flow**, which is *not yet built* — it should land before (or with) shortage going live in payroll.
 
-## Suggested build order
-1. Regularization flow (prerequisite).
-2. Canonical `daily_hours` + portal reads it (kills drift) — low risk, independent.
-3. `declaredOtMins` + the core per-day formula.
-4. Paid WO status + ledger debit.
+## Build order & progress
+1. **Regularization flow — ✅ already existed** (`/regularization`, `approveRegularization`
+   writes `attendance_status` `markedBy:'admin'`). Remaining: let regularization capture
+   effective in/out so a corrected Present day can carry shortage/OT — fold into step 6.
+2. Canonical `daily_hours` + portal reads it — *deferred* (not cleanly independent: historical
+   days predating the nightly fn have no `daily_hours`, so reading it for past days regresses
+   display vs today's live recompute). Revisit with the settlement work.
+3. **`declaredOtMins` + the core per-day formula — ✅ DONE 2026-06-29.** Added `declaredOtMins`
+   to `PlannedHours` + `setPlannedHours`; admin sets it inline on the Attendance page (+OT min
+   field next to each ops shift). Both the OT/Shortage page and the Employee Dashboard now apply:
+   declared OT auto-approved (no review), surplus beyond it flagged pending, shortage measured
+   vs the plain shift. (Both pages mirror the logic — de-dup into a shared module is pending.)
+4. Paid WO status + ledger debit. ← **next**
 5. Sunday/holiday authorization + all-hours OT.
-6. `settlements/{YYYY-MM}` + month lock + payroll wiring.
+6. `settlements/{YYYY-MM}` + month lock + payroll wiring (+ regularization in/out capture).
 7. Manual OT entry + retire lifetime counters.
+
+> Still **portal-only / no payroll effect** so far — the nightly Cloud Function and salary math
+> are untouched. The ledger/settlement wiring (steps 4–7) is where pay is affected.
 
 ## Relevant code (current)
 

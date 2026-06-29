@@ -233,16 +233,19 @@ export default function AttendancePage() {
     return { present, halfDay, sl, slnf, absent, leave };
   }
 
-  function handlePlannedChange(user: User, date: string, field: 'start' | 'end', value: string) {
+  function handlePlannedChange(user: User, date: string, field: 'start' | 'end' | 'ot', value: string) {
     const key      = `${user.id}__${date}`;
     const current  = plannedByDate.get(date)?.get(user.id);
     const startTime = field === 'start' ? value : (current?.startTime || '');
     const endTime   = field === 'end'   ? value : (current?.endTime   || '');
+    const declaredOtMins = field === 'ot'
+      ? Math.max(0, Math.round(Number(value) || 0))
+      : (current?.declaredOtMins ?? 0);
 
     setPlannedByDate(prev => {
       const next   = new Map(prev);
       const dayMap = new Map(next.get(date) || new Map<string, PlannedHours>());
-      dayMap.set(user.id, { id: date, userId: user.id, date, startTime, endTime });
+      dayMap.set(user.id, { id: date, userId: user.id, date, startTime, endTime, declaredOtMins });
       next.set(date, dayMap);
       return next;
     });
@@ -258,7 +261,7 @@ export default function AttendancePage() {
     setSaving(prev => ({ ...prev, [key]: true }));
     setSaveError('');
     try {
-      await setPlannedHours(userId, date, planned.startTime, planned.endTime);
+      await setPlannedHours(userId, date, planned.startTime, planned.endTime, planned.declaredOtMins ?? 0);
       setDirtyPlans(prev => { const next = new Set(prev); next.delete(key); return next; });
     } catch (err) {
       setSaveError('Failed to save planned hours. Please try again.');
@@ -687,6 +690,19 @@ export default function AttendancePage() {
                                 disabled={isSaving || selectedDate > todayStr}
                                 className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50"
                               />
+                              <span className="text-text-secondary text-[11px] pl-1" title="Pre-declared overtime (minutes). OT worked up to this is auto-approved; anything beyond prompts admin review.">+OT</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="15"
+                                value={planned?.declaredOtMins ? planned.declaredOtMins : ''}
+                                onChange={e => handlePlannedChange(user, selectedDate, 'ot', e.target.value)}
+                                disabled={isSaving || selectedDate > todayStr || !planned?.startTime || !planned?.endTime}
+                                placeholder="0"
+                                title="Pre-declared overtime in minutes"
+                                className="w-14 text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50"
+                              />
+                              <span className="text-text-secondary text-[10px]">min</span>
                               {isDirty && (
                                 <button
                                   onClick={() => savePlanned(user.id, selectedDate)}

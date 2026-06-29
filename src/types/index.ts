@@ -116,6 +116,7 @@ export interface PlannedHours {
   date: string;       // "yyyy-MM-dd"
   startTime: string;  // "HH:MM" 24h
   endTime: string;    // "HH:MM" 24h
+  declaredOtMins?: number; // admin pre-declared overtime for the day (minutes); worked OT up to this is auto-approved
   updatedAt?: Timestamp;
 }
 

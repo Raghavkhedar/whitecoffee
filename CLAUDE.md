@@ -29,7 +29,7 @@ No test framework configured.
 - `users/{uid}/leave_requests/`
 - `users/{uid}/attendance/` — check-in/out events. Ops `site_in`/`site_out` carry free-text `siteName`; `siteId` is filled later by admin via **Site IDs** page (`updateAttendanceSiteId`).
 - `users/{uid}/attendance_status/{date}` — computed daily status (written by `computeDailyAttendanceStatus`)
-- `users/{uid}/planned_hours/{date}` — admin-set shift window for ops (`startTime`/`endTime` as `"HH:MM"`); office fixed 10–18
+- `users/{uid}/planned_hours/{date}` — admin-set shift window for ops (`startTime`/`endTime` as `"HH:MM"`); office fixed 10–18. Optional `declaredOtMins` = admin pre-declared overtime for that day (OT worked up to this is auto-approved; set inline on the Attendance page next to the shift)
 - `users/{uid}/daily_hours/{date}` — per-day `plannedMins`/`actualMins`/`shortageMins`/`otMins` (written by `computeDailyAttendanceStatus`, fully-worked days only)
 - `users/{uid}/ot_approvals/{date}` — admin-approved overtime: `requestedMins`/`approvedMins`/`reason`/`approvedBy` (written by `approveOt` from the employee dashboard)
 - `users/{uid}/material_requests/`
@@ -95,7 +95,7 @@ PL balance: +1 on 1st of month (`accrueMonthlyLeave`), -1 per PL day used.
 
 Computed **per worked day** (both check-in and check-out present — absent/leave/SLNF days never count). `plannedDay` = ops `planned_hours` window for that date, or 8 h for office/admin. `actualDay` = last out − first in.
 - **Shortage** = Σ `max(0, plannedDay − actualDay)`. Automatic, no approval. Shown live for the selected range; the nightly function also accrues a lifetime total to `users/{uid}.shortageMins` (idempotent — increments only the delta vs the existing `daily_hours/{date}` record).
-- **Overtime** = `max(0, actualDay − plannedDay)` per day. **Requires admin approval** — the dashboard lists pending OT days; admin grants an adjusted amount (≤ detected) with a **mandatory reason** via `approveOt`, which writes `ot_approvals/{date}` and recomputes `users/{uid}.approvedOtMins` (sum of all approvals). OT and shortage are tracked **separately** (never netted). OT detection in the portal is live (no Cloud Function dependency); only the lifetime `shortageMins` needs the nightly run — **redeploy functions** (`firebase deploy --only functions`) after changing it.
+- **Overtime** = `max(0, actualDay − plannedDay)` per day, split by the day's `declaredOtMins` (pre-declared by admin): worked OT **up to `declaredOtMins` is auto-approved** (no review); only the **surplus beyond it is pending** and needs admin action. The dashboard lists pending OT days; admin grants an adjusted amount (≤ the beyond-declared surplus) with a **mandatory reason** via `approveOt`, which writes `ot_approvals/{date}` and recomputes `users/{uid}.approvedOtMins`. Declared OT is a pre-approval **ceiling, not an obligation** — leaving before the declared end never creates extra shortage (shortage is always measured vs the plain shift). Full redesign spec: **`docs/ot-shortage-design.md`**. OT and shortage are tracked **separately** (never netted). OT detection in the portal is live (no Cloud Function dependency); only the lifetime `shortageMins` needs the nightly run — **redeploy functions** (`firebase deploy --only functions`) after changing it.
 
 ## Styling
 

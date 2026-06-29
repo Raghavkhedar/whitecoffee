@@ -315,11 +315,12 @@ export async function setPlannedHours(
   userId: string,
   date: string,
   startTime: string,
-  endTime: string
+  endTime: string,
+  declaredOtMins = 0,
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', userId, 'planned_hours', date),
-    { userId, date, startTime, endTime, updatedAt: Timestamp.now() },
+    { userId, date, startTime, endTime, declaredOtMins, updatedAt: Timestamp.now() },
     { merge: true }
   );
 }

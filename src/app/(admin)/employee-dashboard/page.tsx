@@ -94,7 +94,14 @@ function formatTime(secs: number): string {
 
 // ── Per-employee aggregation ──────────────────────────────────────────────────
 
-interface DayOt { date: string; plannedMins: number; actualMins: number; otMins: number }
+interface DayOt {
+  date: string;
+  plannedMins: number;
+  declaredOtMins: number;   // admin pre-declared OT for the day
+  actualMins: number;
+  autoOtMins: number;       // pre-authorized OT worked = min(surplus, declared)
+  pendingExtraMins: number; // surplus beyond declared → needs review
+}
 
 interface EmployeeRow {
   user: User;
@@ -103,7 +110,8 @@ interface EmployeeRow {
   shortageMins: number;        // sum of per-day shortfalls (only days worked with a known plan)
   pendingOt: DayOt[];          // OT days in range not yet approved
   pendingOtMins: number;
-  approvedOtRangeMins: number; // approved OT minutes within the selected range
+  autoOtRangeMins: number;     // pre-authorized (declared) OT worked in range — counts as approved
+  approvedOtRangeMins: number; // approved OT minutes within the selected range (granted via docs)
   approvedInRange: OtApproval[];
   // Single-day extras
   firstInSecs: number | null;
@@ -123,18 +131,18 @@ function aggregateForEmployee(
   const isOps = user.role === 'operations';
   const userEvents = allEvents.filter(e => e.userId === user.id);
 
-  // Planned minutes per date (ops use admin-set windows; office/admin fixed 8h)
-  const plannedByDate = new Map<string, number>();
+  // Planned shift + declared-OT minutes per date (ops use admin-set windows; office/admin fixed 8h)
+  const plannedByDate = new Map<string, { planned: number; declared: number }>();
   plannedItems.filter(p => p.userId === user.id).forEach(p => {
     const dur = hhmmToMinutes(p.endTime) - hhmmToMinutes(p.startTime);
-    if (dur > 0) plannedByDate.set(p.date, dur);
+    if (dur > 0) plannedByDate.set(p.date, { planned: dur, declared: Math.max(0, p.declaredOtMins ?? 0) });
   });
 
   // ── Working minutes (range expected) ───────────────────────────────────
   let workingMins: number | null;
   if (isOps) {
     let total = 0;
-    plannedByDate.forEach(d => { total += d; });
+    plannedByDate.forEach(d => { total += d.planned; }); // expected = shift windows only (declared OT is overtime)
     workingMins = total > 0 ? total : null;
   } else {
     workingMins = countWorkingDays(start, end, holidays) * OFFICE_DAY_MINS;
@@ -150,6 +158,7 @@ function aggregateForEmployee(
   let totalActualMins = 0;
   let hasAnyActual = false;
   let shortageMins = 0;
+  let autoOtRangeMins = 0;
   const otDays: DayOt[] = [];
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
@@ -177,10 +186,20 @@ function aggregateForEmployee(
     // Planned for this day → derive OT / shortage (absent days never reach here).
     // Holidays are skipped like Sundays — worked hours still show in Actual, but
     // the day carries no expected window, so no shortage penalty or OT credit.
-    const plannedDay = isOps ? plannedByDate.get(date) : OFFICE_DAY_MINS;
-    if (!holidays.has(date) && plannedDay && plannedDay > 0) {
-      if (dayMins > plannedDay) otDays.push({ date, plannedMins: plannedDay, actualMins: dayMins, otMins: dayMins - plannedDay });
-      else if (dayMins < plannedDay) shortageMins += plannedDay - dayMins;
+    // Declared OT is a pre-approval ceiling, not an obligation: shortage is vs the plain shift;
+    // OT up to the declared amount is auto-approved, beyond it needs admin review.
+    const planInfo    = isOps ? plannedByDate.get(date) : { planned: OFFICE_DAY_MINS, declared: 0 };
+    const plannedDay  = planInfo?.planned ?? 0;
+    const declaredDay = planInfo?.declared ?? 0;
+    if (!holidays.has(date) && plannedDay > 0) {
+      const surplus          = Math.max(0, dayMins - plannedDay);
+      const autoOt           = Math.min(surplus, declaredDay);
+      const pendingExtra      = Math.max(0, surplus - declaredDay);
+      shortageMins += Math.max(0, plannedDay - dayMins);
+      autoOtRangeMins += autoOt;
+      if (pendingExtra > 0) {
+        otDays.push({ date, plannedMins: plannedDay, declaredOtMins: declaredDay, actualMins: dayMins, autoOtMins: autoOt, pendingExtraMins: pendingExtra });
+      }
     }
   });
 
@@ -189,7 +208,7 @@ function aggregateForEmployee(
   approvals.filter(a => a.userId === user.id).forEach(a => approvedByDate.set(a.date, a));
 
   const pendingOt = otDays.filter(d => !approvedByDate.has(d.date)).sort((a, b) => a.date.localeCompare(b.date));
-  const pendingOtMins = pendingOt.reduce((s, d) => s + d.otMins, 0);
+  const pendingOtMins = pendingOt.reduce((s, d) => s + d.pendingExtraMins, 0);
   const approvedInRange = Array.from(approvedByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
   const approvedOtRangeMins = approvedInRange.reduce((s, a) => s + (a.approvedMins || 0), 0);
 
@@ -200,6 +219,7 @@ function aggregateForEmployee(
     shortageMins,
     pendingOt,
     pendingOtMins,
+    autoOtRangeMins,
     approvedOtRangeMins,
     approvedInRange,
     firstInSecs: isSingleDay ? globalFirstIn : null,
@@ -217,7 +237,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 }) {
   const [drafts, setDrafts] = useState<Record<string, { mins: string; reason: string }>>(() => {
     const init: Record<string, { mins: string; reason: string }> = {};
-    row.pendingOt.forEach(d => { init[d.date] = { mins: String(d.otMins), reason: '' }; });
+    row.pendingOt.forEach(d => { init[d.date] = { mins: String(d.pendingExtraMins), reason: '' }; });
     return init;
   });
   const [saving, setSaving] = useState('');
@@ -229,13 +249,14 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 
   async function approve(day: DayOt) {
     const draft = drafts[day.date];
-    // Grant is capped at the detected OT for the day — admin may approve less, never more.
-    const mins  = Math.min(day.otMins, Math.max(0, Math.round(Number(draft.mins) || 0)));
+    // Grant is capped at the beyond-declared OT for the day — admin may approve less, never more.
+    // (The declared portion is already auto-approved and not part of this grant.)
+    const mins  = Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(draft.mins) || 0)));
     if (!draft.reason.trim()) { setError('A reason is required to approve overtime.'); return; }
     setError('');
     setSaving(day.date);
     try {
-      await approveOt(row.user, day.date, day.otMins, mins, draft.reason.trim(), adminName);
+      await approveOt(row.user, day.date, day.pendingExtraMins, mins, draft.reason.trim(), adminName);
       onApproved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to approve. Try again.');
@@ -268,14 +289,16 @@ function OtModal({ row, adminName, onClose, onApproved }: {
               <div className="flex items-center justify-between mb-3">
                 <div className="font-semibold text-text-primary text-sm">{fmtDay(day.date)}</div>
                 <div className="text-xs text-text-secondary font-mono">
-                  Planned {minutesToDisplay(day.plannedMins)} · Worked {minutesToDisplay(day.actualMins)} ·
-                  <span className="text-[#9A5B1E] font-semibold"> +{minutesToDisplay(day.otMins)} OT</span>
+                  Planned {minutesToDisplay(day.plannedMins)}
+                  {day.autoOtMins > 0 && <> · <span className="text-[#0A7A50]">+{minutesToDisplay(day.autoOtMins)} auto</span></>}
+                  {' '}· Worked {minutesToDisplay(day.actualMins)} ·
+                  <span className="text-[#9A5B1E] font-semibold"> +{minutesToDisplay(day.pendingExtraMins)} to review</span>
                 </div>
               </div>
               <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
                 <div>
                   <label className="label">Grant (min)</label>
-                  <input type="number" min="0" max={day.otMins} value={drafts[day.date]?.mins ?? ''}
+                  <input type="number" min="0" max={day.pendingExtraMins} value={drafts[day.date]?.mins ?? ''}
                     onChange={e => set(day.date, 'mins', e.target.value)} className="input" />
                 </div>
                 <div>
@@ -286,7 +309,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
               </div>
               <div className="flex justify-end mt-3">
                 <button onClick={() => approve(day)} disabled={saving === day.date} className="btn-success !py-1.5 !px-4 text-[13px]">
-                  {saving === day.date ? 'Approving…' : `Approve ${minutesToDisplay(Math.min(day.otMins, Math.max(0, Math.round(Number(drafts[day.date]?.mins) || 0))))}`}
+                  {saving === day.date ? 'Approving…' : `Approve ${minutesToDisplay(Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(drafts[day.date]?.mins) || 0))))}`}
                 </button>
               </div>
             </div>
@@ -403,7 +426,9 @@ export default function EmployeeDashboardPage() {
       'Actual Hrs': r.actualMins !== null ? minutesToDisplay(r.actualMins) : '',
       'Shortage (mins)': r.shortageMins,
       'Pending OT (mins)': r.pendingOtMins,
-      'Approved OT range (mins)': r.approvedOtRangeMins,
+      'Auto-approved OT (mins)': r.autoOtRangeMins,
+      'Granted OT (mins)': r.approvedOtRangeMins,
+      'Total Approved OT (mins)': r.autoOtRangeMins + r.approvedOtRangeMins,
       'Lifetime Approved OT (mins)': r.user.approvedOtMins ?? 0,
       'Lifetime Shortage (mins)': r.user.shortageMins ?? 0,
     })));
@@ -501,7 +526,8 @@ export default function EmployeeDashboardPage() {
               </thead>
               <tbody>
                 {rows.map(r => {
-                  const { user, workingMins, actualMins, shortageMins, pendingOt, pendingOtMins, approvedOtRangeMins, firstInSecs, lastOutSecs } = r;
+                  const { user, workingMins, actualMins, shortageMins, pendingOt, pendingOtMins, approvedOtRangeMins, autoOtRangeMins, firstInSecs, lastOutSecs } = r;
+                  const totalApprovedOt = approvedOtRangeMins + autoOtRangeMins;
                   return (
                     <tr key={user.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
                       <td className="px-[14px] py-3 pl-[18px] font-medium text-text-primary whitespace-nowrap">{user.name}</td>
@@ -554,10 +580,10 @@ export default function EmployeeDashboardPage() {
                             className="inline-flex items-center gap-1.5 bg-[#FDF3E4] text-[#B26B07] hover:bg-[#FBEAD0] px-2.5 py-1 rounded-[7px] font-semibold transition-colors">
                             Review +{minutesToDisplay(pendingOtMins)} · {pendingOt.length}d
                           </button>
-                        ) : approvedOtRangeMins > 0 ? (
+                        ) : totalApprovedOt > 0 ? (
                           <button onClick={() => setOtModalUserId(user.id)}
                             className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded font-mono hover:bg-[#D8F0E4] transition-colors">
-                            +{minutesToDisplay(approvedOtRangeMins)}
+                            +{minutesToDisplay(totalApprovedOt)}
                           </button>
                         ) : (
                           <span className="text-text-secondary/60">—</span>
