@@ -4,6 +4,17 @@
 
 ---
 
+> ⚠️ **PARTIALLY SUPERSEDED — UI layer is out of date.** This handbook describes the
+> original **XML Views** UI with the "DM Sans / Space Grotesk" + `colors.xml` design system.
+> As of **Session 27** the entire UI was rebuilt in **Jetpack Compose** with a Material 3
+> **teal** design system (Manrope font, Material Symbols, `ui/theme/`). All 12 screens are now
+> thin `ComposeView` hosts. **`CLAUDE.md` is the authoritative source for the current UI,
+> design system, and screen list.** The architecture/data/Firestore sections below are still
+> accurate (ViewModels, repositories, Hilt, nav-graph, and Firestore were not changed); only
+> the View/XML/design-system chapters (e.g. §23) are stale.
+
+---
+
 ## Table of Contents
 
 1. [What Is This App?](#1-what-is-this-app)

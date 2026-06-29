@@ -104,21 +104,11 @@
         android:name="com.raghav.whitecoffee.ui.requests.WorkProgressFragment"
         android:label="Work Progress" />
 
-    <!-- ── Leave (My Leaves list) ── -->
+    <!-- ── Leave (Apply + History tabbed Compose screen) ── -->
     <fragment
         android:id="@+id/leaveFragment"
         android:name="com.raghav.whitecoffee.ui.attendance.LeaveFragment"
-        android:label="My Leaves">
-        <action
-            android:id="@+id/action_leaveFragment_to_applyLeaveFragment"
-            app:destination="@id/applyLeaveFragment" />
-    </fragment>
-
-    <!-- ── Apply Leave ── -->
-    <fragment
-        android:id="@+id/applyLeaveFragment"
-        android:name="com.raghav.whitecoffee.ui.attendance.ApplyLeaveFragment"
-        android:label="Apply for Leave" />
+        android:label="Leave" />
 
     <!-- ── Leave Approvals (admin only) ── -->
     <fragment

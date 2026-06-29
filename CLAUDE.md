@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 27 End
+### Last Updated: Session 28 End
 
 ---
 
@@ -76,6 +76,7 @@ sealed interface UiState<out T> {
 com.raghav.whitecoffee
 ├── WhiteCoffeeApp.kt                    ✅ @HiltAndroidApp + Firestore offline
 ├── MainActivity.kt                      ✅ @AndroidEntryPoint
+├── MainViewModel.kt                     ✅ @HiltViewModel — single-device session listener + logout auto-checkout (see KEY DECISION #34)
 │
 ├── core/
 │   ├── UiState.kt                       ✅
@@ -332,16 +333,21 @@ Same schema as material_transfers (no photoUrls field).
 | userId | String | Denormalized — needed for collectionGroup approve/reject path |
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
-| leaveType | String | Sick Leave / Casual Leave / Annual Leave / Unpaid Leave |
+| leaveType | String | Legacy — empty string for new submissions (Session 28: leave type removed from form) |
 | fromDate | String | yyyy-MM-dd |
 | toDate | String | yyyy-MM-dd |
 | totalDays | Int | Auto-calculated inclusive days |
+| joiningDate | String | yyyy-MM-dd — employee's joining date (Session 28) |
+| emergencyContact | String | Phone number (Session 28) |
+| placeOfVisit | String | Where employee will be during leave (Session 28) |
 | reason | String | |
 | status | String | pending / approved / rejected |
 | approvedBy | String | Manager's name |
 | approverComment | String | Rejection reason |
 | submittedAt | Timestamp | |
 | reviewedAt | Timestamp | |
+
+> **Session 28 leave form:** Leave type field removed. New fields added: Joining Date, Emergency Contact, Place of Visit. Applicant Name auto-filled from `SessionManager`. `leaveType` kept in the model with empty default to avoid breaking old records.
 
 ### `/users/{userId}/regularization_requests/{requestId}` — Regularization Requests
 | Field | Type | Notes |
@@ -355,9 +361,12 @@ Same schema as material_transfers (no photoUrls field).
 | reason | String | Employee's explanation |
 | status | String | pending / approved / rejected |
 | approvedBy | String | Admin's name |
-| approverComment | String | Rejection reason |
+| approverComment | String | Admin's reason (required for both approve AND reject — Session 28) |
+| approvedStatus | String | The attendance status the admin set on approval: Present / HalfDay / Absent / PL / UPL (Session 28) |
 | submittedAt | Timestamp | |
 | reviewedAt | Timestamp | |
+
+> **Session 28 regularization approval:** Admin must now supply a reason/comment for both approve and reject (previously only reject). Admin also picks the target attendance status (Present/HalfDay/Absent/PL/UPL) — was hardcoded to "Present". `approvedStatus` is written to both the `regularization_requests` doc and the `attendance_status` doc atomically via `writeBatch`.
 
 > **Firestore index required for Leave Approvals screen:**
 > Collection group `leave_requests` → `status` ASC + `submittedAt` ASC
@@ -726,11 +735,34 @@ Deploy: `npm run deploy` from the admin portal directory
   ⚠️ Runtime/on-device walkthrough per role NOT yet done — verify submits write to Firestore
   and Material Symbols render (no tofu) before shipping.
 
+### ✅ Session 28 changes — Leave form redesign + home header + regularization custom approval status:
+- **Leave form redesigned** — leave type selector removed entirely. New fields: Joining Date (date picker), Emergency Contact (phone keyboard), Place of Visit (location icon). Applicant Name auto-filled (read-only) from `SessionManager.name` via `ApplyLeaveViewModel.userName`.
+- **`LeaveRequest` model** — added `joiningDate`, `emergencyContact`, `placeOfVisit` fields. `leaveType` kept with empty default for backward compat. `toMap()` + `fromDocument()` updated.
+- **`ApplyLeaveViewModel`** — injected `SessionManager`; `submit()` signature changed (removed `leaveType`, added 3 new params); all 6 fields must be non-blank.
+- **`LeaveScreens.kt`** — full rewrite: `ReadOnlyFieldBox` for name, 3 × `DateBox` pickers, phone `WcField`, location `WcField`. History card title shows `leaveType.ifBlank { "Leave Application" }`. Approval card shows place of visit + emergency contact.
+- **Home screen** — removed large `Text(userName)` from `HomeHeader`. Greeting line enlarged (18sp ExtraBold). Initials avatar kept (still needs `userName` for initial computation).
+- **`RegularizationRequest` model** — added `approvedStatus: String = ""` field; `toMap()` + `fromDocument()` updated.
+- **`RegularizationScreen.kt`** — `FlaggedDayCard` now shows: green "Marked as \<status\>" row when approved (with `check_circle` icon) + admin's `approverComment` in the reason box (for both approve and reject). Employee's `reason` shown only when no admin comment yet.
+- **Admin portal `regularization/page.tsx`** — approve modal now has status dropdown (Present / HalfDay / Absent / PL / UPL) + mandatory reason field. Table has "Outcome" column showing `→ Present` / `→ HalfDay` etc. badge. Admin comment shown in table for both approved and rejected rows.
+- **Admin portal `firestore.ts`** — `approveRegularization` now takes `approvedStatus: string` param; writes it to both `regularization_requests` and `attendance_status` (replaces hardcoded `'Present'`).
+- **Admin portal `types/index.ts`** — `RegularizationRequest` interface gained `approvedStatus?: string`.
+
 ### ⏳ REMAINING (Phase 4)
 - **Cloud Functions — FCM push** — send push to backgrounded devices (trigger: new doc in `/sent_notifications/`); deferred
 - **Background geofencing auto-checkout** (commented out by design — not in use)
 - Notifications screen ✅ DONE (in-app only; push to background requires Cloud Functions)
 - Google Sheets export ✅ DONE
+
+### 🧹 TECH-DEBT BACKLOG (graph audit — deferred, need a working Gradle build to verify)
+- **#4 Duplicated submit/reset boilerplate** — the 6 request/leave ViewModels (`MaterialToolRequest`, `MaterialToolBuy`, `Transfer`, `WorkProgress`, `ApplyLeave`, `Regularization`) repeat near-identical `submit()` / `resetSubmitState()` + `UiState` plumbing. Candidate for a shared base `SubmitViewModel<T>`.
+- **#5 No test coverage** — only the default `ExampleUnitTest` / `ExampleInstrumentedTest` stubs exist. Repos + `deriveAttendanceState()` / `deriveOfficeState()` are untested.
+- **#6 `UiState.Offline` couples UI-state to connectivity** — `NetworkMonitor` leaks into the `UiState` contract that all 18 ViewModels depend on. Low severity; revisit if `UiState` is reused outside this app.
+
+### ✅ Session 29 changes — Graph audit cleanup:
+- **Dead code deleted** — removed 7 unreferenced Kotlin files (`ApplyLeaveFragment`, `PhotoPickerHelper`, `LeaveRequestAdapter`, `LeaveApprovalAdapter`, `RegularizationAdapter`, `AttendanceTimelineAdapter`, `NotificationAdapter`) + their 6 orphaned XML layouts + the dead `applyLeaveFragment` nav destination/action. (`SiteTask.kt` KEPT — intentionally-dormant feature with re-enable instructions.)
+- **`MainViewModel` documented** — added to package structure + KEY DECISION #34 (single-device session listener + logout auto-checkout).
+- **`.design_import/` removed** — web mockups + superseded "Midnight Indigo" XML redesign deleted (recoverable from git history).
+- **DEVELOPER_HANDBOOK.md** — added "PARTIALLY SUPERSEDED" banner; CLAUDE.md is authoritative for the Compose UI.
 
 ---
 
@@ -769,6 +801,9 @@ Deploy: `npm run deploy` from the admin portal directory
 31. **Firestore rules = field-level least privilege (Session 22)** — owner-update rules NEVER use a bare `isOwner` allow. Owner may only patch a whitelisted set of fields (`changedKeysWithin([...])`): user doc → `activeSessionToken`/`fcmToken`; request/purchase/transfer/work_progress docs → `photoUrls`. Status/role/salary changes are admin-only. Never widen these without a matching app write.
 32. **No in-app admin user/site screens** — User & Site management are WEB-PORTAL ONLY. There is no `ui/admin/` package. `UserRepository` admin methods exist but are unused.
 33. **Office home events are data-only** — `home_in`/`home_out` for office users are recorded purely for record-keeping. Conveyance is operations-only; `computeDailyAttendanceStatus` for office keys on office_in/out. Never wire office home events into pay/status logic.
+34. **`MainViewModel` (app root) owns session + logout** — `@HiltViewModel` scoped to `MainActivity`. Two responsibilities:
+    (a) **Single-device session enforcement** — `startMonitor()` attaches a Firestore snapshot listener on `users/{uid}.activeSessionToken`; if the server token diverges from the cached `SessionManager.sessionToken` (account logged in elsewhere) it emits `sessionInvalidated`. Started via `startMonitorIfLoggedIn()` / `onLoginSuccess()`, torn down in `logout()` + `onCleared()`.
+    (b) **Logout auto-checkout** — `logoutWithAutoCheckout()` records closing attendance events before signing out: operations → `SITE_OUT`/`MARKET_OUT` then `HOME_OUT` based on current `AttendanceState`; office → `OFFICE_OUT` (if still in office) then `HOME_OUT`. Guarded by `_logoutInProgress`; auto-checkout failures are swallowed so logout always completes (offline-safe by design — do not "fix" the empty catch without preserving guaranteed logout).
 
 ---
 
@@ -777,17 +812,27 @@ Deploy: `npm run deploy` from the admin portal directory
 Start your Claude Code session with:
 
 ```
-Read CLAUDE.md first. Session 22 done: Security hardening + Office Home In/Out.
+Read CLAUDE.md first. Session 28 done: Leave form redesign + regularization custom approval status.
 Key state:
-- Phase 3 complete: all screens done (Login, Home, Attendance x2, M&T Request/Buy, Transfers x2, Work Progress, Leave x3, Regularization). User/Site mgmt = WEB PORTAL ONLY (no ui/admin in app).
-- Session 22 security: Firestore + Storage rules deployed (field-level least privilege — owner can't self-promote to admin or self-approve requests). storage.rules + firebase.json + .firebaserc created in repo. R8 enabled for release (needs on-device smoke test). Backup excludes wc_session.
-- Session 22 feature: office attendance now Home→Office→Home (5 phases). home_in/home_out for office = once/day, GPS-only, DATA ONLY (no conveyance/attendance_status impact).
-- Session 21: Attendance Regularization — flagged days → reason → admin approves in portal → flips attendance_status to Present.
-- Google Sheet: 9 tabs. Conveyance = ops-only, road-distance via Maps Distance Matrix × per-employee ₹/km rate.
-- Daily assignment system COMMENTED OUT. No geofencing. Site entry = two free-text fields.
+- ALL 12 screens are Jetpack Compose (Session 27 full M3 teal redesign). Each Fragment = thin ComposeView host; ViewModels/repos/nav/Hilt/Firestore unchanged.
+- Session 28: Leave form lost leave-type selector, gained Joining Date / Emergency Contact / Place of Visit fields. Home header name text removed (initials avatar kept). Regularization approval: admin now picks target status (Present/HalfDay/Absent/PL/UPL) + must give a reason; was hardcoded to Present.
+- Session 22 security: Firestore + Storage rules deployed (field-level least privilege). R8 on for release.
+- Office attendance = Home→Office→Home (5 phases). home_in/home_out = once/day, DATA ONLY.
+- Regularization = employee submits reason per flagged day → admin approves with chosen status in portal → writeBatch updates both regularization_requests + attendance_status.
+- Google Sheet: 9 tabs. Daily assignment system COMMENTED OUT. No geofencing. Site entry = two free-text fields.
 Phase 4 remaining: Cloud Functions FCM push to backgrounded devices.
 ```
 
 ---
 
 *File: CLAUDE.md | Place in: C:\Users\ragha\AndroidStudioProjects\WhiteCoffee2\*
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
