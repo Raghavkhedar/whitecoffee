@@ -22,6 +22,7 @@ const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   { label: 'Time & Sites', items: [
     { href: '/attendance',  icon: 'calendar', label: 'Attendance' },
     { href: '/ot-shortage', icon: 'clock',    label: 'OT & Shortage' },
+    { href: '/settlements', icon: 'doc',      label: 'Settlements' },
     { href: '/site-ids',    icon: 'pin',      label: 'Site IDs' },
   ] },
   { label: 'Records', items: [

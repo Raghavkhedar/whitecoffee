@@ -122,6 +122,30 @@ export interface PlannedHours {
   updatedAt?: Timestamp;
 }
 
+// Frozen monthly OT/shortage/WO settlement for one ops employee. Doc id = month "YYYY-MM",
+// stored at users/{uid}/settlements/{month}. Written when admin "Settle & Locks" the month;
+// the Cloud Function reads locked settlements and adds settlementCash to payroll TOTAL DUE.
+export interface Settlement {
+  id: string;            // = month "YYYY-MM"
+  month: string;         // "YYYY-MM"
+  userId: string;
+  userName: string;
+  employeeId: string;
+  role: string;
+  autoOtMins: number;    // pre-declared OT worked (auto-approved)
+  restDayOtMins: number; // authorized Sunday/holiday OT
+  grantedOtMins: number; // admin-granted OT (beyond-declared)
+  shortageMins: number;
+  woDays: number;        // count of WO days that month
+  woDebitMins: number;   // woDays × 480
+  netMins: number;       // (auto + restDay + granted) − shortage − woDebit
+  salaryRate: number;    // per-day rate at settlement time
+  settlementCash: number;// woDays×rate + netMins/480×rate  (± rupees added to TOTAL DUE)
+  locked: boolean;
+  settledBy: string;
+  settledAt?: Timestamp;
+}
+
 // Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). A marked holiday is
 // skipped like a Sunday: no attendance status is written, no Absent penalty, and
 // it is excluded from expected working days (unpaid, no payroll effect).

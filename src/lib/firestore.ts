@@ -9,7 +9,7 @@ import { db } from './firebase';
 import { istTodayStr } from './date';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -410,6 +410,31 @@ async function writeOtDecision(
   const snap = await getDocs(collection(db, 'users', user.id, 'ot_approvals'));
   const total = snap.docs.reduce((sum, d) => sum + (Number(d.data().approvedMins) || 0), 0);
   await updateDoc(doc(db, 'users', user.id), { approvedOtMins: total });
+}
+
+// ── Monthly Settlements ───────────────────────────────────────────────────
+// Frozen at users/{uid}/settlements/{YYYY-MM} when admin Settle & Locks a month.
+// The Cloud Function reads locked settlements and adds settlementCash to payroll.
+
+export async function getSettlementsForMonth(month: string): Promise<Settlement[]> {
+  // Fetch + client-filter (set stays small; avoids a collection-group index).
+  const snap = await getDocs(collectionGroup(db, 'settlements'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Settlement)).filter(s => s.month === month);
+}
+
+// Write/overwrite a batch of locked settlement docs for a month (one per ops employee).
+export async function settleMonth(rows: Omit<Settlement, 'id' | 'settledAt'>[]): Promise<void> {
+  const batch = writeBatch(db);
+  const now = Timestamp.now();
+  rows.forEach(s => {
+    batch.set(doc(db, 'users', s.userId, 'settlements', s.month), { ...s, id: s.month, settledAt: now }, { merge: true });
+  });
+  await batch.commit();
+}
+
+// Unlock a settled month so it can be revised (excluded from payroll until re-settled).
+export async function unlockMonthSettlement(userId: string, month: string): Promise<void> {
+  await updateDoc(doc(db, 'users', userId, 'settlements', month), { locked: false });
 }
 
 // ── Holidays (company-wide) ───────────────────────────────────────────────
