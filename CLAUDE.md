@@ -20,7 +20,7 @@ No test framework configured.
 
 **Auth guard**: `src/app/(admin)/layout.tsx` listens to `onAuthStateChanged`, redirects to `/login`, and verifies `role === 'admin'` in Firestore.
 
-**Routing**: `(admin)` is a route group (no URL segment) — `/dashboard`, `/employee-dashboard`, `/users`, `/sites`, `/leaves`, `/attendance`, `/submissions` are all protected.
+**Routing**: `(admin)` is a route group (no URL segment) — `/dashboard`, `/employee-dashboard`, `/users`, `/leaves`, `/regularization`, `/attendance`, `/ot-shortage`, `/settlements`, `/site-ids`, `/submissions`, `/conveyance`, `/notifications` are all protected.
 
 ## Firestore Collections
 
@@ -96,7 +96,11 @@ PL balance: +1 on 1st of month (`accrueMonthlyLeave`), -1 per PL day used.
 
 Computed **per worked day** (both check-in and check-out present — absent/leave/SLNF days never count). `plannedDay` = ops `planned_hours` window for that date, or 8 h for office/admin. `actualDay` = last out − first in.
 - **Shortage** = Σ `max(0, plannedDay − actualDay)`. Automatic, no approval. Shown live for the selected range; the nightly function also accrues a lifetime total to `users/{uid}.shortageMins` (idempotent — increments only the delta vs the existing `daily_hours/{date}` record).
-- **Overtime** = `max(0, actualDay − plannedDay)` per day, split by the day's `declaredOtMins` (pre-declared by admin): worked OT **up to `declaredOtMins` is auto-approved** (no review); only the **surplus beyond it is pending** and needs admin action. The dashboard lists pending OT days; admin grants an adjusted amount (≤ the beyond-declared surplus) with a **mandatory reason** via `approveOt`, which writes `ot_approvals/{date}` and recomputes `users/{uid}.approvedOtMins`. Declared OT is a pre-approval **ceiling, not an obligation** — leaving before the declared end never creates extra shortage (shortage is always measured vs the plain shift). Full redesign spec: **`docs/ot-shortage-design.md`**. OT and shortage are tracked **separately** (never netted). OT detection in the portal is live (no Cloud Function dependency); only the lifetime `shortageMins` needs the nightly run — **redeploy functions** (`firebase deploy --only functions`) after changing it.
+- **Overtime** = `max(0, actualDay − plannedDay)` per day, split by the day's `declaredOtMins` (pre-declared by admin): worked OT **up to `declaredOtMins` is auto-approved** (no review); only the **surplus beyond it is pending** and needs admin action. The dashboard lists pending OT days; admin grants an adjusted amount (≤ the beyond-declared surplus) with a **mandatory reason** via `approveOt`, which writes `ot_approvals/{date}` and recomputes `users/{uid}.approvedOtMins`. Admin can also **reject** a pending OT day (`rejectOt`, reason required → `ot_approvals` with `status:'rejected'`). Declared OT is a pre-approval **ceiling, not an obligation** — leaving before the declared end never creates extra shortage (shortage is always measured vs the plain shift).
+
+**Rest-day OT**: ops work on a Sunday/holiday counts as **all-hours OT, but only when admin-authorized** (`planned_hours.otAuthorized`, toggled on the Attendance page); unauthorized rest-day work credits 0 and is flagged. **WO** days carry a −480 ledger debit (see collections).
+
+**Monthly netting & payroll** (replaces the old "tracked separately, never netted"): OT (auto + rest-day + granted), shortage, and WO debits **net within a month** to `netMins`; admin **Settle & Locks** the month on the **Settlements** page → `settlementCash = woDays×rate + netMins/480×rate` → the Cloud Function adds the previous month's locked `settlementCash` to payroll **TOTAL DUE** (OT paid in arrears). The per-day/range math lives in **`src/lib/otLedger.ts`** + **`src/lib/otAggregate.ts`** (pure, unit-tested via `npx tsx src/lib/*.test.ts`), shared by the OT/Shortage page, Employee Dashboard, and Settlements page. Full spec + decisions: **`docs/ot-shortage-design.md`**. Cloud Function changes need **`firebase deploy --only functions`**.
 
 ## Styling
 
