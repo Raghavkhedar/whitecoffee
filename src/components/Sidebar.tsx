@@ -1,29 +1,45 @@
 'use client';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
+import { getAllLeaveRequests } from '@/lib/firestore';
+import Icon, { type IconName } from './Icon';
 
-const NAV = [
-  { href: '/dashboard',           icon: '📊', label: 'Dashboard' },
-  { href: '/employee-dashboard', icon: '👤', label: 'Emp Dashboard' },
-  { href: '/users',     icon: '👥', label: 'Users' },
-  // SITES — NOT IN USE (no daily assignment system, no geofencing). Re-enable with sites/page.tsx + firestore site functions + Site type.
-  // { href: '/sites',             icon: '🏗️', label: 'Sites' },
-  // DAILY ASSIGNMENT SYSTEM — NOT IN USE. Re-enable by uncommenting this line and the page/types/firestore functions.
-  // { href: '/daily-assignments', icon: '📅', label: 'Daily Assignments' },
-  { href: '/leaves',          icon: '🏖️', label: 'Leave Requests' },
-  { href: '/regularization', icon: '🕐', label: 'Regularization' },
-  { href: '/attendance',    icon: '📋', label: 'Attendance' },
-  { href: '/site-ids', icon: '📍', label: 'Site IDs' },
-  { href: '/conveyance',    icon: '🚗', label: 'Conveyance' },
-  { href: '/submissions',   icon: '📝', label: 'Submissions' },
-  { href: '/notifications', icon: '🔔', label: 'Notifications' },
+interface NavItem { href: string; icon: IconName; label: string; badgeKey?: 'pending' }
+
+const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
+  { items: [
+    { href: '/dashboard', icon: 'grid', label: 'Dashboard' },
+  ] },
+  { label: 'People', items: [
+    { href: '/users',              icon: 'users',      label: 'Employees' },
+    { href: '/employee-dashboard', icon: 'userCircle', label: 'Emp Dashboard' },
+    { href: '/leaves',             icon: 'leave',      label: 'Leave Requests', badgeKey: 'pending' },
+    { href: '/regularization',     icon: 'clock',      label: 'Regularization' },
+  ] },
+  { label: 'Time & Sites', items: [
+    { href: '/attendance', icon: 'calendar', label: 'Attendance' },
+    { href: '/site-ids',   icon: 'pin',      label: 'Site IDs' },
+  ] },
+  { label: 'Records', items: [
+    { href: '/submissions',   icon: 'doc',  label: 'Submissions' },
+    { href: '/conveyance',    icon: 'car',  label: 'Conveyance' },
+    { href: '/notifications', icon: 'bell', label: 'Notifications' },
+  ] },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router   = useRouter();
+  const [pending, setPending] = useState<number | null>(null);
+
+  useEffect(() => {
+    getAllLeaveRequests('pending')
+      .then(l => setPending(l.length))
+      .catch(() => setPending(null));
+  }, []);
 
   async function handleLogout() {
     await signOut(auth);
@@ -31,41 +47,58 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="fixed inset-y-0 left-0 w-60 bg-primary flex flex-col z-40">
+    <aside className="w-[248px] flex-shrink-0 bg-sidebar flex flex-col h-screen">
       {/* Logo */}
-      <div className="px-6 py-6 border-b border-white/10">
-        <div className="text-white font-bold text-lg">☕ WhiteCoffee</div>
-        <div className="text-blue-200 text-xs mt-0.5">Admin Portal</div>
+      <div className="flex items-center gap-3 px-5 h-16 border-b border-white/[0.07]">
+        <div className="w-9 h-9 rounded-[10px] bg-primary text-white flex items-center justify-center font-semibold text-[13px] font-mono">WC</div>
+        <div className="leading-tight">
+          <div className="text-[14.5px] font-semibold text-white tracking-tight">WhiteCoffee</div>
+          <div className="text-[11px] text-[#8A93A0] mt-0.5">Admin Portal</div>
+        </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV.map(item => {
-          const active = pathname === item.href || pathname.startsWith(item.href + '/');
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                active
-                  ? 'bg-white/20 text-white'
-                  : 'text-blue-100 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <span className="text-base">{item.icon}</span>
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto px-3 py-3">
+        {NAV_GROUPS.map((group, gi) => (
+          <div key={gi} className={gi > 0 ? 'mt-5' : ''}>
+            {group.label && (
+              <div className="px-3 mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#6B7480]">{group.label}</div>
+            )}
+            {group.items.map(item => {
+              const active = pathname === item.href || pathname.startsWith(item.href + '/');
+              const badge  = item.badgeKey === 'pending' && pending ? pending : null;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3 py-[8.5px] rounded-[9px] text-[13.5px] mb-0.5 transition-colors ${
+                    active
+                      ? 'bg-white/[0.08] text-white font-semibold'
+                      : 'text-[#9AA3AE] font-medium hover:bg-white/[0.05] hover:text-[#F0F2F5]'
+                  }`}
+                >
+                  <span className="flex" style={{ color: active ? '#4D90D9' : undefined }}>
+                    <Icon name={item.icon} size={17.5} />
+                  </span>
+                  <span className="flex-1">{item.label}</span>
+                  {badge != null && (
+                    <span className="font-mono text-[11px] font-semibold bg-primary text-white rounded-[7px] px-[7px] leading-[1.55]">{badge}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Logout */}
-      <div className="px-3 py-4 border-t border-white/10">
+      <div className="px-3 py-3 border-t border-white/[0.07]">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium text-blue-100 hover:bg-white/10 hover:text-white transition-colors"
+          className="flex items-center gap-3 w-full px-3 py-[8.5px] rounded-[9px] text-[13.5px] font-medium text-[#9AA3AE] hover:bg-white/[0.05] hover:text-[#F0F2F5] transition-colors"
         >
-          <span>🚪</span> Sign Out
+          <span className="flex"><Icon name="logout" size={16} /></span>
+          Sign out
         </button>
       </div>
     </aside>

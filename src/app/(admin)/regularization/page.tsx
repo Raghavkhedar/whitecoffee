@@ -5,10 +5,12 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { getAllRegularizationRequests, approveRegularization, rejectRegularization } from '@/lib/firestore';
 import type { RegularizationRequest } from '@/types';
+import ExportButton from '@/components/ExportButton';
+import { downloadSheet } from '@/lib/excel';
 
 type Filter = 'pending' | 'approved' | 'rejected' | 'all';
 
-const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'PL', 'UPL'] as const;
+const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'PL', 'LWP'] as const;
 
 function StatusBadge({ status }: { status: string }) {
   const cls = status === 'approved' ? 'badge-approved' : status === 'rejected' ? 'badge-rejected' : 'badge-pending';
@@ -26,7 +28,7 @@ function ApprovedStatusBadge({ status }: { status: string }) {
     HalfDay:  'bg-amber-100 text-amber-700',
     Absent:   'bg-red-100 text-red-700',
     PL:       'bg-blue-100 text-blue-700',
-    UPL:      'bg-purple-100 text-purple-700',
+    LWP:      'bg-purple-100 text-purple-700',
   };
   const cls = colors[status] ?? 'bg-gray-100 text-gray-600';
   return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>→ {status}</span>;
@@ -116,14 +118,22 @@ export default function RegularizationPage() {
   const FILTERS: Filter[] = ['pending', 'approved', 'rejected', 'all'];
   const filteredRequests = employeeFilter ? requests.filter(r => r.userId === employeeFilter) : requests;
 
+  function exportXlsx() {
+    downloadSheet(`regularization_${month}`, 'Regularization', filteredRequests.map(r => ({
+      Date: r.date,
+      Employee: r.userName,
+      'Emp ID': r.employeeId,
+      'Original Status': r.originalStatus,
+      Reason: r.reason,
+      Status: r.status,
+      'Approved Status': r.approvedStatus ?? '',
+      'Approved By': r.approvedBy ?? '',
+      Comment: r.approverComment ?? '',
+    })));
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">Attendance Regularization</h1>
-        <p className="text-text-secondary text-sm mt-1">
-          Review and approve employee regularization requests
-        </p>
-      </div>
 
       {/* Month selector */}
       <div className="flex items-center gap-4 mb-6">
@@ -158,6 +168,7 @@ export default function RegularizationPage() {
               <option key={id} value={id}>{name}</option>
             ))}
         </select>
+        <ExportButton onClick={exportXlsx} disabled={loading || filteredRequests.length === 0} />
       </div>
 
       {error && (

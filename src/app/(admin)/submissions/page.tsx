@@ -2,8 +2,10 @@
 import { useEffect, useState } from 'react';
 import { collectionGroup, getDocs, doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
-import * as XLSX from 'xlsx';
 import { db, auth } from '@/lib/firebase';
+import Icon from '@/components/Icon';
+import { Avatar, TH, TD } from '@/components/ui';
+import { downloadSheet } from '@/lib/excel';
 
 type CollectionKey = 'material_requests' | 'material_purchases' | 'material_transfers' | 'tool_transfers' | 'work_progress';
 
@@ -309,7 +311,7 @@ export default function SubmissionsPage() {
   useEffect(() => { load(active); }, [active]);
 
   function downloadExcel() {
-    const exportRows = rows.map(row => {
+    const exportRows = filteredRows.map(row => {
       const flat: Record<string, string> = {};
       for (const [k, v] of Object.entries(row)) {
         if (k === 'id' || k === '_path') continue;
@@ -317,10 +319,7 @@ export default function SubmissionsPage() {
       }
       return flat;
     });
-    const ws = XLSX.utils.json_to_sheet(exportRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, active);
-    XLSX.writeFile(wb, `${active}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    downloadSheet(active, active.slice(0, 31), exportRows);
   }
 
   function fmtDate(ts: unknown) {
@@ -337,23 +336,21 @@ export default function SubmissionsPage() {
   const filteredRows = employeeFilter ? rows.filter(r => String(r.userName ?? '') === employeeFilter) : rows;
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">Submissions</h1>
-        <p className="text-text-secondary text-sm mt-1">All form submissions from field teams</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        {COLLECTIONS.map(c => (
-          <button key={c.key} onClick={() => { setActive(c.key); setEmployeeFilter(''); }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${active === c.key ? 'bg-primary text-white' : 'bg-white border border-border text-text-secondary hover:border-primary hover:text-primary'}`}>
-            {c.icon} {c.label}
-          </button>
-        ))}
+    <div className="max-w-[1240px]">
+      <div className="flex flex-wrap items-center gap-2 mb-[18px]">
+        {COLLECTIONS.map(c => {
+          const on = active === c.key;
+          return (
+            <button key={c.key} onClick={() => { setActive(c.key); setEmployeeFilter(''); }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-[9px] text-[13px] font-medium transition-colors ${on ? 'bg-[#1A1613] text-white' : 'bg-white border border-border text-[#6B635C] hover:bg-[#F5F2EE]'}`}>
+              <span>{c.icon}</span>{c.label}
+            </button>
+          );
+        })}
         <select
           value={employeeFilter}
           onChange={e => setEmployeeFilter(e.target.value)}
-          className="ml-auto input text-sm !py-2 min-w-[180px]"
+          className="ml-auto input text-sm !py-2 !w-auto min-w-[180px]"
         >
           <option value="">All Employees</option>
           {Array.from(new Map(rows.map(r => [String(r.userName ?? ''), String(r.userName ?? '')]))).filter(([n]) => n).sort((a, b) => a[0].localeCompare(b[0])).map(([name]) => (
@@ -364,12 +361,12 @@ export default function SubmissionsPage() {
 
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
 
-      <div className="card p-0 overflow-hidden overflow-x-auto">
+      <div className="bg-white border border-[#E9E6E2] rounded-2xl overflow-hidden overflow-x-auto">
         {!loading && filteredRows.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background">
-            <span className="text-xs text-text-secondary font-medium">{filteredRows.length} submission{filteredRows.length !== 1 ? 's' : ''}</span>
+          <div className="flex items-center justify-between px-[18px] py-3 border-b border-[#F1EFEC]">
+            <span className="text-[12px] text-[#9A938C] font-medium">{filteredRows.length} submission{filteredRows.length !== 1 ? 's' : ''}</span>
             <button onClick={downloadExcel} className="btn-outline text-xs py-1.5 px-3 flex items-center gap-1.5">
-              ⬇ Download Excel
+              <Icon name="download" size={14} /> Download Excel
             </button>
           </div>
         )}
@@ -379,38 +376,41 @@ export default function SubmissionsPage() {
         ) : filteredRows.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No submissions found.</div>
         ) : (
-          <table className="w-full text-sm min-w-[700px]">
-            <thead className="bg-background border-b border-border">
+          <table className="w-full border-collapse min-w-[700px]">
+            <thead>
               <tr>
-                {['Employee', 'Site', 'Date Submitted', 'Items / Description', ''].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-bold text-text-secondary uppercase tracking-wide">{h}</th>
-                ))}
+                <th className={`${TH} pl-[18px]`}>Submitted by</th>
+                <th className={TH}>Site</th>
+                <th className={TH}>Date</th>
+                <th className={TH}>Items / Description</th>
+                <th className={`${TH} pr-[18px] text-right`}>Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
               {filteredRows.map(row => (
-                <tr key={row.id} className="hover:bg-background transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-text-primary">{String(row.userName ?? '—')}</div>
-                    <div className="text-xs text-text-secondary">{String(row.employeeId ?? '')}</div>
+                <tr key={row.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
+                  <td className={`${TD} pl-[18px]`}>
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={String(row.userName ?? '?')} size={32} />
+                      <div>
+                        <div className="font-medium text-[#2A241F]">{String(row.userName ?? '—')}</div>
+                        <div className="text-[12px] text-[#9A938C] font-mono">{String(row.employeeId ?? '')}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-4 py-3 text-text-secondary">{String(row.siteName ?? row.fromLocation ?? '—')}</td>
-                  <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtDate(row.submittedAt)}</td>
-                  <td className="px-4 py-3 text-text-secondary max-w-xs">
+                  <td className={`${TD} text-[#6B635C]`}>{String(row.siteName ?? row.fromLocation ?? '—')}</td>
+                  <td className={`${TD} whitespace-nowrap font-mono text-[#6B635C]`}>{fmtDate(row.submittedAt)}</td>
+                  <td className={`${TD} text-[#4A433D] max-w-xs`}>
                     {Array.isArray(row.items) ? (
                       <span>{(row.items as unknown[]).length} item{(row.items as unknown[]).length !== 1 ? 's' : ''}</span>
                     ) : row.workDescription ? (
                       <span className="truncate block max-w-xs">{String(row.workDescription)}</span>
                     ) : '—'}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">
-                        View
-                      </button>
-                      <button onClick={() => setEditing(row)} className="text-text-secondary text-xs font-medium hover:text-primary hover:underline whitespace-nowrap">
-                        Edit
-                      </button>
+                  <td className={`${TD} pr-[18px] text-right`}>
+                    <div className="flex items-center gap-3 justify-end">
+                      <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">View</button>
+                      <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline whitespace-nowrap">Edit</button>
                     </div>
                   </td>
                 </tr>

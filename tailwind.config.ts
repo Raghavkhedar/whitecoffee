@@ -5,13 +5,20 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        primary:    '#1A5FAF',
-        background: '#F0F4F8',
+        primary:    '#2F6DB0',  // blue accent
+        background: '#FAF9F7',  // warm cream app background
         surface:    '#FFFFFF',
-        border:     '#C8D6E8',
-        'text-primary':   '#0D1B2A',
-        'text-secondary': '#6B7E94',
-        'accent-light':   '#EBF2FB',
+        border:     '#E7E3DE',  // warm hairline border
+        'text-primary':   '#1A1613',
+        'text-secondary': '#78716C',
+        'accent-light':   '#EDF2FD',
+        // shell
+        sidebar:        '#1E232B',
+        'sidebar-hover': 'rgba(255,255,255,.05)',
+      },
+      fontFamily: {
+        sans: ['var(--font-geist-sans)', '-apple-system', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-geist-mono)', 'ui-monospace', 'monospace'],
       },
     },
   },

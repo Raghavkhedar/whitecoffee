@@ -2,6 +2,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { getAttendanceForDate, getAllUsers, updateAttendanceSiteId } from '@/lib/firestore';
 import type { AttendanceRecord, User } from '@/types';
+import ExportButton from '@/components/ExportButton';
+import { downloadSheet } from '@/lib/excel';
+import { istTodayStr } from '@/lib/date';
 
 function formatTime(ts: { toDate: () => Date } | undefined) {
   if (!ts) return '—';
@@ -9,7 +12,7 @@ function formatTime(ts: { toDate: () => Date } | undefined) {
 }
 
 export default function SiteIdsPage() {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = istTodayStr();
   const [date, setDate]               = useState(todayStr);
   const [events, setEvents]           = useState<AttendanceRecord[]>([]);
   const [users, setUsers]             = useState<User[]>([]);
@@ -81,15 +84,20 @@ export default function SiteIdsPage() {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 
+  function exportXlsx() {
+    downloadSheet(`site_ids_${date}`, 'Site IDs', siteEntries.map(e => ({
+      Date: date,
+      Employee: userNameMap.get(e.userId) || e.userName || '',
+      'Emp ID': userEmpIdMap.get(e.userId) || e.employeeId || '',
+      Time: formatTime(e.timestamp as Parameters<typeof formatTime>[0]),
+      'In / Out': e.type === 'site_in' ? 'In' : 'Out',
+      'Site Name': e.siteName || e.marketName || '',
+      'Site ID': e.siteId || '',
+    })));
+  }
+
   return (
     <div>
-      {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">Site IDs</h1>
-        <p className="text-text-secondary text-sm mt-1">
-          Operations enter the site name at check-in but leave the Site ID blank. Fill the Site ID for each entry here.
-        </p>
-      </div>
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
@@ -130,7 +138,10 @@ export default function SiteIdsPage() {
       <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-text-primary">{dateDisplay}</h2>
-          <span className="text-xs text-text-secondary">{siteEntries.length} site entries</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-text-secondary">{siteEntries.length} site entries</span>
+            <ExportButton onClick={exportXlsx} disabled={loading || siteEntries.length === 0} />
+          </div>
         </div>
 
         {loading ? (

@@ -6,9 +6,10 @@ import {
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { istTodayStr } from './date';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -323,6 +324,79 @@ export async function setPlannedHours(
   );
 }
 
+// ── Overtime Approvals ────────────────────────────────────────────────────
+
+export async function getOtApprovalsForDateRange(start: string, end: string): Promise<OtApproval[]> {
+  // Fetch + client-filter (no collection-group index required; this set stays small).
+  const snap = await getDocs(collectionGroup(db, 'ot_approvals'));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as OtApproval))
+    .filter(a => a.date >= start && a.date <= end);
+}
+
+// Approve a day's overtime with an admin-adjusted amount + reason. Writes a per-day
+// record at users/{uid}/ot_approvals/{date} and recomputes the user's lifetime
+// approvedOtMins by summing all approvals (idempotent and safe to re-approve).
+export async function approveOt(
+  user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
+  date: string,
+  requestedMins: number,
+  approvedMins: number,
+  reason: string,
+  approverName: string,
+): Promise<void> {
+  await setDoc(
+    doc(db, 'users', user.id, 'ot_approvals', date),
+    {
+      date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
+      role: user.role || '', requestedMins, approvedMins, reason,
+      approvedBy: approverName, approvedAt: Timestamp.now(),
+    },
+    { merge: true },
+  );
+  const snap = await getDocs(collection(db, 'users', user.id, 'ot_approvals'));
+  const total = snap.docs.reduce((sum, d) => sum + (Number(d.data().approvedMins) || 0), 0);
+  await updateDoc(doc(db, 'users', user.id), { approvedOtMins: total });
+}
+
+// ── Holidays (company-wide) ───────────────────────────────────────────────
+// Stored at holidays/{date}; a marked day is skipped like a Sunday everywhere
+// attendance is evaluated (no status, no penalty, excluded from working days).
+
+// month is 1-indexed (1 = January)
+export async function getHolidaysForMonth(year: number, month: number): Promise<Holiday[]> {
+  const monthStr  = `${year}-${String(month).padStart(2, '0')}`;
+  const q = query(
+    collection(db, 'holidays'),
+    where('date', '>=', `${monthStr}-01`),
+    where('date', '<=', `${monthStr}-31`), // safe upper bound for any month
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Holiday));
+}
+
+export async function getHolidaysForDateRange(start: string, end: string): Promise<Holiday[]> {
+  const q = query(
+    collection(db, 'holidays'),
+    where('date', '>=', start),
+    where('date', '<=', end),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Holiday));
+}
+
+export async function setHoliday(date: string, title: string, description: string, createdBy: string): Promise<void> {
+  await setDoc(
+    doc(db, 'holidays', date),
+    { date, title: title.trim(), description: description.trim(), createdBy, createdAt: Timestamp.now() },
+    { merge: true },
+  );
+}
+
+export async function deleteHoliday(date: string): Promise<void> {
+  await deleteDoc(doc(db, 'holidays', date));
+}
+
 // ── Conveyance Config ────────────────────────────────────────────────────
 
 export async function getConveyanceConfig(): Promise<{ rate1: number; rate2: number }> {
@@ -355,7 +429,7 @@ export async function getConveyanceForMonth(month: string): Promise<ConveyanceRe
 // ── Dashboard Stats ───────────────────────────────────────────────────────
 
 export async function getDashboardStats() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = istTodayStr();
   const [usersSnap, sitesSnap, leavesSnap, attendanceSnap] = await Promise.all([
     getDocs(collection(db, 'users')),
     getDocs(collection(db, 'sites')),

@@ -10,3 +10,4 @@ functions/.env
 functions/conveyance-calc.js
 skills-lock.json
 tsconfig.tsbuildinfo
+graphify-out/

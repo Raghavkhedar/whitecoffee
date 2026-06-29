@@ -1,29 +1,14 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours } from '@/lib/firestore';
-import type { User, AttendanceRecord, AttendanceStatus, PlannedHours } from '@/types';
+import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday } from '@/lib/firestore';
+import type { User, AttendanceRecord, AttendanceStatus, PlannedHours, Holiday } from '@/types';
+import { RoleBadge, StatusBadge } from '@/components/ui';
+import ExportButton from '@/components/ExportButton';
+import { downloadSheet } from '@/lib/excel';
+import { istTodayStr } from '@/lib/date';
+import { auth } from '@/lib/firebase';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const STATUS_STYLES: Record<string, string> = {
-  Present:  'bg-green-100 text-green-700 border-green-200',
-  HalfDay:  'bg-yellow-100 text-yellow-700 border-yellow-200',
-  SL:       'bg-amber-100 text-amber-700 border-amber-200',
-  SLNF:     'bg-gray-100 text-gray-700 border-gray-200',
-  Absent:   'bg-red-100 text-red-700 border-red-200',
-  PL:       'bg-blue-100 text-blue-700 border-blue-200',
-  UPL:      'bg-orange-100 text-orange-700 border-orange-200',
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  Present: 'Present',
-  HalfDay: 'Half Day',
-  SL:      'Short Leave',
-  SLNF:    'Log Not Found',
-  Absent:  'Absent',
-  PL:      'PL',
-  UPL:     'UPL',
-};
 
 function formatTime(ts: { toDate: () => Date } | undefined) {
   if (!ts) return '—';
@@ -56,10 +41,11 @@ function deriveStatus(
   if (isOps && (!planned?.startTime || !planned?.endTime)) return null; // no plan → unmarked
 
   const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
-  const inType  = isOps ? 'site_in'  : 'office_in';
-  const outType = isOps ? 'site_out' : 'office_out';
-  const checkIns  = userEvents.filter(e => e.type === inType).sort((a, b) => ts(a) - ts(b));
-  const checkOuts = userEvents.filter(e => e.type === outType).sort((a, b) => ts(a) - ts(b));
+  // Ops field-work spans both site and market visits; office uses office_in/out.
+  const isIn  = (e: AttendanceRecord) => isOps ? (e.type === 'site_in'  || e.type === 'market_in')  : e.type === 'office_in';
+  const isOut = (e: AttendanceRecord) => isOps ? (e.type === 'site_out' || e.type === 'market_out') : e.type === 'office_out';
+  const checkIns  = userEvents.filter(isIn).sort((a, b) => ts(a) - ts(b));
+  const checkOuts = userEvents.filter(isOut).sort((a, b) => ts(a) - ts(b));
   if (checkIns.length === 0 && checkOuts.length === 0) return 'Absent';
 
   if (checkIns.length === 0 || checkOuts.length === 0) return 'SLNF';
@@ -86,7 +72,7 @@ function deriveStatus(
 }
 
 export default function AttendancePage() {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = istTodayStr();
   const [viewDate, setViewDate]         = useState(() => {
     const t = new Date();
     return new Date(t.getFullYear(), t.getMonth(), 1);
@@ -97,6 +83,8 @@ export default function AttendancePage() {
   const [statusByDate, setStatusByDate] = useState<Map<string, Map<string, AttendanceStatus>>>(new Map());
   // date → userId → PlannedHours (operations shift windows)
   const [plannedByDate, setPlannedByDate] = useState<Map<string, Map<string, PlannedHours>>>(new Map());
+  // date → Holiday (company-wide)
+  const [holidaysByDate, setHolidaysByDate] = useState<Map<string, Holiday>>(new Map());
   const [selectedEvents, setSelectedEvents] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading]           = useState(true);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -104,6 +92,10 @@ export default function AttendancePage() {
   const [saveError, setSaveError]       = useState('');
   const [dirtyPlans, setDirtyPlans]     = useState<Set<string>>(new Set());
   const [employeeFilter, setEmployeeFilter] = useState('');
+  // Holiday editor (for the selected day)
+  const [holidayForm, setHolidayForm]   = useState<{ title: string; description: string } | null>(null);
+  const [holidaySaving, setHolidaySaving] = useState(false);
+  const [holidayError, setHolidayError] = useState('');
 
   const year  = viewDate.getFullYear();
   const month = viewDate.getMonth(); // 0-indexed
@@ -143,6 +135,14 @@ export default function AttendancePage() {
       console.warn('Could not load planned hours (may be empty):', err);
     }
 
+    try {
+      const holidays = await getHolidaysForMonth(year, month + 1);
+      setHolidaysByDate(new Map(holidays.map(h => [h.date, h])));
+    } catch (err) {
+      // holidays collection may be empty on first load — not an error
+      console.warn('Could not load holidays (may be empty):', err);
+    }
+
     setLoading(false);
   }, [year, month]);
 
@@ -152,6 +152,8 @@ export default function AttendancePage() {
   useEffect(() => {
     if (!selectedDate) return;
     setEventsLoading(true);
+    setHolidayForm(null);   // collapse the holiday editor when switching days
+    setHolidayError('');
     getAttendanceForDate(selectedDate)
       .then(setSelectedEvents)
       .catch(console.error)
@@ -177,7 +179,7 @@ export default function AttendancePage() {
       else if (s.status === 'SL') sl++;
       else if (s.status === 'SLNF') slnf++;
       else if (s.status === 'Absent')  absent++;
-      else if (s.status === 'PL' || s.status === 'UPL') leave++;
+      else if (s.status === 'PL' || s.status === 'LWP') leave++;
     });
     return { present, halfDay, sl, slnf, absent, leave };
   }
@@ -216,17 +218,55 @@ export default function AttendancePage() {
     setSaving(prev => ({ ...prev, [key]: false }));
   }
 
+  async function saveHoliday() {
+    if (!holidayForm || !holidayForm.title.trim()) {
+      setHolidayError('A title is required.');
+      return;
+    }
+    setHolidaySaving(true);
+    setHolidayError('');
+    try {
+      await setHoliday(selectedDate, holidayForm.title, holidayForm.description, auth.currentUser?.uid || '');
+      const saved: Holiday = {
+        id: selectedDate, date: selectedDate,
+        title: holidayForm.title.trim(), description: holidayForm.description.trim(),
+      };
+      setHolidaysByDate(prev => new Map(prev).set(selectedDate, saved));
+      setHolidayForm(null);
+    } catch (err) {
+      setHolidayError('Failed to save holiday. Please try again.');
+      console.error(err);
+    }
+    setHolidaySaving(false);
+  }
+
+  async function removeHoliday() {
+    setHolidaySaving(true);
+    setHolidayError('');
+    try {
+      await deleteHoliday(selectedDate);
+      setHolidaysByDate(prev => { const next = new Map(prev); next.delete(selectedDate); return next; });
+      setHolidayForm(null);
+    } catch (err) {
+      setHolidayError('Failed to remove holiday. Please try again.');
+      console.error(err);
+    }
+    setHolidaySaving(false);
+  }
+
   const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
   const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
+  const selectedHoliday  = holidaysByDate.get(selectedDate);
 
-  // Merge stored (Cloud Function) statuses with client-side derived statuses for the summary chips
+  // Merge stored (Cloud Function) statuses with client-side derived statuses for the summary chips.
+  // Holidays are skipped like Sundays — no live status is derived for them.
   const effectiveStatuses = useMemo(() => {
     const map = new Map<string, AttendanceStatus['status']>();
     users.forEach(user => {
       const stored = selectedDayMap.get(user.id)?.status;
       if (stored) {
         map.set(user.id, stored);
-      } else if (!eventsLoading) {
+      } else if (!eventsLoading && !selectedHoliday) {
         const derived = deriveStatus(
           user.role,
           selectedEvents.filter(e => e.userId === user.id),
@@ -237,7 +277,7 @@ export default function AttendancePage() {
       }
     });
     return map;
-  }, [users, selectedDayMap, selectedPlanMap, selectedEvents, eventsLoading]);
+  }, [users, selectedDayMap, selectedPlanMap, selectedEvents, eventsLoading, selectedHoliday]);
 
   const statusValues = Array.from(effectiveStatuses.values());
   const totalPresent = statusValues.filter(s => s === 'Present').length;
@@ -245,22 +285,43 @@ export default function AttendancePage() {
   const totalSL      = statusValues.filter(s => s === 'SL').length;
   const totalSLNF    = statusValues.filter(s => s === 'SLNF').length;
   const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
-  const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'UPL').length;
+  const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'LWP').length;
 
   const selectedDateDisplay = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
 
-  return (
-    <div>
-      {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">Attendance Management</h1>
-        <p className="text-text-secondary text-sm mt-1">
-          Calendar view · Office/admin status auto-computed (10:00–18:00) · Operations status computed from the planned shift you set per day
-        </p>
-      </div>
+  function exportXlsx() {
+    const tsOf = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+    const list = [...users]
+      .filter(u => !employeeFilter || u.id === employeeFilter)
+      .sort((a, b) => {
+        const order: Record<string, number> = { office: 0, admin: 1, operations: 2 };
+        return (order[a.role] ?? 3) - (order[b.role] ?? 3) || a.name.localeCompare(b.name);
+      });
+    const rows = list.map(user => {
+      const isOps = user.role === 'operations';
+      const evs   = selectedEvents.filter(e => e.userId === user.id);
+      const ins   = evs.filter(e => e.type === (isOps ? 'site_in'  : 'office_in')).sort((a, b) => tsOf(a) - tsOf(b));
+      const outs  = evs.filter(e => e.type === (isOps ? 'site_out' : 'office_out')).sort((a, b) => tsOf(a) - tsOf(b));
+      const plan  = selectedPlanMap.get(user.id);
+      return {
+        Date: selectedDate,
+        Name: user.name,
+        'Emp ID': user.employeeId || '',
+        Role: user.role,
+        'Planned Shift': isOps ? (plan?.startTime && plan?.endTime ? `${plan.startTime}–${plan.endTime}` : '') : '10:00–18:00',
+        Status: effectiveStatuses.get(user.id) ?? '',
+        'First In': formatTime(ins[0]?.timestamp as Parameters<typeof formatTime>[0]),
+        'Last Out': formatTime(outs[outs.length - 1]?.timestamp as Parameters<typeof formatTime>[0]),
+        'PL Balance': user.plBalance ?? '',
+      };
+    });
+    downloadSheet(`attendance_${selectedDate}`, 'Attendance', rows);
+  }
 
+  return (
+    <div className="max-w-[1240px]">
       {/* Calendar card */}
       <div className="card mb-6">
         {/* Month navigation */}
@@ -306,26 +367,34 @@ export default function AttendancePage() {
               const isFuture  = ds > todayStr;
               const isToday   = ds === todayStr;
               const isSelected = ds === selectedDate;
+              const holiday   = holidaysByDate.get(ds);
               const summary   = getDaySummary(ds);
               const hasData   = summary.present + summary.halfDay + summary.sl + summary.slnf + summary.absent + summary.leave > 0;
 
               return (
                 <button
                   key={i}
-                  onClick={() => !isFuture && setSelectedDate(ds)}
-                  disabled={isFuture}
-                  className={`min-h-[60px] p-1.5 rounded-lg text-left transition-all border ${
+                  onClick={() => setSelectedDate(ds)}
+                  className={`min-h-[60px] p-1.5 rounded-lg text-left transition-all border cursor-pointer ${
                     isSelected
                       ? 'border-primary bg-accent-light shadow-sm'
+                      : holiday
+                      ? 'border-purple-200 bg-purple-50 hover:border-purple-300'
                       : isToday
                       ? 'border-primary/40 bg-background'
                       : 'border-transparent hover:border-border hover:bg-background'
-                  } ${isFuture ? 'opacity-30 cursor-default' : 'cursor-pointer'}`}
+                  } ${isFuture && !holiday && !isSelected ? 'opacity-40' : ''}`}
                 >
-                  <div className={`text-xs font-bold mb-1 ${isToday ? 'text-primary' : 'text-text-primary'}`}>
+                  <div className={`text-xs font-bold mb-1 ${isToday ? 'text-primary' : holiday ? 'text-purple-700' : 'text-text-primary'}`}>
                     {day}
                   </div>
-                  {!isFuture && hasData && (
+                  {holiday ? (
+                    <div className="flex flex-wrap gap-0.5">
+                      <span className="text-[9px] leading-tight bg-purple-100 text-purple-700 rounded px-1 py-0.5 truncate max-w-full" title={holiday.title}>
+                        {holiday.title}
+                      </span>
+                    </div>
+                  ) : !isFuture && hasData ? (
                     <div className="flex flex-wrap gap-0.5">
                       {summary.present > 0 && (
                         <span className="text-[9px] leading-tight bg-green-100 text-green-700 rounded px-1 py-0.5">
@@ -358,7 +427,7 @@ export default function AttendancePage() {
                         </span>
                       )}
                     </div>
-                  )}
+                  ) : null}
                 </button>
               );
             })}
@@ -373,7 +442,8 @@ export default function AttendancePage() {
             { label: 'SL = Short Leave',  cls: 'bg-amber-100 text-amber-700' },
             { label: '? = Log Not Found', cls: 'bg-gray-100 text-gray-700' },
             { label: 'A = Absent',        cls: 'bg-red-100 text-red-700' },
-            { label: 'L = PL / UPL',     cls: 'bg-blue-100 text-blue-700' },
+            { label: 'L = PL / LWP',     cls: 'bg-blue-100 text-blue-700' },
+            { label: 'Holiday',           cls: 'bg-purple-100 text-purple-700' },
           ].map(({ label, cls }) => (
             <span key={label} className={`text-xs px-2 py-0.5 rounded font-medium ${cls}`}>
               {label}
@@ -409,17 +479,84 @@ export default function AttendancePage() {
           </div>
         </div>
 
+        {/* Holiday banner / editor — admin marks the day a company-wide holiday */}
         <div className="mb-4">
+          {selectedHoliday && !holidayForm ? (
+            <div className="flex items-start justify-between gap-3 p-3 rounded-lg bg-purple-50 border border-purple-200">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">Holiday</span>
+                  <span className="font-semibold text-text-primary text-sm">{selectedHoliday.title}</span>
+                </div>
+                {selectedHoliday.description && (
+                  <p className="text-xs text-text-secondary mt-1">{selectedHoliday.description}</p>
+                )}
+                <p className="text-[11px] text-text-secondary/70 mt-1 italic">Skipped like a Sunday — no attendance or salary effect.</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setHolidayForm({ title: selectedHoliday.title, description: selectedHoliday.description || '' })}
+                  className="btn-outline !py-1 !px-3 !text-xs"
+                >
+                  Edit
+                </button>
+                <button onClick={removeHoliday} disabled={holidaySaving} className="btn-danger !py-1 !px-3 !text-xs disabled:opacity-50">
+                  {holidaySaving ? '…' : 'Remove'}
+                </button>
+              </div>
+            </div>
+          ) : holidayForm ? (
+            <div className="p-4 rounded-lg bg-purple-50 border border-purple-200 space-y-3">
+              <div className="text-sm font-semibold text-text-primary">
+                {selectedHoliday ? 'Edit holiday' : 'Mark as holiday'} · {selectedDate}
+              </div>
+              <div>
+                <label className="label">Title <span className="text-red-500">*</span></label>
+                <input
+                  className="input"
+                  value={holidayForm.title}
+                  onChange={e => setHolidayForm(f => ({ ...f!, title: e.target.value }))}
+                  placeholder="e.g. Diwali"
+                />
+              </div>
+              <div>
+                <label className="label">Description</label>
+                <textarea
+                  className="input min-h-[60px]"
+                  value={holidayForm.description}
+                  onChange={e => setHolidayForm(f => ({ ...f!, description: e.target.value }))}
+                  placeholder="Optional note shown with the holiday"
+                />
+              </div>
+              {holidayError && <p className="text-xs text-red-600">{holidayError}</p>}
+              <div className="flex gap-2">
+                <button onClick={saveHoliday} disabled={holidaySaving || !holidayForm.title.trim()} className="btn-primary !py-1.5 !px-4 !text-sm disabled:opacity-50">
+                  {holidaySaving ? 'Saving…' : 'Save holiday'}
+                </button>
+                <button onClick={() => { setHolidayForm(null); setHolidayError(''); }} className="btn-outline !py-1.5 !px-4 !text-sm">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setHolidayForm({ title: '', description: '' })} className="btn-outline !py-1.5 !px-3 !text-xs">
+              + Mark as holiday
+            </button>
+          )}
+        </div>
+
+        <div className="mb-4 flex items-center gap-3">
           <select
             value={employeeFilter}
             onChange={e => setEmployeeFilter(e.target.value)}
-            className="input text-sm !py-2 min-w-[180px]"
+            className="input text-sm !py-2 !w-auto min-w-[180px]"
           >
             <option value="">All Employees</option>
             {[...users].sort((a, b) => a.name.localeCompare(b.name)).map(u => (
               <option key={u.id} value={u.id}>{u.name}</option>
             ))}
           </select>
+          <ExportButton onClick={exportXlsx} disabled={loading || users.length === 0} />
         </div>
 
         {saveError && (
@@ -469,8 +606,9 @@ export default function AttendancePage() {
                     const siteOuts   = userEvents.filter(e => e.type === 'site_out').sort((a, b) => ts(a) - ts(b));
                     const planned      = selectedPlanMap.get(user.id);
                     const hasPlan      = !!(planned?.startTime && planned?.endTime);
-                    // Derive status live from events (+ planned window for ops) until the Cloud Function runs
-                    const derivedStatus = !status && !eventsLoading
+                    // Derive status live from events (+ planned window for ops) until the Cloud
+                    // Function runs. Holidays are skipped like Sundays — no live status.
+                    const derivedStatus = !status && !eventsLoading && !selectedHoliday
                       ? deriveStatus(user.role, userEvents, selectedDate, planned)
                       : null;
                     const displayStatus = status ?? derivedStatus;
@@ -479,17 +617,7 @@ export default function AttendancePage() {
                       <tr key={user.id} className="border-b border-border/40 hover:bg-background/60 transition-colors">
                         <td className="py-3 pr-4 font-medium text-text-primary">{user.name}</td>
                         <td className="py-3 pr-4 text-text-secondary text-xs">{user.employeeId || '—'}</td>
-                        <td className="py-3 pr-4">
-                          <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                            user.role === 'operations'
-                              ? 'bg-purple-50 text-purple-700 border-purple-200'
-                              : user.role === 'admin'
-                              ? 'bg-red-50 text-red-700 border-red-200'
-                              : 'bg-sky-50 text-sky-700 border-sky-200'
-                          }`}>
-                            {user.role}
-                          </span>
-                        </td>
+                        <td className="py-3 pr-4"><RoleBadge role={user.role} /></td>
                         <td className="py-3 pr-4">
                           {isOps ? (
                             <div className="flex items-center gap-1.5">
@@ -525,9 +653,7 @@ export default function AttendancePage() {
                         <td className="py-3 pr-4">
                           {displayStatus ? (
                             <div className="flex items-center gap-1.5">
-                              <span className={`text-xs px-2.5 py-1 rounded border font-medium ${STATUS_STYLES[displayStatus] || 'bg-background text-text-secondary border-border'}`}>
-                                {STATUS_LABEL[displayStatus] || displayStatus}
-                              </span>
+                              <StatusBadge status={displayStatus} />
                               {!status && derivedStatus && (
                                 <span className="text-[10px] text-text-secondary italic">live</span>
                               )}

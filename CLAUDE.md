@@ -30,8 +30,11 @@ No test framework configured.
 - `users/{uid}/attendance/` — check-in/out events. Ops `site_in`/`site_out` carry free-text `siteName`; `siteId` is filled later by admin via **Site IDs** page (`updateAttendanceSiteId`).
 - `users/{uid}/attendance_status/{date}` — computed daily status (written by `computeDailyAttendanceStatus`)
 - `users/{uid}/planned_hours/{date}` — admin-set shift window for ops (`startTime`/`endTime` as `"HH:MM"`); office fixed 10–18
+- `users/{uid}/daily_hours/{date}` — per-day `plannedMins`/`actualMins`/`shortageMins`/`otMins` (written by `computeDailyAttendanceStatus`, fully-worked days only)
+- `users/{uid}/ot_approvals/{date}` — admin-approved overtime: `requestedMins`/`approvedMins`/`reason`/`approvedBy` (written by `approveOt` from the employee dashboard)
 - `users/{uid}/material_requests/`
 - Top-level: `material_purchases`, `material_transfers`, `tool_transfers`, `work_progress`, `conveyance`
+- `holidays/{date}` — company-wide holidays (`title`/`description`), marked by admin on the **Attendance** calendar. A marked day is skipped like a Sunday: no status doc, no Absent penalty, excluded from expected working days (unpaid, no payroll effect). Managed via `setHoliday`/`deleteHoliday`; read by `getHolidaysForMonth`/`getHolidaysForDateRange`.
 
 Required composite indexes (Firebase Console):
 - `leave_requests`: `status` ASC + `submittedAt` ASC
@@ -42,11 +45,13 @@ Required composite indexes (Firebase Console):
 
 ## Attendance Status Logic
 
-`computeDailyAttendanceStatus` Cloud Function runs at 23:59 IST.
+> Full backend reference: **`docs/cloud-functions.md`** (all 6 functions, triggers, collections, deploy/auth notes).
+
+`computeDailyAttendanceStatus` Cloud Function runs at 23:59 IST. **Sundays and company-wide holidays (`holidays/{date}`) are skipped entirely — no status doc written, no penalty.**
 
 **Events and window by role:**
 - **Office/admin**: `office_in` / `office_out`; fixed 10:00–18:00 IST
-- **Operations**: first `site_in` / last `site_out`; window from `planned_hours/{date}`. **No plan + no approved leave → day skipped (no status doc).** Approved leave still produces PL/UPL.
+- **Operations**: first in / last out across both site and market visits (`site_in`/`market_in` and `site_out`/`market_out`); window from `planned_hours/{date}`. **No plan + no approved leave → day skipped (no status doc).** Approved leave still produces PL/LWP.
 
 | Status | Condition | Salary (days) |
 |--------|-----------|---------------|
@@ -55,12 +60,12 @@ Required composite indexes (Firebase Console):
 | Half Day | Late in AND early out | 0.5 |
 | SLNF (Log Not Found) | Missing check-in or check-out | 0.5 |
 | PL (Paid Leave) | Approved leave + PL balance | 1 |
-| UPL (Unpaid Leave) | Approved leave, no balance | 0 |
+| LWP (Leave Without Pay) | Approved leave, no balance | 0 |
 | Absent | No events, no approved leave (ops: only when plan exists) | -2 |
 
 `markedBy: 'auto'` on function-written docs; `markedBy: 'admin'` docs (regularization) are skipped on recompute. The attendance page mirrors this logic client-side until the nightly run writes it.
 
-**Days NP**: `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL - absent×2` (UPL = 0)
+**Days NP**: `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL - absent×2` (LWP = 0)
 
 **Salary**: `daysNP × salaryRate`
 
@@ -71,20 +76,26 @@ PL balance: +1 on 1st of month (`accrueMonthlyLeave`), -1 per PL day used.
 `exportToSheets` Cloud Function runs 16:30 UTC (22:00 IST) → Google Sheet (`SHEET_ID` in `functions/index.js`) via service account (`ATTENDANCE_SHEETS_KEY` secret).
 
 - **Always resolve Name/ID from the live `users` collection** — not the snapshot values on each doc. Use `uidOf(doc)` + `userNameMap`/`userEmpIdMap` (keyed by uid). `uidOf` reads `userId` field, falling back to parent path for subcollection docs.
-- **Attendance tab** is per-employee/day (not per-event): In Time / In Location / Site ID / Out Time / Out Location / All Activity. Built from union of attendance events and status docs — Absent/PL/UPL/SLNF days appear even without check-in events. **All Activity** = full chronological log with resolved Site ID in brackets.
-- **Employee Dashboard tab** — MTD summary, one row per employee: Date | EMP Name | EMP ID | Days Passed | Present | SL | Half Day | SLNF | PL | UPL | Absent | Leaves | Days NP | Salary Rate | Salary Due MTD | Covy Due | Imprest Due | TOTAL DUE. Includes CF BAL (carry-forward leave) and TOTAL summary rows. **Imprest** is preserved across runs by locating columns by header name (not fixed index). Conveyance is built from the `conveyance` collection (operations only).
+- **Attendance tab** is per-employee/day (not per-event): In Time / In Location / Site ID / Out Time / Out Location / All Activity. Built from union of attendance events and status docs — Absent/PL/LWP/SLNF days appear even without check-in events. **All Activity** = full chronological log with resolved Site ID in brackets.
+- **Employee Dashboard tab** — MTD summary, one row per employee: Date | EMP Name | EMP ID | Days Passed | Present | SL | Half Day | SLNF | PL | LWP | Absent | Leaves | Days NP | Salary Rate | Salary Due MTD | Covy Due | Imprest Due | TOTAL DUE. Includes CF BAL (carry-forward leave) and TOTAL summary rows. **Imprest** is preserved across runs by locating columns by header name (not fixed index). Conveyance is built from the `conveyance` collection (operations only).
 
 ## Employee Dashboard Page
 
 `/employee-dashboard` (`src/app/(admin)/employee-dashboard/page.tsx`) — real-time view of expected vs actual working hours across a configurable date range.
 
 - **Filters**: date preset (Today / Last 7/15/30/90/180/365 days / custom), role, individual employee
-- **Columns**: Name, Emp ID, Role, PL Bal, WO Bal, Working Hrs (expected), Actual Hrs, Shortage
+- **Columns**: Name, Emp ID, Role, PL, WO, Working (expected), Actual, Shortage, Overtime
 - **Single-day view**: also shows Check-in / Check-out times
 - **Expected hours**: office/admin = 8 h × working days (Mon–Sat); ops = sum of admin-set `planned_hours` windows
-- **Actual hours**: derived from `office_in`/`office_out` (office) or `site_in`/`site_out` (ops) attendance events
-- **Data**: `getAttendanceForDateRange(start, end)` + `getPlannedHoursForDateRange(start, end)` — both use `collectionGroup` queries
+- **Actual hours**: derived from `office_in`/`office_out` (office) or `site_in`/`market_in` … `site_out`/`market_out` (ops) attendance events
+- **Data**: `getAttendanceForDateRange` + `getPlannedHoursForDateRange` + `getOtApprovalsForDateRange` (all `collectionGroup`)
 - Sundays excluded from working day count; sort order: office → admin → ops, then alphabetical
+
+### Shortage & Overtime (per-day, every minute counts)
+
+Computed **per worked day** (both check-in and check-out present — absent/leave/SLNF days never count). `plannedDay` = ops `planned_hours` window for that date, or 8 h for office/admin. `actualDay` = last out − first in.
+- **Shortage** = Σ `max(0, plannedDay − actualDay)`. Automatic, no approval. Shown live for the selected range; the nightly function also accrues a lifetime total to `users/{uid}.shortageMins` (idempotent — increments only the delta vs the existing `daily_hours/{date}` record).
+- **Overtime** = `max(0, actualDay − plannedDay)` per day. **Requires admin approval** — the dashboard lists pending OT days; admin grants an adjusted amount (≤ detected) with a **mandatory reason** via `approveOt`, which writes `ot_approvals/{date}` and recomputes `users/{uid}.approvedOtMins` (sum of all approvals). OT and shortage are tracked **separately** (never netted). OT detection in the portal is live (no Cloud Function dependency); only the lifetime `shortageMins` needs the nightly run — **redeploy functions** (`firebase deploy --only functions`) after changing it.
 
 ## Styling
 

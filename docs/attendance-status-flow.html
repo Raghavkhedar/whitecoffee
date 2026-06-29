@@ -95,7 +95,7 @@ flowchart TD
     H -- No --> P7[/Absent -2/]:::absent
     H -- Yes --> I{PL balance &gt; 0?}
     I -- Yes --> P5[/PL 1.0<br/>balance -1/]:::pl
-    I -- No --> P6[/UPL 0/]:::upl
+    I -- No --> P6[/LWP 0/]:::upl
 
     classDef present fill:#dcfce7,stroke:#15803d,color:#15803d;
     classDef sl fill:#e0f2fe,stroke:#0369a1,color:#0369a1;
@@ -135,7 +135,7 @@ flowchart TD
       <tr><td><span class="badge b-half">Half Day</span></td><td>Both punches · offMinutes > 120 (> 2h off-window)</td><td>0.5</td></tr>
       <tr><td><span class="badge b-slnf">SLNF</span></td><td>Exactly one punch (in OR out missing)</td><td>0.5</td></tr>
       <tr><td><span class="badge b-pl">PL</span></td><td>No punches · approved leave · PL balance > 0</td><td>1.0</td></tr>
-      <tr><td><span class="badge b-upl">UPL</span></td><td>No punches · approved leave · no balance</td><td>0</td></tr>
+      <tr><td><span class="badge b-upl">LWP</span></td><td>No punches · approved leave · no balance</td><td>0</td></tr>
       <tr><td><span class="badge b-absent">Absent</span></td><td>No punches · no approved leave</td><td>-2</td></tr>
     </table>
     <p class="note"><strong>The 4 things that differentiate everything</strong>, in priority order:
@@ -153,7 +153,7 @@ flowchart TD
       <div>
         <h3>Days NP (Net Present)</h3>
         <code>present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL − absent×2</code>
-        <p class="note">UPL counts as 0.</p>
+        <p class="note">LWP counts as 0.</p>
       </div>
       <div>
         <h3>Salary &amp; PL balance</h3>

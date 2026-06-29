@@ -9,6 +9,12 @@ const { google } = require("googleapis");
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
 
+// Operations field-work events: a worked day spans the first arrival and last
+// departure across both site and market visits (home events are commute bookends
+// and never count toward the working window).
+const OPS_IN_TYPES  = new Set(["site_in", "market_in"]);
+const OPS_OUT_TYPES = new Set(["site_out", "market_out"]);
+
 const SHEETS_KEY   = defineSecret("ATTENDANCE_SHEETS_KEY");
 const MAPS_KEY     = defineSecret("MAPS_API_KEY");
 // Sheet1: Employee Dashboard, Leave Requests, Conveyance
@@ -164,12 +170,15 @@ exports.computeDailyAttendanceStatus = onSchedule(
     // Read per-user docs directly to avoid needing a collectionGroup index on date.
     const adminOverrides = new Set();
     const priorStatus    = new Map(); // userId → status already recorded for today
+    const priorHours     = new Map(); // userId → daily_hours already recorded for today
     const statusChecks = allUsers.map(async (user) => {
       const statusDoc = await db.doc(`users/${user.id}/attendance_status/${today}`).get();
       if (statusDoc.exists) {
         if (statusDoc.data().markedBy === "admin") adminOverrides.add(user.id);
         priorStatus.set(user.id, statusDoc.data().status);
       }
+      const hoursDoc = await db.doc(`users/${user.id}/daily_hours/${today}`).get();
+      if (hoursDoc.exists) priorHours.set(user.id, hoursDoc.data());
     });
 
     // Operations have variable shifts: admin sets a planned start/end per day.
@@ -194,8 +203,16 @@ exports.computeDailyAttendanceStatus = onSchedule(
       return;
     }
 
-    const batch        = db.batch();
-    const plDeductions = [];
+    // Skip company-wide holidays the same way — no status, no Absent penalty.
+    const holidayDoc = await db.doc(`holidays/${today}`).get();
+    if (holidayDoc.exists) {
+      console.log(`computeDailyAttendanceStatus: skipping holiday ${today} (${holidayDoc.data().title || ""})`);
+      return;
+    }
+
+    const batch           = db.batch();
+    const plDeductions    = [];
+    const shortageAccruals = []; // { uid, delta } — change in lifetime shortage minutes
 
     for (const user of allUsers) {
       if (adminOverrides.has(user.id)) continue;
@@ -216,10 +233,10 @@ exports.computeDailyAttendanceStatus = onSchedule(
       const startMin = isOps ? toMinutes(plan?.startTime, 10 * 60) : 10 * 60;
       const endMin   = isOps ? toMinutes(plan?.endTime,   18 * 60) : 18 * 60;
 
-      // Operations: in/out come from the first site they reached and the last
-      // site they left (site_in / site_out). Office: office_in / office_out.
-      const checkIns  = events.filter((e) => e.type === (isOps ? "site_in"   : "office_in"));
-      const checkOuts = events.filter((e) => e.type === (isOps ? "site_out"  : "office_out"));
+      // Operations: in/out come from the first place they reached and the last
+      // they left, across site and market visits. Office: office_in / office_out.
+      const checkIns  = events.filter((e) => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === "office_in");
+      const checkOuts = events.filter((e) => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === "office_out");
       let status;
 
       if (checkIns.length > 0 && checkOuts.length > 0) {
@@ -245,7 +262,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
             // (manual trigger / retry) doesn't decrement the balance twice.
             if (priorStatus.get(user.id) !== "PL") plDeductions.push(user.id);
           } else {
-            status = "UPL";
+            status = "LWP";
           }
         } else {
           status = "Absent";
@@ -257,13 +274,40 @@ exports.computeDailyAttendanceStatus = onSchedule(
         employeeId: user.employeeId || "", role: user.role, status,
         markedBy: "auto", updatedAt: admin.firestore.Timestamp.now(),
       });
+
+      // Per-day worked hours → shortage (auto) and overtime (admin-approved later).
+      // Only on fully-worked days; absent / leave / log-not-found never accrue.
+      if (checkIns.length > 0 && checkOuts.length > 0) {
+        const firstIn    = checkIns[0];
+        const lastOut     = checkOuts[checkOuts.length - 1];
+        const inMin       = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+        const outMin      = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
+        const actualMins  = Math.max(0, outMin - inMin);
+        const plannedMins = Math.max(0, endMin - startMin);
+        const shortageMins = Math.max(0, plannedMins - actualMins);
+        const otMins       = Math.max(0, actualMins - plannedMins);
+
+        batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
+          date: today, userId: user.id, role: user.role,
+          plannedMins, actualMins, shortageMins, otMins,
+          updatedAt: admin.firestore.Timestamp.now(),
+        });
+
+        // Idempotent: accrue only the delta vs any value already stored for today.
+        const prior = priorHours.get(user.id);
+        const delta = shortageMins - (prior ? (prior.shortageMins || 0) : 0);
+        if (delta !== 0) shortageAccruals.push({ uid: user.id, delta });
+      }
     }
 
     await batch.commit();
     for (const uid of plDeductions) {
       await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
     }
-    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
+    for (const { uid, delta } of shortageAccruals) {
+      await db.doc(`users/${uid}`).update({ shortageMins: admin.firestore.FieldValue.increment(delta) });
+    }
+    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}, shortage updated: ${shortageAccruals.length}`);
   }
 );
 
@@ -280,11 +324,16 @@ exports.exportToSheets = onSchedule(
     const now        = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const today      = now.toISOString().slice(0, 10);
-    // Count working days (Mon–Sat, excluding Sundays) passed in the month
+    // Company-wide holidays this month — excluded from working-day counts.
+    const holidaySnap = await db.collection("holidays")
+      .where("date", ">=", monthStart).where("date", "<=", today).get();
+    const holidaySet = new Set(holidaySnap.docs.map((h) => h.id));
+    // Count working days (Mon–Sat, excluding Sundays and holidays) passed in the month
     let daysPassed = 0;
     for (let d = 1; d <= now.getDate(); d++) {
       const dt = new Date(now.getFullYear(), now.getMonth(), d);
-      if (dt.getDay() !== 0) daysPassed++;
+      const ds = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (dt.getDay() !== 0 && !holidaySet.has(ds)) daysPassed++;
     }
     const monthLabel = now.toLocaleString("en-IN", { month: "long", year: "numeric" });
 
@@ -305,7 +354,7 @@ exports.exportToSheets = onSchedule(
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
     // Re-use statusSnap (already fetched above) — filter to current month
-    const userAttendanceMTD = new Map(); // userId → {present, halfDay, pl, upl, absent}
+    const userAttendanceMTD = new Map(); // userId → {present, halfDay, pl, lwp, absent}
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
       if (d.date < monthStart || d.date > today) return;
@@ -313,7 +362,7 @@ exports.exportToSheets = onSchedule(
       const dayOfWeek = new Date(d.date + "T00:00:00+05:30").getDay();
       if (dayOfWeek === 0) return;
       if (!userAttendanceMTD.has(d.userId))
-        userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, upl: 0, absent: 0 });
+        userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, lwp: 0, absent: 0});
       const ua = userAttendanceMTD.get(d.userId);
       switch (d.status) {
         case "Present":  ua.present++;  break;
@@ -321,7 +370,7 @@ exports.exportToSheets = onSchedule(
         case "SL":       ua.sl++;       break;
         case "SLNF":     ua.slnf++;     break;
         case "PL":       ua.pl++;       break;
-        case "UPL":      ua.upl++;      break;
+        case "LWP":      ua.lwp++;      break;
         case "Absent":   ua.absent++;   break;
       }
     });
@@ -348,7 +397,7 @@ exports.exportToSheets = onSchedule(
       });
 
       // Build a row for every employee/day that has EITHER attendance events
-      // OR a computed status doc — so Absent / PL / UPL / SLNF days (which have
+      // OR a computed status doc — so Absent / PL / LWP / SLNF days (which have
       // no check-in events) still appear with their status.
       const allKeys = new Set([...groups.keys(), ...statusMap.keys()]);
       const rows = [...allKeys].map((key) => {
@@ -655,7 +704,7 @@ exports.exportToSheets = onSchedule(
 
       const header = [
         "Date", "EMP Name", "EMP ID", "Days Passed in Month",
-        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "SLNF (×0.5)", "PL (×1)", "UPL (×0)", "Absent (×-2)",
+        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "SLNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
         "Covy Due (approx avg)", "Imprest Due MTD", "TOTAL DUE",
@@ -672,11 +721,11 @@ exports.exportToSheets = onSchedule(
 
       sortedUsers.forEach((user) => {
         const empId    = user.employeeId || "";
-        const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, upl: 0, absent: 0 };
+        const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, lwp: 0, absent: 0};
 
-        // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. UPL = unpaid, contributes 0.
+        // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. LWP = unpaid, contributes 0.
         const daysNP   = ua.present + ua.sl * 0.75 + ua.halfDay * 0.5 + ua.slnf * 0.5 + ua.pl - ua.absent * 2;
-        const leaves   = ua.pl + ua.upl; // all leave types shown together
+        const leaves   = ua.pl + ua.lwp; // all leave types shown together
 
         const salaryRate = user.salaryRate || 0;
         const salaryDue  = parseFloat((daysNP * salaryRate).toFixed(2));
@@ -697,7 +746,7 @@ exports.exportToSheets = onSchedule(
           user.name || "",
           empId,
           daysPassed,
-          ua.present, ua.sl, ua.halfDay, ua.slnf, ua.pl, ua.upl, ua.absent,
+          ua.present, ua.sl, ua.halfDay, ua.slnf, ua.pl, ua.lwp, ua.absent,
           leaves,
           daysNP,
           salaryRate,

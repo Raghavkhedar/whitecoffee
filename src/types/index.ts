@@ -9,10 +9,28 @@ export interface User {
   salaryRate?: number;
   plBalance?: number;
   woBalance?: number;
+  approvedOtMins?: number;   // lifetime approved overtime (minutes)
+  shortageMins?: number;     // lifetime accrued shortage (minutes), set by nightly function
   homeLat?: number;
   homeLng?: number;
   conveyanceRateType?: 1 | 2;
   createdAt?: Timestamp;
+}
+
+// Per-day overtime approval (admin grants an adjusted amount of the detected OT).
+// Stored at users/{uid}/ot_approvals/{date}.
+export interface OtApproval {
+  id: string;            // = date (YYYY-MM-DD)
+  date: string;
+  userId: string;
+  userName: string;
+  employeeId: string;
+  role: string;
+  requestedMins: number; // OT minutes the system detected for that day
+  approvedMins: number;  // minutes the admin actually granted
+  reason: string;
+  approvedBy: string;
+  approvedAt?: Timestamp;
 }
 
 export interface AttendanceStatus {
@@ -22,7 +40,7 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'UPL';
+  status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'LWP';
   markedBy: 'auto' | 'admin';
   updatedAt?: Timestamp;
 }
@@ -99,6 +117,18 @@ export interface PlannedHours {
   startTime: string;  // "HH:MM" 24h
   endTime: string;    // "HH:MM" 24h
   updatedAt?: Timestamp;
+}
+
+// Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). A marked holiday is
+// skipped like a Sunday: no attendance status is written, no Absent penalty, and
+// it is excluded from expected working days (unpaid, no payroll effect).
+export interface Holiday {
+  id: string;
+  date: string;        // "yyyy-MM-dd"
+  title: string;
+  description?: string;
+  createdBy?: string;
+  createdAt?: Timestamp;
 }
 
 export interface AttendanceRecord {

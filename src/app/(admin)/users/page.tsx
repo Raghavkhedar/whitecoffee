@@ -5,14 +5,13 @@ import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 
 import { getAllUsers, createUserProfile, updateUserProfile, deleteUserProfile } from '@/lib/firestore';
 import { firebaseConfig } from '@/lib/firebase';
 import type { User } from '@/types';
+import Icon from '@/components/Icon';
+import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
+import ExportButton from '@/components/ExportButton';
+import { downloadSheet } from '@/lib/excel';
 
 const ROLES = ['operations', 'office', 'admin'] as const;
 type Role = typeof ROLES[number];
-
-function RoleBadge({ role }: { role: string }) {
-  const cls = role === 'admin' ? 'badge-admin' : role === 'office' ? 'badge-office' : 'badge-ops';
-  return <span className={cls}>{role}</span>;
-}
 
 interface FormState {
   name: string;
@@ -40,6 +39,7 @@ export default function UsersPage() {
   const [form, setForm]         = useState<FormState>({ ...EMPTY_FORM });
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState('');
+  const [query, setQuery]       = useState('');
 
   async function load() {
     setLoading(true);
@@ -151,50 +151,93 @@ export default function UsersPage() {
     setSaving(false);
   }
 
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? users.filter(u =>
+        (u.name ?? '').toLowerCase().includes(q) ||
+        (u.email ?? '').toLowerCase().includes(q) ||
+        (u.employeeId ?? '').toLowerCase().includes(q))
+    : users;
+
+  function exportXlsx() {
+    downloadSheet('employees', 'Employees', shown.map(u => ({
+      Name: u.name ?? '',
+      Email: u.email ?? '',
+      'Employee ID': u.employeeId ?? '',
+      Role: u.role ?? '',
+      'Salary Rate': u.salaryRate ?? '',
+      'PL Balance': u.plBalance ?? 0,
+      'WO Balance': u.woBalance ?? 0,
+      Conveyance: u.conveyanceRateType ? `Conveyance ${u.conveyanceRateType}` : '',
+      'Home Lat': u.homeLat ?? '',
+      'Home Lng': u.homeLng ?? '',
+    })));
+  }
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">User Management</h1>
-          <p className="text-text-secondary text-sm mt-1">{users.length} employees</p>
+    <div className="max-w-[1240px]">
+      <div className="flex items-center justify-between gap-4 mb-[18px]">
+        <div className="flex items-center gap-2.5 h-[38px] w-80 max-w-[42%] px-3 border border-border rounded-[10px] bg-white">
+          <span className="text-[#B4ADA5] flex"><Icon name="search" size={16} /></span>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, ID or email"
+            className="border-none outline-none bg-transparent flex-1 text-[13.5px] text-[#2A241F]" />
         </div>
-        <button className="btn-primary" onClick={openAdd}>+ Add Employee</button>
+        <div className="flex items-center gap-2">
+          <ExportButton onClick={exportXlsx} disabled={loading || shown.length === 0} />
+          <button className="btn-primary flex items-center gap-1.5" onClick={openAdd}><Icon name="plus" size={16} />Add employee</button>
+        </div>
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">{error}</div>}
 
-      <div className="card p-0 overflow-hidden">
+      <div className="bg-white border border-[#E9E6E2] rounded-2xl overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-text-secondary">Loading…</div>
         ) : users.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No employees yet.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-background border-b border-border">
+            <table className="w-full border-collapse">
+              <thead>
                 <tr>
-                  {['Name', 'Email', 'Employee ID', 'Role', 'Salary Rate', 'Conveyance Rate', 'Home Location', ''].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-bold text-text-secondary uppercase tracking-wide">{h}</th>
-                  ))}
+                  <th className={`${TH} pl-[18px]`}>Employee</th>
+                  <th className={TH}>ID</th>
+                  <th className={TH}>Role</th>
+                  <th className={`${TH} text-right`}>Salary rate</th>
+                  <th className={`${TH} text-right`}>PL balance</th>
+                  <th className={`${TH} pr-[18px] text-right`}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {users.map(u => (
-                  <tr key={u.id} className="hover:bg-background transition-colors">
-                    <td className="px-4 py-3 font-medium text-text-primary">{u.name}</td>
-                    <td className="px-4 py-3 text-text-secondary">{u.email}</td>
-                    <td className="px-4 py-3 text-text-secondary">{u.employeeId || '—'}</td>
-                    <td className="px-4 py-3"><RoleBadge role={u.role} /></td>
-                    <td className="px-4 py-3 text-text-secondary">{u.salaryRate ? `₹${u.salaryRate}` : '—'}</td>
-                    <td className="px-4 py-3 text-text-secondary">{u.conveyanceRateType ? `Conveyance ${u.conveyanceRateType}` : '—'}</td>
-                    <td className="px-4 py-3 text-text-secondary text-xs">{u.homeLat && u.homeLng ? `${u.homeLat}, ${u.homeLng}` : '—'}</td>
-                    <td className="px-4 py-3">
-                      <button className="text-primary text-xs font-medium hover:underline" onClick={() => openEdit(u)}>Edit</button>
+              <tbody>
+                {shown.map(u => (
+                  <tr key={u.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
+                    <td className={`${TD} pl-[18px]`}>
+                      <div className="flex items-center gap-[11px]">
+                        <Avatar name={u.name} size={34} />
+                        <div>
+                          <div className="font-medium text-[#2A241F]">{u.name}</div>
+                          <div className="text-[12px] text-[#9A938C]">{u.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className={`${TD} font-mono text-[#6B635C]`}>{u.employeeId || '—'}</td>
+                    <td className={TD}><RoleBadge role={u.role} /></td>
+                    <td className={`${TD} text-right font-mono text-[#2A241F]`}>{u.salaryRate ? `₹${u.salaryRate}` : '—'}</td>
+                    <td className={`${TD} text-right font-mono`}>
+                      {u.plBalance !== undefined
+                        ? <span className="bg-[#EDF2FD] text-[#2456C7] px-2 py-0.5 rounded-[6px] text-[12px]">{u.plBalance}</span>
+                        : <span className="text-[#9A938C]">—</span>}
+                    </td>
+                    <td className={`${TD} pr-[18px] text-right`}>
+                      <button className="inline-flex items-center justify-center w-8 h-8 rounded-[8px] text-[#6B635C] hover:bg-[#F5F2EE] transition-colors" onClick={() => openEdit(u)}><Icon name="more" size={16} /></button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {shown.length === 0 && (
+              <div className="p-[34px] text-center text-[13px] text-[#9A938C]">No employees match “{query}”.</div>
+            )}
           </div>
         )}
       </div>

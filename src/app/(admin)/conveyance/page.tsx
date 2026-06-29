@@ -2,6 +2,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { getConveyanceForMonth } from '@/lib/firestore';
 import type { ConveyanceRecord } from '@/types';
+import ExportButton from '@/components/ExportButton';
+import { downloadExcel } from '@/lib/excel';
 
 export default function ConveyancePage() {
   const [month, setMonth] = useState(() => {
@@ -47,7 +49,7 @@ export default function ConveyancePage() {
       map.set(r.userId, entry);
     });
     return Array.from(map.values()).sort((a, b) => a.userName.localeCompare(b.userName));
-  }, [records]);
+  }, [filteredRecords]);
 
   const grandTotal = summary.reduce((s, e) => s + e.totalConveyance, 0);
   const grandKm    = summary.reduce((s, e) => s + e.totalKm, 0);
@@ -60,13 +62,21 @@ export default function ConveyancePage() {
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   }
 
+  function exportXlsx() {
+    downloadExcel(`conveyance_${month}`, [
+      { name: 'Summary', rows: summary.map(s => ({
+        Employee: s.userName, 'Emp ID': s.employeeId || '', Days: s.days,
+        'Total KM': Number(s.totalKm.toFixed(2)), 'Total Conveyance': Number(s.totalConveyance.toFixed(2)),
+      })) },
+      { name: 'Daily', rows: sorted.map(r => ({
+        Date: r.date, Employee: r.userName, 'Emp ID': r.employeeId || '', Route: r.route,
+        KM: Number(r.totalKm.toFixed(2)), 'Rate (/km)': r.ratePerKm, Conveyance: Number(r.conveyance.toFixed(2)),
+      })) },
+    ]);
+  }
+
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">Conveyance</h1>
-        <p className="text-text-secondary text-sm mt-1">Monthly conveyance records computed by the Cloud Function</p>
-      </div>
-
       {/* Month picker + employee filter */}
       <div className="card mb-6">
         <div className="flex items-center justify-between">
@@ -94,7 +104,10 @@ export default function ConveyancePage() {
 
       {/* Employee summary */}
       <div className="card mb-6">
-        <h2 className="font-bold text-text-primary mb-4">Employee Summary</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-text-primary">Employee Summary</h2>
+          <ExportButton onClick={exportXlsx} disabled={loading || sorted.length === 0} />
+        </div>
         {loading ? (
           <div className="text-text-secondary text-sm py-4 text-center">Loading…</div>
         ) : summary.length === 0 ? (

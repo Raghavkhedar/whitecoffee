@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { auth } from '@/lib/firebase';
 import { getAllUsers, sendNotification, getSentNotifications } from '@/lib/firestore';
 import type { User, SentNotification } from '@/types';
+import ExportButton from '@/components/ExportButton';
+import { downloadSheet } from '@/lib/excel';
 
 type RecipientType = 'all' | 'operations' | 'office' | 'specific';
 
@@ -121,16 +123,20 @@ export default function NotificationsPage() {
     specific:   'Specific employee',
   };
 
+  function exportXlsx() {
+    downloadSheet('notifications', 'Notifications', history.map(n => ({
+      Title: n.title,
+      Body: n.body,
+      Type: n.type,
+      Recipients: recipientLabel[n.recipientType],
+      Count: n.recipientCount,
+      'Sent By': n.sentByName,
+      When: formatTime(n),
+    })));
+  }
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
-
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Send Notification</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Notifications appear in the employee's app under the bell icon.
-        </p>
-      </div>
 
       {/* Send form */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
@@ -232,7 +238,10 @@ export default function NotificationsPage() {
 
       {/* History */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-800 mb-3">Recent Notifications</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-gray-800">Recent Notifications</h2>
+          <ExportButton onClick={exportXlsx} disabled={loadingHistory || history.length === 0} />
+        </div>
         {loadingHistory ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : history.length === 0 ? (
