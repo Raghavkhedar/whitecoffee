@@ -1,3 +1,4 @@
+// Deploy stamp: 2026-06-30 — step 6b payroll arrears + step 7 lifetime-counter retirement.
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
