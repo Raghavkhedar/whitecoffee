@@ -1,16 +1,16 @@
 # Graph Report - WhiteCoffee01  (2026-06-30)
 
 ## Corpus Check
-- 95 files · ~53,379 words
+- 95 files · ~53,410 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1089 nodes · 1724 edges · 101 communities (76 shown, 25 thin omitted)
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 153 edges (avg confidence: 0.8)
+- 1089 nodes · 1725 edges · 111 communities (86 shown, 25 thin omitted)
+- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 154 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0d1bd9c9`
+- Built from commit: `dcda766a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -111,6 +111,16 @@
 - [[_COMMUNITY_Community 98|Community 98]]
 - [[_COMMUNITY_Community 99|Community 99]]
 - [[_COMMUNITY_Community 100|Community 100]]
+- [[_COMMUNITY_Community 101|Community 101]]
+- [[_COMMUNITY_Community 102|Community 102]]
+- [[_COMMUNITY_Community 103|Community 103]]
+- [[_COMMUNITY_Community 104|Community 104]]
+- [[_COMMUNITY_Community 105|Community 105]]
+- [[_COMMUNITY_Community 106|Community 106]]
+- [[_COMMUNITY_Community 107|Community 107]]
+- [[_COMMUNITY_Community 108|Community 108]]
+- [[_COMMUNITY_Community 109|Community 109]]
+- [[_COMMUNITY_Community 110|Community 110]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `MsIcon()` - 33 edges
@@ -144,19 +154,19 @@
 - **Regularization end-to-end flow** — developer_handbook_regularization_workflow, app_src_main_java_com_raghav_whitecoffee_data_repository_regularizationrepository_regularizationrepository, app_src_main_java_com_raghav_whitecoffee_data_model_attendancestatusrecord_attendancestatusrecord, developer_handbook_compute_daily_attendance_status, developer_handbook_admin_web_portal [INFERRED 0.85]
 - **Photo upload submission pipeline** — developer_handbook_photo_upload_system, app_src_main_java_com_raghav_whitecoffee_data_photouploadmanager_photouploadmanager, developer_handbook_mt_request_feature, app_src_main_java_com_raghav_whitecoffee_data_repository_requestrepository_requestrepository [INFERRED 0.85]
 
-## Communities (101 total, 25 thin omitted)
+## Communities (111 total, 25 thin omitted)
 
 ### Community 0 - "Attendance Record & State Model"
 Cohesion: 0.10
 Nodes (37): AttendanceRecord, AttendanceState, AttendanceType, DayComplete, deriveAttendanceState(), fromDocument(), HomeCheckedIn, Any (+29 more)
 
 ### Community 1 - "Transfer & Work Progress Models"
-Cohesion: 0.07
-Nodes (25): Transfer, fromDocument(), DocumentSnapshot, User, fromDocument(), Any, DocumentSnapshot, Map (+17 more)
+Cohesion: 0.09
+Nodes (19): Transfer, fromDocument(), DocumentSnapshot, User, AuthRepository, Boolean, Result, String (+11 more)
 
 ### Community 2 - "Core UiState & Network Monitor"
-Cohesion: 0.15
-Nodes (9): Bundle, LayoutInflater, View, ViewGroup, LeaveFragment, Boolean, List, StateFlow (+1 more)
+Cohesion: 0.13
+Nodes (14): fromDocument(), Any, DocumentSnapshot, Map, String, WorkProgress, Boolean, Deferred (+6 more)
 
 ### Community 3 - "Attendance Status & Leave Repos"
 Cohesion: 0.19
@@ -199,20 +209,20 @@ Cohesion: 0.14
 Nodes (16): fromDocument(), fromMap(), Any, DocumentSnapshot, List, Map, String, MaterialToolRequest (+8 more)
 
 ### Community 13 - "Regularization UI (XML)"
-Cohesion: 0.05
-Nodes (32): LeaveApprovalsFragment, RegularizationFragment, Bundle, LayoutInflater, View, ViewGroup, MaterialToolBuyFragment, Bundle (+24 more)
+Cohesion: 0.29
+Nodes (6): BaseFragment, Bundle, LayoutInflater, View, ViewGroup, VB
 
 ### Community 14 - "Photo Picker & Work Progress"
-Cohesion: 0.23
-Nodes (8): Boolean, Deferred, Double, List, StateFlow, String, Uri, WorkProgressViewModel
+Cohesion: 0.31
+Nodes (8): createCameraImageUri(), Context, String, Unit, Uri, PhotoSourceDialog(), PhotoSourceRow(), rememberPhotoAdder()
 
 ### Community 15 - "Office Attendance"
 Cohesion: 0.12
 Nodes (18): Bundle, LayoutInflater, View, ViewGroup, OfficeAttendanceFragment, DayEnded, DayStarted, Error (+10 more)
 
 ### Community 17 - "Transfer Feature"
-Cohesion: 0.10
-Nodes (21): fromDocument(), fromMap(), Any, DocumentSnapshot, List, Map, String, TransferItem (+13 more)
+Cohesion: 0.15
+Nodes (16): fromDocument(), fromMap(), Any, DocumentSnapshot, List, Map, String, TransferItem (+8 more)
 
 ### Community 18 - "Attendance ViewModel"
 Cohesion: 0.11
@@ -223,8 +233,8 @@ Cohesion: 0.21
 Nodes (22): FlaggedDayCard(), List, String, RegularizationScreen(), WcTile, AddItemButton(), EmptyState(), FieldLabel() (+14 more)
 
 ### Community 20 - "M&T Compose Screens"
-Cohesion: 0.10
-Nodes (24): BuyRow, Boolean, List, String, Uri, MaterialToolBuyScreen(), ItemEditorCard(), Boolean (+16 more)
+Cohesion: 0.31
+Nodes (8): ItemEditorCard(), Boolean, Int, List, String, Uri, MaterialToolRequestScreen(), ReqRow
 
 ### Community 21 - "Leave Model & Compose Screens"
 Cohesion: 0.14
@@ -235,16 +245,16 @@ Cohesion: 0.18
 Nodes (11): Int, List, Result, String, Unit, Uri, PhotoUploadManager, Bitmap (+3 more)
 
 ### Community 23 - "Leave Approvals"
-Cohesion: 0.20
-Nodes (8): Any, Map, String, List, Result, String, Unit, LeaveRepository
+Cohesion: 0.33
+Nodes (5): List, Result, String, Unit, LeaveRepository
 
 ### Community 24 - "Site Model & Repo"
 Cohesion: 0.21
 Nodes (9): fromDocument(), DocumentSnapshot, Site, Double, List, Result, String, Unit (+1 more)
 
 ### Community 25 - "Design Tweaks Panel (JSX)"
-Cohesion: 0.10
-Nodes (20): 12. Navigation Graph, 15. Role-Based Access Control, 19. Session Management & Single-Device Enforcement, 1. What Is This App?, 26. Test Credentials, 3. Project Setup (First Time), 4. Architecture Overview, 5. Folder Structure — Full File Map (+12 more)
+Cohesion: 0.11
+Nodes (17): 12. Navigation Graph, 19. Session Management & Single-Device Enforcement, 1. What Is This App?, 21. Admin Web Portal, 26. Test Credentials, 3. Project Setup (First Time), 4. Architecture Overview, Auto-checkout on logout: (+9 more)
 
 ### Community 26 - "Photo Upload Worker"
 Cohesion: 0.22
@@ -267,8 +277,8 @@ Cohesion: 0.12
 Nodes (17): ✅ Admin Web Portal DONE, BUILD STATUS, ✅ DONE (Session 11 complete), ⏳ REMAINING (Phase 4), ✅ Session 11 changes:, ✅ Session 12 changes — Performance improvements (all items from improvements.md done):, ✅ Session 13 changes — Notifications (Phase 4 partial):, ✅ Session 14 changes — Decimal quantities + Firestore collectionGroup rules: (+9 more)
 
 ### Community 31 - "Work Progress Compose Screen"
-Cohesion: 0.17
-Nodes (7): Boolean, String, SessionManager, FcmService, String, FirebaseMessagingService, RemoteMessage
+Cohesion: 0.24
+Nodes (6): Bundle, LayoutInflater, String, View, ViewGroup, WorkProgressFragment
 
 ### Community 32 - "Material Symbols Icons"
 Cohesion: 0.40
@@ -288,7 +298,7 @@ Nodes (17): Collection structure:, `/daily_assignments/{date}_{userId}` — Dail
 
 ### Community 36 - "Community 36"
 Cohesion: 0.29
-Nodes (6): BaseFragment, Bundle, LayoutInflater, View, ViewGroup, VB
+Nodes (5): Bundle, LayoutInflater, View, ViewGroup, MaterialToolBuyFragment
 
 ### Community 37 - "Blank Screenshot Artifacts"
 Cohesion: 0.67
@@ -315,8 +325,8 @@ Cohesion: 0.25
 Nodes (8): getDayOfWeek(), Boolean, Int, List, StateFlow, String, RegularizationDayItem, RegularizationViewModel
 
 ### Community 51 - "Community 51"
-Cohesion: 0.38
-Nodes (6): Boolean, List, String, Uri, StepButton(), WorkProgressScreen()
+Cohesion: 0.14
+Nodes (16): BuyRow, Boolean, List, String, Uri, MaterialToolBuyScreen(), Boolean, List (+8 more)
 
 ### Community 52 - "Community 52"
 Cohesion: 0.20
@@ -403,8 +413,8 @@ Cohesion: 0.67
 Nodes (3): Critical flags in `app/build.gradle.kts`:, Critical flags in `gradle.properties`:, PINNED TOOLCHAIN — DO NOT CHANGE ANY OF THESE
 
 ### Community 74 - "Community 74"
-Cohesion: 0.22
-Nodes (6): Boolean, List, StateFlow, String, Unit, LeaveApprovalsViewModel
+Cohesion: 0.29
+Nodes (5): Bundle, LayoutInflater, View, ViewGroup, MaterialToolRequestFragment
 
 ### Community 75 - "Community 75"
 Cohesion: 0.67
@@ -415,20 +425,60 @@ Cohesion: 0.67
 Nodes (3): 28. Toolchain Lock — DO NOT CHANGE, Critical flags in `app/build.gradle.kts`:, Critical flags in `gradle.properties`:
 
 ### Community 77 - "Community 77"
-Cohesion: 0.67
-Nodes (3): 21. Admin Web Portal, Deploying:, Pages:
+Cohesion: 0.17
+Nodes (7): Boolean, String, SessionManager, FcmService, String, FirebaseMessagingService, RemoteMessage
 
 ### Community 78 - "Community 78"
+Cohesion: 0.22
+Nodes (6): Boolean, List, StateFlow, String, Unit, LeaveApprovalsViewModel
+
+### Community 99 - "Community 99"
+Cohesion: 0.33
+Nodes (6): Boolean, List, String, Uri, TransferScreen(), XferRow
+
+### Community 100 - "Community 100"
+Cohesion: 0.67
+Nodes (3): 5. Folder Structure — Full File Map, Resource Files, Root-Level Files
+
+### Community 101 - "Community 101"
 Cohesion: 0.44
 Nodes (8): Empty, Error, Loading, Offline, Success, UiState, Nothing, T
 
-### Community 99 - "Community 99"
+### Community 102 - "Community 102"
 Cohesion: 0.31
 Nodes (5): ApplyLeaveViewModel, Int, StateFlow, String, ViewModel
 
-### Community 100 - "Community 100"
+### Community 103 - "Community 103"
 Cohesion: 0.22
 Nodes (5): Boolean, List, StateFlow, String, NotificationsViewModel
+
+### Community 104 - "Community 104"
+Cohesion: 0.29
+Nodes (5): Bundle, LayoutInflater, View, ViewGroup, LeaveFragment
+
+### Community 105 - "Community 105"
+Cohesion: 0.29
+Nodes (5): Bundle, LayoutInflater, View, ViewGroup, MaterialTransferFragment
+
+### Community 106 - "Community 106"
+Cohesion: 0.29
+Nodes (5): Bundle, LayoutInflater, View, ViewGroup, ToolTransferFragment
+
+### Community 107 - "Community 107"
+Cohesion: 0.33
+Nodes (4): Boolean, List, StateFlow, LeaveViewModel
+
+### Community 108 - "Community 108"
+Cohesion: 0.40
+Nodes (3): LeaveApprovalsFragment, RegularizationFragment, Fragment
+
+### Community 109 - "Community 109"
+Cohesion: 0.50
+Nodes (3): Any, Map, String
+
+### Community 110 - "Community 110"
+Cohesion: 0.67
+Nodes (3): 15. Role-Based Access Control, Common mistake to avoid, Role hierarchy
 
 ## Ambiguous Edges - Review These
 - `Empty Dark Screen Canvas (no rendered content)` → `White Coffee Material 3 Teal Design Language`  [AMBIGUOUS]
@@ -444,11 +494,11 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **What is the exact relationship between `Empty Dark Screen Canvas (no rendered content)` and `White Coffee Material 3 Teal Design Language`?**
   _Edge tagged AMBIGUOUS (relation: conceptually_related_to) - confidence is low._
-- **Why does `UiState` connect `Community 78` to `Attendance Record & State Model`, `Core UiState & Network Monitor`, `Community 99`, `Community 100`, `Notifications Model & Repo`, `User Model & Auth/Login`, `Community 74`, `M&T Purchase (Buy)`, `M&T Request`, `Community 46`, `Photo Picker & Work Progress`, `Transfer Feature`, `Attendance ViewModel`, `Compose Design System (Theme/Components)`, `Community 50`, `Leave Model & Compose Screens`?**
+- **Why does `UiState` connect `Community 101` to `Attendance Record & State Model`, `Core UiState & Network Monitor`, `Community 102`, `Notifications Model & Repo`, `User Model & Auth/Login`, `Community 103`, `M&T Purchase (Buy)`, `Community 107`, `M&T Request`, `Community 78`, `Community 46`, `Transfer Feature`, `Attendance ViewModel`, `Compose Design System (Theme/Components)`, `Community 50`, `Leave Model & Compose Screens`?**
   _High betweenness centrality (0.110) - this node is a cross-community bridge._
-- **Why does `LeaveRequest` connect `M&T Purchase (Buy)` to `Core UiState & Network Monitor`, `Community 74`, `Community 99`, `Leave Approvals`?**
+- **Why does `LeaveRequest` connect `M&T Purchase (Buy)` to `Community 102`, `Community 107`, `Community 109`, `Community 78`, `Leave Approvals`?**
   _High betweenness centrality (0.067) - this node is a cross-community bridge._
-- **Why does `WhiteCoffeeTheme()` connect `Attendance & Home Fragments` to `Attendance Record & State Model`, `Notifications Model & Repo`, `Home Compose Screen`, `M&T Purchase (Buy)`, `Community 46`, `Compose Design System (Theme/Components)`, `M&T Compose Screens`, `Community 51`?**
+- **Why does `WhiteCoffeeTheme()` connect `Attendance & Home Fragments` to `Attendance Record & State Model`, `Community 99`, `Notifications Model & Repo`, `Home Compose Screen`, `M&T Purchase (Buy)`, `Community 46`, `Compose Design System (Theme/Components)`, `Community 51`, `M&T Compose Screens`?**
   _High betweenness centrality (0.050) - this node is a cross-community bridge._
 - **Are the 28 inferred relationships involving `MsIcon()` (e.g. with `AttendanceScaffold()` and `CardActionButton()`) actually correct?**
   _`MsIcon()` has 28 INFERRED edges - model-reasoned connections that need verification._

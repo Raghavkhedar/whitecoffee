@@ -106,11 +106,9 @@ fun TransferScreen(
         FieldLabel("Notes"); Spacer(Modifier.height(9.dp))
         WcField(notes, { notes = it }, placeholder = "Notes (optional)…", singleLine = false, minLines = 2)
 
-        if (!isTool) {
-            Spacer(Modifier.height(18.dp))
-            FieldLabel("Photos"); Spacer(Modifier.height(9.dp))
-            PhotoStrip(photos, onAddPhoto, onRemovePhoto)
-        }
+        Spacer(Modifier.height(18.dp))
+        FieldLabel("Photos"); Spacer(Modifier.height(9.dp))
+        PhotoStrip(photos, onAddPhoto, onRemovePhoto)
 
         if (error != null) {
             Spacer(Modifier.height(12.dp))

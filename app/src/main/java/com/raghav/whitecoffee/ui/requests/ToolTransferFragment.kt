@@ -1,12 +1,15 @@
 package com.raghav.whitecoffee.ui.requests
 
+import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
@@ -18,7 +21,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
-/** Tool Transfer — Compose host (no photos). Logic stays in [TransferViewModel]. */
+/** Tool Transfer — Compose host. Logic stays in [TransferViewModel]. */
 @AndroidEntryPoint
 class ToolTransferFragment : Fragment() {
 
@@ -33,7 +36,13 @@ class ToolTransferFragment : Fragment() {
         setContent {
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val submit by viewModel.submitState.collectAsStateWithLifecycle()
+            var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
             val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy")) }
+
+            val addPhoto = rememberPhotoAdder { uris ->
+                photos = (photos + uris).distinct()
+                viewModel.onPhotosChanged("tool_transfers", photos)
+            }
 
             LaunchedEffect(submit) { if (submit is UiState.Success) showSuccessAndExit() }
 
@@ -43,12 +52,12 @@ class ToolTransferFragment : Fragment() {
                 isOnline = isOnline,
                 submitting = submit is UiState.Loading,
                 error = (submit as? UiState.Error)?.message,
-                photos = emptyList(),
+                photos = photos,
                 onBack = { findNavController().navigateUp() },
-                onAddPhoto = {},
-                onRemovePhoto = {},
+                onAddPhoto = addPhoto,
+                onRemovePhoto = { photos = photos - it; viewModel.onPhotosChanged("tool_transfers", photos) },
                 onSubmit = { from, to, by, recv, items, notes ->
-                    viewModel.submitToolTransfer(from, to, by, recv, items, notes)
+                    viewModel.submitToolTransfer(from, to, by, recv, items, notes, photos)
                 },
             )
         }
