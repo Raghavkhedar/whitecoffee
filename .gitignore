@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# ── Release signing — NEVER commit. Back these up somewhere safe (e.g. password manager). ──
+keystore.properties
+*.jks
+*.keystore

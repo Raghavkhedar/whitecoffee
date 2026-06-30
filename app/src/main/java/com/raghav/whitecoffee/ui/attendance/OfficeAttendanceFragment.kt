@@ -36,7 +36,10 @@ class OfficeAttendanceFragment : Fragment() {
 
     private val locationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* result handled by location flow on next action */ }
+    ) { grants ->
+        // On grant, start warming the location immediately so the first check-in is instant.
+        if (grants.values.any { it }) locationProvider.startTracking()
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,

@@ -215,8 +215,8 @@
     "semantic_hash": "70ac8bc43182756e1afb6f5163165456"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt": {
-    "mtime": 1782798987.463504,
-    "ast_hash": "fefccece44458a6d1ca344c1b57619ff",
+    "mtime": 1782795722.7604787,
+    "ast_hash": "bbf3cbc0cbed42cb823c21b2aee1ab62",
     "semantic_hash": ""
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceScreen.kt": {
@@ -230,9 +230,9 @@
     "semantic_hash": "d0c1179b66ce63ee60452091f55fcefa"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt": {
-    "mtime": 1782798902.3340423,
-    "ast_hash": "a6c6b481f39e4892bf0fedf3fe903946",
-    "semantic_hash": ""
+    "mtime": 1782551492.3742113,
+    "ast_hash": "b8f53a12316e1e7d587248dc4d687fd5",
+    "semantic_hash": "b8f53a12316e1e7d587248dc4d687fd5"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsViewModel.kt": {
     "mtime": 1782543524.753198,
@@ -265,9 +265,9 @@
     "semantic_hash": "35f7038969a9eba38a5ad96697342f2a"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt": {
-    "mtime": 1782798881.7778223,
-    "ast_hash": "3485d2df28d8d13739eebe1066589805",
-    "semantic_hash": ""
+    "mtime": 1782674609.5746093,
+    "ast_hash": "3d1ac6bca8382af4d27d1fe726db36e2",
+    "semantic_hash": "3d1ac6bca8382af4d27d1fe726db36e2"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationScreen.kt": {
     "mtime": 1782674980.7736993,
@@ -400,9 +400,9 @@
     "semantic_hash": "31e768d21d54590b8c54010fa3178cf4"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt": {
-    "mtime": 1782798852.1828535,
-    "ast_hash": "b26418ec453893fffccfd4a55379656c",
-    "semantic_hash": ""
+    "mtime": 1782550190.9449992,
+    "ast_hash": "3f7998bbd74cea0362fdc3dde7136567",
+    "semantic_hash": "3f7998bbd74cea0362fdc3dde7136567"
   },
   "app/src/main/java/com/raghav/whitecoffee/ui/theme/MsIcons.kt": {
     "mtime": 1782550118.4496453,

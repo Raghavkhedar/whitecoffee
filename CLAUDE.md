@@ -448,8 +448,59 @@ returns a `ComposeView` (DisposeOnViewTreeLifecycleDestroyed) that collects View
 via callbacks. Photos: `rememberLauncherForActivityResult(PickMultipleVisualMedia)` + Glide
 thumbnails in an `AndroidView`.
 
-> Build note: the bundled Android Studio JBR is broken (`...\jbr\bin` missing `lib\jvm.cfg`).
-> Command-line Gradle needs a real JDK 17: set `JAVA_HOME` + pass `-Dorg.gradle.java.home=<jdk>`.
+> Build note (verified Session 30): the bundled Android Studio JBR is broken (`...\jbr\bin`
+> missing `lib\jvm.cfg`). Command-line Gradle needs TWO standalone JDKs installed:
+>  - **JDK 21** — the *Gradle daemon* JVM. The repo pins it via `gradle/gradle-daemon-jvm.properties`
+>    (`toolchainVersion=21`). Without it the daemon won't start ("Cannot find a Java installation ...
+>    matching ... Java 21").
+>  - **JDK 17** — the app's bytecode target (`jvmTarget = "17"`); kotlinc/javac on the 21 daemon
+>    emit 17 bytecode, so 17 isn't strictly required to build but matches the pinned target.
+>  Both installed via winget (Eclipse Temurin):
+>    `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` and `...\jdk-17.0.19.10-hotspot`.
+>  CLI build (PowerShell): set `JAVA_HOME` to the **21** JDK and run gradlew — do NOT pass
+>  `-Dorg.gradle.java.home=<path>` on the command line (PowerShell splits the spaced path and breaks it):
+> ```powershell
+> $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
+> .\gradlew.bat :app:assembleDebug --console=plain
+> ```
+
+---
+
+## RELEASE SIGNING & DISTRIBUTION (Firebase App Distribution — Session 30)
+
+Distribution is via **Firebase App Distribution** (not Play Store). Testers get an email +
+"App Tester" app notification on every new build; one tap to update. Free, uses the existing
+`white-coffee-92c27` Firebase project.
+
+### Release signing (dedicated keystore)
+- Keystore: `keystore/whitecoffee-release.jks`, alias `whitecoffee` (created Session 30).
+- Credentials: `keystore.properties` at repo root. **Both files are gitignored** (`*.jks`,
+  `*.keystore`, `keystore.properties`) — they are NOT in version control.
+- ⚠️ **BACK UP BOTH FILES** (password manager / secure storage). If lost, you can never ship an
+  update that installs over the existing app — users would have to uninstall + reinstall.
+- `app/build.gradle.kts` loads `keystore.properties` and applies a `release` signingConfig. If the
+  file is absent (fresh clone) release builds stay unsigned rather than failing configuration.
+
+### One-time setup (already done in code)
+- Plugin `com.google.firebase.appdistribution` 5.3.0 in version catalog + root + app build files.
+- `firebaseAppDistribution { artifactType="APK"; groups="employees"; releaseNotes=... }` in the
+  release buildType. App ID resolved from `google-services.json` (`1:905719927616:android:...`).
+
+### One-time setup (manual — do in console / CLI)
+1. `firebase login` (Firebase CLI 15.x already installed — the Gradle plugin uses its credentials).
+2. Firebase Console → App Distribution → Testers & Groups → create a group with alias **`employees`**
+   and add tester emails. (Group alias must match `groups="employees"` in build.gradle.kts.)
+
+### Ship an update (every release)
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
+.\gradlew.bat assembleRelease appDistributionUploadRelease "-PreleaseNotes=What changed this build"
+```
+Bump `versionCode` (and `versionName`) in `app/build.gradle.kts` before each release so testers
+see it as a new version. Signed release APK output: `app/build/outputs/apk/release/app-release.apk`.
+
+> Truly silent/automatic updates would require the Play Store internal track or an MDM; App
+> Distribution updates are one-tap (Android blocks silent sideload updates).
 
 ---
 

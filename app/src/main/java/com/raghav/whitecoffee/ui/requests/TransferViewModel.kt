@@ -40,13 +40,12 @@ class TransferViewModel @Inject constructor(
 
     private var pendingDocId: String? = null
     private var pendingCollection: String? = null
-    private var uploadJob: Deferred<Result<List<String>>>? = null
     private var cacheJob: Deferred<List<String>>? = null
 
     fun onPhotosChanged(collection: String, uris: List<Uri>) {
-        uploadJob?.cancel(); cacheJob?.cancel()
+        cacheJob?.cancel()
         if (uris.isEmpty()) {
-            uploadJob = null; cacheJob = null
+            cacheJob = null
             pendingDocId = null; pendingCollection = null
             return
         }
@@ -54,10 +53,9 @@ class TransferViewModel @Inject constructor(
             pendingDocId = it
             pendingCollection = collection
         }
+        // Pre-compress photos to disk while the user fills the form so submit stays instant.
+        // The actual upload always runs in the background worker (survives navigation + process death).
         cacheJob = viewModelScope.async { photoUploadManager.cachePhotos(uris, docId) }
-        if (isOnline.value) {
-            uploadJob = viewModelScope.async { photoUploadManager.uploadPhotos(uris, collection, docId) }
-        }
     }
 
     fun submitMaterialTransfer(
@@ -75,15 +73,15 @@ class TransferViewModel @Inject constructor(
             try {
                 val collection = "material_transfers"
                 val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                // Only wait on local compression — never on the network. Worker uploads in background.
                 val cachedPaths = try {
                     cacheJob?.await() ?: if (photoUris.isNotEmpty()) photoUploadManager.cachePhotos(photoUris, docId) else emptyList()
                 } catch (_: Exception) { emptyList() }
-                val photoUrls = resolvePhotoUrls(collection, photoUris, docId) ?: emptyList()
-                val needsRetry = photoUris.isNotEmpty() && photoUrls.isEmpty() && cachedPaths.isNotEmpty()
 
                 val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
-                val result = requestRepository.submitMaterialTransfer(transfer, docId, photoUrls)
-                finish(result, collection, docId, needsRetry, cachedPaths)
+                // Doc is written with empty photoUrls; the worker patches them in once uploaded.
+                val result = requestRepository.submitMaterialTransfer(transfer, docId, emptyList())
+                finish(result, collection, docId, cachedPaths)
             } catch (e: Exception) {
                 _submitState.value = UiState.Error("Submission failed: ${e.message}")
                 clearState()
@@ -106,15 +104,15 @@ class TransferViewModel @Inject constructor(
             try {
                 val collection = "tool_transfers"
                 val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                // Only wait on local compression — never on the network. Worker uploads in background.
                 val cachedPaths = try {
                     cacheJob?.await() ?: if (photoUris.isNotEmpty()) photoUploadManager.cachePhotos(photoUris, docId) else emptyList()
                 } catch (_: Exception) { emptyList() }
-                val photoUrls = resolvePhotoUrls(collection, photoUris, docId) ?: emptyList()
-                val needsRetry = photoUris.isNotEmpty() && photoUrls.isEmpty() && cachedPaths.isNotEmpty()
 
                 val transfer = buildTransfer(fromLocation, toLocation, transferredBy, receivedBy, items, notes)
-                val result = requestRepository.submitToolTransfer(transfer, docId, photoUrls)
-                finish(result, collection, docId, needsRetry, cachedPaths)
+                // Doc is written with empty photoUrls; the worker patches them in once uploaded.
+                val result = requestRepository.submitToolTransfer(transfer, docId, emptyList())
+                finish(result, collection, docId, cachedPaths)
             } catch (e: Exception) {
                 _submitState.value = UiState.Error("Submission failed: ${e.message}")
                 clearState()
@@ -126,14 +124,11 @@ class TransferViewModel @Inject constructor(
         result: Result<String>,
         collection: String,
         docId: String,
-        needsRetry: Boolean,
         cachedPaths: List<String>
     ) {
         if (result.isSuccess) {
-            if (needsRetry) {
+            if (cachedPaths.isNotEmpty()) {
                 workManager.enqueue(PhotoUploadWorker.buildRequest(collection, docId, cachedPaths))
-            } else {
-                photoUploadManager.clearCachedPhotos(docId)
             }
             _submitState.value = UiState.Success(result.getOrThrow())
         } else {
@@ -144,25 +139,8 @@ class TransferViewModel @Inject constructor(
     }
 
     private fun clearState() {
-        uploadJob = null; cacheJob = null
+        cacheJob = null
         pendingDocId = null; pendingCollection = null
-    }
-
-    private suspend fun resolvePhotoUrls(
-        collection: String,
-        photoUris: List<Uri>,
-        docId: String
-    ): List<String>? {
-        if (photoUris.isEmpty()) return emptyList()
-        val job = uploadJob
-        return if (job != null) {
-            _submitState.value = UiState.Loading("Finishing photo upload…")
-            job.await().getOrNull()
-        } else if (isOnline.value) {
-            photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
-                _submitState.value = UiState.Loading("Uploading photo $current of $total…")
-            }.getOrNull()
-        } else null
     }
 
     private fun validateInputs(

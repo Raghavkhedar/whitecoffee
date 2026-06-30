@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,6 +8,14 @@ plugins {
     alias(libs.plugins.ksp)           // KSP must come before Hilt
     alias(libs.plugins.hilt)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.appdistribution) // Firebase App Distribution upload tasks
+}
+
+// Release signing — credentials live in the gitignored keystore.properties (never committed).
+// If the file is absent (e.g. a fresh clone), release builds stay unsigned rather than failing config.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) load(FileInputStream(keystorePropsFile))
 }
 
 android {
@@ -21,6 +32,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePropsFile.exists()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8 code shrinking + obfuscation. Keep rules for Firestore models live
@@ -31,6 +53,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Sign with the dedicated release key when keystore.properties is present.
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // Firebase App Distribution. App ID comes from google-services.json.
+            // Upload: ./gradlew assembleRelease appDistributionUploadRelease
+            // Override notes per build: -PreleaseNotes="..."  (or pass --releaseNotes via CLI)
+            firebaseAppDistribution {
+                artifactType = "APK"
+                groups = "employees"
+                releaseNotes = (project.findProperty("releaseNotes") as String?) ?: "WhiteCoffee update"
+            }
         }
     }
 

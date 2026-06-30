@@ -14,6 +14,9 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.Priority
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
@@ -52,17 +55,33 @@ class LocationProvider @Inject constructor(
         private const val LOCATION_TIMEOUT_MS = 15_000L          // 15s for a fresh fix (was 10s)
         private const val FAST_PATH_ACCURACY_METERS = 100f       // accept a cached fix this good outright
         private const val FAST_PATH_MAX_AGE_MS = 2 * 60 * 1000L  // ...if no older than 2 minutes
+
+        // Continuous foreground tracking — keeps a warm fix ready so attendance taps don't wait
+        // on GPS. Balanced power (wifi/cell + occasional GPS) is plenty: there is no geofencing,
+        // so an approximate fix is fine and the battery cost stays low.
+        private const val TRACKING_INTERVAL_MS = 10_000L         // desired refresh cadence
+        private const val TRACKING_FASTEST_MS = 5_000L           // accept faster updates if available
+        private const val LIVE_FIX_MAX_AGE_MS = 30_000L          // a tracked fix this fresh is used instantly
     }
+
+    // Latest fix from the continuous foreground tracker (null until the first update arrives).
+    // Exposed as a flow so callers could observe it, but getCurrentLocation() also reads it directly.
+    private val _liveLocation = MutableStateFlow<Location?>(null)
+    val liveLocation: StateFlow<Location?> = _liveLocation.asStateFlow()
+
+    private var trackingCallback: LocationCallback? = null
 
     /**
      * Resolves a usable location for an attendance event, prioritising NOT blocking the operator.
      *
      * Strategy (in order):
      * 1. Permission + GPS-enabled gates (hard failures — operator must fix these).
-     * 2. Fast path — a recent, reasonably accurate last-known fix is returned instantly. This is
+     * 2. Live tracked fix — the warm fix kept fresh by [startTracking] while the app is
+     *    foregrounded. This is the zero-wait path for a snappy check-in.
+     * 3. Fast path — a recent, reasonably accurate last-known fix is returned instantly. This is
      *    what stops the check-in spinner from hanging on a cold GPS start in the field.
-     * 3. Fresh single fix within the timeout window.
-     * 4. Final fallback — ANY last-known fix, even stale/coarse, rather than failing the check-in.
+     * 4. Fresh single fix within the timeout window.
+     * 5. Final fallback — ANY last-known fix, even stale/coarse, rather than failing the check-in.
      *    For attendance the device-clock timestamp is what matters; there is no geofencing, so an
      *    approximate location beats blocking the operator. Only a total absence of any fix returns
      *    Timeout.
@@ -82,7 +101,14 @@ class LocationProvider @Inject constructor(
             return LocationState.GpsDisabled
         }
 
-        // Gate 3 — Fast path: a recent, decent cached fix avoids any spinner at all.
+        // Gate 3 — Live tracked fix: if the foreground tracker has a recent fix, return it instantly.
+        // This is the zero-wait path that makes attendance taps feel snappy.
+        val live = _liveLocation.value
+        if (live != null && System.currentTimeMillis() - live.time <= LIVE_FIX_MAX_AGE_MS) {
+            return LocationState.Success(live.latitude, live.longitude)
+        }
+
+        // Gate 4 — Fast path: a recent, decent cached fix avoids any spinner at all.
         val cached = lastKnownLocation()
         if (cached != null &&
             cached.accuracy <= FAST_PATH_ACCURACY_METERS &&
@@ -91,19 +117,60 @@ class LocationProvider @Inject constructor(
             return LocationState.Success(cached.latitude, cached.longitude)
         }
 
-        // Gate 4 — Try for a fresh fix.
+        // Gate 5 — Try for a fresh fix.
         val fresh = withTimeoutOrNull(LOCATION_TIMEOUT_MS) { requestSingleLocationFix() }
         if (fresh is LocationState.Success) {
             return fresh
         }
 
-        // Gate 5 — Fresh fix failed/timed out: fall back to any last-known fix rather than blocking.
+        // Gate 6 — Fresh fix failed/timed out: fall back to any last-known fix rather than blocking.
         val fallback = cached ?: lastKnownLocation()
         if (fallback != null) {
             return LocationState.Success(fallback.latitude, fallback.longitude)
         }
 
         return LocationState.Timeout
+    }
+
+    /**
+     * Starts continuous foreground location tracking. Keeps [_liveLocation] warm so attendance
+     * check-ins resolve instantly instead of waiting on a fresh GPS fix.
+     *
+     * Idempotent and self-gating: no-ops if a tracker is already running, if location permission
+     * is not granted, or if GPS is disabled. Call from the app's foreground lifecycle (e.g.
+     * MainActivity.onStart) and pair every start with [stopTracking] when backgrounding so the
+     * sensor is never left running in the background.
+     */
+    @SuppressLint("MissingPermission") // gated by hasLocationPermission() below
+    fun startTracking() {
+        if (trackingCallback != null) return
+        if (!hasLocationPermission() || !isGpsEnabled()) return
+
+        // Seed immediately with the last-known fix so a value is ready before the first interval.
+        fusedLocationClient.lastLocation.addOnSuccessListener { loc ->
+            if (loc != null && _liveLocation.value == null) _liveLocation.value = loc
+        }
+
+        val request = LocationRequest.Builder(
+            Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+            TRACKING_INTERVAL_MS
+        )
+            .setMinUpdateIntervalMillis(TRACKING_FASTEST_MS)
+            .build()
+
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { _liveLocation.value = it }
+            }
+        }
+        trackingCallback = callback
+        fusedLocationClient.requestLocationUpdates(request, callback, Looper.getMainLooper())
+    }
+
+    /** Stops continuous tracking. Safe to call when not tracking. Leaves the last fix cached. */
+    fun stopTracking() {
+        trackingCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+        trackingCallback = null
     }
 
     /** Instant cached fix from the fused provider. Null on error or if none is available yet. */

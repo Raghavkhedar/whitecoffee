@@ -38,17 +38,15 @@ class WorkProgressViewModel @Inject constructor(
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
     private var pendingDocId: String? = null
-    private var uploadJob: Deferred<Result<List<String>>>? = null
     private var cacheJob: Deferred<List<String>>? = null
 
     fun onPhotosChanged(uris: List<Uri>) {
-        uploadJob?.cancel(); cacheJob?.cancel()
-        if (uris.isEmpty()) { uploadJob = null; cacheJob = null; pendingDocId = null; return }
+        cacheJob?.cancel()
+        if (uris.isEmpty()) { cacheJob = null; pendingDocId = null; return }
         val docId = pendingDocId ?: requestRepository.newDocId(collection).also { pendingDocId = it }
+        // Pre-compress photos to disk while the user fills the form so submit stays instant.
+        // The actual upload always runs in the background worker (survives navigation + process death).
         cacheJob = viewModelScope.async { photoUploadManager.cachePhotos(uris, docId) }
-        if (isOnline.value) {
-            uploadJob = viewModelScope.async { photoUploadManager.uploadPhotos(uris, collection, docId) }
-        }
     }
 
     fun submitProgress(
@@ -71,11 +69,11 @@ class WorkProgressViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val docId = pendingDocId ?: requestRepository.newDocId(collection)
+                // Only wait on local compression (usually already done from onPhotosChanged) — never
+                // on the network. Photos upload in the background worker after the doc is written.
                 val cachedPaths = try {
                     cacheJob?.await() ?: if (photoUris.isNotEmpty()) photoUploadManager.cachePhotos(photoUris, docId) else emptyList()
                 } catch (_: Exception) { emptyList() }
-                val photoUrls = resolvePhotoUrls(photoUris, docId) ?: emptyList()
-                val needsRetry = photoUris.isNotEmpty() && photoUrls.isEmpty() && cachedPaths.isNotEmpty()
 
                 val progress = WorkProgress(
                     siteId          = siteId.trim(),
@@ -84,12 +82,11 @@ class WorkProgressViewModel @Inject constructor(
                     hoursWorked     = hoursWorked,
                     workDescription = workDescription.trim()
                 )
-                val result = requestRepository.submitWorkProgress(progress, docId, photoUrls)
+                // Doc is written with empty photoUrls; the worker patches them in once uploaded.
+                val result = requestRepository.submitWorkProgress(progress, docId, emptyList())
                 if (result.isSuccess) {
-                    if (needsRetry) {
+                    if (cachedPaths.isNotEmpty()) {
                         workManager.enqueue(PhotoUploadWorker.buildRequest(collection, docId, cachedPaths))
-                    } else {
-                        photoUploadManager.clearCachedPhotos(docId)
                     }
                     _submitState.value = UiState.Success(result.getOrThrow())
                 } else {
@@ -99,22 +96,9 @@ class WorkProgressViewModel @Inject constructor(
             } catch (e: Exception) {
                 _submitState.value = UiState.Error("Submission failed: ${e.message}")
             } finally {
-                uploadJob = null; cacheJob = null; pendingDocId = null
+                cacheJob = null; pendingDocId = null
             }
         }
-    }
-
-    private suspend fun resolvePhotoUrls(photoUris: List<Uri>, docId: String): List<String>? {
-        if (photoUris.isEmpty()) return emptyList()
-        val job = uploadJob
-        return if (job != null) {
-            _submitState.value = UiState.Loading("Finishing photo upload…")
-            job.await().getOrNull()
-        } else if (isOnline.value) {
-            photoUploadManager.uploadPhotos(photoUris, collection, docId) { current, total ->
-                _submitState.value = UiState.Loading("Uploading photo $current of $total…")
-            }.getOrNull()
-        } else null
     }
 
     fun resetSubmitState() {

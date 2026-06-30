@@ -9,13 +9,20 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavOptions
 import androidx.navigation.findNavController
+import com.raghav.whitecoffee.data.location.LocationProvider
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
+
+    // Foreground location tracking lives at the activity level so a warm fix is ready
+    // app-wide (started in onStart, torn down in onStop — never runs in the background).
+    @Inject
+    lateinit var locationProvider: LocationProvider
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,5 +49,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Warm up location while the app is foregrounded. No-ops until permission is granted;
+        // the attendance screens kick it again on first grant.
+        locationProvider.startTracking()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        locationProvider.stopTracking()
     }
 }

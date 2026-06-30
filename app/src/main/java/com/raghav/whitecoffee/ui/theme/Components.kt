@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 
 // ── Top bar (light): back arrow + title, optional trailing slot ───────────────
 @Composable
@@ -315,6 +317,57 @@ fun InfoBanner(text: String, bg: Color, fg: Color, icon: String = Ms.info, modif
         MsIcon(icon, 21.sp, fg)
         Spacer(Modifier.width(10.dp))
         Text(text, color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp)
+    }
+}
+
+// ── Styled input dialog (teal M3) — rounded card, title/subtitle, content slot ─
+// Replaces raw View AlertDialog + EditText prompts. Put WcField(s) in [content].
+@Composable
+fun WcDialog(
+    title: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    confirmEnabled: Boolean = true,
+    dismissText: String = "Cancel",
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(WcColors.Surface)
+                .padding(horizontal = 22.dp, vertical = 20.dp),
+        ) {
+            Text(title, color = WcColors.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            if (subtitle != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(subtitle, color = WcColors.TextSecondary, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(18.dp))
+            content()
+            Spacer(Modifier.height(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(54.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) { Text(dismissText, color = WcColors.TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.width(10.dp))
+                WcPrimaryButton(
+                    text = confirmText,
+                    onClick = onConfirm,
+                    enabled = confirmEnabled,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
 }
 

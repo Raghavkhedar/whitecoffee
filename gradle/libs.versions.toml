@@ -13,6 +13,7 @@ hiltNavigationFragment  = "1.2.0"
 # ── Firebase ──
 firebaseBom             = "34.14.0"
 googleServices          = "4.4.2"
+firebaseAppDistribution = "5.3.0"
 
 # ── Coroutines & Lifecycle ──
 coroutines              = "1.8.1"
@@ -110,3 +111,4 @@ compose-compiler        = { id = "org.jetbrains.kotlin.plugin.compose", version.
 ksp                     = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt                    = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 google-services         = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+firebase-appdistribution = { id = "com.google.firebase.appdistribution", version.ref = "firebaseAppDistribution" }
