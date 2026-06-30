@@ -33,7 +33,10 @@ import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
-private data class BuyRow(val name: String = "", val qty: String = "", val unit: String = "", val price: String = "")
+private data class BuyRow(
+    val name: String = "", val qty: String = "", val unit: String = "", val price: String = "",
+    val spec1: String = "", val spec2: String = "",
+)
 
 @Composable
 fun MaterialToolBuyScreen(
@@ -72,6 +75,11 @@ fun MaterialToolBuyScreen(
                     WcField(row.qty, { items[i] = row.copy(qty = it) }, placeholder = "Qty", keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
                     WcField(row.unit, { items[i] = row.copy(unit = it) }, placeholder = "Unit", modifier = Modifier.weight(1f))
                     WcField(row.price, { items[i] = row.copy(price = it) }, placeholder = "₹/unit", keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    WcField(row.spec1, { items[i] = row.copy(spec1 = it) }, placeholder = "Spec 1 (opt.)", modifier = Modifier.weight(1f))
+                    WcField(row.spec2, { items[i] = row.copy(spec2 = it) }, placeholder = "Spec 2 (opt.)", modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(6.dp))
                 Text("₹%,.2f".format(lineTotal(row)), color = WcColors.SuccessFg, fontSize = 13.5.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.fillMaxWidth().padding(end = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
@@ -112,7 +120,7 @@ fun MaterialToolBuyScreen(
                     val q = it.qty.trim().toDoubleOrNull()
                     val p = it.price.trim().toDoubleOrNull() ?: 0.0
                     if (it.name.isBlank() || q == null) null
-                    else PurchaseItem(it.name.trim(), q, it.unit.trim(), p, q * p)
+                    else PurchaseItem(it.name.trim(), q, it.unit.trim(), p, q * p, it.spec1.trim(), it.spec2.trim())
                 }
                 onSubmit(siteId.trim(), siteName.trim(), mapped, notes.trim())
             },

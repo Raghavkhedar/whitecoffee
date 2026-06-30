@@ -6,9 +6,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,13 +42,9 @@ class WorkProgressFragment : Fragment() {
             var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
             var date by remember { mutableStateOf(LocalDate.now().format(fmt)) }
 
-            val picker = rememberLauncherForActivityResult(
-                ActivityResultContracts.PickMultipleVisualMedia(10)
-            ) { uris ->
-                if (uris.isNotEmpty()) {
-                    photos = (photos + uris).distinct()
-                    viewModel.onPhotosChanged(photos)
-                }
+            val addPhoto = rememberPhotoAdder { uris ->
+                photos = (photos + uris).distinct()
+                viewModel.onPhotosChanged(photos)
             }
 
             LaunchedEffect(submit) { if (submit is UiState.Success) showSuccessAndExit() }
@@ -64,7 +57,7 @@ class WorkProgressFragment : Fragment() {
                 photos = photos,
                 onBack = { findNavController().navigateUp() },
                 onPickDate = { showDatePicker(date) { date = it } },
-                onAddPhoto = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onAddPhoto = addPhoto,
                 onRemovePhoto = { photos = photos - it; viewModel.onPhotosChanged(photos) },
                 onSubmit = { siteId, siteName, hours, description ->
                     viewModel.submitProgress(siteId, siteName, date, hours, description, photos)

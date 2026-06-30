@@ -8,12 +8,16 @@ data class RequestItem(
     val itemName: String = "",
     val quantity: Double = 0.0,
     val unit: String = "",      // e.g. "pcs", "kg", "m"
+    val spec1: String = "",
+    val spec2: String = "",
     val notes: String = ""
 ) {
     fun toMap(): Map<String, Any> = mapOf(
         "itemName" to itemName,
         "quantity" to quantity,
         "unit"     to unit,
+        "spec1"    to spec1,
+        "spec2"    to spec2,
         "notes"    to notes
     )
 
@@ -22,6 +26,8 @@ data class RequestItem(
             itemName = map["itemName"] as? String ?: "",
             quantity = (map["quantity"] as? Number)?.toDouble() ?: 0.0,
             unit     = map["unit"] as? String ?: "",
+            spec1    = map["spec1"] as? String ?: "",
+            spec2    = map["spec2"] as? String ?: "",
             notes    = map["notes"] as? String ?: ""
         )
     }
@@ -49,6 +55,8 @@ data class MaterialToolRequest(
             "Item"         to item.itemName,
             "Quantity"     to item.quantity,
             "Unit"         to item.unit,
+            "Spec 1"       to item.spec1,
+            "Spec 2"       to item.spec2,
             "Item Notes"   to item.notes,
             "Notes"        to notes,
             "Submitted At" to (submittedAt?.toDate()?.toString() ?: "")

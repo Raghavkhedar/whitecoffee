@@ -1416,7 +1416,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase",
-      "community": 11,
+      "community": 21,
       "norm_label": "materialtoolpurchase.kt"
     },
     {
@@ -1426,17 +1426,17 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem",
-      "community": 11,
+      "community": 21,
       "norm_label": "purchaseitem"
     },
     {
       "label": ".toMap()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L15",
+      "source_location": "L17",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem_tomap",
-      "community": 11,
+      "community": 21,
       "norm_label": ".tomap()"
     },
     {
@@ -1446,7 +1446,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_kt_map",
-      "community": 11,
+      "community": 21,
       "norm_label": "map"
     },
     {
@@ -1456,7 +1456,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_kt_string",
-      "community": 11,
+      "community": 21,
       "norm_label": "string"
     },
     {
@@ -1466,37 +1466,37 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_kt_any",
-      "community": 11,
+      "community": 21,
       "norm_label": "any"
     },
     {
       "label": "fromMap()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L25",
+      "source_location": "L29",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_frommap",
-      "community": 11,
+      "community": 21,
       "norm_label": "frommap()"
     },
     {
       "label": "MaterialToolPurchase",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L36",
+      "source_location": "L42",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase",
-      "community": 11,
+      "community": 21,
       "norm_label": "materialtoolpurchase"
     },
     {
       "label": ".toSheetRows()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L51",
+      "source_location": "L57",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tosheetrows",
-      "community": 11,
+      "community": 21,
       "norm_label": ".tosheetrows()"
     },
     {
@@ -1506,27 +1506,27 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_kt_list",
-      "community": 11,
+      "community": 21,
       "norm_label": "list"
     },
     {
       "label": ".toMap()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L68",
+      "source_location": "L76",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tomap",
-      "community": 11,
+      "community": 21,
       "norm_label": ".tomap()"
     },
     {
       "label": "fromDocument()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L82",
+      "source_location": "L90",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_fromdocument",
-      "community": 11,
+      "community": 21,
       "norm_label": "fromdocument()"
     },
     {
@@ -1536,7 +1536,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_kt_documentsnapshot",
-      "community": 11,
+      "community": 21,
       "norm_label": "documentsnapshot"
     },
     {
@@ -1563,7 +1563,7 @@
       "label": ".toMap()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem_tomap",
       "community": 12,
@@ -1603,7 +1603,7 @@
       "label": "fromMap()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L21",
+      "source_location": "L25",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_frommap",
       "community": 12,
@@ -1613,7 +1613,7 @@
       "label": "MaterialToolRequest",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L30",
+      "source_location": "L36",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest",
       "community": 12,
@@ -1623,7 +1623,7 @@
       "label": ".toSheetRows()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L44",
+      "source_location": "L50",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tosheetrows",
       "community": 12,
@@ -1643,7 +1643,7 @@
       "label": ".toMap()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L58",
+      "source_location": "L66",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tomap",
       "community": 12,
@@ -1653,7 +1653,7 @@
       "label": "fromDocument()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L71",
+      "source_location": "L79",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_fromdocument",
       "community": 12,
@@ -3026,7 +3026,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager",
-      "community": 46,
+      "community": 31,
       "norm_label": "sessionmanager.kt"
     },
     {
@@ -3036,7 +3036,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager_sessionmanager",
-      "community": 46,
+      "community": 31,
       "norm_label": "sessionmanager"
     },
     {
@@ -3046,7 +3046,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager_kt_string",
-      "community": 46,
+      "community": 31,
       "norm_label": "string"
     },
     {
@@ -3056,7 +3056,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager_kt_boolean",
-      "community": 46,
+      "community": 31,
       "norm_label": "boolean"
     },
     {
@@ -3066,7 +3066,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager_sessionmanager_savesession",
-      "community": 46,
+      "community": 31,
       "norm_label": ".savesession()"
     },
     {
@@ -3076,7 +3076,7 @@
       "source_location": "L81",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager_sessionmanager_tryrestorefromcache",
-      "community": 46,
+      "community": 31,
       "norm_label": ".tryrestorefromcache()"
     },
     {
@@ -3086,7 +3086,7 @@
       "source_location": "L93",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_data_session_sessionmanager_sessionmanager_clearsession",
-      "community": 46,
+      "community": 31,
       "norm_label": ".clearsession()"
     },
     {
@@ -3336,7 +3336,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_service_fcmservice",
-      "community": 46,
+      "community": 31,
       "norm_label": "fcmservice.kt"
     },
     {
@@ -3346,7 +3346,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_service_fcmservice_fcmservice",
-      "community": 46,
+      "community": 31,
       "norm_label": "fcmservice"
     },
     {
@@ -3356,7 +3356,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "firebasemessagingservice",
-      "community": 46,
+      "community": 31,
       "norm_label": "firebasemessagingservice"
     },
     {
@@ -3366,7 +3366,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_service_fcmservice_fcmservice_onmessagereceived",
-      "community": 46,
+      "community": 31,
       "norm_label": ".onmessagereceived()"
     },
     {
@@ -3376,7 +3376,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "remotemessage",
-      "community": 46,
+      "community": 31,
       "norm_label": "remotemessage"
     },
     {
@@ -3386,7 +3386,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_service_fcmservice_fcmservice_onnewtoken",
-      "community": 46,
+      "community": 31,
       "norm_label": ".onnewtoken()"
     },
     {
@@ -3396,7 +3396,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_service_fcmservice_kt_string",
-      "community": 46,
+      "community": 31,
       "norm_label": "string"
     },
     {
@@ -3406,7 +3406,7 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_service_fcmservice_fcmservice_showsystemnotification",
-      "community": 46,
+      "community": 31,
       "norm_label": ".showsystemnotification()"
     },
     {
@@ -3503,20 +3503,20 @@
       "label": "AttendanceFragment",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L36",
+      "source_location": "L44",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
-      "community": 5,
+      "community": 13,
       "norm_label": "attendancefragment"
     },
     {
       "label": ".onCreateView()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L53",
+      "source_location": "L61",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
-      "community": 5,
+      "community": 13,
       "norm_label": ".oncreateview()"
     },
     {
@@ -3526,7 +3526,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_kt_layoutinflater",
-      "community": 5,
+      "community": 13,
       "norm_label": "layoutinflater"
     },
     {
@@ -3536,7 +3536,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_kt_viewgroup",
-      "community": 5,
+      "community": 13,
       "norm_label": "viewgroup"
     },
     {
@@ -3546,7 +3546,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_kt_bundle",
-      "community": 5,
+      "community": 13,
       "norm_label": "bundle"
     },
     {
@@ -3556,58 +3556,48 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_kt_view",
-      "community": 5,
+      "community": 13,
       "norm_label": "view"
     },
     {
       "label": ".onViewCreated()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L98",
+      "source_location": "L114",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_onviewcreated",
-      "community": 5,
+      "community": 13,
       "norm_label": ".onviewcreated()"
     },
     {
       "label": ".onResume()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L105",
+      "source_location": "L121",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_onresume",
-      "community": 5,
+      "community": 13,
       "norm_label": ".onresume()"
     },
     {
-      "label": ".showSiteInputDialog()",
+      "label": "SiteCheckInDialog()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L111",
+      "source_location": "L128",
       "_origin": "ast",
-      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showsiteinputdialog",
+      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_sitecheckindialog",
       "community": 5,
-      "norm_label": ".showsiteinputdialog()"
+      "norm_label": "sitecheckindialog()"
     },
     {
-      "label": ".showMarketNameDialog()",
+      "label": "MarketCheckInDialog()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L134",
+      "source_location": "L159",
       "_origin": "ast",
-      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showmarketnamedialog",
+      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_marketcheckindialog",
       "community": 5,
-      "norm_label": ".showmarketnamedialog()"
-    },
-    {
-      "label": "Double",
-      "file_type": "code",
-      "source_file": "",
-      "source_location": "",
-      "_origin": "ast",
-      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_kt_double",
-      "community": 5,
-      "norm_label": "double"
+      "norm_label": "marketcheckindialog()"
     },
     {
       "label": "AttendanceScreen.kt",
@@ -4056,27 +4046,27 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment",
-      "community": 23,
+      "community": 13,
       "norm_label": "leaveapprovalsfragment.kt"
     },
     {
       "label": "LeaveApprovalsFragment",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L23",
+      "source_location": "L27",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment",
-      "community": 23,
+      "community": 13,
       "norm_label": "leaveapprovalsfragment"
     },
     {
       "label": ".onCreateView()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L28",
+      "source_location": "L32",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
-      "community": 23,
+      "community": 5,
       "norm_label": ".oncreateview()"
     },
     {
@@ -4086,7 +4076,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_kt_layoutinflater",
-      "community": 23,
+      "community": 5,
       "norm_label": "layoutinflater"
     },
     {
@@ -4096,7 +4086,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_kt_viewgroup",
-      "community": 23,
+      "community": 5,
       "norm_label": "viewgroup"
     },
     {
@@ -4106,7 +4096,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_kt_bundle",
-      "community": 23,
+      "community": 5,
       "norm_label": "bundle"
     },
     {
@@ -4116,18 +4106,8 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_kt_view",
-      "community": 23,
+      "community": 5,
       "norm_label": "view"
-    },
-    {
-      "label": ".showRejectDialog()",
-      "file_type": "code",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L55",
-      "_origin": "ast",
-      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_showrejectdialog",
-      "community": 23,
-      "norm_label": ".showrejectdialog()"
     },
     {
       "label": "LeaveApprovalsViewModel.kt",
@@ -4326,7 +4306,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens",
-      "community": 21,
+      "community": 11,
       "norm_label": "leavescreens.kt"
     },
     {
@@ -4336,7 +4316,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leavestatuscolors",
-      "community": 21,
+      "community": 11,
       "norm_label": "leavestatuscolors()"
     },
     {
@@ -4346,7 +4326,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_kt_string",
-      "community": 21,
+      "community": 11,
       "norm_label": "string"
     },
     {
@@ -4356,7 +4336,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "triple",
-      "community": 21,
+      "community": 11,
       "norm_label": "triple"
     },
     {
@@ -4366,7 +4346,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_kt_color",
-      "community": 21,
+      "community": 11,
       "norm_label": "color"
     },
     {
@@ -4376,7 +4356,7 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leavescreen",
-      "community": 21,
+      "community": 11,
       "norm_label": "leavescreen()"
     },
     {
@@ -4386,7 +4366,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_kt_list",
-      "community": 21,
+      "community": 11,
       "norm_label": "list"
     },
     {
@@ -4396,7 +4376,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_kt_int",
-      "community": 21,
+      "community": 11,
       "norm_label": "int"
     },
     {
@@ -4406,7 +4386,7 @@
       "source_location": "L201",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leavehistorylist",
-      "community": 21,
+      "community": 11,
       "norm_label": "leavehistorylist()"
     },
     {
@@ -4416,7 +4396,7 @@
       "source_location": "L223",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leavehistorycard",
-      "community": 21,
+      "community": 11,
       "norm_label": "leavehistorycard()"
     },
     {
@@ -4426,7 +4406,7 @@
       "source_location": "L260",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leaveapprovalsscreen",
-      "community": 21,
+      "community": 11,
       "norm_label": "leaveapprovalsscreen()"
     },
     {
@@ -4436,7 +4416,7 @@
       "source_location": "L304",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_approvalcard",
-      "community": 21,
+      "community": 11,
       "norm_label": "approvalcard()"
     },
     {
@@ -4446,7 +4426,7 @@
       "source_location": "L370",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_tabpill",
-      "community": 21,
+      "community": 11,
       "norm_label": "tabpill()"
     },
     {
@@ -4456,7 +4436,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_kt_boolean",
-      "community": 21,
+      "community": 11,
       "norm_label": "boolean"
     },
     {
@@ -4466,7 +4446,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_kt_modifier",
-      "community": 21,
+      "community": 11,
       "norm_label": "modifier"
     },
     {
@@ -4476,7 +4456,7 @@
       "source_location": "L382",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_datebox",
-      "community": 21,
+      "community": 11,
       "norm_label": "datebox()"
     },
     {
@@ -4486,7 +4466,7 @@
       "source_location": "L395",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_outlineactionbutton",
-      "community": 21,
+      "community": 11,
       "norm_label": "outlineactionbutton()"
     },
     {
@@ -4496,7 +4476,7 @@
       "source_location": "L408",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_filledactionbutton",
-      "community": 21,
+      "community": 11,
       "norm_label": "filledactionbutton()"
     },
     {
@@ -4896,27 +4876,27 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment",
-      "community": 74,
+      "community": 13,
       "norm_label": "regularizationfragment.kt"
     },
     {
       "label": "RegularizationFragment",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L24",
+      "source_location": "L28",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment",
-      "community": 74,
+      "community": 13,
       "norm_label": "regularizationfragment"
     },
     {
       "label": ".onCreateView()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L29",
+      "source_location": "L33",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
-      "community": 74,
+      "community": 5,
       "norm_label": ".oncreateview()"
     },
     {
@@ -4926,7 +4906,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_kt_layoutinflater",
-      "community": 74,
+      "community": 5,
       "norm_label": "layoutinflater"
     },
     {
@@ -4936,7 +4916,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_kt_viewgroup",
-      "community": 74,
+      "community": 5,
       "norm_label": "viewgroup"
     },
     {
@@ -4946,7 +4926,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_kt_bundle",
-      "community": 74,
+      "community": 5,
       "norm_label": "bundle"
     },
     {
@@ -4956,18 +4936,8 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_kt_view",
-      "community": 74,
+      "community": 5,
       "norm_label": "view"
-    },
-    {
-      "label": ".showApplyDialog()",
-      "file_type": "code",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L57",
-      "_origin": "ast",
-      "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_showapplydialog",
-      "community": 74,
-      "norm_label": ".showapplydialog()"
     },
     {
       "label": "RegularizationScreen.kt",
@@ -4976,7 +4946,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen",
-      "community": 51,
+      "community": 19,
       "norm_label": "regularizationscreen.kt"
     },
     {
@@ -4986,7 +4956,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen_regularizationscreen",
-      "community": 51,
+      "community": 19,
       "norm_label": "regularizationscreen()"
     },
     {
@@ -4996,7 +4966,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen_kt_list",
-      "community": 51,
+      "community": 19,
       "norm_label": "list"
     },
     {
@@ -5006,7 +4976,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen_kt_string",
-      "community": 51,
+      "community": 19,
       "norm_label": "string"
     },
     {
@@ -5016,7 +4986,7 @@
       "source_location": "L91",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen_flaggeddaycard",
-      "community": 51,
+      "community": 19,
       "norm_label": "flaggeddaycard()"
     },
     {
@@ -5026,7 +4996,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel",
-      "community": 74,
+      "community": 2,
       "norm_label": "regularizationviewmodel.kt"
     },
     {
@@ -5036,7 +5006,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationdayitem",
-      "community": 74,
+      "community": 2,
       "norm_label": "regularizationdayitem"
     },
     {
@@ -5046,7 +5016,7 @@
       "source_location": "L35",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationviewmodel",
-      "community": 74,
+      "community": 2,
       "norm_label": "regularizationviewmodel"
     },
     {
@@ -5056,7 +5026,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_kt_stateflow",
-      "community": 74,
+      "community": 2,
       "norm_label": "stateflow"
     },
     {
@@ -5066,7 +5036,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_kt_boolean",
-      "community": 74,
+      "community": 2,
       "norm_label": "boolean"
     },
     {
@@ -5076,7 +5046,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_kt_list",
-      "community": 74,
+      "community": 2,
       "norm_label": "list"
     },
     {
@@ -5086,7 +5056,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_kt_string",
-      "community": 74,
+      "community": 2,
       "norm_label": "string"
     },
     {
@@ -5096,7 +5066,7 @@
       "source_location": "L64",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationviewmodel_loadtoday",
-      "community": 74,
+      "community": 2,
       "norm_label": ".loadtoday()"
     },
     {
@@ -5106,7 +5076,7 @@
       "source_location": "L102",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationviewmodel_derivelivestatus",
-      "community": 74,
+      "community": 2,
       "norm_label": ".derivelivestatus()"
     },
     {
@@ -5116,7 +5086,7 @@
       "source_location": "L135",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationviewmodel_hourof",
-      "community": 74,
+      "community": 2,
       "norm_label": ".hourof()"
     },
     {
@@ -5126,7 +5096,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_kt_int",
-      "community": 74,
+      "community": 2,
       "norm_label": "int"
     },
     {
@@ -5136,7 +5106,7 @@
       "source_location": "L140",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationviewmodel_submitrequest",
-      "community": 74,
+      "community": 2,
       "norm_label": ".submitrequest()"
     },
     {
@@ -5146,7 +5116,7 @@
       "source_location": "L155",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationviewmodel_resetsubmitstate",
-      "community": 74,
+      "community": 2,
       "norm_label": ".resetsubmitstate()"
     },
     {
@@ -5156,7 +5126,7 @@
       "source_location": "L163",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_getdayofweek",
-      "community": 74,
+      "community": 2,
       "norm_label": "getdayofweek()"
     },
     {
@@ -5716,7 +5686,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_login_loginscreen",
-      "community": 51,
+      "community": 46,
       "norm_label": "loginscreen.kt"
     },
     {
@@ -5726,7 +5696,7 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_login_loginscreen_loginscreen",
-      "community": 51,
+      "community": 46,
       "norm_label": "loginscreen()"
     },
     {
@@ -5736,7 +5706,7 @@
       "source_location": "L200",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_login_loginscreen_loginscreenpreview",
-      "community": 51,
+      "community": 46,
       "norm_label": "loginscreenpreview()"
     },
     {
@@ -6066,7 +6036,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment",
-      "community": 13,
+      "community": 21,
       "norm_label": "materialtoolbuyfragment.kt"
     },
     {
@@ -6076,7 +6046,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_materialtoolbuyfragment",
-      "community": 13,
+      "community": 21,
       "norm_label": "materialtoolbuyfragment"
     },
     {
@@ -6086,7 +6056,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_materialtoolbuyfragment_oncreateview",
-      "community": 13,
+      "community": 21,
       "norm_label": ".oncreateview()"
     },
     {
@@ -6096,7 +6066,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_kt_layoutinflater",
-      "community": 13,
+      "community": 21,
       "norm_label": "layoutinflater"
     },
     {
@@ -6106,7 +6076,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_kt_viewgroup",
-      "community": 13,
+      "community": 21,
       "norm_label": "viewgroup"
     },
     {
@@ -6116,7 +6086,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_kt_bundle",
-      "community": 13,
+      "community": 21,
       "norm_label": "bundle"
     },
     {
@@ -6126,7 +6096,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_kt_view",
-      "community": 13,
+      "community": 21,
       "norm_label": "view"
     },
     {
@@ -6136,7 +6106,7 @@
       "source_location": "L74",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyfragment_materialtoolbuyfragment_showsuccessandexit",
-      "community": 13,
+      "community": 21,
       "norm_label": ".showsuccessandexit()"
     },
     {
@@ -6146,7 +6116,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen",
-      "community": 50,
+      "community": 20,
       "norm_label": "materialtoolbuyscreen.kt"
     },
     {
@@ -6156,17 +6126,17 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_buyrow",
-      "community": 50,
+      "community": 20,
       "norm_label": "buyrow"
     },
     {
       "label": "MaterialToolBuyScreen()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
-      "community": 50,
+      "community": 20,
       "norm_label": "materialtoolbuyscreen()"
     },
     {
@@ -6176,7 +6146,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_kt_boolean",
-      "community": 50,
+      "community": 20,
       "norm_label": "boolean"
     },
     {
@@ -6186,7 +6156,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_kt_string",
-      "community": 50,
+      "community": 20,
       "norm_label": "string"
     },
     {
@@ -6196,7 +6166,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_kt_list",
-      "community": 50,
+      "community": 20,
       "norm_label": "list"
     },
     {
@@ -6206,7 +6176,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_kt_uri",
-      "community": 50,
+      "community": 20,
       "norm_label": "uri"
     },
     {
@@ -6216,7 +6186,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel",
-      "community": 11,
+      "community": 21,
       "norm_label": "materialtoolbuyviewmodel.kt"
     },
     {
@@ -6226,7 +6196,7 @@
       "source_location": "L25",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_materialtoolbuyviewmodel",
-      "community": 11,
+      "community": 21,
       "norm_label": "materialtoolbuyviewmodel"
     },
     {
@@ -6236,7 +6206,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_kt_stateflow",
-      "community": 11,
+      "community": 21,
       "norm_label": "stateflow"
     },
     {
@@ -6246,7 +6216,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_kt_boolean",
-      "community": 11,
+      "community": 21,
       "norm_label": "boolean"
     },
     {
@@ -6256,7 +6226,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_kt_string",
-      "community": 11,
+      "community": 21,
       "norm_label": "string"
     },
     {
@@ -6266,7 +6236,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_kt_deferred",
-      "community": 11,
+      "community": 21,
       "norm_label": "deferred"
     },
     {
@@ -6276,7 +6246,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_kt_list",
-      "community": 11,
+      "community": 21,
       "norm_label": "list"
     },
     {
@@ -6286,7 +6256,7 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_materialtoolbuyviewmodel_onphotoschanged",
-      "community": 11,
+      "community": 21,
       "norm_label": ".onphotoschanged()"
     },
     {
@@ -6296,7 +6266,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_kt_uri",
-      "community": 11,
+      "community": 21,
       "norm_label": "uri"
     },
     {
@@ -6306,7 +6276,7 @@
       "source_location": "L53",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_materialtoolbuyviewmodel_submitpurchase",
-      "community": 11,
+      "community": 21,
       "norm_label": ".submitpurchase()"
     },
     {
@@ -6316,7 +6286,7 @@
       "source_location": "L106",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyviewmodel_materialtoolbuyviewmodel_resetsubmitstate",
-      "community": 11,
+      "community": 21,
       "norm_label": ".resetsubmitstate()"
     },
     {
@@ -6423,7 +6393,7 @@
       "label": "MaterialToolRequestScreen()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "community": 20,
@@ -6473,7 +6443,7 @@
       "label": "ItemEditorCard()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L112",
+      "source_location": "L120",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard",
       "community": 20,
@@ -6686,7 +6656,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui",
-      "community": 31,
+      "community": 20,
       "norm_label": "requestsui.kt"
     },
     {
@@ -6696,7 +6666,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_requestscaffold",
-      "community": 31,
+      "community": 20,
       "norm_label": "requestscaffold()"
     },
     {
@@ -6706,7 +6676,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_kt_string",
-      "community": 31,
+      "community": 20,
       "norm_label": "string"
     },
     {
@@ -6716,7 +6686,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_kt_boolean",
-      "community": 31,
+      "community": 20,
       "norm_label": "boolean"
     },
     {
@@ -6726,7 +6696,7 @@
       "source_location": "L69",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_photostrip",
-      "community": 31,
+      "community": 20,
       "norm_label": "photostrip()"
     },
     {
@@ -6736,7 +6706,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_kt_list",
-      "community": 31,
+      "community": 20,
       "norm_label": "list"
     },
     {
@@ -6746,7 +6716,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_kt_uri",
-      "community": 31,
+      "community": 20,
       "norm_label": "uri"
     },
     {
@@ -6836,7 +6806,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen",
-      "community": 72,
+      "community": 50,
       "norm_label": "transferscreen.kt"
     },
     {
@@ -6846,7 +6816,7 @@
       "source_location": "L33",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen_xferrow",
-      "community": 72,
+      "community": 50,
       "norm_label": "xferrow"
     },
     {
@@ -6856,7 +6826,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen_transferscreen",
-      "community": 72,
+      "community": 50,
       "norm_label": "transferscreen()"
     },
     {
@@ -6866,7 +6836,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen_kt_boolean",
-      "community": 72,
+      "community": 50,
       "norm_label": "boolean"
     },
     {
@@ -6876,7 +6846,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen_kt_string",
-      "community": 72,
+      "community": 50,
       "norm_label": "string"
     },
     {
@@ -6886,7 +6856,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen_kt_list",
-      "community": 72,
+      "community": 50,
       "norm_label": "list"
     },
     {
@@ -6896,7 +6866,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_transferscreen_kt_uri",
-      "community": 72,
+      "community": 50,
       "norm_label": "uri"
     },
     {
@@ -7176,7 +7146,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen",
-      "community": 31,
+      "community": 51,
       "norm_label": "workprogressscreen.kt"
     },
     {
@@ -7186,7 +7156,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen_workprogressscreen",
-      "community": 31,
+      "community": 51,
       "norm_label": "workprogressscreen()"
     },
     {
@@ -7196,7 +7166,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen_kt_string",
-      "community": 31,
+      "community": 51,
       "norm_label": "string"
     },
     {
@@ -7206,7 +7176,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen_kt_boolean",
-      "community": 31,
+      "community": 51,
       "norm_label": "boolean"
     },
     {
@@ -7216,7 +7186,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen_kt_list",
-      "community": 31,
+      "community": 51,
       "norm_label": "list"
     },
     {
@@ -7226,7 +7196,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen_kt_uri",
-      "community": 31,
+      "community": 51,
       "norm_label": "uri"
     },
     {
@@ -7236,7 +7206,7 @@
       "source_location": "L110",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_requests_workprogressscreen_stepbutton",
-      "community": 31,
+      "community": 51,
       "norm_label": "stepbutton()"
     },
     {
@@ -7366,7 +7336,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_color",
-      "community": 19,
+      "community": 72,
       "norm_label": "color.kt"
     },
     {
@@ -7376,7 +7346,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_color_wccolors",
-      "community": 19,
+      "community": 72,
       "norm_label": "wccolors"
     },
     {
@@ -7396,7 +7366,7 @@
       "source_location": "L64",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_color_wctiles",
-      "community": 19,
+      "community": 72,
       "norm_label": "wctiles"
     },
     {
@@ -7413,7 +7383,7 @@
       "label": "WcTopBar()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L37",
+      "source_location": "L39",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
       "community": 19,
@@ -7463,7 +7433,7 @@
       "label": "SectionLabel()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L71",
+      "source_location": "L73",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_sectionlabel",
       "community": 19,
@@ -7473,20 +7443,20 @@
       "label": "FieldLabel()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L83",
+      "source_location": "L85",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_fieldlabel",
-      "community": 20,
+      "community": 19,
       "norm_label": "fieldlabel()"
     },
     {
       "label": "WcPrimaryButton()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L95",
+      "source_location": "L97",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
-      "community": 51,
+      "community": 46,
       "norm_label": "wcprimarybutton()"
     },
     {
@@ -7496,14 +7466,14 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_kt_boolean",
-      "community": 19,
+      "community": 5,
       "norm_label": "boolean"
     },
     {
       "label": "StatusBadge()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L127",
+      "source_location": "L129",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_statusbadge",
       "community": 19,
@@ -7523,7 +7493,7 @@
       "label": "WcCard()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L145",
+      "source_location": "L147",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard",
       "community": 19,
@@ -7543,7 +7513,7 @@
       "label": "IconTile()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L161",
+      "source_location": "L163",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
       "community": 19,
@@ -7553,10 +7523,10 @@
       "label": "WcField()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L175",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
-      "community": 19,
+      "community": 5,
       "norm_label": "wcfield()"
     },
     {
@@ -7566,14 +7536,14 @@
       "source_location": "",
       "_origin": "ast",
       "id": "keyboardtype",
-      "community": 19,
+      "community": 5,
       "norm_label": "keyboardtype"
     },
     {
       "label": "ReadOnlyFieldBox()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L208",
+      "source_location": "L210",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
       "community": 19,
@@ -7583,7 +7553,7 @@
       "label": "AddItemButton()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L237",
+      "source_location": "L239",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton",
       "community": 19,
@@ -7593,7 +7563,7 @@
       "label": "RemovableItemRow()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
       "community": 19,
@@ -7603,7 +7573,7 @@
       "label": "EmptyState()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L287",
+      "source_location": "L289",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_emptystate",
       "community": 19,
@@ -7613,11 +7583,21 @@
       "label": "InfoBanner()",
       "file_type": "code",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L306",
+      "source_location": "L308",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_infobanner",
       "community": 19,
       "norm_label": "infobanner()"
+    },
+    {
+      "label": "WcDialog()",
+      "file_type": "code",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
+      "source_location": "L325",
+      "_origin": "ast",
+      "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog",
+      "community": 5,
+      "norm_label": "wcdialog()"
     },
     {
       "label": "MsIcons.kt",
@@ -7626,7 +7606,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons",
-      "community": 32,
+      "community": 46,
       "norm_label": "msicons.kt"
     },
     {
@@ -7636,7 +7616,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_ms",
-      "community": 32,
+      "community": 46,
       "norm_label": "ms"
     },
     {
@@ -7646,7 +7626,7 @@
       "source_location": "L75",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon",
-      "community": 32,
+      "community": 46,
       "norm_label": "msicon()"
     },
     {
@@ -7656,7 +7636,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_kt_string",
-      "community": 32,
+      "community": 46,
       "norm_label": "string"
     },
     {
@@ -7666,7 +7646,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "textunit",
-      "community": 32,
+      "community": 46,
       "norm_label": "textunit"
     },
     {
@@ -7676,7 +7656,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_kt_color",
-      "community": 32,
+      "community": 46,
       "norm_label": "color"
     },
     {
@@ -7686,7 +7666,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_kt_modifier",
-      "community": 32,
+      "community": 46,
       "norm_label": "modifier"
     },
     {
@@ -7696,7 +7676,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme",
-      "community": 51,
+      "community": 5,
       "norm_label": "theme.kt"
     },
     {
@@ -7706,7 +7686,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme",
-      "community": 51,
+      "community": 5,
       "norm_label": "whitecoffeetheme()"
     },
     {
@@ -8070,10 +8050,60 @@
       "norm_label": "design system (compose \u2014 `ui/theme/`, session 27)"
     },
     {
-      "label": "ROLE-BASED ACCESS",
+      "label": "RELEASE SIGNING & DISTRIBUTION (Firebase App Distribution \u2014 Session 30)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
       "source_location": "L469",
+      "_origin": "ast",
+      "id": "claude_release_signing_distribution_firebase_app_distribution_session_30",
+      "community": 32,
+      "norm_label": "release signing & distribution (firebase app distribution \u2014 session 30)"
+    },
+    {
+      "label": "Release signing (dedicated keystore)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L475",
+      "_origin": "ast",
+      "id": "claude_release_signing_dedicated_keystore",
+      "community": 32,
+      "norm_label": "release signing (dedicated keystore)"
+    },
+    {
+      "label": "One-time setup (already done in code)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L484",
+      "_origin": "ast",
+      "id": "claude_one_time_setup_already_done_in_code",
+      "community": 32,
+      "norm_label": "one-time setup (already done in code)"
+    },
+    {
+      "label": "One-time setup (manual \u2014 do in console / CLI)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L489",
+      "_origin": "ast",
+      "id": "claude_one_time_setup_manual_do_in_console_cli",
+      "community": 32,
+      "norm_label": "one-time setup (manual \u2014 do in console / cli)"
+    },
+    {
+      "label": "Ship an update (every release)",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L494",
+      "_origin": "ast",
+      "id": "claude_ship_an_update_every_release",
+      "community": 32,
+      "norm_label": "ship an update (every release)"
+    },
+    {
+      "label": "ROLE-BASED ACCESS",
+      "file_type": "document",
+      "source_file": "CLAUDE.md",
+      "source_location": "L507",
       "_origin": "ast",
       "id": "claude_role_based_access",
       "community": 28,
@@ -8083,7 +8113,7 @@
       "label": "ATTENDANCE LOGIC",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L491",
+      "source_location": "L529",
       "_origin": "ast",
       "id": "claude_attendance_logic",
       "community": 63,
@@ -8093,7 +8123,7 @@
       "label": "Operations users \u2014 event-based (AttendanceFragment + AttendanceViewModel)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L493",
+      "source_location": "L531",
       "_origin": "ast",
       "id": "claude_operations_users_event_based_attendancefragment_attendanceviewmodel",
       "community": 63,
@@ -8103,7 +8133,7 @@
       "label": "Office users \u2014 Home\u2192Office\u2192Home sequential day (OfficeAttendanceFragment + OfficeAttendanceViewModel)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L508",
+      "source_location": "L546",
       "_origin": "ast",
       "id": "claude_office_users_home_office_home_sequential_day_officeattendancefragment_officeattendanceviewmodel",
       "community": 63,
@@ -8113,7 +8143,7 @@
       "label": "HomeFragment routing:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L523",
+      "source_location": "L561",
       "_origin": "ast",
       "id": "claude_homefragment_routing",
       "community": 63,
@@ -8123,7 +8153,7 @@
       "label": "SITE ENTRY (ALL SCREENS)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L531",
+      "source_location": "L569",
       "_origin": "ast",
       "id": "claude_site_entry_all_screens",
       "community": 28,
@@ -8133,7 +8163,7 @@
       "label": "PHOTO UPLOAD SYSTEM",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L545",
+      "source_location": "L583",
       "_origin": "ast",
       "id": "claude_photo_upload_system",
       "community": 28,
@@ -8143,7 +8173,7 @@
       "label": "Collection names used in photo upload calls (must match Firestore sub-collection names):",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L556",
+      "source_location": "L594",
       "_origin": "ast",
       "id": "claude_collection_names_used_in_photo_upload_calls_must_match_firestore_sub_collection_names",
       "community": 28,
@@ -8153,7 +8183,7 @@
       "label": "HOME SCREEN GRID \u2014 CONSTRAINTLAYOUT BARRIERS",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L565",
+      "source_location": "L603",
       "_origin": "ast",
       "id": "claude_home_screen_grid_constraintlayout_barriers",
       "community": 28,
@@ -8163,7 +8193,7 @@
       "label": "TEST CREDENTIALS",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L581",
+      "source_location": "L619",
       "_origin": "ast",
       "id": "claude_test_credentials",
       "community": 28,
@@ -8173,7 +8203,7 @@
       "label": "BUILD STATUS",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L590",
+      "source_location": "L628",
       "_origin": "ast",
       "id": "claude_build_status",
       "community": 30,
@@ -8183,7 +8213,7 @@
       "label": "\u2705 DONE (Session 11 complete)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L592",
+      "source_location": "L630",
       "_origin": "ast",
       "id": "claude_done_session_11_complete",
       "community": 30,
@@ -8193,7 +8223,7 @@
       "label": "\u2705 Session 11 changes:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L613",
+      "source_location": "L651",
       "_origin": "ast",
       "id": "claude_session_11_changes",
       "community": 30,
@@ -8203,7 +8233,7 @@
       "label": "\u2705 Admin Web Portal DONE",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L623",
+      "source_location": "L661",
       "_origin": "ast",
       "id": "claude_admin_web_portal_done",
       "community": 30,
@@ -8213,7 +8243,7 @@
       "label": "\u2705 Session 12 changes \u2014 Performance improvements (all items from improvements.md done):",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L629",
+      "source_location": "L667",
       "_origin": "ast",
       "id": "claude_session_12_changes_performance_improvements_all_items_from_improvements_md_done",
       "community": 30,
@@ -8223,7 +8253,7 @@
       "label": "\u2705 Session 13 changes \u2014 Notifications (Phase 4 partial):",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L640",
+      "source_location": "L678",
       "_origin": "ast",
       "id": "claude_session_13_changes_notifications_phase_4_partial",
       "community": 30,
@@ -8233,7 +8263,7 @@
       "label": "\u2705 Session 14 changes \u2014 Decimal quantities + Firestore collectionGroup rules:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L659",
+      "source_location": "L697",
       "_origin": "ast",
       "id": "claude_session_14_changes_decimal_quantities_firestore_collectiongroup_rules",
       "community": 30,
@@ -8243,7 +8273,7 @@
       "label": "\u2705 Session 15 changes \u2014 Google Sheets export (Cloud Functions):",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L666",
+      "source_location": "L704",
       "_origin": "ast",
       "id": "claude_session_15_changes_google_sheets_export_cloud_functions",
       "community": 30,
@@ -8253,7 +8283,7 @@
       "label": "\u2705 Session 20 changes \u2014 Employee Dashboard fix + salary rates in admin portal:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L678",
+      "source_location": "L716",
       "_origin": "ast",
       "id": "claude_session_20_changes_employee_dashboard_fix_salary_rates_in_admin_portal",
       "community": 30,
@@ -8263,7 +8293,7 @@
       "label": "\u2705 Session 21 changes \u2014 Attendance Regularization:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L688",
+      "source_location": "L726",
       "_origin": "ast",
       "id": "claude_session_21_changes_attendance_regularization",
       "community": 30,
@@ -8273,7 +8303,7 @@
       "label": "\u2705 Session 22 changes \u2014 Security hardening + Office Home In/Out:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L707",
+      "source_location": "L745",
       "_origin": "ast",
       "id": "claude_session_22_changes_security_hardening_office_home_in_out",
       "community": 30,
@@ -8283,7 +8313,7 @@
       "label": "\u2705 Sessions 23\u201326 (summary \u2014 header had lagged at Session 22):",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L726",
+      "source_location": "L764",
       "_origin": "ast",
       "id": "claude_sessions_23_26_summary_header_had_lagged_at_session_22",
       "community": 30,
@@ -8293,7 +8323,7 @@
       "label": "\u2705 Session 27 changes \u2014 Full Material 3 \"teal\" Compose redesign (ALL screens):",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L732",
+      "source_location": "L770",
       "_origin": "ast",
       "id": "claude_session_27_changes_full_material_3_teal_compose_redesign_all_screens",
       "community": 30,
@@ -8303,7 +8333,7 @@
       "label": "\u2705 Session 28 changes \u2014 Leave form redesign + home header + regularization custom approval status:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L751",
+      "source_location": "L789",
       "_origin": "ast",
       "id": "claude_session_28_changes_leave_form_redesign_home_header_regularization_custom_approval_status",
       "community": 30,
@@ -8313,7 +8343,7 @@
       "label": "\u23f3 REMAINING (Phase 4)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L763",
+      "source_location": "L801",
       "_origin": "ast",
       "id": "claude_remaining_phase_4",
       "community": 30,
@@ -8323,7 +8353,7 @@
       "label": "\ud83e\uddf9 TECH-DEBT BACKLOG (graph audit \u2014 deferred, need a working Gradle build to verify)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L769",
+      "source_location": "L807",
       "_origin": "ast",
       "id": "claude_tech_debt_backlog_graph_audit_deferred_need_a_working_gradle_build_to_verify",
       "community": 30,
@@ -8333,7 +8363,7 @@
       "label": "\u2705 Session 29 changes \u2014 Graph audit cleanup:",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L774",
+      "source_location": "L812",
       "_origin": "ast",
       "id": "claude_session_29_changes_graph_audit_cleanup",
       "community": 30,
@@ -8343,7 +8373,7 @@
       "label": "KEY ARCHITECTURE DECISIONS (locked \u2014 never change)",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L782",
+      "source_location": "L820",
       "_origin": "ast",
       "id": "claude_key_architecture_decisions_locked_never_change",
       "community": 28,
@@ -8353,7 +8383,7 @@
       "label": "HOW TO USE THIS FILE WITH CLAUDE CODE",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L823",
+      "source_location": "L861",
       "_origin": "ast",
       "id": "claude_how_to_use_this_file_with_claude_code",
       "community": 28,
@@ -8363,7 +8393,7 @@
       "label": "graphify",
       "file_type": "document",
       "source_file": "CLAUDE.md",
-      "source_location": "L843",
+      "source_location": "L881",
       "_origin": "ast",
       "id": "claude_graphify",
       "community": 28,
@@ -9256,7 +9286,7 @@
       "source_location": "L1217",
       "_origin": "ast",
       "id": "developer_handbook_19_session_management_single_device_enforcement",
-      "community": 25,
+      "community": 74,
       "norm_label": "19. session management & single-device enforcement"
     },
     {
@@ -9266,7 +9296,7 @@
       "source_location": "L1219",
       "_origin": "ast",
       "id": "developer_handbook_how_single_device_sessions_work",
-      "community": 25,
+      "community": 74,
       "norm_label": "how single-device sessions work:"
     },
     {
@@ -9276,7 +9306,7 @@
       "source_location": "L1227",
       "_origin": "ast",
       "id": "developer_handbook_auto_checkout_on_logout",
-      "community": 25,
+      "community": 74,
       "norm_label": "auto-checkout on logout:"
     },
     {
@@ -9336,7 +9366,7 @@
       "source_location": "L1265",
       "_origin": "ast",
       "id": "developer_handbook_21_admin_web_portal",
-      "community": 25,
+      "community": 77,
       "norm_label": "21. admin web portal"
     },
     {
@@ -9346,7 +9376,7 @@
       "source_location": "L1271",
       "_origin": "ast",
       "id": "developer_handbook_pages",
-      "community": 25,
+      "community": 77,
       "norm_label": "pages:"
     },
     {
@@ -9356,7 +9386,7 @@
       "source_location": "L1281",
       "_origin": "ast",
       "id": "developer_handbook_deploying",
-      "community": 25,
+      "community": 77,
       "norm_label": "deploying:"
     },
     {
@@ -10797,32 +10827,6 @@
       "id": "developer_handbook_google_sheets_export"
     },
     {
-      "label": "Jetpack Compose M3 Teal Design System",
-      "file_type": "concept",
-      "source_file": "CLAUDE.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 77,
-      "norm_label": "jetpack compose m3 teal design system",
-      "id": "claude_compose_m3_teal_design_system"
-    },
-    {
-      "label": "ComposeView Fragment Host Pattern",
-      "file_type": "rationale",
-      "source_file": "CLAUDE.md",
-      "source_location": null,
-      "source_url": null,
-      "captured_at": null,
-      "author": null,
-      "contributor": null,
-      "community": 78,
-      "norm_label": "composeview fragment host pattern",
-      "id": "claude_composeview_host_pattern"
-    },
-    {
       "label": "Midnight Indigo XML Redesign",
       "file_type": "concept",
       "source_file": ".design_import/whitecoffe/project/WhiteCoffee UI Redesign Handoff.md",
@@ -11656,7 +11660,7 @@
       "relation": "inherits",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L36",
+      "source_location": "L44",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
       "target": "fragment",
@@ -11666,7 +11670,7 @@
       "relation": "inherits",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L23",
+      "source_location": "L27",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment",
       "target": "fragment",
@@ -11696,7 +11700,7 @@
       "relation": "inherits",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L24",
+      "source_location": "L28",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment",
       "target": "fragment",
@@ -12902,7 +12906,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L41",
+      "source_location": "L49",
       "weight": 1.0,
       "context": "field",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
@@ -13832,17 +13836,6 @@
     {
       "relation": "references",
       "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L55",
-      "weight": 1.0,
-      "context": "parameter_type",
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_showrejectdialog",
-      "target": "app_src_main_java_com_raghav_whitecoffee_data_model_leaverequest_leaverequest",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "references",
-      "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsViewModel.kt",
       "source_location": "L31",
       "weight": 1.0,
@@ -13987,7 +13980,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L82",
+      "source_location": "L90",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_fromdocument",
@@ -13997,7 +13990,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L25",
+      "source_location": "L29",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_frommap",
@@ -14007,7 +14000,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L36",
+      "source_location": "L42",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase",
@@ -14028,7 +14021,7 @@
       "context": "return_type",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L25",
+      "source_location": "L29",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_frommap",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem",
@@ -14038,7 +14031,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L15",
+      "source_location": "L17",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem_tomap",
@@ -14050,7 +14043,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L115",
+      "source_location": "L123",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem"
@@ -14070,7 +14063,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L15",
+      "source_location": "L17",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem_tomap",
@@ -14081,7 +14074,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L15",
+      "source_location": "L17",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem_tomap",
@@ -14092,7 +14085,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L15",
+      "source_location": "L17",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_purchaseitem_tomap",
@@ -14103,7 +14096,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L25",
+      "source_location": "L29",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_frommap",
@@ -14114,7 +14107,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L68",
+      "source_location": "L76",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tomap",
@@ -14125,7 +14118,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L51",
+      "source_location": "L57",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tosheetrows",
@@ -14136,7 +14129,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L68",
+      "source_location": "L76",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tomap",
@@ -14147,7 +14140,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L51",
+      "source_location": "L57",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tosheetrows",
@@ -14158,7 +14151,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L68",
+      "source_location": "L76",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tomap",
@@ -14169,7 +14162,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L51",
+      "source_location": "L57",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tosheetrows",
@@ -14181,7 +14174,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L86",
+      "source_location": "L94",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_fromdocument",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_frommap",
@@ -14192,7 +14185,7 @@
       "context": "return_type",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L82",
+      "source_location": "L90",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_fromdocument",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase",
@@ -14202,7 +14195,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L68",
+      "source_location": "L76",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tomap",
@@ -14212,7 +14205,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L51",
+      "source_location": "L57",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tosheetrows",
@@ -14255,7 +14248,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L51",
+      "source_location": "L57",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_materialtoolpurchase_tosheetrows",
@@ -14266,7 +14259,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt",
-      "source_location": "L82",
+      "source_location": "L90",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolpurchase_fromdocument",
@@ -14277,7 +14270,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L71",
+      "source_location": "L79",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_fromdocument",
@@ -14287,7 +14280,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L21",
+      "source_location": "L25",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_frommap",
@@ -14297,7 +14290,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L30",
+      "source_location": "L36",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest",
@@ -14318,7 +14311,7 @@
       "context": "return_type",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L21",
+      "source_location": "L25",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_frommap",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem",
@@ -14328,7 +14321,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem_tomap",
@@ -14340,7 +14333,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L104",
+      "source_location": "L112",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem"
@@ -14360,7 +14353,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem_tomap",
@@ -14371,7 +14364,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem_tomap",
@@ -14382,7 +14375,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L13",
+      "source_location": "L15",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_requestitem_tomap",
@@ -14393,7 +14386,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L21",
+      "source_location": "L25",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_frommap",
@@ -14404,7 +14397,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L58",
+      "source_location": "L66",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tomap",
@@ -14415,7 +14408,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L44",
+      "source_location": "L50",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tosheetrows",
@@ -14426,7 +14419,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L58",
+      "source_location": "L66",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tomap",
@@ -14437,7 +14430,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L44",
+      "source_location": "L50",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tosheetrows",
@@ -14448,7 +14441,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L58",
+      "source_location": "L66",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tomap",
@@ -14459,7 +14452,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L44",
+      "source_location": "L50",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tosheetrows",
@@ -14471,7 +14464,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L75",
+      "source_location": "L83",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_fromdocument",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_frommap",
@@ -14482,7 +14475,7 @@
       "context": "return_type",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L71",
+      "source_location": "L79",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_fromdocument",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest",
@@ -14492,7 +14485,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L58",
+      "source_location": "L66",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tomap",
@@ -14502,7 +14495,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L44",
+      "source_location": "L50",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest",
       "target": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tosheetrows",
@@ -14545,7 +14538,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L44",
+      "source_location": "L50",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_materialtoolrequest_tosheetrows",
@@ -14556,7 +14549,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt",
-      "source_location": "L71",
+      "source_location": "L79",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_data_model_materialtoolrequest_fromdocument",
@@ -17674,17 +17667,37 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L36",
+      "source_location": "L44",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
       "confidence_score": 1.0
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L159",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_marketcheckindialog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L128",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_sitecheckindialog",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L53",
+      "source_location": "L61",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
@@ -17694,7 +17707,7 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L105",
+      "source_location": "L121",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_onresume",
@@ -17704,37 +17717,17 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L98",
+      "source_location": "L114",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_onviewcreated",
       "confidence_score": 1.0
     },
     {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L134",
-      "weight": 1.0,
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showmarketnamedialog",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L111",
-      "weight": 1.0,
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showsiteinputdialog",
-      "confidence_score": 1.0
-    },
-    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L39",
+      "source_location": "L47",
       "weight": 1.0,
       "context": "field",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment",
@@ -17742,32 +17735,10 @@
       "confidence_score": 1.0
     },
     {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L68",
-      "weight": 1.0,
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showmarketnamedialog",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "calls",
-      "context": "call",
-      "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L67",
-      "weight": 1.0,
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showsiteinputdialog",
-      "confidence_score": 1.0
-    },
-    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L53",
+      "source_location": "L61",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
@@ -17778,7 +17749,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L53",
+      "source_location": "L61",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
@@ -17789,7 +17760,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L53",
+      "source_location": "L61",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
@@ -17800,7 +17771,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L53",
+      "source_location": "L61",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
@@ -17810,10 +17781,32 @@
     {
       "relation": "calls",
       "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L105",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_marketcheckindialog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L101",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_sitecheckindialog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L74",
+      "source_location": "L77",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_oncreateview",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancescreen_operationsattendancescreen"
@@ -17822,7 +17815,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L98",
+      "source_location": "L114",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_onviewcreated",
@@ -17833,7 +17826,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L98",
+      "source_location": "L114",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_onviewcreated",
@@ -17841,15 +17834,70 @@
       "confidence_score": 1.0
     },
     {
-      "relation": "references",
-      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
-      "source_location": "L134",
+      "source_location": "L136",
       "weight": 1.0,
-      "context": "parameter_type",
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_attendancefragment_showmarketnamedialog",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_kt_double",
-      "confidence_score": 1.0
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_sitecheckindialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L143",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_sitecheckindialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L135",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_sitecheckindialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L166",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_marketcheckindialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L174",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_marketcheckindialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt",
+      "source_location": "L165",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_attendancefragment_marketcheckindialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme"
     },
     {
       "relation": "contains",
@@ -19071,7 +19119,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L23",
+      "source_location": "L27",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment",
@@ -19081,27 +19129,17 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L28",
+      "source_location": "L32",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
       "confidence_score": 1.0
     },
     {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L55",
-      "weight": 1.0,
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_showrejectdialog",
-      "confidence_score": 1.0
-    },
-    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L26",
+      "source_location": "L30",
       "weight": 1.0,
       "context": "field",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment",
@@ -19112,7 +19150,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L28",
+      "source_location": "L32",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
@@ -19123,7 +19161,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L28",
+      "source_location": "L32",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
@@ -19134,7 +19172,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L28",
+      "source_location": "L32",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
@@ -19145,7 +19183,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L28",
+      "source_location": "L32",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
@@ -19155,13 +19193,13 @@
     {
       "relation": "calls",
       "context": "call",
-      "confidence": "EXTRACTED",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L49",
+      "source_location": "L53",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_showrejectdialog",
-      "confidence_score": 1.0
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leaveapprovalsscreen"
     },
     {
       "relation": "calls",
@@ -19169,10 +19207,32 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
-      "source_location": "L45",
+      "source_location": "L63",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leavescreens_leaveapprovalsscreen"
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
+      "source_location": "L76",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt",
+      "source_location": "L62",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_leaveapprovalsfragment_leaveapprovalsfragment_oncreateview",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme"
     },
     {
       "relation": "contains",
@@ -20780,7 +20840,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L24",
+      "source_location": "L28",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment",
@@ -20790,27 +20850,17 @@
       "relation": "method",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L29",
+      "source_location": "L33",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
       "confidence_score": 1.0
     },
     {
-      "relation": "method",
-      "confidence": "EXTRACTED",
-      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L57",
-      "weight": 1.0,
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_showapplydialog",
-      "confidence_score": 1.0
-    },
-    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L27",
+      "source_location": "L31",
       "weight": 1.0,
       "context": "field",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment",
@@ -20821,7 +20871,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L29",
+      "source_location": "L33",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
@@ -20832,7 +20882,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L29",
+      "source_location": "L33",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
@@ -20843,7 +20893,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L29",
+      "source_location": "L33",
       "weight": 1.0,
       "context": "return_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
@@ -20854,7 +20904,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L29",
+      "source_location": "L33",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
@@ -20864,13 +20914,13 @@
     {
       "relation": "calls",
       "context": "call",
-      "confidence": "EXTRACTED",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L51",
+      "source_location": "L55",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_showapplydialog",
-      "confidence_score": 1.0
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen_regularizationscreen"
     },
     {
       "relation": "calls",
@@ -20878,21 +20928,32 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L47",
+      "source_location": "L69",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationscreen_regularizationscreen"
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog"
     },
     {
-      "relation": "references",
-      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
-      "source_location": "L57",
+      "source_location": "L80",
       "weight": 1.0,
-      "context": "parameter_type",
-      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_showapplydialog",
-      "target": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationviewmodel_regularizationdayitem",
-      "confidence_score": 1.0
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt",
+      "source_location": "L68",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_attendance_regularizationfragment_regularizationfragment_oncreateview",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme"
     },
     {
       "relation": "contains",
@@ -23052,7 +23113,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
@@ -23063,7 +23124,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L49",
+      "source_location": "L52",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_buyrow",
@@ -23073,7 +23134,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
@@ -23084,7 +23145,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
@@ -23095,7 +23156,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
@@ -23106,7 +23167,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
@@ -23119,7 +23180,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L68",
+      "source_location": "L71",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard"
@@ -23130,7 +23191,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L100",
+      "source_location": "L108",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_photostrip"
@@ -23141,7 +23202,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L57",
+      "source_location": "L60",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_requestscaffold"
@@ -23152,7 +23213,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L81",
+      "source_location": "L89",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton"
@@ -23163,7 +23224,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L58",
+      "source_location": "L61",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_fieldlabel"
@@ -23174,7 +23235,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L66",
+      "source_location": "L69",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_sectionlabel"
@@ -23185,7 +23246,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L60",
+      "source_location": "L63",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield"
@@ -23196,7 +23257,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L108",
+      "source_location": "L116",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton"
@@ -23207,7 +23268,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt",
-      "source_location": "L48",
+      "source_location": "L51",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolbuyscreen_materialtoolbuyscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme"
@@ -23473,7 +23534,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L112",
+      "source_location": "L120",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard",
@@ -23483,7 +23544,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
@@ -23504,7 +23565,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L49",
+      "source_location": "L52",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_reqrow",
@@ -23515,7 +23576,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L68",
+      "source_location": "L71",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard",
@@ -23525,7 +23586,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
@@ -23536,7 +23597,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
@@ -23547,7 +23608,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
@@ -23558,7 +23619,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L38",
+      "source_location": "L41",
       "weight": 1.0,
       "context": "generic_arg",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
@@ -23571,7 +23632,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L90",
+      "source_location": "L98",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_photostrip"
@@ -23582,7 +23643,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L54",
+      "source_location": "L57",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_requests_requestsui_requestscaffold"
@@ -23593,7 +23654,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L80",
+      "source_location": "L88",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton"
@@ -23604,7 +23665,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L55",
+      "source_location": "L58",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_fieldlabel"
@@ -23615,7 +23676,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L64",
+      "source_location": "L67",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_sectionlabel"
@@ -23626,7 +23687,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L57",
+      "source_location": "L60",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield"
@@ -23637,7 +23698,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L98",
+      "source_location": "L106",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton"
@@ -23648,7 +23709,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L48",
+      "source_location": "L51",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_materialtoolrequestscreen",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_theme_whitecoffeetheme"
@@ -23657,7 +23718,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L112",
+      "source_location": "L120",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard",
@@ -23668,7 +23729,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L112",
+      "source_location": "L120",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard",
@@ -23681,7 +23742,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt",
-      "source_location": "L114",
+      "source_location": "L122",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_requests_materialtoolrequestscreen_itemeditorcard",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard"
@@ -25238,7 +25299,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L161",
+      "source_location": "L163",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
@@ -25249,7 +25310,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
@@ -25260,7 +25321,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L237",
+      "source_location": "L239",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton",
@@ -25270,7 +25331,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L287",
+      "source_location": "L289",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_emptystate",
@@ -25280,7 +25341,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L83",
+      "source_location": "L85",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_fieldlabel",
@@ -25290,7 +25351,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L161",
+      "source_location": "L163",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
@@ -25300,7 +25361,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L306",
+      "source_location": "L308",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_infobanner",
@@ -25310,7 +25371,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L208",
+      "source_location": "L210",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
@@ -25320,7 +25381,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
@@ -25330,7 +25391,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L71",
+      "source_location": "L73",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_sectionlabel",
@@ -25340,7 +25401,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L127",
+      "source_location": "L129",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_statusbadge",
@@ -25350,7 +25411,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L145",
+      "source_location": "L147",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard",
@@ -25360,7 +25421,17 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L325",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
+      "source_location": "L175",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
@@ -25370,7 +25441,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L95",
+      "source_location": "L97",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
@@ -25380,7 +25451,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
@@ -25391,7 +25462,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L57",
+      "source_location": "L59",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_kt_color",
@@ -25401,7 +25472,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
@@ -25412,7 +25483,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
@@ -25423,7 +25494,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
@@ -25436,7 +25507,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L57",
+      "source_location": "L59",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25445,7 +25516,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L37",
+      "source_location": "L39",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wctopbar",
@@ -25456,7 +25527,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L237",
+      "source_location": "L239",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton",
@@ -25467,7 +25538,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L287",
+      "source_location": "L289",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_emptystate",
@@ -25478,7 +25549,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L83",
+      "source_location": "L85",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_fieldlabel",
@@ -25489,7 +25560,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L161",
+      "source_location": "L163",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
@@ -25500,7 +25571,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L306",
+      "source_location": "L308",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_infobanner",
@@ -25511,7 +25582,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L208",
+      "source_location": "L210",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
@@ -25522,7 +25593,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
@@ -25533,7 +25604,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L71",
+      "source_location": "L73",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_sectionlabel",
@@ -25544,7 +25615,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L127",
+      "source_location": "L129",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_statusbadge",
@@ -25555,7 +25626,18 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L325",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_kt_string",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
+      "source_location": "L175",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
@@ -25566,7 +25648,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L95",
+      "source_location": "L97",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
@@ -25577,7 +25659,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L237",
+      "source_location": "L239",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton",
@@ -25588,7 +25670,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L287",
+      "source_location": "L289",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_emptystate",
@@ -25599,7 +25681,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L83",
+      "source_location": "L85",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_fieldlabel",
@@ -25610,7 +25692,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L306",
+      "source_location": "L308",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_infobanner",
@@ -25621,7 +25703,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L208",
+      "source_location": "L210",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
@@ -25632,7 +25714,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
@@ -25643,7 +25725,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L71",
+      "source_location": "L73",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_sectionlabel",
@@ -25654,7 +25736,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L127",
+      "source_location": "L129",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_statusbadge",
@@ -25665,7 +25747,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L145",
+      "source_location": "L147",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard",
@@ -25676,7 +25758,18 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L325",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_kt_modifier",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
+      "source_location": "L175",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
@@ -25687,7 +25780,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L95",
+      "source_location": "L97",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
@@ -25698,7 +25791,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
@@ -25709,7 +25802,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L208",
+      "source_location": "L210",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
@@ -25720,7 +25813,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L256",
+      "source_location": "L258",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
@@ -25728,10 +25821,21 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
+      "source_location": "L363",
+      "weight": 1.0,
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L95",
+      "source_location": "L97",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
@@ -25744,7 +25848,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L118",
+      "source_location": "L120",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcprimarybutton",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25753,7 +25857,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L127",
+      "source_location": "L129",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_statusbadge",
@@ -25764,7 +25868,18 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L325",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcdialog",
+      "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_kt_boolean",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
+      "source_location": "L175",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
@@ -25775,7 +25890,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L127",
+      "source_location": "L129",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_statusbadge",
@@ -25787,7 +25902,7 @@
       "context": "parameter_type",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L287",
+      "source_location": "L289",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_emptystate",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_kt_color",
@@ -25797,7 +25912,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L306",
+      "source_location": "L308",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_infobanner",
@@ -25808,7 +25923,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L208",
+      "source_location": "L210",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
@@ -25819,7 +25934,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L145",
+      "source_location": "L147",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard",
@@ -25831,7 +25946,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L266",
+      "source_location": "L268",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard",
@@ -25841,7 +25956,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L145",
+      "source_location": "L147",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wccard",
@@ -25852,7 +25967,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L161",
+      "source_location": "L163",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
@@ -25863,7 +25978,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L175",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
@@ -25876,7 +25991,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L169",
+      "source_location": "L171",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25886,7 +26001,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L269",
+      "source_location": "L271",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_icontile",
@@ -25898,7 +26013,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L193",
+      "source_location": "L195",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25907,7 +26022,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L173",
+      "source_location": "L175",
       "weight": 1.0,
       "context": "parameter_type",
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_wcfield",
@@ -25920,7 +26035,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L228",
+      "source_location": "L230",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_readonlyfieldbox",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25931,7 +26046,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L249",
+      "source_location": "L251",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_additembutton",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25942,7 +26057,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L279",
+      "source_location": "L281",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_removableitemrow",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25953,7 +26068,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L297",
+      "source_location": "L299",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_emptystate",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -25964,7 +26079,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt",
-      "source_location": "L315",
+      "source_location": "L317",
       "weight": 1.0,
       "source": "app_src_main_java_com_raghav_whitecoffee_ui_theme_components_infobanner",
       "target": "app_src_main_java_com_raghav_whitecoffee_ui_theme_msicons_msicon"
@@ -26087,7 +26202,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L491",
+      "source_location": "L529",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_attendance_logic",
@@ -26097,7 +26212,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L590",
+      "source_location": "L628",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_build_status",
@@ -26157,7 +26272,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L843",
+      "source_location": "L881",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_graphify",
@@ -26167,7 +26282,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L565",
+      "source_location": "L603",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_home_screen_grid_constraintlayout_barriers",
@@ -26177,7 +26292,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L823",
+      "source_location": "L861",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_how_to_use_this_file_with_claude_code",
@@ -26187,7 +26302,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L782",
+      "source_location": "L820",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_key_architecture_decisions_locked_never_change",
@@ -26207,7 +26322,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L545",
+      "source_location": "L583",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_photo_upload_system",
@@ -26230,6 +26345,16 @@
       "source_location": "L469",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
+      "target": "claude_release_signing_distribution_firebase_app_distribution_session_30",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L507",
+      "weight": 1.0,
+      "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_role_based_access",
       "confidence_score": 1.0
     },
@@ -26237,7 +26362,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L531",
+      "source_location": "L569",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_site_entry_all_screens",
@@ -26247,7 +26372,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L581",
+      "source_location": "L619",
       "weight": 1.0,
       "source": "claude_whitecoffee_claude_code_context_file",
       "target": "claude_test_credentials",
@@ -26457,7 +26582,47 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L523",
+      "source_location": "L484",
+      "weight": 1.0,
+      "source": "claude_release_signing_distribution_firebase_app_distribution_session_30",
+      "target": "claude_one_time_setup_already_done_in_code",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L489",
+      "weight": 1.0,
+      "source": "claude_release_signing_distribution_firebase_app_distribution_session_30",
+      "target": "claude_one_time_setup_manual_do_in_console_cli",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L475",
+      "weight": 1.0,
+      "source": "claude_release_signing_distribution_firebase_app_distribution_session_30",
+      "target": "claude_release_signing_dedicated_keystore",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L494",
+      "weight": 1.0,
+      "source": "claude_release_signing_distribution_firebase_app_distribution_session_30",
+      "target": "claude_ship_an_update_every_release",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "CLAUDE.md",
+      "source_location": "L561",
       "weight": 1.0,
       "source": "claude_attendance_logic",
       "target": "claude_homefragment_routing",
@@ -26467,7 +26632,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L508",
+      "source_location": "L546",
       "weight": 1.0,
       "source": "claude_attendance_logic",
       "target": "claude_office_users_home_office_home_sequential_day_officeattendancefragment_officeattendanceviewmodel",
@@ -26477,7 +26642,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L493",
+      "source_location": "L531",
       "weight": 1.0,
       "source": "claude_attendance_logic",
       "target": "claude_operations_users_event_based_attendancefragment_attendanceviewmodel",
@@ -26487,7 +26652,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L556",
+      "source_location": "L594",
       "weight": 1.0,
       "source": "claude_photo_upload_system",
       "target": "claude_collection_names_used_in_photo_upload_calls_must_match_firestore_sub_collection_names",
@@ -26497,7 +26662,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L623",
+      "source_location": "L661",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_admin_web_portal_done",
@@ -26507,7 +26672,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L592",
+      "source_location": "L630",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_done_session_11_complete",
@@ -26517,7 +26682,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L763",
+      "source_location": "L801",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_remaining_phase_4",
@@ -26527,7 +26692,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L613",
+      "source_location": "L651",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_11_changes",
@@ -26537,7 +26702,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L629",
+      "source_location": "L667",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_12_changes_performance_improvements_all_items_from_improvements_md_done",
@@ -26547,7 +26712,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L640",
+      "source_location": "L678",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_13_changes_notifications_phase_4_partial",
@@ -26557,7 +26722,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L659",
+      "source_location": "L697",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_14_changes_decimal_quantities_firestore_collectiongroup_rules",
@@ -26567,7 +26732,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L666",
+      "source_location": "L704",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_15_changes_google_sheets_export_cloud_functions",
@@ -26577,7 +26742,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L678",
+      "source_location": "L716",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_20_changes_employee_dashboard_fix_salary_rates_in_admin_portal",
@@ -26587,7 +26752,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L688",
+      "source_location": "L726",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_21_changes_attendance_regularization",
@@ -26597,7 +26762,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L707",
+      "source_location": "L745",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_22_changes_security_hardening_office_home_in_out",
@@ -26607,7 +26772,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L732",
+      "source_location": "L770",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_27_changes_full_material_3_teal_compose_redesign_all_screens",
@@ -26617,7 +26782,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L751",
+      "source_location": "L789",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_28_changes_leave_form_redesign_home_header_regularization_custom_approval_status",
@@ -26627,7 +26792,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L774",
+      "source_location": "L812",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_session_29_changes_graph_audit_cleanup",
@@ -26637,7 +26802,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L726",
+      "source_location": "L764",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_sessions_23_26_summary_header_had_lagged_at_session_22",
@@ -26647,7 +26812,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "CLAUDE.md",
-      "source_location": "L769",
+      "source_location": "L807",
       "weight": 1.0,
       "source": "claude_build_status",
       "target": "claude_tech_debt_backlog_graph_audit_deferred_need_a_working_gradle_build_to_verify",
@@ -28899,5 +29064,5 @@
       "source_file": "DEVELOPER_HANDBOOK.md"
     }
   ],
-  "built_at_commit": "3fd8ffdcd75b37363306cbb7f514ef191b40cd6f"
+  "built_at_commit": "0d1bd9c98a6115b2022df519b94e281a6f72d113"
 }

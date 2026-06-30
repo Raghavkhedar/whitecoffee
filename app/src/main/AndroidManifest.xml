@@ -41,6 +41,17 @@
             </intent-filter>
         </service>
 
+        <!-- FileProvider — hands the camera app a content:// URI to write captured photos into -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Disable WorkManager's auto-init so Hilt's custom WorkerFactory is used instead.
              Without this, WorkManager initialises before HiltWorkerFactory is ready and
              @HiltWorker classes cannot be injected. -->

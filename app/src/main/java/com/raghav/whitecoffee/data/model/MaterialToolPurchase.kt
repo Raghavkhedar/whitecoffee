@@ -10,6 +10,8 @@ data class PurchaseItem(
     val unit: String = "",
     val pricePerUnit: Double = 0.0,
     val totalPrice: Double = 0.0,
+    val spec1: String = "",
+    val spec2: String = "",
     val notes: String = ""
 ) {
     fun toMap(): Map<String, Any> = mapOf(
@@ -18,6 +20,8 @@ data class PurchaseItem(
         "unit"         to unit,
         "pricePerUnit" to pricePerUnit,
         "totalPrice"   to totalPrice,
+        "spec1"        to spec1,
+        "spec2"        to spec2,
         "notes"        to notes
     )
 
@@ -28,6 +32,8 @@ data class PurchaseItem(
             unit         = map["unit"] as? String ?: "",
             pricePerUnit = map["pricePerUnit"] as? Double ?: 0.0,
             totalPrice   = map["totalPrice"] as? Double ?: 0.0,
+            spec1        = map["spec1"] as? String ?: "",
+            spec2        = map["spec2"] as? String ?: "",
             notes        = map["notes"] as? String ?: ""
         )
     }
@@ -59,6 +65,8 @@ data class MaterialToolPurchase(
             "Price Per Unit" to item.pricePerUnit,
             "Total Price"    to item.totalPrice,
             "Grand Total"    to grandTotal,
+            "Spec 1"         to item.spec1,
+            "Spec 2"         to item.spec2,
             "Item Notes"     to item.notes,
             "Notes"          to notes,
             "Submitted At"   to (submittedAt?.toDate()?.toString() ?: "")

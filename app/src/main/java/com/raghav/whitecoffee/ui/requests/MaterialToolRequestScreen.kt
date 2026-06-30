@@ -33,7 +33,10 @@ import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
-internal data class ReqRow(val name: String = "", val qty: String = "", val unit: String = "", val notes: String = "")
+internal data class ReqRow(
+    val name: String = "", val qty: String = "", val unit: String = "",
+    val spec1: String = "", val spec2: String = "", val notes: String = "",
+)
 
 @Composable
 fun MaterialToolRequestScreen(
@@ -73,6 +76,11 @@ fun MaterialToolRequestScreen(
                     WcField(row.unit, { items[i] = row.copy(unit = it) }, placeholder = "Unit", modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    WcField(row.spec1, { items[i] = row.copy(spec1 = it) }, placeholder = "Spec 1 (opt.)", modifier = Modifier.weight(1f))
+                    WcField(row.spec2, { items[i] = row.copy(spec2 = it) }, placeholder = "Spec 2 (opt.)", modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
                 WcField(row.notes, { items[i] = row.copy(notes = it) }, placeholder = "Notes (optional)")
             }
             Spacer(Modifier.height(10.dp))
@@ -101,7 +109,7 @@ fun MaterialToolRequestScreen(
                 val mapped = items.mapNotNull {
                     val q = it.qty.trim().toDoubleOrNull()
                     if (it.name.isBlank() || q == null) null
-                    else RequestItem(it.name.trim(), q, it.unit.trim(), it.notes.trim())
+                    else RequestItem(it.name.trim(), q, it.unit.trim(), it.spec1.trim(), it.spec2.trim(), it.notes.trim())
                 }
                 onSubmit(siteId.trim(), siteName.trim(), mapped, notes.trim())
             },
