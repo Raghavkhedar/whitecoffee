@@ -2,7 +2,7 @@
 
 import {
   collection, collectionGroup, doc, getDocs, getDoc,
-  setDoc, updateDoc, deleteDoc, writeBatch,
+  setDoc, updateDoc, deleteDoc, deleteField, writeBatch,
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -158,18 +158,30 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
   });
 }
 
+// Approve a regularization request → write the admin attendance_status. When approving to a
+// worked status (Present) the admin may pass effective in/out times ("HH:MM"), captured on the
+// status doc so the OT/shortage ledger can carry that day's shortage/OT (missed-punch fix).
 export async function approveRegularization(
   userId: string, requestId: string, date: string, approverName: string,
-  comment: string, approvedStatus: string, userName = '', employeeId = ''
+  comment: string, approvedStatus: string, userName = '', employeeId = '',
+  inTime?: string, outTime?: string,
 ) {
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
     { status: 'approved', approvedBy: approverName, approverComment: comment, approvedStatus, reviewedAt: Timestamp.now() }
   );
+  // Set in/out only for a Present outcome with both times given; otherwise clear any stale pair
+  // so a re-approval to a non-worked status doesn't leave orphan times on the doc.
+  const carryHours = approvedStatus === 'Present' && !!inTime && !!outTime;
   batch.set(
     doc(db, 'users', userId, 'attendance_status', date),
-    { date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin', updatedAt: Timestamp.now() },
+    {
+      date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin',
+      inTime: carryHours ? inTime : deleteField(),
+      outTime: carryHours ? outTime : deleteField(),
+      updatedAt: Timestamp.now(),
+    },
     { merge: true }
   );
   await batch.commit();
@@ -362,8 +374,7 @@ export async function getOtApprovalsForDateRange(start: string, end: string): Pr
 }
 
 // Approve a day's overtime with an admin-adjusted amount + reason. Writes a per-day
-// record at users/{uid}/ot_approvals/{date} and recomputes the user's lifetime
-// approvedOtMins by summing all approvals (idempotent and safe to re-approve).
+// record at users/{uid}/ot_approvals/{date} (idempotent and safe to re-approve).
 export async function approveOt(
   user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
   date: string,
@@ -387,8 +398,21 @@ export async function rejectOt(
   await writeOtDecision(user, date, requestedMins, 0, 'rejected', reason, approverName);
 }
 
-// Shared writer for an OT decision (approve/reject). Recomputes the user's lifetime
-// approvedOtMins by summing granted minutes across all decisions (rejected contribute 0).
+// Manually grant OT for a day the system didn't auto-detect (e.g. a missed punch where OT
+// really happened). Records an approved decision flagged `manual:true`; the ledger counts it
+// as granted OT exactly like an approval. Reason required (enforced by the caller).
+export async function setManualOt(
+  user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
+  date: string,
+  approvedMins: number,
+  reason: string,
+  approverName: string,
+): Promise<void> {
+  await writeOtDecision(user, date, approvedMins, approvedMins, 'approved', reason, approverName, true);
+}
+
+// Shared writer for an OT decision (approve / reject / manual). One doc per day at
+// users/{uid}/ot_approvals/{date}; the ledger sums approvedMins live (no lifetime counter).
 async function writeOtDecision(
   user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
   date: string,
@@ -397,19 +421,17 @@ async function writeOtDecision(
   status: 'approved' | 'rejected',
   reason: string,
   approverName: string,
+  manual = false,
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', user.id, 'ot_approvals', date),
     {
       date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
-      role: user.role || '', requestedMins, approvedMins, status, reason,
+      role: user.role || '', requestedMins, approvedMins, status, manual, reason,
       approvedBy: approverName, approvedAt: Timestamp.now(),
     },
     { merge: true },
   );
-  const snap = await getDocs(collection(db, 'users', user.id, 'ot_approvals'));
-  const total = snap.docs.reduce((sum, d) => sum + (Number(d.data().approvedMins) || 0), 0);
-  await updateDoc(doc(db, 'users', user.id), { approvedOtMins: total });
 }
 
 // ── Monthly Settlements ───────────────────────────────────────────────────

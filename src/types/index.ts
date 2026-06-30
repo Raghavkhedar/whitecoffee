@@ -9,8 +9,12 @@ export interface User {
   salaryRate?: number;
   plBalance?: number;
   woBalance?: number;
-  approvedOtMins?: number;   // lifetime approved overtime (minutes)
-  shortageMins?: number;     // lifetime accrued shortage (minutes), set by nightly function
+  /** @deprecated Retired in the OT redesign (step 7). OT/shortage now net per-month in the
+   *  ledger (otLedger/otAggregate) and settle via users/{uid}/settlements/{month}; these
+   *  lifetime counters are no longer written or read. Kept only so historical docs still type. */
+  approvedOtMins?: number;
+  /** @deprecated See approvedOtMins — retired in step 7. */
+  shortageMins?: number;
   homeLat?: number;
   homeLng?: number;
   conveyanceRateType?: 1 | 2;
@@ -29,6 +33,7 @@ export interface OtApproval {
   requestedMins: number; // OT minutes the system detected for that day
   approvedMins: number;  // minutes the admin actually granted (0 when rejected)
   status?: 'approved' | 'rejected'; // decision outcome (older docs without this are 'approved')
+  manual?: boolean;      // admin-entered OT for a day with no auto-detected surplus (e.g. missed-punch anomaly)
   reason: string;
   approvedBy: string;
   approvedAt?: Timestamp;
@@ -43,6 +48,11 @@ export interface AttendanceStatus {
   role: string;
   status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO';
   markedBy: 'auto' | 'admin';
+  // Effective worked window captured when an admin regularizes a day to Present (missed-punch
+  // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw
+  // events so the corrected day can carry shortage/OT. "HH:MM" 24h, ops only.
+  inTime?: string;
+  outTime?: string;
   updatedAt?: Timestamp;
 }
 

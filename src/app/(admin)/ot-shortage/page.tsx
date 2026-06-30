@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange, approveOt, rejectOt } from '@/lib/firestore';
+import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange, approveOt, rejectOt, setManualOt } from '@/lib/firestore';
 import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus } from '@/types';
 import { RoleBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -86,6 +86,12 @@ function tsSeconds(e: AttendanceRecord): number {
   return (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
 }
 
+// Epoch seconds for a "HH:MM" IST wall-clock time on a given date (used for regularized
+// in/out, which is stored as HH:MM, so it renders back through formatTime as that IST time).
+function istHHMMToSecs(date: string, hhmm: string): number {
+  return Math.floor(new Date(`${date}T${hhmm}:00+05:30`).getTime() / 1000);
+}
+
 function formatTime(secs: number): string {
   return new Date(secs * 1000).toLocaleTimeString('en-IN', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
@@ -124,6 +130,7 @@ interface DayDetail {
   isRestDay: boolean;       // Sunday or company holiday
   firstInSecs: number;
   lastOutSecs: number;
+  regularized: boolean;     // effective in/out came from an admin regularization (no raw punches)
 }
 
 interface EmpRow {
@@ -203,24 +210,12 @@ function aggregateForEmployee(
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
 
-  eventsByDate.forEach((dayEvents, date) => {
-    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
-    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
-    if (inEvents.length === 0) return; // no check-in → nothing to show
-
-    const firstIn = Math.min(...inEvents.map(tsSeconds));
-    const lastOut = outEvents.length ? Math.max(...outEvents.map(tsSeconds)) : null;
-    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
-
-    // Open day — checked in but not yet checked out. Final hours can't be measured,
-    // so it never counts toward totals / OT / shortage, but the check-in time stays
-    // visible (shown as "in progress" in the single-day view).
-    if (lastOut === null || lastOut <= firstIn) return;
-
+  // A completed worked day (raw events or a regularized override) → ledger + detail + totals.
+  const commitDay = (date: string, firstIn: number, lastOut: number, regularized: boolean) => {
     const dayMins = Math.round((lastOut - firstIn) / 60);
     totalActualMins += dayMins;
     hasAnyActual = true;
-
+    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
     if (globalLastOut === null || lastOut > globalLastOut) globalLastOut = lastOut;
 
     const restDay     = isSunday(date) || holidays.has(date);
@@ -231,7 +226,7 @@ function aggregateForEmployee(
       date, plannedMins: plannedDay, plannedStart: planInfo?.startTime ?? '', plannedEnd: planInfo?.endTime ?? '',
       declaredOtMins: declaredDay, actualMins: dayMins,
       autoOtMins: 0, pendingExtraMins: 0, shortageMins: 0, restDayOtMins: 0, isRestDay: restDay,
-      firstInSecs: firstIn, lastOutSecs: lastOut,
+      firstInSecs: firstIn, lastOutSecs: lastOut, regularized,
     };
 
     if (isOps) {
@@ -251,7 +246,37 @@ function aggregateForEmployee(
       if (led.unauthorizedRestDay)  unauthorizedRestDays.push(detail);
     }
     workedDays.push(detail);
+  };
+
+  // Regularized-to-Present days carry admin-set effective in/out (missed-punch fix); these
+  // override raw events for the date so the corrected day can carry shortage/OT (ops only).
+  const overrideByDate = new Map<string, { inSecs: number; outSecs: number }>();
+  if (isOps) {
+    statuses.filter(s => s.userId === user.id && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
+      const inSecs = istHHMMToSecs(s.date, s.inTime!), outSecs = istHHMMToSecs(s.date, s.outTime!);
+      if (outSecs > inSecs) overrideByDate.set(s.date, { inSecs, outSecs });
+    });
+  }
+
+  eventsByDate.forEach((dayEvents, date) => {
+    if (overrideByDate.has(date)) return; // regularization in/out is authoritative for this date
+    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
+    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
+    if (inEvents.length === 0) return; // no check-in → nothing to show
+
+    const firstIn = Math.min(...inEvents.map(tsSeconds));
+    const lastOut = outEvents.length ? Math.max(...outEvents.map(tsSeconds)) : null;
+    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
+
+    // Open day — checked in but not yet checked out. Final hours can't be measured,
+    // so it never counts toward totals / OT / shortage, but the check-in time stays
+    // visible (shown as "in progress" in the single-day view).
+    if (lastOut === null || lastOut <= firstIn) return;
+
+    commitDay(date, firstIn, lastOut, false);
   });
+
+  overrideByDate.forEach((o, date) => commitDay(date, o.inSecs, o.outSecs, true));
 
   const approvedByDate = new Map<string, OtApproval>();
   approvals.filter(a => a.userId === user.id).forEach(a => approvedByDate.set(a.date, a));
@@ -299,9 +324,11 @@ function aggregateForEmployee(
 
 // ── Drill-in modal: OT review/approval + shortage (ops) and worked days ────────
 
-function DetailModal({ row, adminName, onClose, onApproved }: {
+function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
   row: EmpRow;
   adminName: string;
+  start: string;
+  end: string;
   onClose: () => void;
   onApproved: () => void;
 }) {
@@ -312,6 +339,25 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
   });
   const [saving, setSaving] = useState('');
   const [error, setError]   = useState('');
+  const [manual, setManual] = useState<{ date: string; mins: string; reason: string }>({ date: end, mins: '', reason: '' });
+  const [manualSaving, setManualSaving] = useState(false);
+
+  async function addManualOt() {
+    const mins = Math.max(0, Math.round(Number(manual.mins) || 0));
+    if (!manual.date)         { setError('Pick a date for the manual OT entry.'); return; }
+    if (mins <= 0)            { setError('Enter the OT minutes to grant (greater than 0).'); return; }
+    if (!manual.reason.trim()){ setError('A reason is required for a manual OT entry.'); return; }
+    setError('');
+    setManualSaving(true);
+    try {
+      await setManualOt(row.user, manual.date, mins, manual.reason.trim(), adminName);
+      setManual({ date: end, mins: '', reason: '' });
+      onApproved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save the manual entry. Try again.');
+    }
+    setManualSaving(false);
+  }
 
   function set(date: string, field: 'mins' | 'reason', value: string) {
     setDrafts(prev => ({ ...prev, [date]: { ...prev[date], [field]: value } }));
@@ -348,9 +394,6 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
     setSaving('');
   }
 
-  const lifetimeOt = row.user.approvedOtMins ?? 0;
-  const lifetimeShortage = row.user.shortageMins ?? 0;
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -360,10 +403,7 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
               <h2 className="text-lg font-bold text-text-primary">{row.user.name}</h2>
               <RoleBadge role={row.user.role} />
             </div>
-            <p className="text-xs text-text-secondary mt-0.5 font-mono">
-              {row.user.employeeId}
-              {row.isOps && <> · Lifetime OT <span className="text-[#0A7A50] font-semibold">{minutesToDisplay(lifetimeOt)}</span> · Lifetime shortage <span className="text-[#C42B2B] font-semibold">{minutesToDisplay(lifetimeShortage)}</span></>}
-            </p>
+            <p className="text-xs text-text-secondary mt-0.5 font-mono">{row.user.employeeId}</p>
           </div>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl leading-none">×</button>
         </div>
@@ -451,6 +491,37 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
             </div>
           )}
 
+          {/* Manual OT entry (operations only) — grant OT for a day the system didn't auto-detect
+              (e.g. a missed punch where OT really happened). Counts as granted OT in the ledger. */}
+          {row.isOps && (
+            <div className="border border-dashed border-[#D8D2CB] rounded-xl p-4 bg-[#FCFBFA]">
+              <div className="label mb-1">Add manual OT</div>
+              <p className="text-xs text-text-secondary mb-3">For anomalies/missed punches the auto-detection can’t see. Logged with your reason and counted as granted OT.</p>
+              <div className="grid grid-cols-[150px_120px_1fr] gap-3 items-start">
+                <div>
+                  <label className="label">Date</label>
+                  <input type="date" min={start} max={end} value={manual.date}
+                    onChange={e => setManual(m => ({ ...m, date: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="label">OT (min)</label>
+                  <input type="number" min="0" value={manual.mins}
+                    onChange={e => setManual(m => ({ ...m, mins: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="label">Reason <span className="text-red-500">*</span></label>
+                  <input value={manual.reason} onChange={e => setManual(m => ({ ...m, reason: e.target.value }))}
+                    placeholder="e.g. missed checkout — confirmed worked till 8 PM" className="input" />
+                </div>
+              </div>
+              <div className="flex justify-end mt-3">
+                <button onClick={addManualOt} disabled={manualSaving} className="btn-primary !py-1.5 !px-4 text-[13px]">
+                  {manualSaving ? 'Saving…' : 'Add OT'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* OT decisions — history (operations only): pre-declared auto, rest-day auto, plus admin approve/reject. */}
           {row.isOps && (row.approvedInRange.length > 0 || row.autoOtRangeMins > 0 || row.restDayOtRangeMins > 0) && (
             <div>
@@ -479,7 +550,10 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
                   return (
                     <div key={a.date} className={`flex items-start justify-between border rounded-lg px-3 py-2 text-sm ${rejected ? 'bg-[#FCF7F7] border-[#F4E4E4]' : 'bg-[#FBFAF8] border-[#F0EEEB]'}`}>
                       <div>
-                        <div className="font-medium text-text-primary">{fmtDay(a.date)}</div>
+                        <div className="font-medium text-text-primary flex items-center gap-1.5">
+                          {fmtDay(a.date)}
+                          {a.manual && <span className="text-[10px] font-semibold bg-[#E7F0FA] text-[#1A5FAF] px-1.5 py-0.5 rounded">Manual</span>}
+                        </div>
                         <div className="text-xs text-text-secondary">{a.reason}{a.approvedBy ? ` · ${a.approvedBy}` : ''}</div>
                       </div>
                       {rejected ? (
@@ -505,7 +579,10 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
                   {row.shortageDays.map(day => (
                     <div key={day.date} className="flex items-start justify-between bg-[#FCF7F7] border border-[#F4E4E4] rounded-lg px-3 py-2 text-sm">
                       <div>
-                        <div className="font-medium text-text-primary">{fmtDay(day.date)}</div>
+                        <div className="font-medium text-text-primary flex items-center gap-1.5">
+                          {fmtDay(day.date)}
+                          {day.regularized && <span className="text-[10px] font-semibold bg-[#FDF3E4] text-[#B26B07] px-1.5 py-0.5 rounded">Regularized</span>}
+                        </div>
                         <div className="text-xs text-text-secondary font-mono">
                           Planned {minutesToDisplay(day.plannedMins)} · Worked {minutesToDisplay(day.actualMins)} · {formatTime(day.firstInSecs)} – {formatTime(day.lastOutSecs)}
                         </div>
@@ -546,7 +623,10 @@ function DetailModal({ row, adminName, onClose, onApproved }: {
                 {row.workedDays.map(day => (
                   <div key={day.date} className="flex items-start justify-between bg-[#FBFAF8] border border-[#F0EEEB] rounded-lg px-3 py-2 text-sm">
                     <div>
-                      <div className="font-medium text-text-primary">{fmtDay(day.date)}</div>
+                      <div className="font-medium text-text-primary flex items-center gap-1.5">
+                        {fmtDay(day.date)}
+                        {day.regularized && <span className="text-[10px] font-semibold bg-[#FDF3E4] text-[#B26B07] px-1.5 py-0.5 rounded">Regularized</span>}
+                      </div>
                       <div className="text-xs text-text-secondary font-mono">{formatTime(day.firstInSecs)} – {formatTime(day.lastOutSecs)}</div>
                     </div>
                     <span className="font-mono text-text-primary font-semibold whitespace-nowrap">{minutesToDisplay(day.actualMins)}</span>
@@ -673,8 +753,6 @@ export default function OtShortagePage() {
       'WO days': r.isOps ? r.woDates.length : '',
       'WO debit (mins)': r.isOps ? r.woDebitMins : '',
       'Net ledger (mins)': r.isOps ? r.netLedgerMins : '',
-      'Lifetime Approved OT (mins)': r.isOps ? (r.user.approvedOtMins ?? 0) : '',
-      'Lifetime Shortage (mins)': r.isOps ? (r.user.shortageMins ?? 0) : '',
     })));
   }
 
@@ -904,6 +982,8 @@ export default function OtShortagePage() {
         <DetailModal
           row={modalRow}
           adminName={adminName}
+          start={start}
+          end={end}
           onClose={() => setModalUserId(null)}
           onApproved={loadData}
         />

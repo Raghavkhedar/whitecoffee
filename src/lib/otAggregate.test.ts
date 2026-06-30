@@ -55,6 +55,29 @@ eq('woDates = 1', r.woDates.length, 1);
 eq('woDebit = 480', r.woDebitMins, 480);
 eq('net = -480', r.netMins, -480);
 
+console.log('\nRegularized-to-Present day with effective in/out (missed punch, no events):');
+// 2026-06-03 Wednesday, shift 10:00–18:00 (480). Admin regularized with worked 09:00–17:00 (480
+// window but inTime 10:00 outTime 16:30 → 390 worked → 90 shortage). Use 10:00→16:30.
+const planReg = [{ id: '2026-06-03', userId: U, date: '2026-06-03', startTime: '10:00', endTime: '18:00' } as never];
+const statusReg = [{ id: '2026-06-03', userId: U, date: '2026-06-03', status: 'Present', inTime: '10:00', outTime: '16:30' } as never];
+r = computeRangeLedger(U, [], planReg, [], statusReg, noHol);
+eq('reg shortage = 90 (480 − 390)', r.shortageMins, 90);
+eq('reg net = -90', r.netMins, -90);
+
+console.log('\nRegularized in/out OVERRIDES raw events for the same date:');
+// Events say worked 540 (would be 60 surplus), but admin regularized to 10:00–18:30 (510 → +30 OT).
+const statusReg2 = [{ id: '2026-06-01', userId: U, date: '2026-06-01', status: 'Present', inTime: '10:00', outTime: '18:30' } as never];
+r = computeRangeLedger(U, evNormal, planNormal, [], statusReg2, noHol);
+eq('override autoOt = 30 (declared cap)', r.autoOtMins, 30);
+eq('override pending = 0 (30 surplus all within declared)', r.pendingOtMins, 0);
+eq('override shortage = 0', r.shortageMins, 0);
+
+console.log('\nManual OT grant on a day with no events (counts as granted):');
+const manualAppr = [{ id: '2026-06-04', userId: U, date: '2026-06-04', approvedMins: 120, status: 'approved', manual: true } as never];
+r = computeRangeLedger(U, [], [], manualAppr, [], noHol);
+eq('granted = 120', r.grantedOtMins, 120);
+eq('net = 120', r.netMins, 120);
+
 console.log('\nsettlementCash (rate ₹800/day):');
 eq('unworked WO → 0', settlementCash(800, 1, -480), 0);              // +800 − 800
 eq('WO worked off (net 0) → +800', settlementCash(800, 1, 0), 800);  // kept the paid day

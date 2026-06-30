@@ -59,19 +59,19 @@ export function computeRangeLedger(
   const apprByDate = new Map<string, OtApproval>();
   approvals.filter(a => a.userId === userId).forEach(a => apprByDate.set(a.date, a));
 
+  // Regularized-to-Present days carry an effective in/out captured by the admin (missed-punch
+  // fix). These override raw events for the date so the corrected day can carry shortage/OT.
+  const overrideByDate = new Map<string, number>(); // date → worked minutes
+  statuses.filter(s => s.userId === userId && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
+    const mins = hhmmToMinutes(s.outTime) - hhmmToMinutes(s.inTime);
+    if (mins > 0) overrideByDate.set(s.date, mins);
+  });
+
   let autoOtMins = 0, restDayOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates: string[] = [];
   const unauthorizedRestDates: string[] = [];
 
-  eventsByDate.forEach((dayEvents, date) => {
-    const ins  = dayEvents.filter(e => OPS_IN_TYPES.has(e.type));
-    const outs = dayEvents.filter(e => OPS_OUT_TYPES.has(e.type));
-    if (ins.length === 0) return;
-    const firstIn = Math.min(...ins.map(tsSeconds));
-    const lastOut = outs.length ? Math.max(...outs.map(tsSeconds)) : null;
-    if (lastOut === null || lastOut <= firstIn) return; // open/invalid day
-
-    const dayMins = Math.round((lastOut - firstIn) / 60);
+  const accrueDay = (date: string, dayMins: number) => {
     const info = plannedByDate.get(date);
     const led = computeDayLedger({
       plannedMins: info?.planned ?? 0,
@@ -85,7 +85,21 @@ export function computeRangeLedger(
     restDayOtMins  += led.restDayOtMins;
     if (led.pendingExtraMins > 0 && !apprByDate.has(date)) { pendingOtMins += led.pendingExtraMins; pendingDates.push(date); }
     if (led.unauthorizedRestDay) unauthorizedRestDates.push(date);
+  };
+
+  eventsByDate.forEach((dayEvents, date) => {
+    if (overrideByDate.has(date)) return; // regularization in/out is authoritative for this date
+    const ins  = dayEvents.filter(e => OPS_IN_TYPES.has(e.type));
+    const outs = dayEvents.filter(e => OPS_OUT_TYPES.has(e.type));
+    if (ins.length === 0) return;
+    const firstIn = Math.min(...ins.map(tsSeconds));
+    const lastOut = outs.length ? Math.max(...outs.map(tsSeconds)) : null;
+    if (lastOut === null || lastOut <= firstIn) return; // open/invalid day
+
+    accrueDay(date, Math.round((lastOut - firstIn) / 60));
   });
+
+  overrideByDate.forEach((mins, date) => accrueDay(date, mins));
 
   const grantedOtMins = Array.from(apprByDate.values()).reduce((s, a) => s + (Number(a.approvedMins) || 0), 0);
   const woDates = statuses.filter(s => s.userId === userId && s.status === 'WO').map(s => s.date).sort();

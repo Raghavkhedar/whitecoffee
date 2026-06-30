@@ -3,8 +3,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, approveOt, rejectOt } from '@/lib/firestore';
-import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday } from '@/types';
+import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange, approveOt, rejectOt } from '@/lib/firestore';
+import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus } from '@/types';
 import { RoleBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
@@ -81,6 +81,11 @@ function tsSeconds(e: AttendanceRecord): number {
   return (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
 }
 
+// Epoch seconds for a "HH:MM" IST wall-clock on a given date (regularized in/out is stored HH:MM).
+function istHHMMToSecs(date: string, hhmm: string): number {
+  return Math.floor(new Date(`${date}T${hhmm}:00+05:30`).getTime() / 1000);
+}
+
 const OFFICE_DAY_MINS = 8 * 60;
 
 // Field-work event types for operations (home events excluded — commute bookends)
@@ -125,6 +130,7 @@ function aggregateForEmployee(
   allEvents: AttendanceRecord[],
   plannedItems: PlannedHours[],
   approvals: OtApproval[],
+  statuses: AttendanceStatus[],
   start: string,
   end: string,
   holidays: Set<string>,
@@ -168,24 +174,12 @@ function aggregateForEmployee(
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
 
-  eventsByDate.forEach((dayEvents, date) => {
-    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
-    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
-    if (inEvents.length === 0) return; // no check-in → nothing to show
-
-    const firstIn  = Math.min(...inEvents.map(tsSeconds));
-    const lastOut  = outEvents.length ? Math.max(...outEvents.map(tsSeconds)) : null;
-    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
-
-    // Open day — checked in but not yet checked out. Final hours can't be measured,
-    // so it never counts toward totals / OT / shortage, but the check-in time stays
-    // visible (shown as "in progress" in the single-day view).
-    if (lastOut === null || lastOut <= firstIn) return;
-
+  // A completed worked day (raw events or a regularized override) → ledger + totals.
+  const commitDay = (date: string, firstIn: number, lastOut: number) => {
     const dayMins = Math.round((lastOut - firstIn) / 60);
     totalActualMins += dayMins;
     hasAnyActual = true;
-
+    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
     if (globalLastOut === null || lastOut > globalLastOut) globalLastOut = lastOut;
 
     // Sunday/holiday: all worked minutes count as OT, but only when admin-authorized (auto-approved).
@@ -211,7 +205,37 @@ function aggregateForEmployee(
       // Office/admin: shortage only, vs the fixed 8h window (no OT, no rest-day, no holidays).
       shortageMins += Math.max(0, plannedDay - dayMins);
     }
+  };
+
+  // Regularized-to-Present days carry admin-set effective in/out (missed-punch fix); these
+  // override raw events for the date so the corrected day can carry shortage/OT (ops only).
+  const overrideByDate = new Map<string, { inSecs: number; outSecs: number }>();
+  if (isOps) {
+    statuses.filter(s => s.userId === user.id && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
+      const inSecs = istHHMMToSecs(s.date, s.inTime!), outSecs = istHHMMToSecs(s.date, s.outTime!);
+      if (outSecs > inSecs) overrideByDate.set(s.date, { inSecs, outSecs });
+    });
+  }
+
+  eventsByDate.forEach((dayEvents, date) => {
+    if (overrideByDate.has(date)) return; // regularization in/out is authoritative for this date
+    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
+    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
+    if (inEvents.length === 0) return; // no check-in → nothing to show
+
+    const firstIn  = Math.min(...inEvents.map(tsSeconds));
+    const lastOut  = outEvents.length ? Math.max(...outEvents.map(tsSeconds)) : null;
+    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
+
+    // Open day — checked in but not yet checked out. Final hours can't be measured,
+    // so it never counts toward totals / OT / shortage, but the check-in time stays
+    // visible (shown as "in progress" in the single-day view).
+    if (lastOut === null || lastOut <= firstIn) return;
+
+    commitDay(date, firstIn, lastOut);
   });
+
+  overrideByDate.forEach((o, date) => commitDay(date, o.inSecs, o.outSecs));
 
   // Split OT days into pending vs already-approved
   const approvedByDate = new Map<string, OtApproval>();
@@ -289,15 +313,13 @@ function OtModal({ row, adminName, onClose, onApproved }: {
     setSaving('');
   }
 
-  const lifetime = row.user.approvedOtMins ?? 0;
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div>
             <h2 className="text-lg font-bold text-text-primary">Overtime — {row.user.name}</h2>
-            <p className="text-xs text-text-secondary mt-0.5 font-mono">{row.user.employeeId} · Lifetime approved OT: {minutesToDisplay(lifetime)}</p>
+            <p className="text-xs text-text-secondary mt-0.5 font-mono">{row.user.employeeId}</p>
           </div>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl leading-none">×</button>
         </div>
@@ -386,6 +408,7 @@ export default function EmployeeDashboardPage() {
   const [planned, setPlanned]         = useState<PlannedHours[]>([]);
   const [approvals, setApprovals]     = useState<OtApproval[]>([]);
   const [holidays, setHolidays]       = useState<Holiday[]>([]);
+  const [statuses, setStatuses]       = useState<AttendanceStatus[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [roleFilter, setRoleFilter]   = useState('');
@@ -414,18 +437,20 @@ export default function EmployeeDashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [fetchedUsers, fetchedEvents, fetchedPlanned, fetchedApprovals, fetchedHolidays] = await Promise.all([
+      const [fetchedUsers, fetchedEvents, fetchedPlanned, fetchedApprovals, fetchedHolidays, fetchedStatuses] = await Promise.all([
         getAllUsers(),
         getAttendanceForDateRange(start, end),
         getPlannedHoursForDateRange(start, end),
         getOtApprovalsForDateRange(start, end),
         getHolidaysForDateRange(start, end),
+        getAttendanceStatusForDateRange(start, end),
       ]);
       setUsers(fetchedUsers);
       setEvents(fetchedEvents);
       setPlanned(fetchedPlanned);
       setApprovals(fetchedApprovals);
       setHolidays(fetchedHolidays);
+      setStatuses(fetchedStatuses);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -444,8 +469,8 @@ export default function EmployeeDashboardPage() {
         const order: Record<string, number> = { office: 0, admin: 1, operations: 2 };
         return (order[a.role] ?? 3) - (order[b.role] ?? 3) || a.name.localeCompare(b.name);
       })
-      .map(u => aggregateForEmployee(u, events, planned, approvals, start, end, holidaySet));
-  }, [users, events, planned, approvals, roleFilter, empFilter, start, end, holidaySet]);
+      .map(u => aggregateForEmployee(u, events, planned, approvals, statuses, start, end, holidaySet));
+  }, [users, events, planned, approvals, statuses, roleFilter, empFilter, start, end, holidaySet]);
 
   const modalRow = otModalUserId ? rows.find(r => r.user.id === otModalUserId) ?? null : null;
   const colCount = isSingleDay ? 10 : 9;
@@ -465,8 +490,6 @@ export default function EmployeeDashboardPage() {
       'Rest-day OT (mins)': r.restDayOtRangeMins,
       'Granted OT (mins)': r.approvedOtRangeMins,
       'Total Approved OT (mins)': r.autoOtRangeMins + r.restDayOtRangeMins + r.approvedOtRangeMins,
-      'Lifetime Approved OT (mins)': r.user.approvedOtMins ?? 0,
-      'Lifetime Shortage (mins)': r.user.shortageMins ?? 0,
     })));
   }
 

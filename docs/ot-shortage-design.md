@@ -1,8 +1,10 @@
-# OT, Shortage & WO — System Redesign (WORKING DRAFT)
+# OT, Shortage & WO — System Redesign
 
-> **Status:** model fully decided (all 5 questions answered). Ready to finalize the
-> implementation plan. No code written yet.
-> Today's date when drafted: 2026-06-29. Decisions locked: 2026-06-29.
+> **Status:** ✅ fully built (steps 1–7 complete, 2026-06-30). Model decided & all 5 questions
+> answered 2026-06-29. Pure math in `src/lib/otLedger.ts` + `src/lib/otAggregate.ts` (44 unit
+> tests). **Outstanding:** `firebase deploy --only functions` to make the step-6b payroll-arrears
+> + step-7 counter-retirement changes live (portal is already deployed-on-build).
+> Drafted 2026-06-29; decisions locked 2026-06-29.
 
 ## Why we're redesigning
 
@@ -174,10 +176,28 @@ flow**, which is *not yet built* — it should land before (or with) shortage go
    OT paid in arrears). **Requires `firebase deploy --only functions` to take effect.**
    Still TODO from this step: regularization in/out capture (so a regularized-to-Present day can
    carry shortage/OT) — deferred to step 7.
-7. Manual OT entry + retire lifetime counters (+ regularization in/out capture). ← **next**
+7. **Manual OT entry + regularization in/out capture + retire lifetime counters — ✅ DONE 2026-06-30.**
+   - **Manual OT:** `setManualOt` writes an `ot_approvals/{date}` decision flagged `manual:true`
+     (counted as granted OT by the ledger, exactly like an approval). Admin adds it via an
+     **Add manual OT** form (date within range / minutes / mandatory reason) in the OT/Shortage
+     drill-in modal — for anomalies the auto-detection can't see (e.g. a missed punch where OT
+     really happened). Manual entries show a **Manual** tag in the OT-decisions history.
+   - **Regularization in/out capture:** approving a regularization **to Present** can carry an
+     **effective in/out** (`inTime`/`outTime` on the `attendance_status` doc). The shared ledger
+     (`computeRangeLedger`) + the OT/Shortage page + the Employee Dashboard treat that override as
+     **authoritative for the date** (it replaces raw events), so a corrected/missed-punch Present
+     day now carries shortage/OT. Override days show a **Regularized** tag. Non-Present outcomes
+     clear any stale in/out. (Only Present carries hours — SL/Half-Day keep their own pay penalty.)
+   - **Retired lifetime counters:** `users.approvedOtMins`/`users.shortageMins` are no longer
+     written or read — `writeOtDecision` dropped its `approvedOtMins` rollup; the nightly
+     `computeDailyAttendanceStatus` dropped the lifetime `shortageMins` accrual (still writes the
+     canonical per-day `daily_hours/{date}`); the "Lifetime OT/shortage" modal lines + export
+     columns are gone from both pages. The type fields are kept `@deprecated` for historical docs.
+   - New aggregate tests cover the regularized override + manual grant (`otAggregate.test.ts`, 29).
+   - ⚠ The nightly-function change needs `firebase deploy --only functions` (bundled with step 6b).
 
-> Still **portal-only / no payroll effect** so far — the nightly Cloud Function and salary math
-> are untouched. The ledger/settlement wiring (steps 4–7) is where pay is affected.
+> Steps 3–5 were **portal-only**; the ledger/settlement wiring (steps 4, 6, 7) is where pay is
+> affected. All build steps are now complete.
 
 ### Shared ledger module + tests (2026-06-30)
 The per-day math (shortage / declared-OT split / rest-day OT) and the net formula now live in one

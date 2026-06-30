@@ -170,15 +170,12 @@ exports.computeDailyAttendanceStatus = onSchedule(
     // Read per-user docs directly to avoid needing a collectionGroup index on date.
     const adminOverrides = new Set();
     const priorStatus    = new Map(); // userId → status already recorded for today
-    const priorHours     = new Map(); // userId → daily_hours already recorded for today
     const statusChecks = allUsers.map(async (user) => {
       const statusDoc = await db.doc(`users/${user.id}/attendance_status/${today}`).get();
       if (statusDoc.exists) {
         if (statusDoc.data().markedBy === "admin") adminOverrides.add(user.id);
         priorStatus.set(user.id, statusDoc.data().status);
       }
-      const hoursDoc = await db.doc(`users/${user.id}/daily_hours/${today}`).get();
-      if (hoursDoc.exists) priorHours.set(user.id, hoursDoc.data());
     });
 
     // Operations have variable shifts: admin sets a planned start/end per day.
@@ -212,7 +209,6 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
     const batch           = db.batch();
     const plDeductions    = [];
-    const shortageAccruals = []; // { uid, delta } — change in lifetime shortage minutes
 
     for (const user of allUsers) {
       if (adminOverrides.has(user.id)) continue;
@@ -287,16 +283,12 @@ exports.computeDailyAttendanceStatus = onSchedule(
         const shortageMins = Math.max(0, plannedMins - actualMins);
         const otMins       = Math.max(0, actualMins - plannedMins);
 
+        // Per-day canonical record (the OT/shortage ledger reads this, not a lifetime counter).
         batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
           date: today, userId: user.id, role: user.role,
           plannedMins, actualMins, shortageMins, otMins,
           updatedAt: admin.firestore.Timestamp.now(),
         });
-
-        // Idempotent: accrue only the delta vs any value already stored for today.
-        const prior = priorHours.get(user.id);
-        const delta = shortageMins - (prior ? (prior.shortageMins || 0) : 0);
-        if (delta !== 0) shortageAccruals.push({ uid: user.id, delta });
       }
     }
 
@@ -304,10 +296,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
     for (const uid of plDeductions) {
       await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
     }
-    for (const { uid, delta } of shortageAccruals) {
-      await db.doc(`users/${uid}`).update({ shortageMins: admin.firestore.FieldValue.increment(delta) });
-    }
-    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}, shortage updated: ${shortageAccruals.length}`);
+    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
   }
 );
 
