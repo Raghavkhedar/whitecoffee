@@ -10,7 +10,7 @@ import { downloadSheet } from '@/lib/excel';
 
 type Filter = 'pending' | 'approved' | 'rejected' | 'all';
 
-const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'PL', 'LWP'] as const;
+const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'PL', 'LWP', 'WO'] as const;
 
 function StatusBadge({ status }: { status: string }) {
   const cls = status === 'approved' ? 'badge-approved' : status === 'rejected' ? 'badge-rejected' : 'badge-pending';
@@ -29,6 +29,7 @@ function ApprovedStatusBadge({ status }: { status: string }) {
     Absent:   'bg-red-100 text-red-700',
     PL:       'bg-blue-100 text-blue-700',
     LWP:      'bg-purple-100 text-purple-700',
+    WO:       'bg-sky-100 text-sky-700',
   };
   const cls = colors[status] ?? 'bg-gray-100 text-gray-600';
   return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>→ {status}</span>;
@@ -60,6 +61,8 @@ export default function RegularizationPage() {
   const [actionModal, setActionModal] = useState<{ req: RegularizationRequest; type: 'approve' | 'reject' } | null>(null);
   const [actionComment, setActionComment]     = useState('');
   const [approvedStatus, setApprovedStatus]   = useState<string>('Present');
+  const [effIn, setEffIn]             = useState('');
+  const [effOut, setEffOut]           = useState('');
   const [actioning, setActioning]     = useState('');
   const [employeeFilter, setEmployeeFilter]   = useState('');
 
@@ -91,15 +94,27 @@ export default function RegularizationPage() {
     setActionModal({ req, type });
     setActionComment('');
     setApprovedStatus('Present');
+    setEffIn('');
+    setEffOut('');
   }
 
   async function handleAction() {
     if (!actionModal) return;
     const { req, type } = actionModal;
+    if (type === 'approve' && approvedStatus === 'Present') {
+      if (!!effIn !== !!effOut) { setError('Enter both in and out times, or leave both blank.'); return; }
+      if (effIn && effOut && effOut <= effIn) { setError('Out time must be after in time.'); return; }
+    }
+    setError('');
     setActioning(req.id);
     try {
       if (type === 'approve') {
-        await approveRegularization(req.userId, req.id, req.date, adminName, actionComment, approvedStatus, req.userName, req.employeeId);
+        // Effective in/out only meaningful for a Present outcome (lets that day carry shortage/OT).
+        const carry = approvedStatus === 'Present' && effIn && effOut;
+        await approveRegularization(
+          req.userId, req.id, req.date, adminName, actionComment, approvedStatus, req.userName, req.employeeId,
+          carry ? effIn : undefined, carry ? effOut : undefined,
+        );
       } else {
         await rejectRegularization(req.userId, req.id, adminName, actionComment);
       }
@@ -263,6 +278,20 @@ export default function RegularizationPage() {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {actionModal.type === 'approve' && approvedStatus === 'Present' && (
+              <div className="mb-4">
+                <label className="label">Effective worked hours <span className="font-normal text-text-secondary">(optional)</span></label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input type="time" className="input" value={effIn} onChange={e => setEffIn(e.target.value)} />
+                  <span className="text-text-secondary text-sm">to</span>
+                  <input type="time" className="input" value={effOut} onChange={e => setEffOut(e.target.value)} />
+                </div>
+                <p className="text-xs text-text-secondary mt-1.5">
+                  Set the real in/out for a missed-punch day so it carries shortage/overtime in the OT ledger (operations). Leave blank for a full-day Present.
+                </p>
               </div>
             )}
 

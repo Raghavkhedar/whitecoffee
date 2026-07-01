@@ -2,14 +2,14 @@
 
 import {
   collection, collectionGroup, doc, getDocs, getDoc,
-  setDoc, updateDoc, deleteDoc, writeBatch,
+  setDoc, updateDoc, deleteDoc, deleteField, writeBatch,
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { istTodayStr } from './date';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -158,18 +158,30 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
   });
 }
 
+// Approve a regularization request → write the admin attendance_status. When approving to a
+// worked status (Present) the admin may pass effective in/out times ("HH:MM"), captured on the
+// status doc so the OT/shortage ledger can carry that day's shortage/OT (missed-punch fix).
 export async function approveRegularization(
   userId: string, requestId: string, date: string, approverName: string,
-  comment: string, approvedStatus: string, userName = '', employeeId = ''
+  comment: string, approvedStatus: string, userName = '', employeeId = '',
+  inTime?: string, outTime?: string,
 ) {
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
     { status: 'approved', approvedBy: approverName, approverComment: comment, approvedStatus, reviewedAt: Timestamp.now() }
   );
+  // Set in/out only for a Present outcome with both times given; otherwise clear any stale pair
+  // so a re-approval to a non-worked status doesn't leave orphan times on the doc.
+  const carryHours = approvedStatus === 'Present' && !!inTime && !!outTime;
   batch.set(
     doc(db, 'users', userId, 'attendance_status', date),
-    { date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin', updatedAt: Timestamp.now() },
+    {
+      date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin',
+      inTime: carryHours ? inTime : deleteField(),
+      outTime: carryHours ? outTime : deleteField(),
+      updatedAt: Timestamp.now(),
+    },
     { merge: true }
   );
   await batch.commit();
@@ -273,6 +285,21 @@ export async function setAttendanceStatus(
   );
 }
 
+// Remove an admin-set status doc (e.g. clearing a WO) so the nightly function can recompute.
+export async function deleteAttendanceStatus(userId: string, date: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', userId, 'attendance_status', date));
+}
+
+export async function getAttendanceStatusForDateRange(start: string, end: string): Promise<AttendanceStatus[]> {
+  const q = query(
+    collectionGroup(db, 'attendance_status'),
+    where('date', '>=', start),
+    where('date', '<=', end)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AttendanceStatus));
+}
+
 // ── Planned Hours (operations shift windows) ──────────────────────────────
 
 // month is 1-indexed (1 = January)
@@ -315,11 +342,23 @@ export async function setPlannedHours(
   userId: string,
   date: string,
   startTime: string,
-  endTime: string
+  endTime: string,
+  declaredOtMins = 0,
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', userId, 'planned_hours', date),
-    { userId, date, startTime, endTime, updatedAt: Timestamp.now() },
+    { userId, date, startTime, endTime, declaredOtMins, updatedAt: Timestamp.now() },
+    { merge: true }
+  );
+}
+
+// Authorize (or revoke) all-hours OT for an ops employee on a Sunday/holiday. Merges a flag
+// into planned_hours/{date} without requiring a shift window. When true, the OT/shortage
+// ledger counts every worked minute that day as auto-approved OT.
+export async function setOtAuthorization(userId: string, date: string, authorized: boolean): Promise<void> {
+  await setDoc(
+    doc(db, 'users', userId, 'planned_hours', date),
+    { userId, date, otAuthorized: authorized, updatedAt: Timestamp.now() },
     { merge: true }
   );
 }
@@ -335,8 +374,7 @@ export async function getOtApprovalsForDateRange(start: string, end: string): Pr
 }
 
 // Approve a day's overtime with an admin-adjusted amount + reason. Writes a per-day
-// record at users/{uid}/ot_approvals/{date} and recomputes the user's lifetime
-// approvedOtMins by summing all approvals (idempotent and safe to re-approve).
+// record at users/{uid}/ot_approvals/{date} (idempotent and safe to re-approve).
 export async function approveOt(
   user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
   date: string,
@@ -345,18 +383,80 @@ export async function approveOt(
   reason: string,
   approverName: string,
 ): Promise<void> {
+  await writeOtDecision(user, date, requestedMins, approvedMins, 'approved', reason, approverName);
+}
+
+// Reject a day's overtime: records a 0-minute decision so the day stops showing as pending
+// and is logged in history. Reason required (enforced by the caller).
+export async function rejectOt(
+  user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
+  date: string,
+  requestedMins: number,
+  reason: string,
+  approverName: string,
+): Promise<void> {
+  await writeOtDecision(user, date, requestedMins, 0, 'rejected', reason, approverName);
+}
+
+// Manually grant OT for a day the system didn't auto-detect (e.g. a missed punch where OT
+// really happened). Records an approved decision flagged `manual:true`; the ledger counts it
+// as granted OT exactly like an approval. Reason required (enforced by the caller).
+export async function setManualOt(
+  user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
+  date: string,
+  approvedMins: number,
+  reason: string,
+  approverName: string,
+): Promise<void> {
+  await writeOtDecision(user, date, approvedMins, approvedMins, 'approved', reason, approverName, true);
+}
+
+// Shared writer for an OT decision (approve / reject / manual). One doc per day at
+// users/{uid}/ot_approvals/{date}; the ledger sums approvedMins live (no lifetime counter).
+async function writeOtDecision(
+  user: Pick<User, 'id' | 'name' | 'employeeId' | 'role'>,
+  date: string,
+  requestedMins: number,
+  approvedMins: number,
+  status: 'approved' | 'rejected',
+  reason: string,
+  approverName: string,
+  manual = false,
+): Promise<void> {
   await setDoc(
     doc(db, 'users', user.id, 'ot_approvals', date),
     {
       date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
-      role: user.role || '', requestedMins, approvedMins, reason,
+      role: user.role || '', requestedMins, approvedMins, status, manual, reason,
       approvedBy: approverName, approvedAt: Timestamp.now(),
     },
     { merge: true },
   );
-  const snap = await getDocs(collection(db, 'users', user.id, 'ot_approvals'));
-  const total = snap.docs.reduce((sum, d) => sum + (Number(d.data().approvedMins) || 0), 0);
-  await updateDoc(doc(db, 'users', user.id), { approvedOtMins: total });
+}
+
+// ── Monthly Settlements ───────────────────────────────────────────────────
+// Frozen at users/{uid}/settlements/{YYYY-MM} when admin Settle & Locks a month.
+// The Cloud Function reads locked settlements and adds settlementCash to payroll.
+
+export async function getSettlementsForMonth(month: string): Promise<Settlement[]> {
+  // Fetch + client-filter (set stays small; avoids a collection-group index).
+  const snap = await getDocs(collectionGroup(db, 'settlements'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Settlement)).filter(s => s.month === month);
+}
+
+// Write/overwrite a batch of locked settlement docs for a month (one per ops employee).
+export async function settleMonth(rows: Omit<Settlement, 'id' | 'settledAt'>[]): Promise<void> {
+  const batch = writeBatch(db);
+  const now = Timestamp.now();
+  rows.forEach(s => {
+    batch.set(doc(db, 'users', s.userId, 'settlements', s.month), { ...s, id: s.month, settledAt: now }, { merge: true });
+  });
+  await batch.commit();
+}
+
+// Unlock a settled month so it can be revised (excluded from payroll until re-settled).
+export async function unlockMonthSettlement(userId: string, month: string): Promise<void> {
+  await updateDoc(doc(db, 'users', userId, 'settlements', month), { locked: false });
 }
 
 // ── Holidays (company-wide) ───────────────────────────────────────────────

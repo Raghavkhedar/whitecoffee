@@ -3,12 +3,14 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, approveOt } from '@/lib/firestore';
-import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday } from '@/types';
+import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange, approveOt, rejectOt } from '@/lib/firestore';
+import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus } from '@/types';
 import { RoleBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr, istDaysAgoStr } from '@/lib/date';
+import { computeDayLedger, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
+import { LAUNCH_DATE } from '@/lib/config';
 
 // ── Date range helpers ────────────────────────────────────────────────────────
 
@@ -51,6 +53,7 @@ function fmtDay(s: string): string {
 
 // Count Mon–Sat days (no Sundays, no company holidays) in a date range, inclusive.
 function countWorkingDays(start: string, end: string, holidays?: Set<string>): number {
+  if (start < LAUNCH_DATE) start = LAUNCH_DATE; // ignore pre-launch (wiped) dates
   let count = 0;
   const d = new Date(start + 'T12:00:00');
   const e = new Date(end + 'T12:00:00');
@@ -80,6 +83,11 @@ function tsSeconds(e: AttendanceRecord): number {
   return (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
 }
 
+// Epoch seconds for a "HH:MM" IST wall-clock on a given date (regularized in/out is stored HH:MM).
+function istHHMMToSecs(date: string, hhmm: string): number {
+  return Math.floor(new Date(`${date}T${hhmm}:00+05:30`).getTime() / 1000);
+}
+
 const OFFICE_DAY_MINS = 8 * 60;
 
 // Field-work event types for operations (home events excluded — commute bookends)
@@ -94,7 +102,14 @@ function formatTime(secs: number): string {
 
 // ── Per-employee aggregation ──────────────────────────────────────────────────
 
-interface DayOt { date: string; plannedMins: number; actualMins: number; otMins: number }
+interface DayOt {
+  date: string;
+  plannedMins: number;
+  declaredOtMins: number;   // admin pre-declared OT for the day
+  actualMins: number;
+  autoOtMins: number;       // pre-authorized OT worked = min(surplus, declared)
+  pendingExtraMins: number; // surplus beyond declared → needs review
+}
 
 interface EmployeeRow {
   user: User;
@@ -103,7 +118,9 @@ interface EmployeeRow {
   shortageMins: number;        // sum of per-day shortfalls (only days worked with a known plan)
   pendingOt: DayOt[];          // OT days in range not yet approved
   pendingOtMins: number;
-  approvedOtRangeMins: number; // approved OT minutes within the selected range
+  autoOtRangeMins: number;     // pre-authorized (declared) OT worked in range — counts as approved
+  restDayOtRangeMins: number;  // all worked minutes on authorized Sun/holiday rest days — auto-approved
+  approvedOtRangeMins: number; // approved OT minutes within the selected range (granted via docs)
   approvedInRange: OtApproval[];
   // Single-day extras
   firstInSecs: number | null;
@@ -115,6 +132,7 @@ function aggregateForEmployee(
   allEvents: AttendanceRecord[],
   plannedItems: PlannedHours[],
   approvals: OtApproval[],
+  statuses: AttendanceStatus[],
   start: string,
   end: string,
   holidays: Set<string>,
@@ -123,18 +141,20 @@ function aggregateForEmployee(
   const isOps = user.role === 'operations';
   const userEvents = allEvents.filter(e => e.userId === user.id);
 
-  // Planned minutes per date (ops use admin-set windows; office/admin fixed 8h)
-  const plannedByDate = new Map<string, number>();
+  // Planned shift + declared-OT minutes per date (ops use admin-set windows; office/admin fixed 8h)
+  const plannedByDate = new Map<string, { planned: number; declared: number; startTime: string; endTime: string }>();
+  const otAuthByDate = new Set<string>(); // dates with admin-authorized rest-day OT
   plannedItems.filter(p => p.userId === user.id).forEach(p => {
     const dur = hhmmToMinutes(p.endTime) - hhmmToMinutes(p.startTime);
-    if (dur > 0) plannedByDate.set(p.date, dur);
+    if (dur > 0) plannedByDate.set(p.date, { planned: dur, declared: Math.max(0, p.declaredOtMins ?? 0), startTime: p.startTime, endTime: p.endTime });
+    if (p.otAuthorized) otAuthByDate.add(p.date);
   });
 
   // ── Working minutes (range expected) ───────────────────────────────────
   let workingMins: number | null;
   if (isOps) {
     let total = 0;
-    plannedByDate.forEach(d => { total += d; });
+    plannedByDate.forEach(d => { total += d.planned; }); // expected = shift windows only (declared OT is overtime)
     workingMins = total > 0 ? total : null;
   } else {
     workingMins = countWorkingDays(start, end, holidays) * OFFICE_DAY_MINS;
@@ -150,42 +170,85 @@ function aggregateForEmployee(
   let totalActualMins = 0;
   let hasAnyActual = false;
   let shortageMins = 0;
+  let autoOtRangeMins = 0;
+  let restDayOtRangeMins = 0;
   const otDays: DayOt[] = [];
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
 
-  eventsByDate.forEach((dayEvents, date) => {
-    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
-    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
-    if (inEvents.length === 0 || outEvents.length === 0) return; // not a fully-worked day → ignore
-
-    const firstIn  = Math.min(...inEvents.map(tsSeconds));
-    const lastOut  = Math.max(...outEvents.map(tsSeconds));
-    if (lastOut <= firstIn) return;
-
+  // A completed worked day (raw events or a regularized override) → ledger + totals.
+  const commitDay = (date: string, firstIn: number, lastOut: number) => {
     const dayMins = Math.round((lastOut - firstIn) / 60);
     totalActualMins += dayMins;
     hasAnyActual = true;
-
     if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
     if (globalLastOut === null || lastOut > globalLastOut) globalLastOut = lastOut;
 
-    // Planned for this day → derive OT / shortage (absent days never reach here).
-    // Holidays are skipped like Sundays — worked hours still show in Actual, but
-    // the day carries no expected window, so no shortage penalty or OT credit.
-    const plannedDay = isOps ? plannedByDate.get(date) : OFFICE_DAY_MINS;
-    if (!holidays.has(date) && plannedDay && plannedDay > 0) {
-      if (dayMins > plannedDay) otDays.push({ date, plannedMins: plannedDay, actualMins: dayMins, otMins: dayMins - plannedDay });
-      else if (dayMins < plannedDay) shortageMins += plannedDay - dayMins;
+    // Sunday/holiday: all worked minutes count as OT, but only when admin-authorized (auto-approved).
+    // Otherwise (normal working day with a shift): declared OT is a pre-approval ceiling, not an
+    // obligation — shortage is vs the plain shift; OT up to declared is auto-approved, beyond needs review.
+    const restDay     = new Date(date + 'T12:00:00').getDay() === 0 || holidays.has(date);
+    const planInfo    = isOps ? plannedByDate.get(date) : undefined;
+    // Ops: admin window, or the default 10:00–18:00 when no valid plan. Office/admin: fixed 10:00–18:00.
+    const shiftStartMin = isOps && planInfo ? hhmmToMinutes(planInfo.startTime) : DEFAULT_SHIFT_START_MIN;
+    const shiftEndMin   = isOps && planInfo ? hhmmToMinutes(planInfo.endTime)   : DEFAULT_SHIFT_END_MIN;
+    const plannedDay    = shiftEndMin - shiftStartMin;
+    const declaredDay   = planInfo?.declared ?? 0;
+    const inMin = istMinuteOfDay(firstIn), outMin = istMinuteOfDay(lastOut);
+    if (isOps) {
+      const led = computeDayLedger({
+        shiftStartMin, shiftEndMin, inMin, outMin,
+        declaredOtMins: declaredDay, isRestDay: restDay, otAuthorized: otAuthByDate.has(date),
+      });
+      shortageMins    += led.shortageMins;
+      autoOtRangeMins += led.autoOtMins;
+      restDayOtRangeMins += led.restDayOtMins;
+      if (led.pendingExtraMins > 0) {
+        otDays.push({ date, plannedMins: plannedDay, declaredOtMins: declaredDay, actualMins: dayMins, autoOtMins: led.autoOtMins, pendingExtraMins: led.pendingExtraMins });
+      }
+    } else if (!restDay) {
+      // Office/admin: shortage only, edge-based vs the fixed 10:00–18:00 window (early in never
+      // offsets early out); no OT, no rest-day, no holidays.
+      shortageMins += Math.max(0, inMin - shiftStartMin) + Math.max(0, shiftEndMin - outMin);
     }
+  };
+
+  // Regularized-to-Present days carry admin-set effective in/out (missed-punch fix); these
+  // override raw events for the date so the corrected day can carry shortage/OT (ops only).
+  const overrideByDate = new Map<string, { inSecs: number; outSecs: number }>();
+  if (isOps) {
+    statuses.filter(s => s.userId === user.id && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
+      const inSecs = istHHMMToSecs(s.date, s.inTime!), outSecs = istHHMMToSecs(s.date, s.outTime!);
+      if (outSecs > inSecs) overrideByDate.set(s.date, { inSecs, outSecs });
+    });
+  }
+
+  eventsByDate.forEach((dayEvents, date) => {
+    if (overrideByDate.has(date)) return; // regularization in/out is authoritative for this date
+    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
+    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
+    if (inEvents.length === 0) return; // no check-in → nothing to show
+
+    const firstIn  = Math.min(...inEvents.map(tsSeconds));
+    const lastOut  = outEvents.length ? Math.max(...outEvents.map(tsSeconds)) : null;
+    if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
+
+    // Open day — checked in but not yet checked out. Final hours can't be measured,
+    // so it never counts toward totals / OT / shortage, but the check-in time stays
+    // visible (shown as "in progress" in the single-day view).
+    if (lastOut === null || lastOut <= firstIn) return;
+
+    commitDay(date, firstIn, lastOut);
   });
+
+  overrideByDate.forEach((o, date) => commitDay(date, o.inSecs, o.outSecs));
 
   // Split OT days into pending vs already-approved
   const approvedByDate = new Map<string, OtApproval>();
   approvals.filter(a => a.userId === user.id).forEach(a => approvedByDate.set(a.date, a));
 
   const pendingOt = otDays.filter(d => !approvedByDate.has(d.date)).sort((a, b) => a.date.localeCompare(b.date));
-  const pendingOtMins = pendingOt.reduce((s, d) => s + d.otMins, 0);
+  const pendingOtMins = pendingOt.reduce((s, d) => s + d.pendingExtraMins, 0);
   const approvedInRange = Array.from(approvedByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
   const approvedOtRangeMins = approvedInRange.reduce((s, a) => s + (a.approvedMins || 0), 0);
 
@@ -196,6 +259,8 @@ function aggregateForEmployee(
     shortageMins,
     pendingOt,
     pendingOtMins,
+    autoOtRangeMins,
+    restDayOtRangeMins,
     approvedOtRangeMins,
     approvedInRange,
     firstInSecs: isSingleDay ? globalFirstIn : null,
@@ -213,7 +278,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 }) {
   const [drafts, setDrafts] = useState<Record<string, { mins: string; reason: string }>>(() => {
     const init: Record<string, { mins: string; reason: string }> = {};
-    row.pendingOt.forEach(d => { init[d.date] = { mins: String(d.otMins), reason: '' }; });
+    row.pendingOt.forEach(d => { init[d.date] = { mins: String(d.pendingExtraMins), reason: '' }; });
     return init;
   });
   const [saving, setSaving] = useState('');
@@ -225,13 +290,14 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 
   async function approve(day: DayOt) {
     const draft = drafts[day.date];
-    // Grant is capped at the detected OT for the day — admin may approve less, never more.
-    const mins  = Math.min(day.otMins, Math.max(0, Math.round(Number(draft.mins) || 0)));
+    // Grant is capped at the beyond-declared OT for the day — admin may approve less, never more.
+    // (The declared portion is already auto-approved and not part of this grant.)
+    const mins  = Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(draft.mins) || 0)));
     if (!draft.reason.trim()) { setError('A reason is required to approve overtime.'); return; }
     setError('');
     setSaving(day.date);
     try {
-      await approveOt(row.user, day.date, day.otMins, mins, draft.reason.trim(), adminName);
+      await approveOt(row.user, day.date, day.pendingExtraMins, mins, draft.reason.trim(), adminName);
       onApproved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to approve. Try again.');
@@ -239,7 +305,19 @@ function OtModal({ row, adminName, onClose, onApproved }: {
     setSaving('');
   }
 
-  const lifetime = row.user.approvedOtMins ?? 0;
+  async function reject(day: DayOt) {
+    const draft = drafts[day.date];
+    if (!draft.reason.trim()) { setError('A reason is required to reject overtime.'); return; }
+    setError('');
+    setSaving(day.date);
+    try {
+      await rejectOt(row.user, day.date, day.pendingExtraMins, draft.reason.trim(), adminName);
+      onApproved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to reject. Try again.');
+    }
+    setSaving('');
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
@@ -247,7 +325,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div>
             <h2 className="text-lg font-bold text-text-primary">Overtime — {row.user.name}</h2>
-            <p className="text-xs text-text-secondary mt-0.5 font-mono">{row.user.employeeId} · Lifetime approved OT: {minutesToDisplay(lifetime)}</p>
+            <p className="text-xs text-text-secondary mt-0.5 font-mono">{row.user.employeeId}</p>
           </div>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl leading-none">×</button>
         </div>
@@ -264,14 +342,16 @@ function OtModal({ row, adminName, onClose, onApproved }: {
               <div className="flex items-center justify-between mb-3">
                 <div className="font-semibold text-text-primary text-sm">{fmtDay(day.date)}</div>
                 <div className="text-xs text-text-secondary font-mono">
-                  Planned {minutesToDisplay(day.plannedMins)} · Worked {minutesToDisplay(day.actualMins)} ·
-                  <span className="text-[#9A5B1E] font-semibold"> +{minutesToDisplay(day.otMins)} OT</span>
+                  Planned {minutesToDisplay(day.plannedMins)}
+                  {day.autoOtMins > 0 && <> · <span className="text-[#0A7A50]">+{minutesToDisplay(day.autoOtMins)} auto</span></>}
+                  {' '}· Worked {minutesToDisplay(day.actualMins)} ·
+                  <span className="text-[#9A5B1E] font-semibold"> +{minutesToDisplay(day.pendingExtraMins)} to review</span>
                 </div>
               </div>
               <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
                 <div>
                   <label className="label">Grant (min)</label>
-                  <input type="number" min="0" max={day.otMins} value={drafts[day.date]?.mins ?? ''}
+                  <input type="number" min="0" max={day.pendingExtraMins} value={drafts[day.date]?.mins ?? ''}
                     onChange={e => set(day.date, 'mins', e.target.value)} className="input" />
                 </div>
                 <div>
@@ -280,9 +360,12 @@ function OtModal({ row, adminName, onClose, onApproved }: {
                     placeholder="e.g. extra site visit at client request" className="input" />
                 </div>
               </div>
-              <div className="flex justify-end mt-3">
+              <div className="flex justify-end gap-2 mt-3">
+                <button onClick={() => reject(day)} disabled={saving === day.date} className="btn-danger !py-1.5 !px-4 text-[13px]">
+                  {saving === day.date ? 'Saving…' : 'Reject'}
+                </button>
                 <button onClick={() => approve(day)} disabled={saving === day.date} className="btn-success !py-1.5 !px-4 text-[13px]">
-                  {saving === day.date ? 'Approving…' : `Approve ${minutesToDisplay(Math.min(day.otMins, Math.max(0, Math.round(Number(drafts[day.date]?.mins) || 0))))}`}
+                  {saving === day.date ? 'Saving…' : `Approve ${minutesToDisplay(Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(drafts[day.date]?.mins) || 0))))}`}
                 </button>
               </div>
             </div>
@@ -290,17 +373,24 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 
           {row.approvedInRange.length > 0 && (
             <div>
-              <div className="label mb-2">Already approved in this range</div>
+              <div className="label mb-2">Decisions in this range</div>
               <div className="space-y-2">
-                {row.approvedInRange.map(a => (
-                  <div key={a.date} className="flex items-start justify-between bg-[#FBFAF8] border border-[#F0EEEB] rounded-lg px-3 py-2 text-sm">
-                    <div>
-                      <div className="font-medium text-text-primary">{fmtDay(a.date)}</div>
-                      <div className="text-xs text-text-secondary">{a.reason}{a.approvedBy ? ` · ${a.approvedBy}` : ''}</div>
+                {row.approvedInRange.map(a => {
+                  const rejected = a.status === 'rejected';
+                  return (
+                    <div key={a.date} className={`flex items-start justify-between border rounded-lg px-3 py-2 text-sm ${rejected ? 'bg-[#FCF7F7] border-[#F4E4E4]' : 'bg-[#FBFAF8] border-[#F0EEEB]'}`}>
+                      <div>
+                        <div className="font-medium text-text-primary">{fmtDay(a.date)}</div>
+                        <div className="text-xs text-text-secondary">{a.reason}{a.approvedBy ? ` · ${a.approvedBy}` : ''}</div>
+                      </div>
+                      {rejected ? (
+                        <span className="text-[11px] font-semibold bg-[#FBEAEA] text-[#C42B2B] px-2 py-0.5 rounded whitespace-nowrap self-center">Rejected</span>
+                      ) : (
+                        <span className="font-mono text-[#0A7A50] font-semibold whitespace-nowrap">+{minutesToDisplay(a.approvedMins)}</span>
+                      )}
                     </div>
-                    <span className="font-mono text-[#0A7A50] font-semibold whitespace-nowrap">+{minutesToDisplay(a.approvedMins)}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -324,6 +414,7 @@ export default function EmployeeDashboardPage() {
   const [planned, setPlanned]         = useState<PlannedHours[]>([]);
   const [approvals, setApprovals]     = useState<OtApproval[]>([]);
   const [holidays, setHolidays]       = useState<Holiday[]>([]);
+  const [statuses, setStatuses]       = useState<AttendanceStatus[]>([]);
   const [loading, setLoading]         = useState(true);
   const [error, setError]             = useState('');
   const [roleFilter, setRoleFilter]   = useState('');
@@ -337,6 +428,7 @@ export default function EmployeeDashboardPage() {
   );
 
   const isSingleDay = start === end;
+  const nowSecs = Math.floor(Date.now() / 1000);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -351,18 +443,20 @@ export default function EmployeeDashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [fetchedUsers, fetchedEvents, fetchedPlanned, fetchedApprovals, fetchedHolidays] = await Promise.all([
+      const [fetchedUsers, fetchedEvents, fetchedPlanned, fetchedApprovals, fetchedHolidays, fetchedStatuses] = await Promise.all([
         getAllUsers(),
         getAttendanceForDateRange(start, end),
         getPlannedHoursForDateRange(start, end),
         getOtApprovalsForDateRange(start, end),
         getHolidaysForDateRange(start, end),
+        getAttendanceStatusForDateRange(start, end),
       ]);
       setUsers(fetchedUsers);
       setEvents(fetchedEvents);
       setPlanned(fetchedPlanned);
       setApprovals(fetchedApprovals);
       setHolidays(fetchedHolidays);
+      setStatuses(fetchedStatuses);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -381,8 +475,8 @@ export default function EmployeeDashboardPage() {
         const order: Record<string, number> = { office: 0, admin: 1, operations: 2 };
         return (order[a.role] ?? 3) - (order[b.role] ?? 3) || a.name.localeCompare(b.name);
       })
-      .map(u => aggregateForEmployee(u, events, planned, approvals, start, end, holidaySet));
-  }, [users, events, planned, approvals, roleFilter, empFilter, start, end, holidaySet]);
+      .map(u => aggregateForEmployee(u, events, planned, approvals, statuses, start, end, holidaySet));
+  }, [users, events, planned, approvals, statuses, roleFilter, empFilter, start, end, holidaySet]);
 
   const modalRow = otModalUserId ? rows.find(r => r.user.id === otModalUserId) ?? null : null;
   const colCount = isSingleDay ? 10 : 9;
@@ -398,9 +492,10 @@ export default function EmployeeDashboardPage() {
       'Actual Hrs': r.actualMins !== null ? minutesToDisplay(r.actualMins) : '',
       'Shortage (mins)': r.shortageMins,
       'Pending OT (mins)': r.pendingOtMins,
-      'Approved OT range (mins)': r.approvedOtRangeMins,
-      'Lifetime Approved OT (mins)': r.user.approvedOtMins ?? 0,
-      'Lifetime Shortage (mins)': r.user.shortageMins ?? 0,
+      'Auto-approved OT (mins)': r.autoOtRangeMins,
+      'Rest-day OT (mins)': r.restDayOtRangeMins,
+      'Granted OT (mins)': r.approvedOtRangeMins,
+      'Total Approved OT (mins)': r.autoOtRangeMins + r.restDayOtRangeMins + r.approvedOtRangeMins,
     })));
   }
 
@@ -496,7 +591,8 @@ export default function EmployeeDashboardPage() {
               </thead>
               <tbody>
                 {rows.map(r => {
-                  const { user, workingMins, actualMins, shortageMins, pendingOt, pendingOtMins, approvedOtRangeMins, firstInSecs, lastOutSecs } = r;
+                  const { user, workingMins, actualMins, shortageMins, pendingOt, pendingOtMins, approvedOtRangeMins, autoOtRangeMins, restDayOtRangeMins, firstInSecs, lastOutSecs } = r;
+                  const totalApprovedOt = approvedOtRangeMins + autoOtRangeMins + restDayOtRangeMins;
                   return (
                     <tr key={user.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
                       <td className="px-[14px] py-3 pl-[18px] font-medium text-text-primary whitespace-nowrap">{user.name}</td>
@@ -514,13 +610,24 @@ export default function EmployeeDashboardPage() {
                           : <span className="italic text-text-secondary/60">{user.role === 'operations' ? 'No plan' : '—'}</span>}
                       </td>
                       <td className="px-[14px] py-3 text-xs whitespace-nowrap font-mono">
-                        {actualMins !== null
-                          ? <span className="font-medium text-text-primary">{minutesToDisplay(actualMins)}</span>
-                          : <span className="italic text-text-secondary/60">No data</span>}
+                        {actualMins !== null ? (
+                          <span className="font-medium text-text-primary">{minutesToDisplay(actualMins)}</span>
+                        ) : isSingleDay && firstInSecs && !lastOutSecs ? (
+                          <span className="font-medium text-text-primary">
+                            {minutesToDisplay(Math.max(0, Math.round((nowSecs - firstInSecs) / 60)))}
+                            <span className="ml-1.5 not-italic bg-[#EAF7F0] text-[#0A7A50] px-1.5 py-0.5 rounded text-[10px] font-semibold">in</span>
+                          </span>
+                        ) : (
+                          <span className="italic text-text-secondary/60">No data</span>
+                        )}
                       </td>
                       {isSingleDay && (
                         <td className="px-[14px] py-3 text-xs text-text-secondary whitespace-nowrap font-mono">
-                          {firstInSecs && lastOutSecs ? `${formatTime(firstInSecs)} – ${formatTime(lastOutSecs)}` : '—'}
+                          {firstInSecs ? (
+                            lastOutSecs
+                              ? `${formatTime(firstInSecs)} – ${formatTime(lastOutSecs)}`
+                              : <>{formatTime(firstInSecs)} – <span className="text-[#0A7A50] font-semibold">still in</span></>
+                          ) : '—'}
                         </td>
                       )}
                       <td className="px-[14px] py-3 text-xs whitespace-nowrap">
@@ -538,10 +645,10 @@ export default function EmployeeDashboardPage() {
                             className="inline-flex items-center gap-1.5 bg-[#FDF3E4] text-[#B26B07] hover:bg-[#FBEAD0] px-2.5 py-1 rounded-[7px] font-semibold transition-colors">
                             Review +{minutesToDisplay(pendingOtMins)} · {pendingOt.length}d
                           </button>
-                        ) : approvedOtRangeMins > 0 ? (
+                        ) : totalApprovedOt > 0 ? (
                           <button onClick={() => setOtModalUserId(user.id)}
                             className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded font-mono hover:bg-[#D8F0E4] transition-colors">
-                            +{minutesToDisplay(approvedOtRangeMins)}
+                            +{minutesToDisplay(totalApprovedOt)}
                           </button>
                         ) : (
                           <span className="text-text-secondary/60">—</span>

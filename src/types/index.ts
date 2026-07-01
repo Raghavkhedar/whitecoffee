@@ -9,8 +9,12 @@ export interface User {
   salaryRate?: number;
   plBalance?: number;
   woBalance?: number;
-  approvedOtMins?: number;   // lifetime approved overtime (minutes)
-  shortageMins?: number;     // lifetime accrued shortage (minutes), set by nightly function
+  /** @deprecated Retired in the OT redesign (step 7). OT/shortage now net per-month in the
+   *  ledger (otLedger/otAggregate) and settle via users/{uid}/settlements/{month}; these
+   *  lifetime counters are no longer written or read. Kept only so historical docs still type. */
+  approvedOtMins?: number;
+  /** @deprecated See approvedOtMins — retired in step 7. */
+  shortageMins?: number;
   homeLat?: number;
   homeLng?: number;
   conveyanceRateType?: 1 | 2;
@@ -27,7 +31,9 @@ export interface OtApproval {
   employeeId: string;
   role: string;
   requestedMins: number; // OT minutes the system detected for that day
-  approvedMins: number;  // minutes the admin actually granted
+  approvedMins: number;  // minutes the admin actually granted (0 when rejected)
+  status?: 'approved' | 'rejected'; // decision outcome (older docs without this are 'approved')
+  manual?: boolean;      // admin-entered OT for a day with no auto-detected surplus (e.g. missed-punch anomaly)
   reason: string;
   approvedBy: string;
   approvedAt?: Timestamp;
@@ -40,8 +46,13 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'LWP';
+  status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO';
   markedBy: 'auto' | 'admin';
+  // Effective worked window captured when an admin regularizes a day to Present (missed-punch
+  // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw
+  // events so the corrected day can carry shortage/OT. "HH:MM" 24h, ops only.
+  inTime?: string;
+  outTime?: string;
   updatedAt?: Timestamp;
 }
 
@@ -116,7 +127,33 @@ export interface PlannedHours {
   date: string;       // "yyyy-MM-dd"
   startTime: string;  // "HH:MM" 24h
   endTime: string;    // "HH:MM" 24h
+  declaredOtMins?: number; // admin pre-declared overtime for the day (minutes); worked OT up to this is auto-approved
+  otAuthorized?: boolean;  // Sunday/holiday only: admin authorized this person's rest-day work → all worked minutes count as auto-approved OT
   updatedAt?: Timestamp;
+}
+
+// Frozen monthly OT/shortage/WO settlement for one ops employee. Doc id = month "YYYY-MM",
+// stored at users/{uid}/settlements/{month}. Written when admin "Settle & Locks" the month;
+// the Cloud Function reads locked settlements and adds settlementCash to payroll TOTAL DUE.
+export interface Settlement {
+  id: string;            // = month "YYYY-MM"
+  month: string;         // "YYYY-MM"
+  userId: string;
+  userName: string;
+  employeeId: string;
+  role: string;
+  autoOtMins: number;    // pre-declared OT worked (auto-approved)
+  restDayOtMins: number; // authorized Sunday/holiday OT
+  grantedOtMins: number; // admin-granted OT (beyond-declared)
+  shortageMins: number;
+  woDays: number;        // count of WO days that month
+  woDebitMins: number;   // woDays × 480
+  netMins: number;       // (auto + restDay + granted) − shortage − woDebit
+  salaryRate: number;    // per-day rate at settlement time
+  settlementCash: number;// woDays×rate + netMins/480×rate  (± rupees added to TOTAL DUE)
+  locked: boolean;
+  settledBy: string;
+  settledAt?: Timestamp;
 }
 
 // Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). A marked holiday is

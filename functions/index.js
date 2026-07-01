@@ -1,3 +1,4 @@
+// Deploy stamp: 2026-06-30 — step 6b payroll arrears + step 7 lifetime-counter retirement.
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
@@ -170,15 +171,12 @@ exports.computeDailyAttendanceStatus = onSchedule(
     // Read per-user docs directly to avoid needing a collectionGroup index on date.
     const adminOverrides = new Set();
     const priorStatus    = new Map(); // userId → status already recorded for today
-    const priorHours     = new Map(); // userId → daily_hours already recorded for today
     const statusChecks = allUsers.map(async (user) => {
       const statusDoc = await db.doc(`users/${user.id}/attendance_status/${today}`).get();
       if (statusDoc.exists) {
         if (statusDoc.data().markedBy === "admin") adminOverrides.add(user.id);
         priorStatus.set(user.id, statusDoc.data().status);
       }
-      const hoursDoc = await db.doc(`users/${user.id}/daily_hours/${today}`).get();
-      if (hoursDoc.exists) priorHours.set(user.id, hoursDoc.data());
     });
 
     // Operations have variable shifts: admin sets a planned start/end per day.
@@ -212,7 +210,6 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
     const batch           = db.batch();
     const plDeductions    = [];
-    const shortageAccruals = []; // { uid, delta } — change in lifetime shortage minutes
 
     for (const user of allUsers) {
       if (adminOverrides.has(user.id)) continue;
@@ -230,8 +227,10 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
       // Working window: office is fixed 10:00–18:00; operations use the planned
       // start/end the admin entered for the day.
-      const startMin = isOps ? toMinutes(plan?.startTime, 10 * 60) : 10 * 60;
-      const endMin   = isOps ? toMinutes(plan?.endTime,   18 * 60) : 18 * 60;
+      let startMin = isOps ? toMinutes(plan?.startTime, 10 * 60) : 10 * 60;
+      let endMin   = isOps ? toMinutes(plan?.endTime,   18 * 60) : 18 * 60;
+      // Inverted/zero window (e.g. a mis-entered "06:00" end meaning 6 PM) → fall back to 10:00–18:00.
+      if (endMin <= startMin) { startMin = 10 * 60; endMin = 18 * 60; }
 
       // Operations: in/out come from the first place they reached and the last
       // they left, across site and market visits. Office: office_in / office_out.
@@ -284,19 +283,16 @@ exports.computeDailyAttendanceStatus = onSchedule(
         const outMin      = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
         const actualMins  = Math.max(0, outMin - inMin);
         const plannedMins = Math.max(0, endMin - startMin);
-        const shortageMins = Math.max(0, plannedMins - actualMins);
-        const otMins       = Math.max(0, actualMins - plannedMins);
+        // Shortage = late-in + early-out; OT = late-out only (arriving early never earns OT).
+        const shortageMins = Math.max(0, inMin - startMin) + Math.max(0, endMin - outMin);
+        const otMins       = Math.max(0, outMin - endMin);
 
+        // Per-day canonical record (the OT/shortage ledger reads this, not a lifetime counter).
         batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
           date: today, userId: user.id, role: user.role,
           plannedMins, actualMins, shortageMins, otMins,
           updatedAt: admin.firestore.Timestamp.now(),
         });
-
-        // Idempotent: accrue only the delta vs any value already stored for today.
-        const prior = priorHours.get(user.id);
-        const delta = shortageMins - (prior ? (prior.shortageMins || 0) : 0);
-        if (delta !== 0) shortageAccruals.push({ uid: user.id, delta });
       }
     }
 
@@ -304,10 +300,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
     for (const uid of plDeductions) {
       await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
     }
-    for (const { uid, delta } of shortageAccruals) {
-      await db.doc(`users/${uid}`).update({ shortageMins: admin.firestore.FieldValue.increment(delta) });
-    }
-    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}, shortage updated: ${shortageAccruals.length}`);
+    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
   }
 );
 
@@ -702,12 +695,25 @@ exports.exportToSheets = onSchedule(
         // Tab doesn't exist yet — start fresh
       }
 
+      // Prior-month settlement (OT/shortage/WO) — paid in arrears. Read each user's LOCKED
+      // settlement for the previous month and add its cash to this month's TOTAL DUE.
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+      const settlementCashMap = new Map(); // userId → settlement cash (locked only)
+      await Promise.all(allUsersData.map(async (u) => {
+        try {
+          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(prevMonth).get();
+          const s = sdoc.data();
+          if (s && s.locked) settlementCashMap.set(u.id, Number(s.settlementCash) || 0);
+        } catch (_) { /* no settlement for this user — skip */ }
+      }));
+
       const header = [
         "Date", "EMP Name", "EMP ID", "Days Passed in Month",
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "SLNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
-        "Covy Due (approx avg)", "Imprest Due MTD", "TOTAL DUE",
+        "Covy Due (approx avg)", "Imprest Due MTD", `Prior Settlement ${prevMonth} (₹)`, "TOTAL DUE",
       ];
 
       const sortedUsers = [...allUsersData].sort((a, b) => {
@@ -736,7 +742,8 @@ exports.exportToSheets = onSchedule(
           : 0;
 
         const imprest    = imprestMap.get(empId) || 0;
-        const totalDue   = parseFloat((salaryDue + covy + imprest).toFixed(2));
+        const settlement = parseFloat((settlementCashMap.get(user.id) || 0).toFixed(2));
+        const totalDue   = parseFloat((salaryDue + covy + imprest + settlement).toFixed(2));
 
         grandTotal += totalDue;
         grandCfBal += user.plBalance || 0;
@@ -753,6 +760,7 @@ exports.exportToSheets = onSchedule(
           salaryDue,
           covy,
           imprest,
+          settlement,
           totalDue,
         ]);
       });

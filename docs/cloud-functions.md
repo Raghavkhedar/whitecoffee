@@ -68,7 +68,7 @@ The nightly attendance engine. **Trigger:** scheduled `59 23 * * *` (23:59 IST),
 - All `users/`.
 - Today's events via `collectionGroup("attendance").where("date","==",today)`, grouped per user.
 - All approved `leave_requests` covering today (`status==="approved"` and `fromDate <= today <= toDate`).
-- Per user: existing `attendance_status/{today}` (to detect `markedBy:"admin"` overrides and the prior status) and `daily_hours/{today}` (prior hours, for idempotent accrual).
+- Per user: existing `attendance_status/{today}` (to detect `markedBy:"admin"` overrides and the prior status).
 - Operations only: `planned_hours/{today}` (the admin-set shift window).
 
 ### Guards
@@ -106,17 +106,16 @@ Writes these to **`users/{uid}/daily_hours/{today}`**. Absent / leave / SLNF day
 
 ### Outputs / writes
 - `users/{uid}/attendance_status/{today}` — `{date, userId, userName, employeeId, role, status, markedBy:"auto", updatedAt}`.
-- `users/{uid}/daily_hours/{today}` — `{date, userId, role, plannedMins, actualMins, shortageMins, otMins, updatedAt}`.
+- `users/{uid}/daily_hours/{today}` — `{date, userId, role, plannedMins, actualMins, shortageMins, otMins, updatedAt}` (the **canonical** per-day record).
 - `users/{uid}.plBalance` — `−1` for each PL day (after the batch).
-- `users/{uid}.shortageMins` — incremented by the **delta** vs the previously stored `daily_hours/{today}.shortageMins`.
+- (Retired in step 7: the lifetime `users/{uid}.shortageMins` accrual is **no longer written** — OT/shortage net per-month via the ledger/Settlements, not a lifetime counter.)
 
 ### Idempotency
 Safe to re-run for the same day:
 - PL is only deducted when the prior status for today wasn't already `PL`.
-- Shortage increments use `newShortage − priorShortage`, so a recompute adjusts rather than double-counts.
 - All status/hours docs are keyed by date and overwritten.
 
-> Overtime is **detected** here (`otMins` in `daily_hours`) but **not** auto-applied to any balance — it requires admin approval in the Employee Dashboard (`approveOt` → `ot_approvals/{date}` + `users/{uid}.approvedOtMins`). See `CLAUDE.md › Shortage & Overtime`.
+> Overtime is **detected** here (`otMins` in `daily_hours`) but **not** auto-applied to any balance — it nets per-month via the ledger and is settled by admin on the **Settlements** page (`approveOt`/`setManualOt` → `ot_approvals/{date}`). See `CLAUDE.md › Shortage & Overtime`.
 
 ---
 
@@ -154,7 +153,8 @@ Authenticates to Google Sheets with the service-account JSON and rebuilds 9 tabs
    - **Salary Due** = `daysNP × salaryRate`.
    - **Imprest is preserved** across runs: the existing sheet is read first and the Imprest column is matched **by header name** (survives layout changes), keyed by EMP ID.
    - **Covy Due** = monthly conveyance total (operations only).
-   - **TOTAL DUE** = `salaryDue + covy + imprest`.
+   - **Prior Settlement** = the **previous month's locked** OT/shortage/WO `settlementCash`, read per user from `users/{uid}/settlements/{prevMonth}` (only when `locked`). OT is paid **in arrears** — June's settlement appears in July's export once June is locked on the portal Settlements page. `settlementCash = woDays×rate + netMins/480×rate`.
+   - **TOTAL DUE** = `salaryDue + covy + imprest + priorSettlement`.
 
 ### Failure modes
 - A bad/expired `ATTENDANCE_SHEETS_KEY` fails Sheets auth.
@@ -225,13 +225,14 @@ Authenticates to Google Sheets with the service-account JSON and rebuilds 9 tabs
 
 | Collection / path | Read by | Written by |
 |-------------------|---------|------------|
-| `users/` | all | `accrueMonthlyLeave` (plBalance), `computeDailyAttendanceStatus` (plBalance, shortageMins) |
+| `users/` | all | `accrueMonthlyLeave` (plBalance), `computeDailyAttendanceStatus` (plBalance) |
 | `users/{uid}/attendance/` | compute, export, logout | `onEmployeeLogout` |
 | `users/{uid}/attendance_status/{date}` | compute, export | `computeDailyAttendanceStatus` |
-| `users/{uid}/daily_hours/{date}` | compute (prior) | `computeDailyAttendanceStatus` |
+| `users/{uid}/daily_hours/{date}` | — | `computeDailyAttendanceStatus` |
 | `users/{uid}/planned_hours/{date}` | compute | — (set by admin portal) |
 | `users/{uid}/leave_requests/` | compute, export | — |
-| `users/{uid}/ot_approvals/{date}` | — | — (written by portal `approveOt`; detected here via `daily_hours.otMins`) |
+| `users/{uid}/ot_approvals/{date}` | — | — (written by portal `approveOt`/`setManualOt`; detected here via `daily_hours.otMins`) |
+| `users/{uid}/settlements/{month}` | `exportToSheets` (prev month) | — (written by portal `settleMonth`) |
 | `users/{uid}/notifications/` | — | `regularizationReminder` |
 | `regularization_requests` (group) | `regularizationReminder` | — |
 | `material_requests`/`material_purchases`/`material_transfers`/`tool_transfers`/`work_progress` (groups) | `exportToSheets` | — |

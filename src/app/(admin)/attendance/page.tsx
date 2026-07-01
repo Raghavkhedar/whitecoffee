@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday } from '@/lib/firestore';
+import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus, setOtAuthorization } from '@/lib/firestore';
 import type { User, AttendanceRecord, AttendanceStatus, PlannedHours, Holiday } from '@/types';
 import { RoleBadge, StatusBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
+import { LAUNCH_DATE } from '@/lib/config';
 import { auth } from '@/lib/firebase';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -83,6 +84,7 @@ function deriveStatus(
   date: string,
   planned?: PlannedHours,
 ): AttendanceStatus['status'] | null {
+  if (date < LAUNCH_DATE) return null; // pre-launch (test data wiped) — never render a status
   const dayOfWeek = new Date(date + 'T00:00:00').getDay();
   if (dayOfWeek === 0) return null; // Sunday — no status
 
@@ -233,16 +235,19 @@ export default function AttendancePage() {
     return { present, halfDay, sl, slnf, absent, leave };
   }
 
-  function handlePlannedChange(user: User, date: string, field: 'start' | 'end', value: string) {
+  function handlePlannedChange(user: User, date: string, field: 'start' | 'end' | 'ot', value: string) {
     const key      = `${user.id}__${date}`;
     const current  = plannedByDate.get(date)?.get(user.id);
     const startTime = field === 'start' ? value : (current?.startTime || '');
     const endTime   = field === 'end'   ? value : (current?.endTime   || '');
+    const declaredOtMins = field === 'ot'
+      ? Math.max(0, Math.round(Number(value) || 0))
+      : (current?.declaredOtMins ?? 0);
 
     setPlannedByDate(prev => {
       const next   = new Map(prev);
       const dayMap = new Map(next.get(date) || new Map<string, PlannedHours>());
-      dayMap.set(user.id, { id: date, userId: user.id, date, startTime, endTime });
+      dayMap.set(user.id, { id: date, userId: user.id, date, startTime, endTime, declaredOtMins });
       next.set(date, dayMap);
       return next;
     });
@@ -255,13 +260,87 @@ export default function AttendancePage() {
     const planned = plannedByDate.get(date)?.get(userId);
     if (!planned?.startTime || !planned?.endTime) return;
 
+    // Guard against an inverted window (e.g. entering "06:00" as the end meaning 6 PM). A shift
+    // whose end is not after its start would silently drop the day from the OT/shortage ledger.
+    if (hhmmToMinutes(planned.endTime, 0) <= hhmmToMinutes(planned.startTime, 0)) {
+      setSaveError(`Shift end (${planned.endTime}) must be after start (${planned.startTime}). Times are 24-hour — use 18:00 for 6 PM.`);
+      return;
+    }
+
     setSaving(prev => ({ ...prev, [key]: true }));
     setSaveError('');
     try {
-      await setPlannedHours(userId, date, planned.startTime, planned.endTime);
+      await setPlannedHours(userId, date, planned.startTime, planned.endTime, planned.declaredOtMins ?? 0);
       setDirtyPlans(prev => { const next = new Set(prev); next.delete(key); return next; });
     } catch (err) {
       setSaveError('Failed to save planned hours. Please try again.');
+      console.error(err);
+    }
+    setSaving(prev => ({ ...prev, [key]: false }));
+  }
+
+  // Mark / clear a paid WO (no-work day off) for an ops employee. Writes a markedBy:'admin'
+  // status doc the nightly function won't overwrite; clearing removes it so it recomputes.
+  async function markWo(user: User, date: string) {
+    const key = `${user.id}__${date}`;
+    setSaving(prev => ({ ...prev, [key]: true }));
+    setSaveError('');
+    try {
+      await setAttendanceStatus(user.id, date, {
+        date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
+        role: user.role || '', status: 'WO', markedBy: 'admin',
+      });
+      setStatusByDate(prev => {
+        const next = new Map(prev);
+        const dayMap = new Map(next.get(date) || new Map<string, AttendanceStatus>());
+        dayMap.set(user.id, { id: date, date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '', role: user.role || '', status: 'WO', markedBy: 'admin' });
+        next.set(date, dayMap);
+        return next;
+      });
+    } catch (err) {
+      setSaveError('Failed to mark WO. Please try again.');
+      console.error(err);
+    }
+    setSaving(prev => ({ ...prev, [key]: false }));
+  }
+
+  async function clearWo(userId: string, date: string) {
+    const key = `${userId}__${date}`;
+    setSaving(prev => ({ ...prev, [key]: true }));
+    setSaveError('');
+    try {
+      await deleteAttendanceStatus(userId, date);
+      setStatusByDate(prev => {
+        const next = new Map(prev);
+        const dayMap = new Map(next.get(date) || new Map<string, AttendanceStatus>());
+        dayMap.delete(userId);
+        next.set(date, dayMap);
+        return next;
+      });
+    } catch (err) {
+      setSaveError('Failed to clear WO. Please try again.');
+      console.error(err);
+    }
+    setSaving(prev => ({ ...prev, [key]: false }));
+  }
+
+  // Authorize / revoke all-hours OT for an ops employee on a Sunday or holiday.
+  async function toggleOtAuth(user: User, date: string, authorized: boolean) {
+    const key = `${user.id}__${date}`;
+    setSaving(prev => ({ ...prev, [key]: true }));
+    setSaveError('');
+    try {
+      await setOtAuthorization(user.id, date, authorized);
+      setPlannedByDate(prev => {
+        const next = new Map(prev);
+        const dayMap = new Map(next.get(date) || new Map<string, PlannedHours>());
+        const current = dayMap.get(user.id);
+        dayMap.set(user.id, { ...(current || { id: date, userId: user.id, date, startTime: '', endTime: '' }), otAuthorized: authorized });
+        next.set(date, dayMap);
+        return next;
+      });
+    } catch (err) {
+      setSaveError('Failed to update OT authorization. Please try again.');
       console.error(err);
     }
     setSaving(prev => ({ ...prev, [key]: false }));
@@ -306,6 +385,8 @@ export default function AttendancePage() {
   const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
   const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
   const selectedHoliday  = holidaysByDate.get(selectedDate);
+  const selectedIsSunday = selectedDate ? new Date(selectedDate + 'T12:00:00').getDay() === 0 : false;
+  const selectedIsRestDay = selectedIsSunday || !!selectedHoliday;
 
   // Merge stored (Cloud Function) statuses with client-side derived statuses for the summary chips.
   // Holidays are skipped like Sundays — no live status is derived for them.
@@ -335,6 +416,7 @@ export default function AttendancePage() {
   const totalSLNF    = statusValues.filter(s => s === 'SLNF').length;
   const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
   const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'LWP').length;
+  const totalWo      = statusValues.filter(s => s === 'WO').length;
 
   const selectedDateDisplay = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -523,6 +605,7 @@ export default function AttendancePage() {
               { count: totalSLNF,    label: 'Log Not Found', cls: 'bg-gray-50 text-gray-700 border border-gray-200' },
               { count: totalAbsent,  label: 'Absent',        cls: 'bg-red-50 text-red-700 border border-red-200' },
               { count: totalLeave,   label: 'On Leave',      cls: 'bg-blue-50 text-blue-700 border border-blue-200' },
+              { count: totalWo,      label: 'WO',            cls: 'bg-sky-50 text-sky-700 border border-sky-200' },
             ].map(({ count, label, cls }) => (
               <span key={label} className={`text-xs px-2.5 py-1 rounded-lg font-medium ${cls}`}>
                 {count} {label}
@@ -670,7 +753,21 @@ export default function AttendancePage() {
                         <td className="py-3 pr-4 text-text-secondary text-xs">{user.employeeId || '—'}</td>
                         <td className="py-3 pr-4"><RoleBadge role={user.role} /></td>
                         <td className="py-3 pr-4">
-                          {isOps ? (
+                          {isOps ? (selectedIsRestDay ? (
+                            <label className="flex items-center gap-2 text-xs cursor-pointer" title="Sunday/holiday: authorize this person's work so all hours count as OT">
+                              <input
+                                type="checkbox"
+                                checked={!!planned?.otAuthorized}
+                                onChange={e => toggleOtAuth(user, selectedDate, e.target.checked)}
+                                disabled={isSaving}
+                                className="accent-primary w-4 h-4"
+                              />
+                              <span className={planned?.otAuthorized ? 'text-[#1A5FAF] font-semibold' : 'text-text-secondary'}>
+                                {planned?.otAuthorized ? 'OT authorized (all hours)' : 'Authorize OT'}
+                              </span>
+                              {isSaving && <span className="text-text-secondary">…</span>}
+                            </label>
+                          ) : (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="time"
@@ -687,6 +784,19 @@ export default function AttendancePage() {
                                 disabled={isSaving || selectedDate > todayStr}
                                 className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50"
                               />
+                              <span className="text-text-secondary text-[11px] pl-1" title="Pre-declared overtime (minutes). OT worked up to this is auto-approved; anything beyond prompts admin review.">+OT</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="15"
+                                value={planned?.declaredOtMins ? planned.declaredOtMins : ''}
+                                onChange={e => handlePlannedChange(user, selectedDate, 'ot', e.target.value)}
+                                disabled={isSaving || selectedDate > todayStr || !planned?.startTime || !planned?.endTime}
+                                placeholder="0"
+                                title="Pre-declared overtime in minutes"
+                                className="w-14 text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary disabled:opacity-50"
+                              />
+                              <span className="text-text-secondary text-[10px]">min</span>
                               {isDirty && (
                                 <button
                                   onClick={() => savePlanned(user.id, selectedDate)}
@@ -697,23 +807,33 @@ export default function AttendancePage() {
                                 </button>
                               )}
                             </div>
-                          ) : (
+                          )) : (
                             <span className="text-xs text-text-secondary">10:00 – 18:00</span>
                           )}
                         </td>
                         <td className="py-3 pr-4">
-                          {displayStatus ? (
-                            <div className="flex items-center gap-1.5">
-                              <StatusBadge status={displayStatus} />
-                              {!status && derivedStatus && (
-                                <span className="text-[10px] text-text-secondary italic">live</span>
-                              )}
-                            </div>
-                          ) : isOps && !hasPlan ? (
-                            <span className="text-xs text-text-secondary italic">Set plan</span>
-                          ) : (
-                            <span className="text-xs text-text-secondary italic">No data</span>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {displayStatus ? (
+                              <>
+                                <StatusBadge status={displayStatus} />
+                                {!status && derivedStatus && (
+                                  <span className="text-[10px] text-text-secondary italic">live</span>
+                                )}
+                              </>
+                            ) : isOps && !hasPlan ? (
+                              <span className="text-xs text-text-secondary italic">Set plan</span>
+                            ) : (
+                              <span className="text-xs text-text-secondary italic">No data</span>
+                            )}
+                            {isOps && (status === 'WO' ? (
+                              <button onClick={() => clearWo(user.id, selectedDate)} disabled={isSaving}
+                                className="text-[11px] text-text-secondary underline hover:text-primary disabled:opacity-50">clear</button>
+                            ) : (
+                              <button onClick={() => markWo(user, selectedDate)} disabled={isSaving}
+                                title="Mark a paid no-work day off (owes 8h, payable by OT this month)"
+                                className="text-[11px] text-[#1A5FAF] border border-[#CFE0F3] bg-[#F2F7FC] rounded px-1.5 py-0.5 hover:bg-[#E7F0FA] disabled:opacity-50">Mark WO</button>
+                            ))}
+                          </div>
                         </td>
                         <td className="py-3 pr-4 text-text-secondary text-xs">
                           {eventsLoading ? '…' : <VisitCell visit={firstVisit} />}
