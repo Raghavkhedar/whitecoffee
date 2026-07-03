@@ -28,7 +28,7 @@ class LoginViewModel @Inject constructor(
 
         // Local validation before hitting Firebase
         if (email.isBlank()) {
-            _loginState.value = UiState.Error("Please enter your email address.")
+            _loginState.value = UiState.Error("Please enter your email or employee ID.")
             return
         }
         if (password.isBlank()) {

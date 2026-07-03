@@ -23,9 +23,11 @@ class AuthRepository @Inject constructor(
      */
     suspend fun login(email: String, password: String): Result<User> {
         return try {
-            // Step 1 — Firebase Auth sign in
+            // Step 1 — Resolve the login identifier, then Firebase Auth sign in.
+            // New hires log in with just their employee ID (turned into a synthetic
+            // email); existing users still type their real email. See resolveLoginEmail().
             val authResult = auth.signInWithEmailAndPassword(
-                email.lowercase().trim(),
+                resolveLoginEmail(email),
                 password
             ).await()
 
@@ -105,5 +107,33 @@ class AuthRepository @Inject constructor(
                 "Login failed. Please try again."
         }
         return Exception(message)
+    }
+
+    companion object {
+        /**
+         * Synthetic login domain for employee-ID logins (Session 31).
+         *
+         * Company email addresses get recycled between employees, so email can't be a
+         * stable identity. New hires instead log in with just their employee ID, which the
+         * app turns into a synthetic Firebase Auth email of the form "<empId>@<this domain>".
+         * These addresses never need to be real mailboxes — they exist only as login keys,
+         * so we never run out and a reused real email never collides with an account.
+         *
+         * ⚠️ MUST exactly match the domain the admin portal uses when it creates new
+         * accounts. If you change it here, change it there too, or new hires can't log in.
+         */
+        const val LOGIN_EMAIL_DOMAIN = "whitecoffee.internal"
+
+        /**
+         * Resolves a raw login identifier (as typed on the login screen) into the email
+         * Firebase Auth expects.
+         *  - Contains "@" → treated as a full email (existing real-email users) → used as-is.
+         *  - Otherwise    → treated as an employee ID → "<id>@$LOGIN_EMAIL_DOMAIN".
+         * Always lowercased + trimmed so "EMP001" and " emp001 " resolve identically.
+         */
+        fun resolveLoginEmail(identifier: String): String {
+            val trimmed = identifier.trim().lowercase()
+            return if (trimmed.contains("@")) trimmed else "$trimmed@$LOGIN_EMAIL_DOMAIN"
+        }
     }
 }

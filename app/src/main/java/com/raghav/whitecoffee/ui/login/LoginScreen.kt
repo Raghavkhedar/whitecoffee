@@ -130,12 +130,12 @@ fun LoginScreen(
                 Text("Sign in with your company credentials", color = WcColors.TextSecondary, fontSize = 13.5.sp)
                 Spacer(Modifier.height(22.dp))
 
-                Text("Email address", color = WcColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Email or Employee ID", color = WcColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    placeholder = { Text("you@senken.in", color = WcColors.TextHint, fontSize = 15.sp) },
+                    placeholder = { Text("EMP001 or you@senken.in", color = WcColors.TextHint, fontSize = 15.sp) },
                     leadingIcon = { MsIcon(Ms.mail, 20.sp, WcColors.Primary) },
                     singleLine = true,
                     enabled = !isLoading,
