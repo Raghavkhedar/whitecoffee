@@ -1,9 +1,11 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { getAllUsers, createUserProfile, updateUserProfile, deleteUserProfile } from '@/lib/firestore';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAllUsers, createUserProfile, updateUserProfile,
+  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail } from '@/lib/firestore';
 import { firebaseConfig } from '@/lib/firebase';
+import { syntheticLoginEmail } from '@/lib/constants';
 import type { User } from '@/types';
 import Icon from '@/components/Icon';
 import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
@@ -15,7 +17,8 @@ type Role = typeof ROLES[number];
 
 interface FormState {
   name: string;
-  email: string;
+  loginEmail: string;
+  contactEmail: string;
   password: string;
   employeeId: string;
   role: Role;
@@ -26,9 +29,14 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  name: '', email: '', password: '', employeeId: '', role: 'operations',
+  name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
   salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
 };
+
+// A short random temp password for new hires / admin resets (synthetic logins get no email link).
+function makeTempPassword() {
+  return 'Wc' + Math.random().toString(36).slice(2, 8) + Math.floor(10 + Math.random() * 90);
+}
 
 export default function UsersPage() {
   const [users, setUsers]       = useState<User[]>([]);
@@ -40,12 +48,13 @@ export default function UsersPage() {
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState('');
   const [query, setQuery]       = useState('');
+  const [showInactive, setShowInactive] = useState(false);
 
   async function load() {
     setLoading(true);
     setError('');
     try {
-      const u = await getAllUsers();
+      const u = await getAllUsers(true); // include inactive so admins can reactivate
       setUsers(u.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')));
     } catch (e: unknown) {
       setError(`Failed to load users: ${e instanceof Error ? e.message : String(e)}`);
@@ -66,7 +75,8 @@ export default function UsersPage() {
     setEditing(u);
     setForm({
       name: u.name ?? '',
-      email: u.email ?? '',
+      loginEmail: u.email ?? '',
+      contactEmail: u.contactEmail ?? '',
       password: '',
       employeeId: u.employeeId ?? '',
       role: (u.role as Role) ?? 'operations',
@@ -82,7 +92,7 @@ export default function UsersPage() {
   async function handleSave() {
     setFormError('');
     if (!form.name.trim()) { setFormError('Name is required.'); return; }
-    if (!editing && !form.email.trim()) { setFormError('Email is required.'); return; }
+    if (!form.employeeId.trim()) { setFormError('Employee ID is required.'); return; }
     if (!editing && form.password.length < 6) { setFormError('Password must be at least 6 characters.'); return; }
     setSaving(true);
     try {
@@ -90,25 +100,43 @@ export default function UsersPage() {
       const homeLat = form.homeLat ? parseFloat(form.homeLat) : undefined;
       const homeLng = form.homeLng ? parseFloat(form.homeLng) : undefined;
       const conveyanceRateType = form.conveyanceRateType ? (parseInt(form.conveyanceRateType) as 1 | 2) : undefined;
+      const contactEmail = form.contactEmail.trim().toLowerCase();
 
       if (editing) {
+        // Login email goes through a Cloud Function (Auth + doc); validate before touching anything.
+        const nextLogin = form.loginEmail.trim().toLowerCase();
+        const loginChanged = nextLogin !== (editing.email ?? '').toLowerCase();
+        if (loginChanged && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextLogin)) {
+          setFormError('Login email is not a valid email address.');
+          setSaving(false);
+          return;
+        }
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
-          salaryRate, homeLat, homeLng, conveyanceRateType,
+          contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
         });
+        if (loginChanged) await updateUserEmail(editing.id, nextLogin);
       } else {
+        // New hires log in with just their employee ID → a synthetic login email.
+        // Block reusing an ID an active user still holds.
+        if (await employeeIdInUse(form.employeeId)) {
+          setFormError('An active user already has this Employee ID.');
+          setSaving(false);
+          return;
+        }
+        const loginEmail = syntheticLoginEmail(form.employeeId);
         const secondary = initializeApp(firebaseConfig, `create_${Date.now()}`);
         const secAuth   = getAuth(secondary);
         let uid: string;
         try {
-          const cred = await createUserWithEmailAndPassword(secAuth, form.email.trim().toLowerCase(), form.password);
+          const cred = await createUserWithEmailAndPassword(secAuth, loginEmail, form.password);
           uid = cred.user.uid;
         } finally {
           await secAuth.signOut().catch(() => {});
           await deleteApp(secondary).catch(() => {});
         }
         await createUserProfile(uid, {
-          name: form.name.trim(), email: form.email.trim().toLowerCase(),
+          name: form.name.trim(), email: loginEmail, contactEmail,
           role: form.role, employeeId: form.employeeId.trim(), salaryRate,
           homeLat, homeLng, conveyanceRateType,
         });
@@ -117,10 +145,12 @@ export default function UsersPage() {
       await load();
     } catch (e: unknown) {
       const code = (e as { code?: string }).code;
-      if (code === 'auth/email-already-in-use') {
-        setFormError('This email is already registered.');
+      if (code === 'functions/already-exists') {
+        setFormError('That login email is already used by another employee.');
+      } else if (code === 'auth/email-already-in-use') {
+        setFormError('This Employee ID is already registered as a login.');
       } else if (code === 'auth/invalid-email') {
-        setFormError('Please enter a valid email address.');
+        setFormError('Employee ID produces an invalid login — use letters/numbers only.');
       } else if (code === 'auth/weak-password') {
         setFormError('Password must be at least 6 characters.');
       } else {
@@ -132,37 +162,48 @@ export default function UsersPage() {
 
   async function handleResetPassword() {
     if (!editing) return;
-    await sendPasswordResetEmail(getAuth(), editing.email);
-    alert(`Password reset email sent to ${editing.email}`);
-  }
-
-  async function handleDelete() {
-    if (!editing) return;
-    const confirmed = window.confirm(`Delete ${editing.name || 'this employee'}? This cannot be undone.`);
-    if (!confirmed) return;
+    const temp = makeTempPassword();
     setSaving(true);
     try {
-      await deleteUserProfile(editing.id);
+      await resetUserPassword(editing.id, temp);
+      window.prompt(`New password for ${editing.name || 'this employee'} — copy and hand it over:`, temp);
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'Password reset failed. Try again.');
+    }
+    setSaving(false);
+  }
+
+  async function handleToggleActive() {
+    if (!editing) return;
+    const next = editing.active === false; // reactivate if currently inactive
+    const verb = next ? 'Reactivate' : 'Deactivate';
+    if (!window.confirm(`${verb} ${editing.name || 'this employee'}? ${next ? 'They will be able to log in again.' : 'Their login will be disabled; data is kept.'}`)) return;
+    setSaving(true);
+    try {
+      await setUserActive(editing.id, next);
       setShowModal(false);
       await load();
     } catch (e: unknown) {
-      setFormError(e instanceof Error ? e.message : 'Delete failed. Try again.');
+      setFormError(e instanceof Error ? e.message : `${verb} failed. Try again.`);
     }
     setSaving(false);
   }
 
   const q = query.trim().toLowerCase();
-  const shown = q
-    ? users.filter(u =>
-        (u.name ?? '').toLowerCase().includes(q) ||
-        (u.email ?? '').toLowerCase().includes(q) ||
-        (u.employeeId ?? '').toLowerCase().includes(q))
-    : users;
+  const shown = users
+    .filter(u => showInactive || u.active !== false)
+    .filter(u => !q
+      || (u.name ?? '').toLowerCase().includes(q)
+      || (u.email ?? '').toLowerCase().includes(q)
+      || (u.contactEmail ?? '').toLowerCase().includes(q)
+      || (u.employeeId ?? '').toLowerCase().includes(q));
 
   function exportXlsx() {
     downloadSheet('employees', 'Employees', shown.map(u => ({
       Name: u.name ?? '',
-      Email: u.email ?? '',
+      'Login Email': u.email ?? '',
+      'Contact Email': u.contactEmail ?? '',
+      Status: u.active === false ? 'Inactive' : 'Active',
       'Employee ID': u.employeeId ?? '',
       Role: u.role ?? '',
       'Salary Rate': u.salaryRate ?? '',
@@ -183,6 +224,10 @@ export default function UsersPage() {
             className="border-none outline-none bg-transparent flex-1 text-[13.5px] text-[#2A241F]" />
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[13px] text-text-secondary select-none cursor-pointer">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+            Show inactive
+          </label>
           <ExportButton onClick={exportXlsx} disabled={loading || shown.length === 0} />
           <button className="btn-primary flex items-center gap-1.5" onClick={openAdd}><Icon name="plus" size={16} />Add employee</button>
         </div>
@@ -210,13 +255,16 @@ export default function UsersPage() {
               </thead>
               <tbody>
                 {shown.map(u => (
-                  <tr key={u.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
+                  <tr key={u.id} className={`border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors ${u.active === false ? 'opacity-55' : ''}`}>
                     <td className={`${TD} pl-[18px]`}>
                       <div className="flex items-center gap-[11px]">
                         <Avatar name={u.name} size={34} />
                         <div>
-                          <div className="font-medium text-[#2A241F]">{u.name}</div>
-                          <div className="text-[12px] text-[#9A938C]">{u.email}</div>
+                          <div className="font-medium text-[#2A241F] flex items-center gap-2">
+                            {u.name}
+                            {u.active === false && <span className="bg-[#F3E9E7] text-[#B4463A] px-1.5 py-0.5 rounded-[6px] text-[11px] font-normal">Inactive</span>}
+                          </div>
+                          <div className="text-[12px] text-[#9A938C]">{u.contactEmail || u.email}</div>
                         </div>
                       </div>
                     </td>
@@ -249,12 +297,26 @@ export default function UsersPage() {
             <div className="space-y-4">
               <div><label className="label">Full Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ravi Kumar" /></div>
 
-              {!editing && <>
-                <div><label className="label">Email Address</label><input className="input" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="ravi@senken.com" /></div>
-                <div><label className="label">Initial Password</label><input className="input" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" /></div>
-              </>}
+              <div>
+                <label className="label">Employee ID</label>
+                <input className="input" value={form.employeeId} onChange={e => setForm(f => ({ ...f, employeeId: e.target.value }))} placeholder="EMP001" />
+                {!editing && <p className="text-[12px] text-text-secondary mt-1">The employee logs in with this ID (login: <span className="font-mono">{form.employeeId.trim() ? syntheticLoginEmail(form.employeeId) : `‹id›@whitecoffee.internal`}</span>).</p>}
+              </div>
 
-              <div><label className="label">Employee ID</label><input className="input" value={form.employeeId} onChange={e => setForm(f => ({ ...f, employeeId: e.target.value }))} placeholder="EMP001" /></div>
+              {editing && (
+                <div>
+                  <label className="label">Login Email <span className="text-text-secondary font-normal">(the credential this employee signs in with)</span></label>
+                  <input className="input" type="email" value={form.loginEmail} onChange={e => setForm(f => ({ ...f, loginEmail: e.target.value }))} placeholder="ravi@whitecoffee.internal" />
+                  <p className="text-[12px] text-text-secondary mt-1">Changing this updates their sign-in credential immediately — they must use the new email to log in.</p>
+                </div>
+              )}
+
+              <div>
+                <label className="label">Contact Email <span className="text-text-secondary font-normal">(optional — notifications only, not a login)</span></label>
+                <input className="input" type="email" value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="ravi@senken.com" />
+              </div>
+
+              {!editing && <div><label className="label">Initial Password</label><input className="input" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" /></div>}
 
               <div>
                 <label className="label">Role</label>
@@ -288,10 +350,14 @@ export default function UsersPage() {
 
               {editing && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-border">
-                  <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center" onClick={handleResetPassword}>
-                    Send password reset email
+                  <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
+                    Reset password (set a new temporary one)
                   </button>
-                  <button className="btn-danger w-full" onClick={handleDelete} disabled={saving}>Delete Employee</button>
+                  {editing.active === false ? (
+                    <button className="btn-success w-full" onClick={handleToggleActive} disabled={saving}>Reactivate Employee</button>
+                  ) : (
+                    <button className="btn-danger w-full" onClick={handleToggleActive} disabled={saving}>Deactivate Employee</button>
+                  )}
                 </div>
               )}
             </div>

@@ -3,7 +3,9 @@ import { Timestamp } from 'firebase/firestore';
 export interface User {
   id: string;
   name: string;
-  email: string;
+  email: string;          // login email — SYNTHETIC (‹empId›@whitecoffee.internal) for new hires, real email for legacy users
+  contactEmail?: string;  // real email/phone for notifications only — NOT a login credential
+  active?: boolean;       // false = offboarded (login disabled). MISSING must be treated as active.
   role: 'operations' | 'office' | 'admin';
   employeeId: string;
   salaryRate?: number;

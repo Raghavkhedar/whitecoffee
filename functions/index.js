@@ -10,6 +10,18 @@ const { google } = require("googleapis");
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
 
+// Verify the caller is a signed-in admin (role === "admin" in their user doc).
+// Throws HttpsError so callable clients get a clean permission-denied.
+async function assertAdmin(request) {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Must be signed in.");
+  const snap = await admin.firestore().doc(`users/${uid}`).get();
+  if (!snap.exists || snap.data().role !== "admin") {
+    throw new HttpsError("permission-denied", "Admin only.");
+  }
+  return uid;
+}
+
 // Operations field-work events: a worked day spans the first arrival and last
 // departure across both site and market visits (home events are commute bookends
 // and never count toward the working window).
@@ -150,7 +162,11 @@ exports.computeDailyAttendanceStatus = onSchedule(
     const today  = nowIST.toISOString().slice(0, 10);
 
     const usersSnap   = await db.collection("users").get();
-    const allUsers    = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Offboarded users (active === false) are skipped entirely — no status doc, no
+    // Absent penalty. Legacy users have no `active` field (missing = active).
+    const allUsers    = usersSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((u) => u.active !== false);
 
     const attendSnap = await db.collectionGroup("attendance").where("date", "==", today).get();
     const eventsByUser = new Map();
@@ -966,4 +982,59 @@ exports.onEmployeeLogout = onCall(async (request) => {
   if (wrote > 0) await batch.commit();
   console.log(`onEmployeeLogout: ${uid} — ${wrote} auto-checkout event(s) for ${today}`);
   return { success: true, eventsCreated: wrote };
+});
+
+// ── Offboarding / reactivation (Admin SDK) ────────────────────────────────────
+// Disables (or re-enables) the user's Auth account — blocks login server-side — and
+// mirrors it on the user doc. Never deletes data: attendance/salary history is retained.
+exports.setUserActive = onCall(async (request) => {
+  await assertAdmin(request);
+  const { uid, active } = request.data || {};
+  if (!uid || typeof active !== "boolean") {
+    throw new HttpsError("invalid-argument", "uid and active (boolean) are required.");
+  }
+  await admin.auth().updateUser(uid, { disabled: !active });
+  await admin.firestore().doc(`users/${uid}`).update({ active });
+  console.log(`setUserActive: ${uid} → active=${active}`);
+  return { success: true };
+});
+
+// ── Admin password reset (Admin SDK) ──────────────────────────────────────────
+// Synthetic-email logins can't receive reset links, so the admin sets a new password
+// directly and reads it back to hand over to the employee.
+exports.resetUserPassword = onCall(async (request) => {
+  await assertAdmin(request);
+  const { uid, newPassword } = request.data || {};
+  if (!uid || typeof newPassword !== "string" || newPassword.length < 6) {
+    throw new HttpsError("invalid-argument", "uid and newPassword (min 6 chars) are required.");
+  }
+  await admin.auth().updateUser(uid, { password: newPassword });
+  console.log(`resetUserPassword: ${uid}`);
+  return { success: true };
+});
+
+// ── Admin login-email change (Admin SDK) ──────────────────────────────────────
+// Changes the employee's sign-in credential in Auth AND mirrors it on the user doc
+// so the two never drift. The employee logs in with the new email afterwards.
+exports.updateUserEmail = onCall(async (request) => {
+  await assertAdmin(request);
+  const { uid, email } = request.data || {};
+  const next = typeof email === "string" ? email.trim().toLowerCase() : "";
+  if (!uid || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) {
+    throw new HttpsError("invalid-argument", "uid and a valid email are required.");
+  }
+  try {
+    await admin.auth().updateUser(uid, { email: next });
+  } catch (e) {
+    if (e.code === "auth/email-already-exists") {
+      throw new HttpsError("already-exists", "That email is already used by another login.");
+    }
+    if (e.code === "auth/invalid-email") {
+      throw new HttpsError("invalid-argument", "That email is not valid.");
+    }
+    throw new HttpsError("internal", e.message || "Failed to update email.");
+  }
+  await admin.firestore().doc(`users/${uid}`).update({ email: next });
+  console.log(`updateUserEmail: ${uid} → ${next}`);
+  return { success: true };
 });

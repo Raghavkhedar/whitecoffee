@@ -5,7 +5,8 @@ import {
   setDoc, updateDoc, deleteDoc, deleteField, writeBatch,
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from './firebase';
 import { istTodayStr } from './date';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
@@ -13,9 +14,13 @@ import type { User, LeaveRequest, AttendanceRecord, SentNotification, Attendance
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
-export async function getAllUsers(): Promise<User[]> {
+// Offboarded users (`active === false`) are excluded by default so they drop out of
+// every dashboard/attendance/notification view. Legacy users have no `active` field —
+// missing must count as active. Pass `includeInactive` (Users page) to see everyone.
+export async function getAllUsers(includeInactive = false): Promise<User[]> {
   const snap = await getDocs(collection(db, 'users'));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as User));
+  const all  = snap.docs.map(d => ({ id: d.id, ...d.data() } as User));
+  return includeInactive ? all : all.filter(u => u.active !== false);
 }
 
 export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
@@ -27,8 +32,21 @@ export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
     homeLng: homeLng || null,
     conveyanceRateType: conveyanceRateType || null,
     plBalance: 0,
+    active: true,
     createdAt: Timestamp.now(),
   });
+}
+
+// True if an ACTIVE user already holds this employee ID (blocks reuse of a live ID).
+// Offboarded holders don't count — a new hire reuses the freed ID with a new UID.
+export async function employeeIdInUse(employeeId: string): Promise<boolean> {
+  const snap = await getDocs(query(
+    collection(db, 'users'),
+    where('employeeId', '==', employeeId.trim()),
+  ));
+  // Legacy users have no `active` field (missing = active), so filter in code
+  // rather than a compound `active == true` query that would skip them.
+  return snap.docs.some(d => (d.data() as User).active !== false);
 }
 
 export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'id'>>) {
@@ -41,6 +59,25 @@ export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'i
 
 export async function deleteUserProfile(uid: string) {
   await deleteDoc(doc(db, 'users', uid));
+}
+
+// Offboard / reactivate. The client SDK can't disable another user's Auth account, so this
+// goes through the Admin-SDK Cloud Function, which sets `disabled` in Auth AND `active` on the
+// user doc. Data is never deleted — attendance/salary history is retained.
+export async function setUserActive(uid: string, active: boolean) {
+  await httpsCallable(functions, 'setUserActive')({ uid, active });
+}
+
+// Admin sets a new password directly (synthetic-email users can't receive reset links).
+// Returns nothing; the caller shows the temp password it passed in to hand to the employee.
+export async function resetUserPassword(uid: string, newPassword: string) {
+  await httpsCallable(functions, 'resetUserPassword')({ uid, newPassword });
+}
+
+// Admin changes the employee's login email. Updates Firebase Auth AND the user doc
+// (Admin SDK) so the sign-in credential and the mirrored `email` field stay in sync.
+export async function updateUserEmail(uid: string, email: string) {
+  await httpsCallable(functions, 'updateUserEmail')({ uid, email });
 }
 
 // ── Sites — NOT IN USE ────────────────────────────────────────────────────
