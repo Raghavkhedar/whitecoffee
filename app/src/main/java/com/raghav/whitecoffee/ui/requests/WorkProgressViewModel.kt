@@ -53,16 +53,11 @@ class WorkProgressViewModel @Inject constructor(
         siteId: String,
         siteName: String,
         date: String,
-        hoursWorked: Double,
         workDescription: String,
         photoUris: List<Uri> = emptyList()
     ) {
         if (workDescription.isBlank()) {
             _submitState.value = UiState.Error("Please enter a work description.")
-            return
-        }
-        if (hoursWorked <= 0.0) {
-            _submitState.value = UiState.Error("Please enter valid hours worked.")
             return
         }
         _submitState.value = UiState.Loading()
@@ -79,7 +74,6 @@ class WorkProgressViewModel @Inject constructor(
                     siteId          = siteId.trim(),
                     siteName        = siteName.trim(),
                     date            = date,
-                    hoursWorked     = hoursWorked,
                     workDescription = workDescription.trim()
                 )
                 // Doc is written with empty photoUrls; the worker patches them in once uploaded.

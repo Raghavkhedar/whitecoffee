@@ -5,8 +5,8 @@
     "semantic_hash": "e51077b6a7f1f67afc748f1a32a1557d"
   },
   "app/build.gradle.kts": {
-    "mtime": 1783164199.8120015,
-    "ast_hash": "a198f1ac07323e9b7c69a0ff46a40c51",
+    "mtime": 1783058978.358391,
+    "ast_hash": "240290b40f42e92bc9afdfc222e62e2a",
     "semantic_hash": ""
   },
   "app/debug/output-metadata.json": {
@@ -440,9 +440,9 @@
     "semantic_hash": "8e6aae945a8938c1b19c5bc4738c226d"
   },
   "CLAUDE.md": {
-    "mtime": 1783164141.344477,
-    "ast_hash": "2b82811f0247b9bf00eebb5578328132",
-    "semantic_hash": ""
+    "mtime": 1782908505.3756425,
+    "ast_hash": "603a65af6c17746db1e12daafee9bce0",
+    "semantic_hash": "603a65af6c17746db1e12daafee9bce0"
   },
   "DEVELOPER_HANDBOOK.md": {
     "mtime": 1782908505.3756425,

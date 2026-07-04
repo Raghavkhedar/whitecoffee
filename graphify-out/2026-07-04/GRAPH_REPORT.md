@@ -1,7 +1,7 @@
 # Graph Report - WhiteCoffee01  (2026-07-04)
 
 ## Corpus Check
-- 96 files · ~55,030 words
+- 96 files · ~54,944 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -291,7 +291,7 @@ Nodes (14): 11. UI Layer — Every Screen Explained, Apply Leave Screen, Home Sc
 
 ### Community 28 - "White Coffee — Developer Handbook & Hand"
 Cohesion: 0.10
-Nodes (20): 12. Navigation Graph, 15. Role-Based Access Control, 19. Session Management & Single-Device Enforcement, 1. What Is This App?, 26. Test Credentials, 3. Project Setup (First Time), 4. Architecture Overview, 5. Folder Structure — Full File Map (+12 more)
+Nodes (20): 12. Navigation Graph, 15. Role-Based Access Control, 19. Session Management & Single-Device Enforcement, 1. What Is This App?, 21. Admin Web Portal, 26. Test Credentials, 3. Project Setup (First Time), 4. Architecture Overview (+12 more)
 
 ### Community 29 - "Base Fragment"
 Cohesion: 0.06
@@ -455,7 +455,7 @@ Nodes (3): 28. Toolchain Lock — DO NOT CHANGE, Critical flags in `app/build.gr
 
 ### Community 82 - "Resource Files"
 Cohesion: 0.67
-Nodes (3): 21. Admin Web Portal, Deploying:, Pages:
+Nodes (3): 5. Folder Structure — Full File Map, Resource Files, Root-Level Files
 
 ## Ambiguous Edges - Review These
 - `Empty Dark Screen Canvas (no rendered content)` → `White Coffee Material 3 Teal Design Language`  [AMBIGUOUS]

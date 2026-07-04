@@ -464,6 +464,16 @@ thumbnails in an `AndroidView`.
 > .\gradlew.bat :app:assembleDebug --console=plain
 > ```
 
+> **Linux build (this machine — Arch, verified Session 31):** the Windows/JBR notes above do NOT
+> apply here. JDK 21 is on PATH (`/usr/bin/java`, `java-21-openjdk`) and the Gradle daemon is
+> already pinned to 21 via `gradle/gradle-daemon-jvm.properties`, so **no `JAVA_HOME` juggling is
+> needed** — do not set it. Android SDK lives at `~/Android/Sdk` (`local.properties → sdk.dir`).
+> Just run gradlew directly from the repo root:
+> ```bash
+> ./gradlew :app:compileDebugKotlin --console=plain   # fast type-check
+> ./gradlew :app:assembleDebug --console=plain          # full debug APK
+> ```
+
 ---
 
 ## RELEASE SIGNING & DISTRIBUTION (Firebase App Distribution — Session 30)

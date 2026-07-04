@@ -59,8 +59,8 @@ class WorkProgressFragment : Fragment() {
                 onPickDate = { showDatePicker(date) { date = it } },
                 onAddPhoto = addPhoto,
                 onRemovePhoto = { photos = photos - it; viewModel.onPhotosChanged(photos) },
-                onSubmit = { siteId, siteName, hours, description ->
-                    viewModel.submitProgress(siteId, siteName, date, hours, description, photos)
+                onSubmit = { siteId, siteName, description ->
+                    viewModel.submitProgress(siteId, siteName, date, description, photos)
                 },
             )
         }
