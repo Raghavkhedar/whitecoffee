@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.WhiteCoffee" parent="Theme.MaterialComponents.Light.NoActionBar">
+
+        <item name="colorPrimary">@color/primary_blue</item>
+        <item name="colorPrimaryDark">@color/midnight</item>
+        <item name="colorPrimaryVariant">@color/navy</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/violet</item>
+        <item name="colorSecondaryVariant">@color/navy</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="android:colorBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorOnBackground">@color/text_primary</item>
+        <item name="android:statusBarColor">@color/midnight</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="materialCardViewStyle">@style/WC.CardView</item>
+        <item name="materialButtonStyle">@style/WC.Button.Primary</item>
+        <item name="textInputStyle">@style/WC.TextInputLayout</item>
+
+    </style>
+
+    <!-- ── Buttons ──────────────────────────────────────────────────── -->
+
+    <style name="WC.Button.Primary" parent="Widget.MaterialComponents.Button">
+        <item name="android:background">@drawable/bg_primary_button</item>
+        <item name="backgroundTint">@null</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.01</item>
+        <item name="android:fontFamily">@font/wc_heading</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="android:paddingTop">15dp</item>
+        <item name="android:paddingBottom">15dp</item>
+        <item name="rippleColor">@color/ripple_primary</item>
+        <item name="elevation">0dp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <style name="WC.Button.Outlined" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="strokeColor">@color/primary_blue</item>
+        <item name="android:textColor">@color/primary_blue</item>
+        <item name="android:textSize">15sp</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+    </style>
+
+    <style name="WC.Button.Danger" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="strokeColor">@color/status_rejected</item>
+        <item name="android:textColor">@color/status_rejected</item>
+        <item name="android:textSize">15sp</item>
+        <item name="cornerRadius">14dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+    </style>
+
+    <style name="WC.Button.Text" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:textColor">@color/primary_blue</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <!-- ── Cards ────────────────────────────────────────────────────── -->
+
+    <style name="WC.CardView" parent="Widget.MaterialComponents.CardView">
+        <item name="cardBackgroundColor">@color/surface</item>
+        <item name="cardCornerRadius">20dp</item>
+        <item name="cardElevation">2dp</item>
+        <item name="cardMaxElevation">4dp</item>
+        <item name="strokeColor">@color/border</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="contentPadding">16dp</item>
+    </style>
+
+    <style name="WC.CardView.NoPadding" parent="WC.CardView">
+        <item name="contentPadding">0dp</item>
+    </style>
+
+    <style name="WC.CardView.Module" parent="WC.CardView">
+        <item name="cardCornerRadius">18dp</item>
+        <item name="contentPadding">0dp</item>
+    </style>
+
+    <!-- ── Inputs ────────────────────────────────────────────────────── -->
+
+    <style name="WC.TextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+        <item name="boxStrokeColor">@color/wc_input_stroke</item>
+        <item name="boxStrokeWidth">1.5dp</item>
+        <item name="boxStrokeWidthFocused">1.5dp</item>
+        <item name="boxBackgroundColor">@color/surface</item>
+        <item name="hintTextColor">@color/wc_input_hint</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+        <item name="boxCornerRadiusTopStart">12dp</item>
+        <item name="boxCornerRadiusTopEnd">12dp</item>
+        <item name="boxCornerRadiusBottomStart">12dp</item>
+        <item name="boxCornerRadiusBottomEnd">12dp</item>
+    </style>
+
+    <style name="WC.TextInputEditText" parent="Widget.MaterialComponents.TextInputEditText.OutlinedBox">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+        <item name="android:fontFamily">@font/wc_body</item>
+    </style>
+
+    <!-- ── Typography ───────────────────────────────────────────────── -->
+
+    <style name="WC.Text" parent="android:Widget.TextView"/>
+
+    <style name="WC.Text.ScreenTitle">
+        <item name="android:textSize">20sp</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.02</item>
+        <item name="android:fontFamily">@font/wc_heading</item>
+    </style>
+
+    <style name="WC.Text.SectionLabel">
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">@color/text_hint</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.10</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="WC.Text.Body">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:lineSpacingMultiplier">1.45</item>
+        <item name="android:fontFamily">@font/wc_body</item>
+    </style>
+
+    <style name="WC.Text.Caption">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:fontFamily">@font/wc_body</item>
+    </style>
+
+    <style name="WC.Text.HeaderGreeting">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/header_text_sub</item>
+    </style>
+
+    <style name="WC.Text.HeaderName">
+        <item name="android:textSize">22sp</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.025</item>
+        <item name="android:fontFamily">@font/wc_heading</item>
+    </style>
+
+    <!-- ── FAB ──────────────────────────────────────────────────────── -->
+
+    <style name="WC.ExtendedFab" parent="Widget.MaterialComponents.ExtendedFloatingActionButton">
+        <item name="android:backgroundTint">@color/primary_blue</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="iconTint">@color/white</item>
+        <item name="cornerRadius">16dp</item>
+        <item name="elevation">6dp</item>
+    </style>
+
+</resources>

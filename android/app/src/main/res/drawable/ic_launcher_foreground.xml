@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive icon foreground — coffee cup with "WC" monogram.
+  Viewport: 108×108dp. Safe zone: 18–90 on each axis.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Steam wisps — elegant thin curves -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M42,38 C44,33 40,29 42,24"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.6"/>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,36 C56,30 52,26 54,20"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.8"/>
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M66,38 C68,33 64,29 66,24"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.6"/>
+
+    <!-- Cup body — smooth rounded trapezoid -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,42 L80,42 Q78,72 54,76 Q30,72 28,42 Z"/>
+
+    <!-- Cup rim highlight -->
+    <path
+        android:fillColor="#E8F0FF"
+        android:pathData="M28,42 L80,42 L80,45 L28,45 Z"/>
+
+    <!-- Cup handle — refined D-shape -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:pathData="M80,50 C92,50 92,66 80,66"/>
+
+    <!-- "WC" text inside the cup -->
+    <!-- W letter -->
+    <path
+        android:fillColor="#1A2F72"
+        android:pathData="M38,52 L41,64 L44.5,56 L48,64 L51,52
+                          L49,52 L47,60 L44.5,53 L42,60 L40,52 Z"/>
+    <!-- C letter -->
+    <path
+        android:fillColor="#1A2F72"
+        android:pathData="M62,53 C56,51 53,55 53,58 C53,61 56,65 62,63
+                          L62,61 C58,62.5 55.5,60 55.5,58 C55.5,56 58,53.5 62,55 Z"/>
+
+    <!-- Saucer — slim elegant oval -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M22,79 Q54,87 86,79 L86,82 Q54,90 22,82 Z"/>
+
+    <!-- Saucer highlight -->
+    <path
+        android:fillColor="#E8F0FF"
+        android:pathData="M24,79 Q54,86 84,79 L84,80 Q54,87 24,80 Z"/>
+
+</vector>

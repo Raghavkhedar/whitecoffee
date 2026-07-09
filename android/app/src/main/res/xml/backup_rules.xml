@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   Auto-backup rules (devices below API 31).
+   wc_session holds the user identity + active session token — never back it up.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="wc_session.xml"/>
+</full-backup-content>

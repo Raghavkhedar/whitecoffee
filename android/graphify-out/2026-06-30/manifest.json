@@ -1,0 +1,527 @@
+{
+  ".claude/settings.json": {
+    "mtime": 1782715938.7915955,
+    "ast_hash": "598cb075410bcd95220ac90bbb60344a",
+    "semantic_hash": "598cb075410bcd95220ac90bbb60344a"
+  },
+  ".claude/settings.local.json": {
+    "mtime": 1782678238.8047636,
+    "ast_hash": "cca58af8ba28eb68891a62516f3d9da0",
+    "semantic_hash": "cca58af8ba28eb68891a62516f3d9da0"
+  },
+  "app/build.gradle.kts": {
+    "mtime": 1782800249.7690215,
+    "ast_hash": "0d8864ad63ea7c70847aee0b85883109",
+    "semantic_hash": ""
+  },
+  "app/debug/output-metadata.json": {
+    "mtime": 1782543524.7081954,
+    "ast_hash": "aab9d12e3fed25b75d7b992291df7a98",
+    "semantic_hash": "aab9d12e3fed25b75d7b992291df7a98"
+  },
+  "app/google-services.json": {
+    "mtime": 1782543574.118179,
+    "ast_hash": "6a6da7c1a4a1aa33be90ee761bc8514f",
+    "semantic_hash": "6a6da7c1a4a1aa33be90ee761bc8514f"
+  },
+  "app/release/baselineProfiles/0/app-release.dm": {
+    "mtime": 1782543524.732199,
+    "ast_hash": "db93382f41df9dcd164b143a7e07b17d",
+    "semantic_hash": "db93382f41df9dcd164b143a7e07b17d"
+  },
+  "app/release/baselineProfiles/1/app-release.dm": {
+    "mtime": 1782543524.733199,
+    "ast_hash": "6a5a61181e080b50777592fea11be1b9",
+    "semantic_hash": "6a5a61181e080b50777592fea11be1b9"
+  },
+  "app/release/output-metadata.json": {
+    "mtime": 1782543524.7341986,
+    "ast_hash": "c7134290990b89b2e77503524a95237e",
+    "semantic_hash": "c7134290990b89b2e77503524a95237e"
+  },
+  "app/src/androidTest/java/com/raghav/whitecoffee/ExampleInstrumentedTest.kt": {
+    "mtime": 1782543524.7361984,
+    "ast_hash": "dfa2692781aa16b8541860cce8bdc40e",
+    "semantic_hash": "dfa2692781aa16b8541860cce8bdc40e"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/MainActivity.kt": {
+    "mtime": 1782795702.3417857,
+    "ast_hash": "f363383b8ce15d6baabcc03753326212",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/MainViewModel.kt": {
+    "mtime": 1782543524.737198,
+    "ast_hash": "2fe122356c6ab1af08e7ae62410ca772",
+    "semantic_hash": "2fe122356c6ab1af08e7ae62410ca772"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/WhiteCoffeeApp.kt": {
+    "mtime": 1782543524.738195,
+    "ast_hash": "8c710cef1a245a03c4879dfb012533ad",
+    "semantic_hash": "8c710cef1a245a03c4879dfb012533ad"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/core/BaseFragment.kt": {
+    "mtime": 1782543524.738195,
+    "ast_hash": "b5e54b05d456f7ad33682a01f6e92808",
+    "semantic_hash": "b5e54b05d456f7ad33682a01f6e92808"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/core/UiState.kt": {
+    "mtime": 1782543524.7392266,
+    "ast_hash": "0bfb92124a12671e0dfc4a38afd8230e",
+    "semantic_hash": "0bfb92124a12671e0dfc4a38afd8230e"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/PhotoUploadManager.kt": {
+    "mtime": 1782543524.7392266,
+    "ast_hash": "792e7d3361dc6b6b3a329a133169dfe5",
+    "semantic_hash": "792e7d3361dc6b6b3a329a133169dfe5"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/location/LocationProvider.kt": {
+    "mtime": 1782795791.991088,
+    "ast_hash": "7d68c5067bce92ce7cfab365f2af4531",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/AppNotification.kt": {
+    "mtime": 1782543524.7401972,
+    "ast_hash": "92dc4c0d1902031aefb25f4e900f8c3c",
+    "semantic_hash": "92dc4c0d1902031aefb25f4e900f8c3c"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/AttendanceRecord.kt": {
+    "mtime": 1782543524.7411973,
+    "ast_hash": "b4572ca0fb67655a3c594cc3a20d23ab",
+    "semantic_hash": "b4572ca0fb67655a3c594cc3a20d23ab"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/AttendanceStatusRecord.kt": {
+    "mtime": 1782543524.7411973,
+    "ast_hash": "dafbf6a44b1e9d2e91db8946f4ec4c68",
+    "semantic_hash": "dafbf6a44b1e9d2e91db8946f4ec4c68"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/LeaveRequest.kt": {
+    "mtime": 1782671852.0793893,
+    "ast_hash": "8f1a2c427d5a66954d20432f6601930c",
+    "semantic_hash": "8f1a2c427d5a66954d20432f6601930c"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolPurchase.kt": {
+    "mtime": 1782809924.5308404,
+    "ast_hash": "46539b91d4874b1c5c114398a3833d14",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/MaterialToolRequest.kt": {
+    "mtime": 1782809900.3115149,
+    "ast_hash": "16a469e591b0a39e44e4fe7fede2e123",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/RegularizationRequest.kt": {
+    "mtime": 1782674391.762556,
+    "ast_hash": "313356f659bd594ff5c1fea12dc9f54f",
+    "semantic_hash": "313356f659bd594ff5c1fea12dc9f54f"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/Site.kt": {
+    "mtime": 1782543524.7431965,
+    "ast_hash": "6f54751369c5a33506ea3efa431e89f7",
+    "semantic_hash": "6f54751369c5a33506ea3efa431e89f7"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/SiteTask.kt": {
+    "mtime": 1782543524.7431965,
+    "ast_hash": "fd0889c799ba00b5f421ab99fa8e9bc1",
+    "semantic_hash": "fd0889c799ba00b5f421ab99fa8e9bc1"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/Transfer.kt": {
+    "mtime": 1782543524.7431965,
+    "ast_hash": "83bede8704145678a6b8f397e5900b20",
+    "semantic_hash": "83bede8704145678a6b8f397e5900b20"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/User.kt": {
+    "mtime": 1782543524.7431965,
+    "ast_hash": "77515168070aead1f134f38e89474f50",
+    "semantic_hash": "77515168070aead1f134f38e89474f50"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/model/WorkProgress.kt": {
+    "mtime": 1782543524.744197,
+    "ast_hash": "21b75b6f9451e57299eba8cfda16d463",
+    "semantic_hash": "21b75b6f9451e57299eba8cfda16d463"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/network/NetworkMonitor.kt": {
+    "mtime": 1782543524.744197,
+    "ast_hash": "d6dd708b5a0f682c48ac987821a7ecf5",
+    "semantic_hash": "d6dd708b5a0f682c48ac987821a7ecf5"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/AttendanceRepository.kt": {
+    "mtime": 1782543524.7451956,
+    "ast_hash": "4f499f7b8ecdacecb9c657db08160941",
+    "semantic_hash": "4f499f7b8ecdacecb9c657db08160941"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/AuthRepository.kt": {
+    "mtime": 1782543524.7451956,
+    "ast_hash": "d57f48f7208c11fd8527ffb67c6683e2",
+    "semantic_hash": "d57f48f7208c11fd8527ffb67c6683e2"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/LeaveRepository.kt": {
+    "mtime": 1782543524.7461963,
+    "ast_hash": "1723cd604176a7728dafa002cac9d0e6",
+    "semantic_hash": "1723cd604176a7728dafa002cac9d0e6"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/NotificationRepository.kt": {
+    "mtime": 1782543524.7461963,
+    "ast_hash": "69f733bdafe3962cb3942965f5846ebf",
+    "semantic_hash": "69f733bdafe3962cb3942965f5846ebf"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/RegularizationRepository.kt": {
+    "mtime": 1782543524.7461963,
+    "ast_hash": "0e5d623c688bc438ff7f95490b18e99b",
+    "semantic_hash": "0e5d623c688bc438ff7f95490b18e99b"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/RequestRepository.kt": {
+    "mtime": 1782543524.7461963,
+    "ast_hash": "9aedf195c7d62c17b5e17ba84061a36b",
+    "semantic_hash": "9aedf195c7d62c17b5e17ba84061a36b"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/SiteRepository.kt": {
+    "mtime": 1782543524.7471964,
+    "ast_hash": "eff8bb788b02c9177bb5deafc34cfc3f",
+    "semantic_hash": "eff8bb788b02c9177bb5deafc34cfc3f"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/repository/UserRepository.kt": {
+    "mtime": 1782543524.7471964,
+    "ast_hash": "272341baaa4f9060664c2b5f31fde718",
+    "semantic_hash": "272341baaa4f9060664c2b5f31fde718"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/session/SessionManager.kt": {
+    "mtime": 1782543524.748197,
+    "ast_hash": "5c8efaf15900a9b870ec69c3c2cc73e6",
+    "semantic_hash": "5c8efaf15900a9b870ec69c3c2cc73e6"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/data/worker/PhotoUploadWorker.kt": {
+    "mtime": 1782543524.748197,
+    "ast_hash": "47a5a019621a3a6d3f8896c747174a08",
+    "semantic_hash": "47a5a019621a3a6d3f8896c747174a08"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/di/AppModule.kt": {
+    "mtime": 1782543524.749196,
+    "ast_hash": "f429daf4fd12682e76a7cd1f22fec369",
+    "semantic_hash": "f429daf4fd12682e76a7cd1f22fec369"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/di/FirebaseModule.kt": {
+    "mtime": 1782543524.749196,
+    "ast_hash": "70e9d6fc6988b5b7e909c2295077dde2",
+    "semantic_hash": "70e9d6fc6988b5b7e909c2295077dde2"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/service/FcmService.kt": {
+    "mtime": 1782543524.7501957,
+    "ast_hash": "3e4a46aa179163b1af6bffdc83eda06c",
+    "semantic_hash": "3e4a46aa179163b1af6bffdc83eda06c"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/ApplyLeaveViewModel.kt": {
+    "mtime": 1782671876.5339923,
+    "ast_hash": "70ac8bc43182756e1afb6f5163165456",
+    "semantic_hash": "70ac8bc43182756e1afb6f5163165456"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceFragment.kt": {
+    "mtime": 1782798987.463504,
+    "ast_hash": "fefccece44458a6d1ca344c1b57619ff",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceScreen.kt": {
+    "mtime": 1782550870.42777,
+    "ast_hash": "acf6c94b03b8f36f29b92368f6f2f220",
+    "semantic_hash": "acf6c94b03b8f36f29b92368f6f2f220"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/AttendanceViewModel.kt": {
+    "mtime": 1782543524.7521963,
+    "ast_hash": "d0c1179b66ce63ee60452091f55fcefa",
+    "semantic_hash": "d0c1179b66ce63ee60452091f55fcefa"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsFragment.kt": {
+    "mtime": 1782798902.3340423,
+    "ast_hash": "a6c6b481f39e4892bf0fedf3fe903946",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveApprovalsViewModel.kt": {
+    "mtime": 1782543524.753198,
+    "ast_hash": "4fe50b526b518da36495d92bfe36be4a",
+    "semantic_hash": "4fe50b526b518da36495d92bfe36be4a"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveFragment.kt": {
+    "mtime": 1782674609.5736072,
+    "ast_hash": "be54221d9328fe89b68526bd4e72ca27",
+    "semantic_hash": "be54221d9328fe89b68526bd4e72ca27"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveScreens.kt": {
+    "mtime": 1782674692.1745596,
+    "ast_hash": "31dcdad314cb57e3ec9aed9647894fb4",
+    "semantic_hash": "31dcdad314cb57e3ec9aed9647894fb4"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/LeaveViewModel.kt": {
+    "mtime": 1782543524.754196,
+    "ast_hash": "82d7d963c0bca2bcc8215b6e6c32d756",
+    "semantic_hash": "82d7d963c0bca2bcc8215b6e6c32d756"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/OfficeAttendanceFragment.kt": {
+    "mtime": 1782795709.6229348,
+    "ast_hash": "ad0b59254c3f2ff66c83b4310c447d48",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/OfficeAttendanceViewModel.kt": {
+    "mtime": 1782543524.7551968,
+    "ast_hash": "35f7038969a9eba38a5ad96697342f2a",
+    "semantic_hash": "35f7038969a9eba38a5ad96697342f2a"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationFragment.kt": {
+    "mtime": 1782798881.7778223,
+    "ast_hash": "3485d2df28d8d13739eebe1066589805",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationScreen.kt": {
+    "mtime": 1782674980.7736993,
+    "ast_hash": "46cdde385641042a4c289bcaff403397",
+    "semantic_hash": "46cdde385641042a4c289bcaff403397"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/attendance/RegularizationViewModel.kt": {
+    "mtime": 1782543524.7561963,
+    "ast_hash": "1f4fe709b1990c6b636e0588e8ed2a0c",
+    "semantic_hash": "1f4fe709b1990c6b636e0588e8ed2a0c"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/home/HomeFragment.kt": {
+    "mtime": 1782544834.6822505,
+    "ast_hash": "f96f19c3d5a4bae077b4f4380a7d85df",
+    "semantic_hash": "f96f19c3d5a4bae077b4f4380a7d85df"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/home/HomeScreen.kt": {
+    "mtime": 1782673421.281164,
+    "ast_hash": "9de6c1795955319c6f851a7db5784232",
+    "semantic_hash": "9de6c1795955319c6f851a7db5784232"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/home/HomeViewModel.kt": {
+    "mtime": 1782544805.9566555,
+    "ast_hash": "83b3d7fa8232fe8a2a58b27a525b42d4",
+    "semantic_hash": "83b3d7fa8232fe8a2a58b27a525b42d4"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/login/LoginFragment.kt": {
+    "mtime": 1782543524.757196,
+    "ast_hash": "07388d35d3e381c878eab819f6cd424a",
+    "semantic_hash": "07388d35d3e381c878eab819f6cd424a"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/login/LoginScreen.kt": {
+    "mtime": 1782550239.4447184,
+    "ast_hash": "7e180835e5ffb88a13bdcc3fa41bfa74",
+    "semantic_hash": "7e180835e5ffb88a13bdcc3fa41bfa74"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/login/LoginViewModel.kt": {
+    "mtime": 1782543524.7581947,
+    "ast_hash": "dce6abb7deff5894c7de87bc1cb93650",
+    "semantic_hash": "dce6abb7deff5894c7de87bc1cb93650"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/notifications/NotificationsFragment.kt": {
+    "mtime": 1782551606.1434505,
+    "ast_hash": "e15e067c99834ff048896e35b8429c7e",
+    "semantic_hash": "e15e067c99834ff048896e35b8429c7e"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/notifications/NotificationsScreen.kt": {
+    "mtime": 1782551597.600232,
+    "ast_hash": "379a04baed14ecf9e95cb7d468a0e1ce",
+    "semantic_hash": "379a04baed14ecf9e95cb7d468a0e1ce"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/notifications/NotificationsViewModel.kt": {
+    "mtime": 1782543524.7591958,
+    "ast_hash": "1e64c7915fc47133513f404728edcd9c",
+    "semantic_hash": "1e64c7915fc47133513f404728edcd9c"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyFragment.kt": {
+    "mtime": 1782810755.2710054,
+    "ast_hash": "87bdca8d187153a38cda6b4b4905dc31",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyScreen.kt": {
+    "mtime": 1782810355.7816935,
+    "ast_hash": "9f5af5515f3db907e5c71ef8073e7f0f",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolBuyViewModel.kt": {
+    "mtime": 1782797578.750471,
+    "ast_hash": "aa62bf6494c17e173bbe95ede144ad1f",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestFragment.kt": {
+    "mtime": 1782810726.4435863,
+    "ast_hash": "b45f37c1356fec13acb448da3184d1c4",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestScreen.kt": {
+    "mtime": 1782810011.3090281,
+    "ast_hash": "aab5ffc84f35048d15c32bbf89461f07",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialToolRequestViewModel.kt": {
+    "mtime": 1782797554.7799249,
+    "ast_hash": "66ce612f1030b979dfabf71d3eb52ce1",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/MaterialTransferFragment.kt": {
+    "mtime": 1782810777.3510516,
+    "ast_hash": "710375db16069a765a701ae908dc862d",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/RequestsUi.kt": {
+    "mtime": 1782810690.6855087,
+    "ast_hash": "647732acc25e92ec82d76118c5bd1281",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/ToolTransferFragment.kt": {
+    "mtime": 1782551255.609685,
+    "ast_hash": "81bcb775bc813e226981ccccffe758ee",
+    "semantic_hash": "81bcb775bc813e226981ccccffe758ee"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/TransferScreen.kt": {
+    "mtime": 1782551203.3331885,
+    "ast_hash": "780abbdf8082bf916e9f9dc5a74d13d4",
+    "semantic_hash": "780abbdf8082bf916e9f9dc5a74d13d4"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/TransferViewModel.kt": {
+    "mtime": 1782797649.3604507,
+    "ast_hash": "994f7b237b4de7686853b73f7b1be486",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/WorkProgressFragment.kt": {
+    "mtime": 1782810803.7503343,
+    "ast_hash": "322e59e91cb9d5d7208aeaa52f08b7fe",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/WorkProgressScreen.kt": {
+    "mtime": 1782551224.4013495,
+    "ast_hash": "1d7365ebafc2ddc5d91063187656b130",
+    "semantic_hash": "1d7365ebafc2ddc5d91063187656b130"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/requests/WorkProgressViewModel.kt": {
+    "mtime": 1782797608.3619368,
+    "ast_hash": "eebcd33c43d14eb5832b9a1c8f20b095",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/theme/Color.kt": {
+    "mtime": 1782550062.8719018,
+    "ast_hash": "31e768d21d54590b8c54010fa3178cf4",
+    "semantic_hash": "31e768d21d54590b8c54010fa3178cf4"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/theme/Components.kt": {
+    "mtime": 1782798852.1828535,
+    "ast_hash": "b26418ec453893fffccfd4a55379656c",
+    "semantic_hash": ""
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/theme/MsIcons.kt": {
+    "mtime": 1782550118.4496453,
+    "ast_hash": "b69e28586cb62af6bae36891ed1ff9b8",
+    "semantic_hash": "b69e28586cb62af6bae36891ed1ff9b8"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/theme/Theme.kt": {
+    "mtime": 1782550126.2236638,
+    "ast_hash": "3f9612f9e5df474e132705278a6b8ca9",
+    "semantic_hash": "3f9612f9e5df474e132705278a6b8ca9"
+  },
+  "app/src/main/java/com/raghav/whitecoffee/ui/theme/Type.kt": {
+    "mtime": 1782550083.0101366,
+    "ast_hash": "c9665c56bb75896ef21870bc27ef875c",
+    "semantic_hash": "c9665c56bb75896ef21870bc27ef875c"
+  },
+  "app/src/test/java/com/raghav/whitecoffee/ExampleUnitTest.kt": {
+    "mtime": 1782543524.800232,
+    "ast_hash": "16fd576d49844baa6352120d5769f9b5",
+    "semantic_hash": "16fd576d49844baa6352120d5769f9b5"
+  },
+  "build.gradle.kts": {
+    "mtime": 1782800196.0232537,
+    "ast_hash": "1b6594b46a988c2123c13ad96365ed35",
+    "semantic_hash": ""
+  },
+  "firebase.json": {
+    "mtime": 1782543524.800232,
+    "ast_hash": "fbad698c3479a1ff80713312e58d53f4",
+    "semantic_hash": "fbad698c3479a1ff80713312e58d53f4"
+  },
+  "gradlew": {
+    "mtime": 1782543524.8032324,
+    "ast_hash": "4f7a8a3a765f6f751d47568dc3bb913f",
+    "semantic_hash": "4f7a8a3a765f6f751d47568dc3bb913f"
+  },
+  "settings.gradle.kts": {
+    "mtime": 1782543524.8052316,
+    "ast_hash": "eaf6c7d8968bdd90c8bc7b54b84d7f11",
+    "semantic_hash": "eaf6c7d8968bdd90c8bc7b54b84d7f11"
+  },
+  "CLAUDE.md": {
+    "mtime": 1782800487.714005,
+    "ast_hash": "c3da58bc59908395b84ae4e6e059dd2c",
+    "semantic_hash": ""
+  },
+  "DEVELOPER_HANDBOOK.md": {
+    "mtime": 1782725094.730488,
+    "ast_hash": "c8bd199aa2f3912709eefc144726c46a",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1782543524.6376755,
+    "ast_hash": "f63464b03307f7a65639e4d877384103",
+    "semantic_hash": "f63464b03307f7a65639e4d877384103"
+  },
+  "SESSION_21_TODO.md": {
+    "mtime": 1782543524.6376755,
+    "ast_hash": "cbd56acee32bffff0d44c9a65e556e8a",
+    "semantic_hash": "cbd56acee32bffff0d44c9a65e556e8a"
+  },
+  "STRESS_TEST.md": {
+    "mtime": 1782543524.6386752,
+    "ast_hash": "484f9fcb48b7c5bf81d43c691fe1c1b6",
+    "semantic_hash": "484f9fcb48b7c5bf81d43c691fe1c1b6"
+  },
+  "improvements.md": {
+    "mtime": 1782543524.804232,
+    "ast_hash": "24e78c55f4cc9684a84693b9b44fb50e",
+    "semantic_hash": "24e78c55f4cc9684a84693b9b44fb50e"
+  },
+  "app/src/main/res/mipmap-hdpi/ic_launcher.webp": {
+    "mtime": 1782543524.7932322,
+    "ast_hash": "39d9bb21eb48f128a71c3f01ad3cd427",
+    "semantic_hash": "39d9bb21eb48f128a71c3f01ad3cd427"
+  },
+  "app/src/main/res/mipmap-hdpi/ic_launcher_round.webp": {
+    "mtime": 1782543524.7932322,
+    "ast_hash": "70d6f58af3c76ee221c829b1ce9daa04",
+    "semantic_hash": "70d6f58af3c76ee221c829b1ce9daa04"
+  },
+  "app/src/main/res/mipmap-mdpi/ic_launcher.webp": {
+    "mtime": 1782543524.7932322,
+    "ast_hash": "d2acce71c7b46e5e9540d23a9f7b2166",
+    "semantic_hash": "d2acce71c7b46e5e9540d23a9f7b2166"
+  },
+  "app/src/main/res/mipmap-mdpi/ic_launcher_round.webp": {
+    "mtime": 1782543524.7942321,
+    "ast_hash": "6376acb48f96a855ee95c113cd7fd616",
+    "semantic_hash": "6376acb48f96a855ee95c113cd7fd616"
+  },
+  "app/src/main/res/mipmap-xhdpi/ic_launcher.webp": {
+    "mtime": 1782543524.7942321,
+    "ast_hash": "bd087d80b70bec05a43c745f29dc3ffc",
+    "semantic_hash": "bd087d80b70bec05a43c745f29dc3ffc"
+  },
+  "app/src/main/res/mipmap-xhdpi/ic_launcher_round.webp": {
+    "mtime": 1782543524.7942321,
+    "ast_hash": "7479edd56ab712609f030054bffd7263",
+    "semantic_hash": "7479edd56ab712609f030054bffd7263"
+  },
+  "app/src/main/res/mipmap-xxhdpi/ic_launcher.webp": {
+    "mtime": 1782543524.7952318,
+    "ast_hash": "ea180e8d1a2e8300cc998b987266b736",
+    "semantic_hash": "ea180e8d1a2e8300cc998b987266b736"
+  },
+  "app/src/main/res/mipmap-xxhdpi/ic_launcher_round.webp": {
+    "mtime": 1782543524.7952318,
+    "ast_hash": "947842742b29eeda80ee0805e1600366",
+    "semantic_hash": "947842742b29eeda80ee0805e1600366"
+  },
+  "app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp": {
+    "mtime": 1782543524.7962317,
+    "ast_hash": "54ab624970c86c2146e76b93f27586f7",
+    "semantic_hash": "54ab624970c86c2146e76b93f27586f7"
+  },
+  "app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.webp": {
+    "mtime": 1782543524.7962317,
+    "ast_hash": "9ee591be72fb336861a8044086054daa",
+    "semantic_hash": "9ee591be72fb336861a8044086054daa"
+  }
+}

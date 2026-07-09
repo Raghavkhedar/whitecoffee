@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/loginFragment">
+
+    <!-- ── Login ── -->
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.raghav.whitecoffee.ui.login.LoginFragment"
+        android:label="Login">
+        <action
+            android:id="@+id/action_loginFragment_to_homeFragment"
+            app:destination="@id/homeFragment"
+            app:popUpTo="@id/loginFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <!-- ── Home ── -->
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.raghav.whitecoffee.ui.home.HomeFragment"
+        android:label="Home">
+        <action
+            android:id="@+id/action_homeFragment_to_attendanceFragment"
+            app:destination="@id/attendanceFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_officeAttendanceFragment"
+            app:destination="@id/officeAttendanceFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_materialToolRequestFragment"
+            app:destination="@id/materialToolRequestFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_materialToolBuyFragment"
+            app:destination="@id/materialToolBuyFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_materialTransferFragment"
+            app:destination="@id/materialTransferFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_toolTransferFragment"
+            app:destination="@id/toolTransferFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_workProgressFragment"
+            app:destination="@id/workProgressFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_leaveFragment"
+            app:destination="@id/leaveFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_leaveApprovalsFragment"
+            app:destination="@id/leaveApprovalsFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_loginFragment"
+            app:destination="@id/loginFragment"
+            app:popUpTo="@id/homeFragment"
+            app:popUpToInclusive="true" />
+        <action
+            android:id="@+id/action_homeFragment_to_notificationsFragment"
+            app:destination="@id/notificationsFragment" />
+        <action
+            android:id="@+id/action_homeFragment_to_regularizationFragment"
+            app:destination="@id/regularizationFragment" />
+    </fragment>
+
+    <!-- ── Attendance ── -->
+    <fragment
+        android:id="@+id/attendanceFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.AttendanceFragment"
+        android:label="Attendance" />
+
+    <!-- ── M&T Request ── -->
+    <fragment
+        android:id="@+id/materialToolRequestFragment"
+        android:name="com.raghav.whitecoffee.ui.requests.MaterialToolRequestFragment"
+        android:label="M&amp;T Request" />
+
+    <!-- ── M&T Buy ── -->
+    <fragment
+        android:id="@+id/materialToolBuyFragment"
+        android:name="com.raghav.whitecoffee.ui.requests.MaterialToolBuyFragment"
+        android:label="M&amp;T Buy" />
+
+    <!-- ── Material Transfer ── -->
+    <fragment
+        android:id="@+id/materialTransferFragment"
+        android:name="com.raghav.whitecoffee.ui.requests.MaterialTransferFragment"
+        android:label="Material Transfer" />
+
+    <!-- ── Tool Transfer ── -->
+    <fragment
+        android:id="@+id/toolTransferFragment"
+        android:name="com.raghav.whitecoffee.ui.requests.ToolTransferFragment"
+        android:label="Tool Transfer" />
+
+    <!-- ── Office Attendance ── -->
+    <fragment
+        android:id="@+id/officeAttendanceFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.OfficeAttendanceFragment"
+        android:label="Attendance" />
+
+    <!-- ── Work Progress ── -->
+    <fragment
+        android:id="@+id/workProgressFragment"
+        android:name="com.raghav.whitecoffee.ui.requests.WorkProgressFragment"
+        android:label="Work Progress" />
+
+    <!-- ── Leave (Apply + History tabbed Compose screen) ── -->
+    <fragment
+        android:id="@+id/leaveFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.LeaveFragment"
+        android:label="Leave" />
+
+    <!-- ── Leave Approvals (admin only) ── -->
+    <fragment
+        android:id="@+id/leaveApprovalsFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.LeaveApprovalsFragment"
+        android:label="Leave Approvals" />
+
+    <!-- ── Notifications ── -->
+    <fragment
+        android:id="@+id/notificationsFragment"
+        android:name="com.raghav.whitecoffee.ui.notifications.NotificationsFragment"
+        android:label="Notifications" />
+
+    <!-- ── Attendance Regularization ── -->
+    <fragment
+        android:id="@+id/regularizationFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.RegularizationFragment"
+        android:label="Regularization" />
+
+</navigation>

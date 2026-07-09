@@ -1,0 +1,5 @@
+# Machine-specific / regenerated local state — not portable across clones
+.graphify_python
+.graphify_root
+.needs_update
+cache/
