@@ -1,0 +1,30 @@
+# Secrets (never commit)
+keystore.properties
+**/keystore.properties
+*.jks
+*.keystore
+**/local.properties
+admin/.env.local
+**/.env.local
+firebase/functions/*.local
+
+# Android / Gradle
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+
+# Node / Next.js
+admin/node_modules/
+admin/.next/
+admin/out/
+firebase/functions/node_modules/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# Graphify (regenerated at root)
+graphify-out/
