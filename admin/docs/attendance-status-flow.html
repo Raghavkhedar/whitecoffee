@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Attendance Status — How it's Calculated</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --primary: #1A5FAF;
+    --bg: #F0F4F8;
+    --border: #C8D6E8;
+    --text: #0D1B2A;
+    --text2: #6B7E94;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  header {
+    background: var(--primary);
+    color: #fff;
+    padding: 28px 32px;
+  }
+  header h1 { margin: 0 0 6px; font-size: 24px; }
+  header p  { margin: 0; opacity: .85; font-size: 14px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  section {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    box-shadow: 0 1px 3px rgba(13,27,42,.05);
+  }
+  h2 { color: var(--primary); margin-top: 0; font-size: 19px; border-bottom: 2px solid var(--bg); padding-bottom: 10px; }
+  h3 { font-size: 15px; margin-bottom: 8px; }
+  .mermaid { text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg); color: var(--text2); font-weight: 600; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 5px; font-size: 13px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .b-present { background:#dcfce7; color:#15803d; }
+  .b-sl      { background:#e0f2fe; color:#0369a1; }
+  .b-half    { background:#fef9c3; color:#a16207; }
+  .b-slnf    { background:#f3f4f6; color:#374151; }
+  .b-pl      { background:#ede9fe; color:#6d28d9; }
+  .b-upl     { background:#ffedd5; color:#c2410c; }
+  .b-absent  { background:#fee2e2; color:#b91c1c; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px){ .grid2 { grid-template-columns: 1fr; } }
+  .note { font-size: 13px; color: var(--text2); margin-top: 12px; }
+  .src { font-size: 12px; color: var(--text2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Attendance Status — How it's Calculated</h1>
+  <p>White Coffee admin · evaluated per employee, per day · nightly Cloud Function at 23:59 IST</p>
+</header>
+
+<main>
+
+  <!-- ───────────── MAIN FLOW ───────────── -->
+  <section>
+    <h2>1 · The decision flow</h2>
+    <p>For each user, each day, the logic walks top to bottom and stops at the first match.</p>
+    <div class="mermaid">
+flowchart TD
+    A([Start: one user, one day]) --> B{markedBy == 'admin'?<br/><small>regularization override</small>}
+    B -- Yes --> SKIP([⛔ Skip — keep admin value])
+    B -- No --> C{Is it Sunday?}
+    C -- Yes --> SKIP
+    C -- No --> D{Operations role<br/>AND no plan<br/>AND no leave?}
+    D -- Yes --> SKIP2([⛔ Skip — no status written])
+    D -- No --> E[Set role inputs:<br/>events + work window]
+
+    E --> F{How many<br/>punches?}
+
+    F -- "Both IN and OUT" --> G[offMinutes =<br/>late + early minutes]
+    G --> G1{offMinutes == 0?}
+    G1 -- Yes --> P1[/Present 1.0/]:::present
+    G1 -- No --> G2{offMinutes &le; 120?}
+    G2 -- Yes --> P2[/SL 0.75/]:::sl
+    G2 -- No --> P3[/Half Day 0.5/]:::half
+
+    F -- "Only ONE punch" --> P4[/SLNF 0.5/]:::slnf
+
+    F -- "No punches" --> H{Approved<br/>leave today?}
+    H -- No --> P7[/Absent -2/]:::absent
+    H -- Yes --> I{PL balance &gt; 0?}
+    I -- Yes --> P5[/PL 1.0<br/>balance -1/]:::pl
+    I -- No --> P6[/LWP 0/]:::upl
+
+    classDef present fill:#dcfce7,stroke:#15803d,color:#15803d;
+    classDef sl fill:#e0f2fe,stroke:#0369a1,color:#0369a1;
+    classDef half fill:#fef9c3,stroke:#a16207,color:#a16207;
+    classDef slnf fill:#f3f4f6,stroke:#374151,color:#374151;
+    classDef pl fill:#ede9fe,stroke:#6d28d9,color:#6d28d9;
+    classDef upl fill:#ffedd5,stroke:#c2410c,color:#c2410c;
+    classDef absent fill:#fee2e2,stroke:#b91c1c,color:#b91c1c;
+    </div>
+    <p class="src">Source: <code>functions/index.js:200–253</code> (authoritative) · mirrored in <code>src/app/(admin)/attendance/page.tsx:44–85</code></p>
+  </section>
+
+  <!-- ───────────── ROLE INPUTS ───────────── -->
+  <section>
+    <h2>2 · Role decides the inputs</h2>
+    <p>Before evaluating, the two role groups feed different events and a different working window into the same logic.</p>
+    <table>
+      <tr><th></th><th>Office / Admin</th><th>Operations</th></tr>
+      <tr><td>Check-in event</td><td><code>office_in</code></td><td>first <code>site_in</code></td></tr>
+      <tr><td>Check-out event</td><td><code>office_out</code></td><td>last <code>site_out</code></td></tr>
+      <tr><td>Working window</td><td>fixed <strong>10:00 – 18:00</strong></td><td><code>planned_hours/{date}</code> (admin-set start/end)</td></tr>
+      <tr><td>No plan set?</td><td>N/A (window is fixed)</td><td><strong>Day skipped</strong> unless there's approved leave</td></tr>
+    </table>
+    <div class="note">
+      <strong>offMinutes</strong> = how far outside the window the day was:<br/>
+      <code>lateMinutes = max(0, actualIn − windowStart)</code> + <code>earlyMinutes = max(0, windowEnd − actualOut)</code>
+    </div>
+  </section>
+
+  <!-- ───────────── STATUS TABLE ───────────── -->
+  <section>
+    <h2>3 · The 7 statuses &amp; what separates them</h2>
+    <table>
+      <tr><th>Status</th><th>Condition</th><th>Salary (days)</th></tr>
+      <tr><td><span class="badge b-present">Present</span></td><td>Both punches · offMinutes = 0 (on time both ends)</td><td>1.0</td></tr>
+      <tr><td><span class="badge b-sl">SL</span></td><td>Both punches · offMinutes ≤ 120 (≤ 2h off-window)</td><td>0.75</td></tr>
+      <tr><td><span class="badge b-half">Half Day</span></td><td>Both punches · offMinutes > 120 (> 2h off-window)</td><td>0.5</td></tr>
+      <tr><td><span class="badge b-slnf">SLNF</span></td><td>Exactly one punch (in OR out missing)</td><td>0.5</td></tr>
+      <tr><td><span class="badge b-pl">PL</span></td><td>No punches · approved leave · PL balance > 0</td><td>1.0</td></tr>
+      <tr><td><span class="badge b-upl">LWP</span></td><td>No punches · approved leave · no balance</td><td>0</td></tr>
+      <tr><td><span class="badge b-absent">Absent</span></td><td>No punches · no approved leave</td><td>-2</td></tr>
+    </table>
+    <p class="note"><strong>The 4 things that differentiate everything</strong>, in priority order:
+      ① override/Sunday/ops-no-plan → nothing written ·
+      ② number of punches (2 / 1 / 0) ·
+      ③ offMinutes threshold (0 / ≤120 / >120) ·
+      ④ leave + PL balance.
+    </p>
+  </section>
+
+  <!-- ───────────── DOWNSTREAM ───────────── -->
+  <section>
+    <h2>4 · What the status feeds into</h2>
+    <div class="grid2">
+      <div>
+        <h3>Days NP (Net Present)</h3>
+        <code>present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL − absent×2</code>
+        <p class="note">LWP counts as 0.</p>
+      </div>
+      <div>
+        <h3>Salary &amp; PL balance</h3>
+        <code>Salary = daysNP × salaryRate</code>
+        <p class="note">PL balance: +1 on the 1st of each month (<code>accrueMonthlyLeave</code>), −1 each PL day used (guarded so re-runs don't double-deduct).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────── EDGE NOTES ───────────── -->
+  <section>
+    <h2>5 · Edge cases worth remembering</h2>
+    <ul>
+      <li><strong>Admin override wins:</strong> docs with <code>markedBy: 'admin'</code> (from regularization approvals) are never overwritten by the nightly run.</li>
+      <li><strong>Sundays</strong> are skipped — no status, no penalty.</li>
+      <li><strong>Ops with no plan + no leave:</strong> day left unmarked; admin must enter a planned shift.</li>
+      <li><strong>UI vs stored doc:</strong> the attendance page computes live status from events, so on skipped days the on-screen value can differ from what's actually saved.</li>
+    </ul>
+  </section>
+
+</main>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'base', themeVariables: {
+    primaryColor: '#eaf1fb', primaryBorderColor: '#1A5FAF', primaryTextColor: '#0D1B2A',
+    lineColor: '#6B7E94', fontSize: '14px'
+  }});
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #FAF9F7;
+  color: #1A1613;
+  font-family: var(--font-geist-sans), -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Slim warm scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: #DDD8D2;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #C7C1B9; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary text-white px-4 py-2 rounded-[10px] font-medium hover:bg-[#27598F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-outline {
+    @apply border border-border text-text-primary bg-white px-4 py-2 rounded-[10px] font-medium hover:bg-[#F5F2EE] transition-colors;
+  }
+  .btn-danger {
+    @apply bg-[#C42B2B] text-white px-4 py-2 rounded-[10px] font-medium hover:bg-[#A82424] transition-colors disabled:opacity-50;
+  }
+  .btn-success {
+    @apply bg-[#0A7A50] text-white px-4 py-2 rounded-[10px] font-medium hover:bg-[#086840] transition-colors disabled:opacity-50;
+  }
+  .card {
+    @apply bg-white rounded-2xl border border-[#E9E6E2] p-6 shadow-[0_1px_2px_rgba(26,22,19,0.03)];
+  }
+  .input {
+    @apply w-full border border-border rounded-[10px] px-3 py-2 text-sm bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary;
+  }
+  .label {
+    @apply block text-xs font-semibold text-[#A8A29E] uppercase tracking-wide mb-1.5;
+  }
+  .badge-pending  { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FDF3E4] text-[#B26B07]; }
+  .badge-approved { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#EAF7F0] text-[#0A7A50]; }
+  .badge-rejected { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FBEAEA] text-[#C42B2B]; }
+  .badge-admin    { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FBECEC] text-[#B4322F]; }
+  .badge-office   { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#ECF1FC] text-[#2456C7]; }
+  .badge-ops      { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#F7EFE3] text-[#9A5B1E]; }
+}
