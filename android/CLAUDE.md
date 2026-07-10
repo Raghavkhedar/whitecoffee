@@ -197,14 +197,22 @@ com.raghav.whitecoffee
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
 | role | String | operations / office / admin |
-| status | String | Present / HalfDay / Absent / PL / UPL |
+| status | String | Present / SL / HalfDay / LNF / Absent / PL / LWP / WO |
 | markedBy | String | auto (Cloud Function) / admin (manual override) / backfill |
 | updatedAt | Timestamp | |
 
 > Auto-computed nightly at 23:59 IST by `computeDailyAttendanceStatus` Cloud Function for ALL users.
-> Operations: Present if home_in before 10:00 and home_out after 18:00; HalfDay otherwise.
-> Office/Admin: Present if office_in before 10:00 and office_out after 18:00; HalfDay otherwise.
-> No events + approved leave → PL (if plBalance > 0) or UPL. No events + no leave → Absent.
+> Office/Admin window is fixed 10:00–18:00; Operations use the admin-set planned shift.
+> With both punches: **off-minutes** = late-in + early-out (scored against the window). `0` →
+> **Present**, `≤120` → **SL**, else **HalfDay**. On-time is **inclusive** of the start —
+> checking in at exactly 10:00 is on time (`inMinutes ≤ 600`), NOT late. One punch → **LNF**
+> (Log Not Found, formerly SLNF). No events + approved leave → **PL** (if plBalance > 0) or
+> **LWP**. No events + no leave → **Absent**.
+>
+> The app's live home-screen / regularization preview uses **`AttendanceStatusRules`**
+> (`data/model`) — a pure, unit-tested port of this logic (minute-based, SL-aware) so what the
+> employee sees matches payroll. It replaced an older hour-granular `inHour < 10` check that
+> wrongly showed **Half Day** for anyone checking in during the 10:00 hour.
 
 > **HalfDay vs "short leave" — there is NO short-leave concept (known gap).** HalfDay is derived
 > purely from punch TIMES (late in / early out); no employee intent is attached. Leave is
