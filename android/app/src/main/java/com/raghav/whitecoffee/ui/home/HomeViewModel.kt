@@ -3,6 +3,7 @@ package com.raghav.whitecoffee.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.data.model.AttendanceRecord
+import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
@@ -22,6 +23,7 @@ sealed interface TodayAttendanceStatus {
     data object Loading : TodayAttendanceStatus
     data object NotCheckedIn : TodayAttendanceStatus
     data class Present(val location: String, val since: String) : TodayAttendanceStatus
+    data class ShortLeave(val location: String, val since: String) : TodayAttendanceStatus
     data class HalfDay(val location: String, val since: String) : TodayAttendanceStatus
     data object Error : TodayAttendanceStatus
 }
@@ -93,45 +95,43 @@ class HomeViewModel @Inject constructor(
 
             _todayStatus.value = when (dailyStatus) {
                 DailyStatus.PRESENT -> TodayAttendanceStatus.Present(location, since)
+                DailyStatus.SHORT_LEAVE -> TodayAttendanceStatus.ShortLeave(location, since)
                 DailyStatus.HALF_DAY -> TodayAttendanceStatus.HalfDay(location, since)
                 else -> TodayAttendanceStatus.NotCheckedIn
             }
         }
     }
 
-    private enum class DailyStatus { PRESENT, HALF_DAY, NOT_CHECKED_IN }
+    private enum class DailyStatus { PRESENT, SHORT_LEAVE, HALF_DAY, NOT_CHECKED_IN }
 
+    private fun AttendanceStatusRules.DayStatus.toDaily(): DailyStatus = when (this) {
+        AttendanceStatusRules.DayStatus.PRESENT -> DailyStatus.PRESENT
+        AttendanceStatusRules.DayStatus.SHORT_LEAVE -> DailyStatus.SHORT_LEAVE
+        AttendanceStatusRules.DayStatus.HALF_DAY -> DailyStatus.HALF_DAY
+    }
+
+    // Ops: home_in/home_out bookend the day (commute), scored against 10:00–18:00.
     private fun deriveOpsDailyStatus(events: List<AttendanceRecord>): DailyStatus {
         val homeIn = events.firstOrNull { it.type == AttendanceType.HOME_IN }
             ?: return DailyStatus.NOT_CHECKED_IN
+        val inMin = minutesOf(homeIn) ?: return DailyStatus.HALF_DAY
         val homeOut = events.lastOrNull { it.type == AttendanceType.HOME_OUT }
-
-        val inHour = hourOf(homeIn) ?: return DailyStatus.HALF_DAY
-
-        if (homeOut != null) {
-            val outHour = hourOf(homeOut) ?: return DailyStatus.HALF_DAY
-            return if (inHour < 10 && outHour >= 18) DailyStatus.PRESENT else DailyStatus.HALF_DAY
-        }
-
-        return if (inHour < 10) DailyStatus.PRESENT else DailyStatus.HALF_DAY
+        val outMin = if (homeOut != null) minutesOf(homeOut) else null
+        return AttendanceStatusRules.classify(inMin, outMin).toDaily()
     }
 
     private fun deriveOfficeDailyStatus(events: List<AttendanceRecord>): DailyStatus {
         val officeIn = events.firstOrNull { it.type == AttendanceType.OFFICE_IN }
             ?: return DailyStatus.NOT_CHECKED_IN
-        val officeOut = events.lastOrNull { it.type == AttendanceType.OFFICE_OUT }
-
-        val inHour = hourOf(officeIn) ?: return DailyStatus.HALF_DAY
+        val inMin = minutesOf(officeIn) ?: return DailyStatus.HALF_DAY
 
         val lastInIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_IN }
         val lastOutIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_OUT }
+        val officeOut = events.lastOrNull { it.type == AttendanceType.OFFICE_OUT }
+        // Only count the checkout if it's the final event (they haven't re-entered since).
+        val outMin = if (officeOut != null && lastOutIdx > lastInIdx) minutesOf(officeOut) else null
 
-        if (officeOut != null && lastOutIdx > lastInIdx) {
-            val outHour = hourOf(officeOut) ?: return DailyStatus.HALF_DAY
-            return if (inHour < 10 && outHour >= 18) DailyStatus.PRESENT else DailyStatus.HALF_DAY
-        }
-
-        return if (inHour < 10) DailyStatus.PRESENT else DailyStatus.HALF_DAY
+        return AttendanceStatusRules.classify(inMin, outMin).toDaily()
     }
 
     private fun deriveLocation(event: AttendanceRecord): String {
@@ -148,9 +148,10 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun hourOf(record: AttendanceRecord): Int? {
+    private fun minutesOf(record: AttendanceRecord): Int? {
         val date = record.timestamp?.toDate() ?: return null
-        return Calendar.getInstance().apply { time = date }.get(Calendar.HOUR_OF_DAY)
+        val cal = Calendar.getInstance().apply { time = date }
+        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     }
 
 }
