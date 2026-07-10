@@ -210,9 +210,12 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
     await Promise.all([...statusChecks, ...planChecks]);
 
-    // Skip Sundays — no status written, no penalty
-    const todayDate = new Date(today + "T00:00:00+05:30");
-    if (todayDate.getDay() === 0) {
+    // Skip Sundays — no status written, no penalty.
+    // `today` is the IST date string; read the weekday in UTC to avoid the
+    // runtime's UTC timezone shifting a "+05:30 midnight" back to the prior day
+    // (which made Mondays read as Sundays and vice-versa).
+    const todayDate = new Date(today + "T00:00:00Z");
+    if (todayDate.getUTCDay() === 0) {
       console.log(`computeDailyAttendanceStatus: skipping Sunday ${today}`);
       return;
     }
@@ -267,7 +270,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
         else if (offMinutes <= 120) status = "SL";
         else status = "HalfDay";
       } else if (checkIns.length > 0 || checkOuts.length > 0) {
-        status = "SLNF";
+        status = "LNF";
       } else {
         if (leave) {
           const balance = user.plBalance || 0;
@@ -358,7 +361,9 @@ exports.exportToSheets = onSchedule(
     const statusMap  = new Map();
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
-      statusMap.set(`${d.userId}__${d.date}`, d.status || "");
+      // Legacy docs stored "SLNF"; the status is now "LNF" (Log Not Found).
+      const st = d.status === "SLNF" ? "LNF" : (d.status || "");
+      statusMap.set(`${d.userId}__${d.date}`, st);
     });
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
@@ -367,8 +372,9 @@ exports.exportToSheets = onSchedule(
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
       if (d.date < monthStart || d.date > today) return;
-      // Skip Sundays — they are not working days
-      const dayOfWeek = new Date(d.date + "T00:00:00+05:30").getDay();
+      // Skip Sundays — they are not working days (read weekday in UTC; see note
+      // at the Sunday-skip in computeDailyAttendanceStatus for why).
+      const dayOfWeek = new Date(d.date + "T00:00:00Z").getUTCDay();
       if (dayOfWeek === 0) return;
       if (!userAttendanceMTD.has(d.userId))
         userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, lwp: 0, absent: 0});
@@ -377,7 +383,8 @@ exports.exportToSheets = onSchedule(
         case "Present":  ua.present++;  break;
         case "HalfDay":  ua.halfDay++;  break;
         case "SL":       ua.sl++;       break;
-        case "SLNF":     ua.slnf++;     break;
+        case "LNF":      ua.slnf++;     break; // "Log Not Found"
+        case "SLNF":     ua.slnf++;     break; // legacy value, same bucket
         case "PL":       ua.pl++;       break;
         case "LWP":      ua.lwp++;      break;
         case "Absent":   ua.absent++;   break;
@@ -417,7 +424,14 @@ exports.exportToSheets = onSchedule(
         const role  = userRoleMap.get(uid) || "";
         const isOps = role === "operations";
 
-        const locOf = (e) => !e ? "" : (isOps ? (e.siteName || "Site") : (e.locationName || "Office"));
+        const locOf = (e) => {
+          if (!e) return "";
+          if (isOps) return e.siteName || "Site";
+          // Office/admin now log from home too (enforced for BO) — distinguish
+          // home_in/home_out from office_in/office_out so the timeline is honest.
+          if (e.type === "home_in" || e.type === "home_out") return "Home";
+          return e.locationName || "Office";
+        };
         // Site ID is filled in per-entry by the admin (Site IDs page) on the attendance doc.
         const siteIdOf = (e) => (isOps && e) ? (e.siteId || "") : "";
 
@@ -726,7 +740,7 @@ exports.exportToSheets = onSchedule(
 
       const header = [
         "Date", "EMP Name", "EMP ID", "Days Passed in Month",
-        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "SLNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
+        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
         "Covy Due (approx avg)", "Imprest Due MTD", `Prior Settlement ${prevMonth} (₹)`, "TOTAL DUE",

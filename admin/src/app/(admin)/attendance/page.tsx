@@ -99,13 +99,13 @@ function deriveStatus(
   const checkOuts = userEvents.filter(isOut).sort((a, b) => ts(a) - ts(b));
   if (checkIns.length === 0 && checkOuts.length === 0) return 'Absent';
 
-  if (checkIns.length === 0 || checkOuts.length === 0) return 'SLNF';
+  if (checkIns.length === 0 || checkOuts.length === 0) return 'LNF';
 
   const toIST = (d: Date) => new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
 
   const firstInDate = checkIns[0].timestamp?.toDate();
   const lastOutDate = checkOuts[checkOuts.length - 1].timestamp?.toDate();
-  if (!firstInDate || !lastOutDate) return 'SLNF';
+  if (!firstInDate || !lastOutDate) return 'LNF';
 
   const inIST  = toIST(firstInDate);
   const outIST = toIST(lastOutDate);
@@ -221,6 +221,8 @@ export default function AttendancePage() {
   while (calendarCells.length % 7 !== 0) calendarCells.push(null);
 
   function getDaySummary(date: string) {
+    // Pre-launch dates only hold wiped test/backfill data — never surface it.
+    if (date < LAUNCH_DATE) return { present: 0, halfDay: 0, sl: 0, slnf: 0, absent: 0, leave: 0 };
     const dayMap = statusByDate.get(date);
     if (!dayMap) return { present: 0, halfDay: 0, sl: 0, slnf: 0, absent: 0, leave: 0 };
     let present = 0, halfDay = 0, sl = 0, slnf = 0, absent = 0, leave = 0;
@@ -228,7 +230,7 @@ export default function AttendancePage() {
       if (s.status === 'Present')  present++;
       else if (s.status === 'HalfDay') halfDay++;
       else if (s.status === 'SL') sl++;
-      else if (s.status === 'SLNF') slnf++;
+      else if (s.status === 'LNF' || s.status === 'SLNF') slnf++;
       else if (s.status === 'Absent')  absent++;
       else if (s.status === 'PL' || s.status === 'LWP') leave++;
     });
@@ -393,7 +395,8 @@ export default function AttendancePage() {
   const effectiveStatuses = useMemo(() => {
     const map = new Map<string, AttendanceStatus['status']>();
     users.forEach(user => {
-      const stored = selectedDayMap.get(user.id)?.status;
+      // Ignore pre-launch stored docs (wiped test/backfill data); deriveStatus already guards this.
+      const stored = selectedDate < LAUNCH_DATE ? undefined : selectedDayMap.get(user.id)?.status;
       if (stored) {
         map.set(user.id, stored);
       } else if (!eventsLoading && !selectedHoliday) {
@@ -413,7 +416,7 @@ export default function AttendancePage() {
   const totalPresent = statusValues.filter(s => s === 'Present').length;
   const totalHalf    = statusValues.filter(s => s === 'HalfDay').length;
   const totalSL      = statusValues.filter(s => s === 'SL').length;
-  const totalSLNF    = statusValues.filter(s => s === 'SLNF').length;
+  const totalSLNF    = statusValues.filter(s => s === 'LNF' || s === 'SLNF').length;
   const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
   const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'LWP').length;
   const totalWo      = statusValues.filter(s => s === 'WO').length;
