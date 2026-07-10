@@ -48,7 +48,7 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO';
+  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO';
   markedBy: 'auto' | 'admin';
   // Effective worked window captured when an admin regularizes a day to Present (missed-punch
   // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw

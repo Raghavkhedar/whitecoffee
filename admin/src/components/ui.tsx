@@ -38,7 +38,8 @@ const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> =
   Present:   { label: 'Present',       bg: '#EAF7F0', color: '#0A7A50' },
   HalfDay:   { label: 'Half Day',      bg: '#FDF3E4', color: '#B26B07' },
   SL:        { label: 'Short Leave',   bg: '#FBF1E2', color: '#A2670F' },
-  SLNF:      { label: 'Log Not Found', bg: '#F2EEFB', color: '#6D40C9' },
+  LNF:       { label: 'Log Not Found', bg: '#F2EEFB', color: '#6D40C9' },
+  SLNF:      { label: 'Log Not Found', bg: '#F2EEFB', color: '#6D40C9' }, // legacy alias
   PL:        { label: 'Paid Leave',    bg: '#EDF2FD', color: '#2456C7' },
   LWP:       { label: 'LWP',           bg: '#F2EFEC', color: '#6B5E54' },
   Absent:    { label: 'Absent',        bg: '#FBEAEA', color: '#C42B2B' },
