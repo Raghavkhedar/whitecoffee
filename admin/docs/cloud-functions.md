@@ -88,7 +88,7 @@ Check-in/out events: ops use `site_in`/`site_out`; office uses `office_in`/`offi
 | Both punches present, in by window start **and** out by window end (off-minutes = 0) | **Present** | ×1 |
 | Both punches, total off-minutes ≤ 120 | **SL** (Short Leave) | ×0.75 |
 | Both punches, off-minutes > 120 | **HalfDay** | ×0.5 |
-| Exactly one punch (in OR out missing) | **SLNF** (Log Not Found) | ×0.5 |
+| Exactly one punch (in OR out missing) | **LNF** (Log Not Found) | ×0.5 |
 | No punches + approved leave + `plBalance > 0` | **PL** (queues −1 PL) | ×1 |
 | No punches + approved leave + no balance | **LWP** (Leave Without Pay) | ×0 |
 | No punches + no leave | **Absent** | ×−2 |
@@ -102,7 +102,7 @@ On **fully-worked days only** (both a check-in and check-out exist):
 - `shortageMins = max(0, plannedMins − actualMins)`
 - `otMins       = max(0, actualMins − plannedMins)`
 
-Writes these to **`users/{uid}/daily_hours/{today}`**. Absent / leave / SLNF days never write hours or accrue shortage.
+Writes these to **`users/{uid}/daily_hours/{today}`**. Absent / leave / LNF days never write hours or accrue shortage.
 
 ### Outputs / writes
 - `users/{uid}/attendance_status/{today}` — `{date, userId, userName, employeeId, role, status, markedBy:"auto", updatedAt}`.
@@ -133,7 +133,7 @@ Authenticates to Google Sheets with the service-account JSON and rebuilds 9 tabs
 - `userAttendanceMTD` — per-user month-to-date counts of each status (Sundays excluded), used by the Employee Dashboard tab.
 
 ### Tabs produced
-1. **Attendance** (`SHEET_ID_2`) — one row per employee/day: In/Out time + location, Site ID, full chronological **All Activity** log (with resolved Site ID in brackets), OT flag (ops who left ≥ 18:00), Daily Status. Built from the union of attendance events **and** status docs, so Absent/PL/LWP/SLNF days appear even without punches.
+1. **Attendance** (`SHEET_ID_2`) — one row per employee/day: In/Out time + location, Site ID, full chronological **All Activity** log (with resolved Site ID in brackets), OT flag (ops who left ≥ 18:00), Daily Status. Built from the union of attendance events **and** status docs, so Absent/PL/LWP/LNF days appear even without punches.
 2. **MT Requests** (`SHEET_ID_3`) — `material_requests`, one row per line item (or one row if none).
 3. **MT Purchases** (`SHEET_ID_4`) — `material_purchases`, line items with price/total/grand total.
 4. **Material Transfers** (`SHEET_ID_5`) — `material_transfers`, from/to/by + line items.
@@ -148,8 +148,8 @@ Authenticates to Google Sheets with the service-account JSON and rebuilds 9 tabs
    - **Persists** each day to the top-level `conveyance` collection (doc id `{uid}__{date}`), batched at 500 writes.
    - Accumulates `conveyanceByUserId` (monthly ₹ total) for the dashboard tab.
 9. **Employee Dashboard** (`SHEET_ID_1`) — MTD summary, one row per employee:
-   `Date | EMP Name | EMP ID | Days Passed | Present | SL | Half Day | SLNF | PL | LWP | Absent | Leaves | Days NP | Salary Rate | Salary Due MTD | Covy Due | Imprest Due | TOTAL DUE`, plus **CF BAL** (sum of PL balances) and **TOTAL** rows.
-   - **Days NP** = `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL − absent×2` (LWP contributes 0).
+   `Date | EMP Name | EMP ID | Days Passed | Present | SL | Half Day | LNF | PL | LWP | Absent | Leaves | Days NP | Salary Rate | Salary Due MTD | Covy Due | Imprest Due | TOTAL DUE`, plus **CF BAL** (sum of PL balances) and **TOTAL** rows.
+   - **Days NP** = `present + SL×0.75 + halfDay×0.5 + LNF×0.5 + PL − absent×2` (LWP contributes 0).
    - **Salary Due** = `daysNP × salaryRate`.
    - **Imprest is preserved** across runs: the existing sheet is read first and the Imprest column is matched **by header name** (survives layout changes), keyed by EMP ID.
    - **Covy Due** = monthly conveyance total (operations only).
@@ -203,7 +203,7 @@ Authenticates to Google Sheets with the service-account JSON and rebuilds 9 tabs
 4. If there's an open `home_in` with no `home_out`, write a `home_out` (using the user's stored home coords or the `home_in` coords).
 5. Commit if anything was written. Returns `{ success: true, eventsCreated }`.
 
-**Why:** prevents dangling check-ins that would otherwise be scored **SLNF** or distort hours/conveyance.
+**Why:** prevents dangling check-ins that would otherwise be scored **LNF** or distort hours/conveyance.
 
 ---
 
