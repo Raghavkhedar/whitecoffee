@@ -28,7 +28,7 @@ No test framework configured.
 - `sites/` — geofenced locations with GPS coordinates
 - `users/{uid}/leave_requests/`
 - `users/{uid}/attendance/` — check-in/out events. Ops `site_in`/`site_out` carry free-text `siteName`; `siteId` is filled later by admin via **Site IDs** page (`updateAttendanceSiteId`).
-- `users/{uid}/attendance_status/{date}` — computed daily status (written by `computeDailyAttendanceStatus`). Statuses: `Present`/`HalfDay`/`SL`/`SLNF`/`Absent`/`PL`/`LWP`/`WO`. **WO** (paid no-work day off for ops) is admin-set (`markedBy:'admin'`) via the Attendance page (Mark WO / clear) or as a regularization outcome; in the OT/shortage ledger it owes a standard 8h, payable by OT in the same month. Optional `inTime`/`outTime` (`"HH:MM"`) = **effective worked window** captured when an admin regularizes a day **to Present** (missed-punch fix); when present, the OT/shortage ledger uses these **instead of raw events** for that date, so a corrected Present day carries shortage/OT (set via `approveRegularization`; non-Present outcomes clear them)
+- `users/{uid}/attendance_status/{date}` — computed daily status (written by `computeDailyAttendanceStatus`). Statuses: `Present`/`HalfDay`/`SL`/`LNF`/`Absent`/`PL`/`LWP`/`WO`. **WO** (paid no-work day off for ops) is admin-set (`markedBy:'admin'`) via the Attendance page (Mark WO / clear) or as a regularization outcome; in the OT/shortage ledger it owes a standard 8h, payable by OT in the same month. Optional `inTime`/`outTime` (`"HH:MM"`) = **effective worked window** captured when an admin regularizes a day **to Present** (missed-punch fix); when present, the OT/shortage ledger uses these **instead of raw events** for that date, so a corrected Present day carries shortage/OT (set via `approveRegularization`; non-Present outcomes clear them)
 - `users/{uid}/planned_hours/{date}` — admin-set shift window for ops (`startTime`/`endTime` as `"HH:MM"`); office fixed 10–18. Optional `declaredOtMins` = admin pre-declared overtime for that day (OT worked up to this is auto-approved; set inline on the Attendance page next to the shift). Optional `otAuthorized` (boolean) = Sunday/holiday OT authorization: when true, **all** worked minutes that rest day count as auto-approved OT (set via the "Authorize OT" toggle that replaces the shift inputs on Sundays/holidays). Without it, rest-day work credits 0 OT (flagged as "unauthorized" in the OT/Shortage modal)
 - `users/{uid}/daily_hours/{date}` — per-day `plannedMins`/`actualMins`/`shortageMins`/`otMins` (written by `computeDailyAttendanceStatus`, fully-worked days only)
 - `users/{uid}/ot_approvals/{date}` — admin OT decision: `requestedMins`/`approvedMins`/`status` (`approved`|`rejected`)/`manual`/`reason`/`approvedBy` (written by `approveOt`/`rejectOt`/`setManualOt`). `manual:true` = admin-entered OT for a day with no auto-detected surplus (e.g. missed-punch anomaly), added via the **Add manual OT** form in the OT/Shortage drill-in modal; counted as granted OT in the ledger like any approval
@@ -57,16 +57,16 @@ Required composite indexes (Firebase Console):
 | Status | Condition | Salary (days) |
 |--------|-----------|---------------|
 | Present | In by window start AND out after window end | 1 |
-| Short Leave (SL) | Both events present, total hours < 6 | 0.75 |
-| Half Day | Late in AND early out | 0.5 |
-| SLNF (Log Not Found) | Missing check-in or check-out | 0.5 |
+| Short Leave (SL) | Both punches present, off-minutes (late-in + early-out) ≤ 120 | 0.75 |
+| Half Day | Both punches present, off-minutes > 120 | 0.5 |
+| LNF (Log Not Found) | Exactly one punch (missing check-in OR check-out); formerly SLNF | 0.5 |
 | PL (Paid Leave) | Approved leave + PL balance | 1 |
 | LWP (Leave Without Pay) | Approved leave, no balance | 0 |
 | Absent | No events, no approved leave (ops: only when plan exists) | -2 |
 
 `markedBy: 'auto'` on function-written docs; `markedBy: 'admin'` docs (regularization) are skipped on recompute. The attendance page mirrors this logic client-side until the nightly run writes it.
 
-**Days NP**: `present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL - absent×2` (LWP = 0)
+**Days NP**: `present + SL×0.75 + halfDay×0.5 + LNF×0.5 + PL - absent×2` (LWP = 0)
 
 **Salary**: `daysNP × salaryRate`
 
@@ -77,8 +77,8 @@ PL balance: +1 on 1st of month (`accrueMonthlyLeave`), -1 per PL day used.
 `exportToSheets` Cloud Function runs 16:30 UTC (22:00 IST) → Google Sheet (`SHEET_ID` in `functions/index.js`) via service account (`ATTENDANCE_SHEETS_KEY` secret).
 
 - **Always resolve Name/ID from the live `users` collection** — not the snapshot values on each doc. Use `uidOf(doc)` + `userNameMap`/`userEmpIdMap` (keyed by uid). `uidOf` reads `userId` field, falling back to parent path for subcollection docs.
-- **Attendance tab** is per-employee/day (not per-event): In Time / In Location / Site ID / Out Time / Out Location / All Activity. Built from union of attendance events and status docs — Absent/PL/LWP/SLNF days appear even without check-in events. **All Activity** = full chronological log with resolved Site ID in brackets.
-- **Employee Dashboard tab** — MTD summary, one row per employee: Date | EMP Name | EMP ID | Days Passed | Present | SL | Half Day | SLNF | PL | LWP | Absent | Leaves | Days NP | Salary Rate | Salary Due MTD | Covy Due | Imprest Due | Prior Settlement (prev month) | TOTAL DUE. Includes CF BAL (carry-forward leave) and TOTAL summary rows. **Imprest** is preserved across runs by locating columns by header name (not fixed index). Conveyance is built from the `conveyance` collection (operations only). **Prior Settlement** = previous month's locked OT/shortage/WO `settlementCash` (OT paid in arrears; 0 until that month is locked). **TOTAL DUE** = salaryDue + covy + imprest + priorSettlement.
+- **Attendance tab** is per-employee/day (not per-event): In Time / In Location / Site ID / Out Time / Out Location / All Activity. Built from union of attendance events and status docs — Absent/PL/LWP/LNF days appear even without check-in events. **All Activity** = full chronological log with resolved Site ID in brackets.
+- **Employee Dashboard tab** — MTD summary, one row per employee: Date | EMP Name | EMP ID | Days Passed | Present | SL | Half Day | LNF | PL | LWP | Absent | Leaves | Days NP | Salary Rate | Salary Due MTD | Covy Due | Imprest Due | Prior Settlement (prev month) | TOTAL DUE. Includes CF BAL (carry-forward leave) and TOTAL summary rows. **Imprest** is preserved across runs by locating columns by header name (not fixed index). Conveyance is built from the `conveyance` collection (operations only). **Prior Settlement** = previous month's locked OT/shortage/WO `settlementCash` (OT paid in arrears; 0 until that month is locked). **TOTAL DUE** = salaryDue + covy + imprest + priorSettlement.
 
 ## Employee Dashboard Page
 
@@ -94,7 +94,7 @@ PL balance: +1 on 1st of month (`accrueMonthlyLeave`), -1 per PL day used.
 
 ### Shortage & Overtime (per-day, every minute counts)
 
-Computed **per worked day** (both check-in and check-out present — absent/leave/SLNF days never count). The shift window is the ops `planned_hours` window for that date; **ops days with no valid plan (or an inverted/mis-entered window like end `06:00`) fall back to the default 10:00–18:00**; office/admin is always fixed 10:00–18:00. Each shift **edge is scored independently and edges never cancel** (arriving early does not pay for leaving early). **Arriving early NEVER earns OT** — the only source of OT on a normal day is staying past shift end:
+Computed **per worked day** (both check-in and check-out present — absent/leave/LNF days never count). The shift window is the ops `planned_hours` window for that date; **ops days with no valid plan (or an inverted/mis-entered window like end `06:00`) fall back to the default 10:00–18:00**; office/admin is always fixed 10:00–18:00. Each shift **edge is scored independently and edges never cancel** (arriving early does not pay for leaving early). **Arriving early NEVER earns OT** — the only source of OT on a normal day is staying past shift end:
 - **Shortage** = `max(0, checkIn − shiftStart)` (late-in) `+ max(0, shiftEnd − checkOut)` (early-out). Automatic, no approval. Computed live for the selected range; the nightly function writes the canonical per-day `daily_hours/{date}`. (The old lifetime `users/{uid}.shortageMins`/`approvedOtMins` counters are **retired** — no longer written or read; OT/shortage net per-month via the ledger.)
 - **Overtime** = `max(0, checkOut − shiftEnd)` (late-out only; early check-in is ignored), split by the day's `declaredOtMins` (pre-declared by admin): worked OT **up to `declaredOtMins` is auto-approved** (no review); only the **surplus beyond it is pending** and needs admin action. The dashboard lists pending OT days; admin grants an adjusted amount (≤ the beyond-declared surplus) with a **mandatory reason** via `approveOt`, which writes `ot_approvals/{date}`. Admin can also **reject** a pending OT day (`rejectOt`, reason required → `ot_approvals` with `status:'rejected'`), or **manually grant OT** for a day the system can't auto-detect (`setManualOt` → `manual:true` decision; e.g. missed-punch anomalies). Declared OT is a pre-approval **ceiling, not an obligation** on the OT earned — it never changes shortage, and leaving before the declared end never creates extra shortage (shortage is measured against the plain shift). The core math is `computeDayLedger` in `src/lib/otLedger.ts` (edge-based, takes shift start/end + actual in/out as IST minutes-of-day). `savePlanned` on the Attendance page rejects `endTime ≤ startTime`.
 

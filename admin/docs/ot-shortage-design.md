@@ -46,7 +46,7 @@ Additional confirmed points:
 - **No lunch/break deduction** — `actual = lastOut − firstIn` (gross) is accepted.
 - **Manual OT entry must be possible** for anomalies (e.g. missed punch but OT really happened —
   admin calls/confirms and sets that day's OT manually).
-- Missed-punch (SLNF) days are fixed via the **regularization flow (to be built)**. If OT was
+- Missed-punch (LNF) days are fixed via the **regularization flow (to be built)**. If OT was
   offsetting a shortage and the punch is missing, the shortage stays unaffected (OT didn't happen).
 
 ## The core formula (FINAL — corrected 2026-06-29)
@@ -88,7 +88,7 @@ Worked example — planned 10:00–18:00 (480), declared +30:
 5. **Scope → operations only.** Office/admin stay fixed 8h with no ledger (unchanged).
 
 ### Key code finding (WO is vestigial today)
-- There is **no "WO" attendance status** — statuses are only Present / SL / HalfDay / SLNF /
+- There is **no "WO" attendance status** — statuses are only Present / SL / HalfDay / LNF /
   Absent / PL / LWP (`attendance/page.tsx:98-120`).
 - `users.woBalance` is a **manual number** shown on dashboards (`employee-dashboard/page.tsx:401`,
   `users/page.tsx:170`); **no function writes it and it has zero salary effect** (`daysNP` ignores WO).

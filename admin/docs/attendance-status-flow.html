@@ -89,7 +89,7 @@ flowchart TD
     G2 -- Yes --> P2[/SL 0.75/]:::sl
     G2 -- No --> P3[/Half Day 0.5/]:::half
 
-    F -- "Only ONE punch" --> P4[/SLNF 0.5/]:::slnf
+    F -- "Only ONE punch" --> P4[/LNF 0.5/]:::slnf
 
     F -- "No punches" --> H{Approved<br/>leave today?}
     H -- No --> P7[/Absent -2/]:::absent
@@ -133,7 +133,7 @@ flowchart TD
       <tr><td><span class="badge b-present">Present</span></td><td>Both punches · offMinutes = 0 (on time both ends)</td><td>1.0</td></tr>
       <tr><td><span class="badge b-sl">SL</span></td><td>Both punches · offMinutes ≤ 120 (≤ 2h off-window)</td><td>0.75</td></tr>
       <tr><td><span class="badge b-half">Half Day</span></td><td>Both punches · offMinutes > 120 (> 2h off-window)</td><td>0.5</td></tr>
-      <tr><td><span class="badge b-slnf">SLNF</span></td><td>Exactly one punch (in OR out missing)</td><td>0.5</td></tr>
+      <tr><td><span class="badge b-slnf">LNF</span></td><td>Exactly one punch (in OR out missing)</td><td>0.5</td></tr>
       <tr><td><span class="badge b-pl">PL</span></td><td>No punches · approved leave · PL balance > 0</td><td>1.0</td></tr>
       <tr><td><span class="badge b-upl">LWP</span></td><td>No punches · approved leave · no balance</td><td>0</td></tr>
       <tr><td><span class="badge b-absent">Absent</span></td><td>No punches · no approved leave</td><td>-2</td></tr>
@@ -152,7 +152,7 @@ flowchart TD
     <div class="grid2">
       <div>
         <h3>Days NP (Net Present)</h3>
-        <code>present + SL×0.75 + halfDay×0.5 + SLNF×0.5 + PL − absent×2</code>
+        <code>present + SL×0.75 + halfDay×0.5 + LNF×0.5 + PL − absent×2</code>
         <p class="note">LWP counts as 0.</p>
       </div>
       <div>
