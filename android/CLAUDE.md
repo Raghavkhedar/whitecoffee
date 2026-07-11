@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: Session 28 End
+### Last Updated: attendance-status rule parity (ops planned-shift/site scoring) + exportToSheets TZ fix; released v1.5 / versionCode 5
 
 ---
 
@@ -213,6 +213,13 @@ com.raghav.whitecoffee
 > (`data/model`) — a pure, unit-tested port of this logic (minute-based, SL-aware) so what the
 > employee sees matches payroll. It replaced an older hour-granular `inHour < 10` check that
 > wrongly showed **Half Day** for anyone checking in during the 10:00 hour.
+>
+> For **operations** the preview reads that day's `planned_hours` (via
+> `AttendanceRepository.getTodayPlannedWindow()`) and scores `site_in`/`market_in` →
+> `site_out`/`market_out` against it — matching payroll's event source + window, NOT
+> `home_in`/`home_out`. No plan (or not yet at any site) → a neutral **Pending** chip (payroll
+> leaves such days unmarked). The JS side is the shared `firebase/functions/attendanceRules.js`
+> (`npm test` = `node --test`); it and `AttendanceStatusRules.kt` must stay in lockstep.
 
 > **HalfDay vs "short leave" — there is NO short-leave concept (known gap).** HalfDay is derived
 > purely from punch TIMES (late in / early out); no employee intent is attached. Leave is
@@ -476,7 +483,8 @@ thumbnails in an `AndroidView`.
 > apply here. JDK 21 is on PATH (`/usr/bin/java`, `java-21-openjdk`) and the Gradle daemon is
 > already pinned to 21 via `gradle/gradle-daemon-jvm.properties`, so **no `JAVA_HOME` juggling is
 > needed** — do not set it. Android SDK lives at `~/Android/Sdk` (`local.properties → sdk.dir`).
-> Just run gradlew directly from the repo root:
+> Run gradlew from the **`android/` directory** (that's where `gradlew` + `settings.gradle.kts`
+> live and where Gradle's `rootProject` resolves — NOT the monorepo root):
 > ```bash
 > ./gradlew :app:compileDebugKotlin --console=plain   # fast type-check
 > ./gradlew :app:assembleDebug --console=plain          # full debug APK
@@ -491,9 +499,12 @@ Distribution is via **Firebase App Distribution** (not Play Store). Testers get 
 `white-coffee-92c27` Firebase project.
 
 ### Release signing (dedicated keystore)
-- Keystore: `keystore/whitecoffee-release.jks`, alias `whitecoffee` (created Session 30).
-- Credentials: `keystore.properties` at repo root. **Both files are gitignored** (`*.jks`,
-  `*.keystore`, `keystore.properties`) — they are NOT in version control.
+- Keystore: `android/keystore/whitecoffee-release.jks`, alias `whitecoffee` (created Session 30).
+- Credentials: `android/keystore.properties` — NOTE the paths are relative to Gradle's
+  `rootProject`, which is the **`android/` dir**, not the monorepo root (`build.gradle.kts` does
+  `rootProject.file("keystore.properties")` + `rootProject.file(storeFile)`). **Both files are
+  gitignored** (`*.jks`, `*.keystore`, `keystore.properties`) — they are NOT in version control,
+  so they exist ONLY on a dev machine; verify with `keytool -list -keystore <jks>` before a release.
 - ⚠️ **BACK UP BOTH FILES** (password manager / secure storage). If lost, you can never ship an
   update that installs over the existing app — users would have to uninstall + reinstall.
 - `app/build.gradle.kts` loads `keystore.properties` and applies a `release` signingConfig. If the
@@ -862,7 +873,7 @@ Deploy: `npm run deploy` from the admin portal directory
 23. **Push to background = Cloud Functions** — `FcmService.onMessageReceived` only fires when app is foregrounded. Sending push to backgrounded devices requires a Cloud Function that reads `/sent_notifications/` docs and calls FCM HTTP v1 API. Deferred to Phase 4.
 24. **FCM token saved two ways** — proactively on login via `FirebaseMessaging.getInstance().token.await()`, and automatically on refresh via `FcmService.onNewToken()`. Both call `notificationRepository.saveToken()`.
 25. **Salary rate in Firestore** — `salaryRate` (₹/day) stored on `/users/{uid}` doc, set via admin portal. Cloud Function `exportToSheets` reads it from the user doc directly (not from the Google Sheet). Imprest is still manually entered in the sheet and preserved across exports.
-26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Operations use `home_in`/`home_out`, office/admin use `office_in`/`office_out`. Same time thresholds: in before 10:00 + out after 18:00 = Present, otherwise HalfDay.
+26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Office/admin are scored on `office_in`/`office_out` vs a fixed 10:00–18:00 window; operations on the first `site_in`/`market_in` → last `site_out`/`market_out` vs the day's admin-set `planned_hours` (no plan → day left **unmarked**). Status = off-minutes (late-in + early-out): `0` Present, `≤120` SL, else HalfDay; a single punch → LNF. `home_in`/`home_out` are commute markers only and are never scored. The rule lives in `firebase/functions/attendanceRules.js` (shared, `npm test`) and is mirrored by `AttendanceStatusRules.kt` for the app preview — **change both together**.
 27. **Regularization = employee-initiated, admin-approved** — employee submits reason per flagged day, admin approves/rejects in admin portal only (no Android admin screen). Approval atomically updates both `regularization_requests` and `attendance_status` via `writeBatch`.
 28. **Admin overrides protected** — `computeDailyAttendanceStatus` skips any user whose `attendance_status` doc has `markedBy === "admin"`. This prevents nightly auto-compute from overwriting approved regularizations.
 29. **Duplicate prevention** — `RegularizationRepository.submitRequest()` checks for existing pending/approved request for the same date before creating a new one.
