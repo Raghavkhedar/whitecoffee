@@ -325,7 +325,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
 // ── Daily Sheets Export ───────────────────────────────────────────────────────
 exports.exportToSheets = onSchedule(
-  { schedule: "30 16 * * *", secrets: ["ATTENDANCE_SHEETS_KEY", "MAPS_API_KEY"], timeoutSeconds: 540, memory: "512MiB" },
+  { schedule: "0 22 * * *", timeZone: "Asia/Kolkata", secrets: ["ATTENDANCE_SHEETS_KEY", "MAPS_API_KEY"], timeoutSeconds: 540, memory: "512MiB" },
   async () => {
     const keyJson = JSON.parse(SHEETS_KEY.value());
     const auth    = new google.auth.GoogleAuth({ credentials: keyJson, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
@@ -333,21 +333,30 @@ exports.exportToSheets = onSchedule(
     const db      = admin.firestore();
 
     // ── Shared date helpers ────────────────────────────────────────────
-    const now        = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    const today      = now.toISOString().slice(0, 10);
+    // Work in IST explicitly. The runtime clock is UTC, so shift by +05:30 and read the
+    // components via getUTC* — using new Date()/getDate()/getDay() directly would read the
+    // UTC calendar day and weekday, which drifts from IST near midnight (the same class of
+    // bug fixed in computeDailyAttendanceStatus: a UTC weekday made Mondays read as Sundays).
+    const nowIST     = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const istYear    = nowIST.getUTCFullYear();
+    const istMonth   = nowIST.getUTCMonth(); // 0-based
+    const istDay     = nowIST.getUTCDate();
+    const pad2       = (n) => String(n).padStart(2, "0");
+    const monthStart = `${istYear}-${pad2(istMonth + 1)}-01`;
+    const today      = `${istYear}-${pad2(istMonth + 1)}-${pad2(istDay)}`;
     // Company-wide holidays this month — excluded from working-day counts.
     const holidaySnap = await db.collection("holidays")
       .where("date", ">=", monthStart).where("date", "<=", today).get();
     const holidaySet = new Set(holidaySnap.docs.map((h) => h.id));
     // Count working days (Mon–Sat, excluding Sundays and holidays) passed in the month
     let daysPassed = 0;
-    for (let d = 1; d <= now.getDate(); d++) {
-      const dt = new Date(now.getFullYear(), now.getMonth(), d);
-      const ds = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-      if (dt.getDay() !== 0 && !holidaySet.has(ds)) daysPassed++;
+    for (let d = 1; d <= istDay; d++) {
+      const ds = `${istYear}-${pad2(istMonth + 1)}-${pad2(d)}`;
+      const dayOfWeek = new Date(ds + "T00:00:00Z").getUTCDay(); // 0 = Sunday, read in UTC
+      if (dayOfWeek !== 0 && !holidaySet.has(ds)) daysPassed++;
     }
-    const monthLabel = now.toLocaleString("en-IN", { month: "long", year: "numeric" });
+    const monthLabel = new Date(Date.UTC(istYear, istMonth, 1))
+      .toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
     // ── All users (shared across sections) ────────────────────────────
     const allUsersSnap = await db.collection("users").get();
@@ -727,8 +736,8 @@ exports.exportToSheets = onSchedule(
 
       // Prior-month settlement (OT/shortage/WO) — paid in arrears. Read each user's LOCKED
       // settlement for the previous month and add its cash to this month's TOTAL DUE.
-      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+      const prevMonthDate = new Date(Date.UTC(istYear, istMonth - 1, 1));
+      const prevMonth = `${prevMonthDate.getUTCFullYear()}-${pad2(prevMonthDate.getUTCMonth() + 1)}`;
       const settlementCashMap = new Map(); // userId → settlement cash (locked only)
       await Promise.all(allUsersData.map(async (u) => {
         try {
