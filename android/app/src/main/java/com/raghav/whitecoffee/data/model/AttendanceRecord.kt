@@ -18,6 +18,12 @@ object AttendanceType {
     // Office role — simple check-in/out only
     const val OFFICE_IN   = "office_in"
     const val OFFICE_OUT  = "office_out"
+
+    // Operations attendance is scored on the first arrival and last departure across site and
+    // market visits — home_in/home_out are commute markers only. Mirrors OPS_IN_TYPES /
+    // OPS_OUT_TYPES in the computeDailyAttendanceStatus cloud function.
+    val OPS_IN_TYPES  = setOf(SITE_IN, MARKET_IN)
+    val OPS_OUT_TYPES = setOf(SITE_OUT, MARKET_OUT)
 }
 
 /**

@@ -76,7 +76,10 @@ class RegularizationViewModel @Inject constructor(
                     return@launch
                 }
                 val (_, events) = dataResult.getOrThrow()
-                val liveStatus = deriveLiveStatus(events)
+                val plannedWindow = if (isOperations) {
+                    attendanceRepository.getTodayPlannedWindow().getOrNull()
+                } else null
+                val liveStatus = deriveLiveStatus(events, plannedWindow)
 
                 if (liveStatus == null) {
                     _daysState.value = UiState.Empty
@@ -101,16 +104,29 @@ class RegularizationViewModel @Inject constructor(
     }
 
     // Returns the day's live status only when it's NOT clean (i.e. worth regularizing):
-    // null = Present/on-time (nothing to fix), "SL" or "HalfDay" otherwise.
-    private fun deriveLiveStatus(events: List<AttendanceRecord>): String? {
+    // null = nothing to fix (Present/on-time, or a day payroll leaves unmarked), "SL"/"HalfDay"
+    // otherwise. Scoring mirrors computeDailyAttendanceStatus: ops uses the first site/market
+    // arrival → last departure against the day's planned shift; office uses office_in/out vs 10–18.
+    private fun deriveLiveStatus(events: List<AttendanceRecord>, plannedWindow: Pair<Int, Int>?): String? {
         if (events.isEmpty()) return null
 
         val inRec: AttendanceRecord
         val outRec: AttendanceRecord?
+        val startMin: Int
+        val endMin: Int
         if (isOperations) {
-            inRec = events.firstOrNull { it.type == AttendanceType.HOME_IN } ?: return null
-            outRec = events.lastOrNull { it.type == AttendanceType.HOME_OUT }
+            // No planned shift → payroll leaves the day unmarked; nothing to regularize.
+            val window = plannedWindow ?: return null
+            startMin = window.first
+            endMin = window.second
+            inRec = events.firstOrNull { it.type in AttendanceType.OPS_IN_TYPES } ?: return null
+            val lastInIdx = events.indexOfLast { it.type in AttendanceType.OPS_IN_TYPES }
+            val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
+            outRec = events.lastOrNull { it.type in AttendanceType.OPS_OUT_TYPES }
+                ?.takeIf { lastOutIdx > lastInIdx }
         } else {
+            startMin = AttendanceStatusRules.OFFICE_START_MIN
+            endMin = AttendanceStatusRules.OFFICE_END_MIN
             inRec = events.firstOrNull { it.type == AttendanceType.OFFICE_IN } ?: return null
             val lastInIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_IN }
             val lastOutIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_OUT }
@@ -121,7 +137,7 @@ class RegularizationViewModel @Inject constructor(
 
         val inMin = minutesOf(inRec) ?: return "HalfDay"
         val outMin = outRec?.let { minutesOf(it) }
-        return when (AttendanceStatusRules.classify(inMin, outMin)) {
+        return when (AttendanceStatusRules.classify(inMin, outMin, startMin, endMin)) {
             AttendanceStatusRules.DayStatus.PRESENT -> null
             AttendanceStatusRules.DayStatus.SHORT_LEAVE -> "SL"
             AttendanceStatusRules.DayStatus.HALF_DAY -> "HalfDay"

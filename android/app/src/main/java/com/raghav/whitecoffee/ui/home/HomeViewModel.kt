@@ -25,6 +25,9 @@ sealed interface TodayAttendanceStatus {
     data class Present(val location: String, val since: String) : TodayAttendanceStatus
     data class ShortLeave(val location: String, val since: String) : TodayAttendanceStatus
     data class HalfDay(val location: String, val since: String) : TodayAttendanceStatus
+    // Operations only: checked in, but no verdict yet — either no planned shift is set for
+    // today (payroll leaves such days unmarked) or the user hasn't reached a site/market yet.
+    data class Pending(val location: String, val since: String) : TodayAttendanceStatus
     data object Error : TodayAttendanceStatus
 }
 
@@ -82,7 +85,11 @@ class HomeViewModel @Inject constructor(
                 return@launch
             }
 
-            val dailyStatus = if (isOperations) deriveOpsDailyStatus(events) else deriveOfficeDailyStatus(events)
+            val plannedWindow = if (isOperations) {
+                attendanceRepository.getTodayPlannedWindow().getOrNull()
+            } else null
+            val dailyStatus = if (isOperations) deriveOpsDailyStatus(events, plannedWindow)
+                              else deriveOfficeDailyStatus(events)
 
             if (dailyStatus == DailyStatus.NOT_CHECKED_IN) {
                 _todayStatus.value = TodayAttendanceStatus.NotCheckedIn
@@ -97,12 +104,13 @@ class HomeViewModel @Inject constructor(
                 DailyStatus.PRESENT -> TodayAttendanceStatus.Present(location, since)
                 DailyStatus.SHORT_LEAVE -> TodayAttendanceStatus.ShortLeave(location, since)
                 DailyStatus.HALF_DAY -> TodayAttendanceStatus.HalfDay(location, since)
-                else -> TodayAttendanceStatus.NotCheckedIn
+                DailyStatus.PENDING -> TodayAttendanceStatus.Pending(location, since)
+                DailyStatus.NOT_CHECKED_IN -> TodayAttendanceStatus.NotCheckedIn
             }
         }
     }
 
-    private enum class DailyStatus { PRESENT, SHORT_LEAVE, HALF_DAY, NOT_CHECKED_IN }
+    private enum class DailyStatus { PRESENT, SHORT_LEAVE, HALF_DAY, PENDING, NOT_CHECKED_IN }
 
     private fun AttendanceStatusRules.DayStatus.toDaily(): DailyStatus = when (this) {
         AttendanceStatusRules.DayStatus.PRESENT -> DailyStatus.PRESENT
@@ -110,14 +118,23 @@ class HomeViewModel @Inject constructor(
         AttendanceStatusRules.DayStatus.HALF_DAY -> DailyStatus.HALF_DAY
     }
 
-    // Ops: home_in/home_out bookend the day (commute), scored against 10:00–18:00.
-    private fun deriveOpsDailyStatus(events: List<AttendanceRecord>): DailyStatus {
-        val homeIn = events.firstOrNull { it.type == AttendanceType.HOME_IN }
-            ?: return DailyStatus.NOT_CHECKED_IN
-        val inMin = minutesOf(homeIn) ?: return DailyStatus.HALF_DAY
-        val homeOut = events.lastOrNull { it.type == AttendanceType.HOME_OUT }
-        val outMin = if (homeOut != null) minutesOf(homeOut) else null
-        return AttendanceStatusRules.classify(inMin, outMin).toDaily()
+    // Ops: scored on arrival at the first site/market and departure from the last, against the
+    // day's planned shift — matching computeDailyAttendanceStatus. No planned shift (window null)
+    // or not-yet-at-any-site → PENDING (payroll leaves such days unmarked; don't guess a verdict).
+    private fun deriveOpsDailyStatus(
+        events: List<AttendanceRecord>,
+        window: Pair<Int, Int>?,
+    ): DailyStatus {
+        if (window == null) return DailyStatus.PENDING
+        val firstIn = events.firstOrNull { it.type in AttendanceType.OPS_IN_TYPES }
+            ?: return DailyStatus.PENDING
+        val inMin = minutesOf(firstIn) ?: return DailyStatus.PENDING
+        // Only score a checkout that's the user's final event — if they've re-entered a
+        // site/market since (still out in the field), the day is in progress.
+        val lastInIdx = events.indexOfLast { it.type in AttendanceType.OPS_IN_TYPES }
+        val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
+        val outMin = if (lastOutIdx > lastInIdx) minutesOf(events[lastOutIdx]) else null
+        return AttendanceStatusRules.classify(inMin, outMin, window.first, window.second).toDaily()
     }
 
     private fun deriveOfficeDailyStatus(events: List<AttendanceRecord>): DailyStatus {

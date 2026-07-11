@@ -57,4 +57,39 @@ class AttendanceStatusRulesTest {
         // 15 min late, no checkout yet -> SL from late-in alone
         assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(10, 15), null))
     }
+
+    // --- Operations planned window scoring (custom start/end) ---
+    @Test fun `ops on-time against a 12 to 20 planned shift is Present`() {
+        // Arrive 12:00, leave 20:00 against a noon–8pm shift -> Present (would be Half Day vs 10–18)
+        assertEquals(DayStatus.PRESENT, AttendanceStatusRules.classify(m(12, 0), m(20, 0), m(12, 0), m(20, 0)))
+    }
+
+    @Test fun `ops late against planned shift grades to SL`() {
+        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(12, 30), m(20, 0), m(12, 0), m(20, 0)))
+    }
+
+    // --- hhmmToMinutes ---
+    @Test fun `hhmm parses valid time`() {
+        assertEquals(m(14, 30), AttendanceStatusRules.hhmmToMinutes("14:30", 0))
+    }
+
+    @Test fun `hhmm falls back on null blank or malformed`() {
+        assertEquals(600, AttendanceStatusRules.hhmmToMinutes(null, 600))
+        assertEquals(600, AttendanceStatusRules.hhmmToMinutes("", 600))
+        assertEquals(600, AttendanceStatusRules.hhmmToMinutes("garbage", 600))
+    }
+
+    // --- resolveOpsWindow ---
+    @Test fun `resolveOpsWindow returns null when either time missing`() {
+        assertEquals(null, AttendanceStatusRules.resolveOpsWindow(null, "18:00"))
+        assertEquals(null, AttendanceStatusRules.resolveOpsWindow("10:00", ""))
+    }
+
+    @Test fun `resolveOpsWindow returns parsed window`() {
+        assertEquals(m(12, 0) to m(20, 0), AttendanceStatusRules.resolveOpsWindow("12:00", "20:00"))
+    }
+
+    @Test fun `resolveOpsWindow falls back to 10 to 18 for inverted window`() {
+        assertEquals(m(10, 0) to m(18, 0), AttendanceStatusRules.resolveOpsWindow("20:00", "12:00"))
+    }
 }

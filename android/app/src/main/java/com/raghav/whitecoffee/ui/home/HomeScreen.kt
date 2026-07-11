@@ -242,9 +242,11 @@ private fun TodayStatusCard(
                 val location = (todayStatus as? TodayAttendanceStatus.Present)?.location
                     ?: (todayStatus as? TodayAttendanceStatus.ShortLeave)?.location
                     ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.location
+                    ?: (todayStatus as? TodayAttendanceStatus.Pending)?.location
                 val since = (todayStatus as? TodayAttendanceStatus.Present)?.since
                     ?: (todayStatus as? TodayAttendanceStatus.ShortLeave)?.since
                     ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.since
+                    ?: (todayStatus as? TodayAttendanceStatus.Pending)?.since
                 if (location != null) Text(location, color = WcColors.TextSecondary, fontSize = 10.5.sp, modifier = Modifier.padding(top = 6.dp))
                 if (since != null) Text("Since $since", color = WcColors.TextMuted, fontSize = 10.5.sp, modifier = Modifier.padding(top = 1.dp))
             }
@@ -258,6 +260,7 @@ private fun AttendanceStatusChip(status: TodayAttendanceStatus) {
         is TodayAttendanceStatus.Present -> Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Present")
         is TodayAttendanceStatus.ShortLeave -> Triple(WcColors.SlBg, WcColors.SlFg, "Short Leave")
         is TodayAttendanceStatus.HalfDay -> Triple(WcColors.WarnBg, WcColors.WarnFg, "Half Day")
+        is TodayAttendanceStatus.Pending -> Triple(WcColors.Border, WcColors.TextMuted, "Pending")
         is TodayAttendanceStatus.NotCheckedIn -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Not checked in")
         is TodayAttendanceStatus.Loading -> Triple(WcColors.Border, WcColors.TextMuted, "Loading…")
         is TodayAttendanceStatus.Error -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Error")
