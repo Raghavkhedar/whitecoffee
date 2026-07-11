@@ -1,9 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { useAccess } from './AccessContext';
+import { TAG_LABELS, recognizedTags } from '@/lib/portalAccess';
 import Icon from './Icon';
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -26,16 +24,12 @@ function initials(name: string) {
 
 export default function Header() {
   const pathname = usePathname();
-  const [name, setName] = useState('Admin');
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async user => {
-      if (!user) return;
-      const snap = await getDoc(doc(db, 'users', user.uid));
-      if (snap.exists()) setName(snap.data().name ?? 'Admin');
-    });
-    return unsub;
-  }, []);
+  const { user } = useAccess();
+  const name = user?.name || 'Admin';
+  // Accurate role label: admins say "Administrator"; tagged staff show their tag names.
+  const roleLabel = user?.role === 'admin'
+    ? 'Administrator'
+    : (recognizedTags(user).map(t => TAG_LABELS[t]).join(', ') || 'Staff');
 
   const match = Object.keys(TITLES).find(k => pathname === k || pathname.startsWith(k + '/'));
   const meta  = match ? TITLES[match] : { title: 'WhiteCoffee', subtitle: 'Admin Portal' };
@@ -60,7 +54,7 @@ export default function Header() {
           <div className="w-[34px] h-[34px] rounded-full bg-primary text-white flex items-center justify-center text-[12.5px] font-semibold font-mono">{initials(name)}</div>
           <div className="leading-[1.2]">
             <div className="text-[13px] font-semibold text-[#2A241F]">{name}</div>
-            <div className="text-[11px] text-[#9A938C]">Administrator</div>
+            <div className="text-[11px] text-[#9A938C]">{roleLabel}</div>
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@ import Icon from '@/components/Icon';
 import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
+import { TAG_LABELS, ALL_TAGS } from '@/lib/portalAccess';
 
 const ROLES = ['operations', 'office', 'admin'] as const;
 type Role = typeof ROLES[number];
@@ -22,6 +23,7 @@ interface FormState {
   password: string;
   employeeId: string;
   role: Role;
+  tags: string[];
   salaryRate: string;
   homeLat: string;
   homeLng: string;
@@ -30,7 +32,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
-  salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
+  tags: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
 // A short random temp password for new hires / admin resets (synthetic logins get no email link).
@@ -80,6 +82,7 @@ export default function UsersPage() {
       password: '',
       employeeId: u.employeeId ?? '',
       role: (u.role as Role) ?? 'operations',
+      tags: (u.tags ?? []).filter(t => t in TAG_LABELS),
       salaryRate: u.salaryRate ? String(u.salaryRate) : '',
       homeLat: u.homeLat ? String(u.homeLat) : '',
       homeLng: u.homeLng ? String(u.homeLng) : '',
@@ -113,7 +116,7 @@ export default function UsersPage() {
         }
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
-          contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
+          tags: form.tags, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
         });
         if (loginChanged) await updateUserEmail(editing.id, nextLogin);
       } else {
@@ -137,7 +140,7 @@ export default function UsersPage() {
         }
         await createUserProfile(uid, {
           name: form.name.trim(), email: loginEmail, contactEmail,
-          role: form.role, employeeId: form.employeeId.trim(), salaryRate,
+          role: form.role, tags: form.tags, employeeId: form.employeeId.trim(), salaryRate,
           homeLat, homeLng, conveyanceRateType,
         });
       }
@@ -206,6 +209,7 @@ export default function UsersPage() {
       Status: u.active === false ? 'Inactive' : 'Active',
       'Employee ID': u.employeeId ?? '',
       Role: u.role ?? '',
+      Tags: u.role !== 'admin' ? (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => TAG_LABELS[t]).join(', ') : '',
       'Salary Rate': u.salaryRate ?? '',
       'PL Balance': u.plBalance ?? 0,
       'WO Balance': u.woBalance ?? 0,
@@ -269,7 +273,14 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className={`${TD} font-mono text-[#6B635C]`}>{u.employeeId || '—'}</td>
-                    <td className={TD}><RoleBadge role={u.role} /></td>
+                    <td className={TD}>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <RoleBadge role={u.role} />
+                        {u.role !== 'admin' && (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => (
+                          <span key={t} className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{TAG_LABELS[t]}</span>
+                        ))}
+                      </div>
+                    </td>
                     <td className={`${TD} text-right font-mono text-[#2A241F]`}>{u.salaryRate ? `₹${u.salaryRate}` : '—'}</td>
                     <td className={`${TD} text-right font-mono`}>
                       {u.plBalance !== undefined
@@ -323,6 +334,35 @@ export default function UsersPage() {
                 <select className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as Role }))}>
                   {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
                 </select>
+              </div>
+
+              <div>
+                <label className="label">Portal Access Tags <span className="text-text-secondary font-normal">(scoped admin-portal tabs)</span></label>
+                {form.role === 'admin' ? (
+                  <p className="text-[12px] text-text-secondary">Admins always see the entire portal — tags don’t apply.</p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      {ALL_TAGS.map(tag => {
+                        const checked = form.tags.includes(tag);
+                        return (
+                          <label key={tag} className="flex items-center gap-2 text-[13.5px] text-[#2A241F] select-none cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={e => setForm(f => ({
+                                ...f,
+                                tags: e.target.checked ? [...f.tags, tag] : f.tags.filter(t => t !== tag),
+                              }))}
+                            />
+                            {TAG_LABELS[tag]}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[12px] text-text-secondary mt-1">Tagged non-admins can sign into the portal and see only the tabs their tags grant.</p>
+                  </>
+                )}
               </div>
 
               <div><label className="label">Salary Rate (₹/day)</label><input className="input" type="number" step="any" min="0" value={form.salaryRate} onChange={e => setForm(f => ({ ...f, salaryRate: e.target.value }))} placeholder="e.g. 800" /></div>
