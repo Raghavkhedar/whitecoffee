@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { hasPortalAccess, landingPath } from '@/lib/portalAccess';
+import type { User } from '@/types';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,12 +21,15 @@ export default function LoginPage() {
     try {
       const result = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
       const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-      if (!userDoc.exists() || userDoc.data()?.role !== 'admin') {
+      // Admins and tagged portal staff (e.g. attendance managers) may enter; everyone
+      // else is denied. Send them to the first tab their access allows.
+      const u = userDoc.exists() ? ({ id: userDoc.id, ...userDoc.data() } as User) : null;
+      if (!u || !hasPortalAccess(u)) {
         await auth.signOut();
-        setError('Access denied. Admin accounts only.');
+        setError('Access denied. This portal is for admins and tagged staff only.');
         return;
       }
-      router.replace('/dashboard');
+      router.replace(landingPath(u));
     } catch {
       setError('Invalid email or password.');
     } finally {

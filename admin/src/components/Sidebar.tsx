@@ -1,47 +1,44 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { getAllLeaveRequests } from '@/lib/firestore';
-import Icon, { type IconName } from './Icon';
-
-interface NavItem { href: string; icon: IconName; label: string; badgeKey?: 'pending' }
-
-const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
-  { items: [
-    { href: '/dashboard', icon: 'grid', label: 'Dashboard' },
-  ] },
-  { label: 'People', items: [
-    { href: '/users',              icon: 'users',      label: 'Employees' },
-    { href: '/employee-dashboard', icon: 'userCircle', label: 'Emp Dashboard' },
-    { href: '/leaves',             icon: 'leave',      label: 'Leave Requests', badgeKey: 'pending' },
-    { href: '/regularization',     icon: 'clock',      label: 'Regularization' },
-  ] },
-  { label: 'Time & Sites', items: [
-    { href: '/attendance',  icon: 'calendar', label: 'Attendance' },
-    { href: '/ot-shortage', icon: 'clock',    label: 'OT & Shortage' },
-    { href: '/settlements', icon: 'doc',      label: 'Settlements' },
-    { href: '/site-ids',    icon: 'pin',      label: 'Site IDs' },
-  ] },
-  { label: 'Records', items: [
-    { href: '/submissions',   icon: 'doc',  label: 'Submissions' },
-    { href: '/conveyance',    icon: 'car',  label: 'Conveyance' },
-    { href: '/notifications', icon: 'bell', label: 'Notifications' },
-  ] },
-];
+import { TABS, allowedPaths, type TabDef } from '@/lib/portalAccess';
+import { useAccess } from './AccessContext';
+import Icon from './Icon';
 
 export default function Sidebar() {
   const pathname = usePathname();
   const router   = useRouter();
+  const { user } = useAccess();
   const [pending, setPending] = useState<number | null>(null);
 
+  // Build the visible nav from the single TABS registry, filtered to what this
+  // user may access, then grouped (preserving TABS order). Empty groups drop out.
+  const navGroups = useMemo(() => {
+    const allowed = new Set(allowedPaths(user));
+    const groups: { label?: string; items: TabDef[] }[] = [];
+    for (const tab of TABS) {
+      if (!allowed.has(tab.path)) continue;
+      let g = groups.find(x => x.label === tab.group);
+      if (!g) { g = { label: tab.group, items: [] }; groups.push(g); }
+      g.items.push(tab);
+    }
+    return groups;
+  }, [user]);
+
+  const canSeeLeaves = useMemo(() => allowedPaths(user).includes('/leaves'), [user]);
+
+  // Only fetch the pending-leaves badge for users who can see Leaves — a tagged
+  // manager without that tab would otherwise trigger a permission-denied read.
   useEffect(() => {
+    if (!canSeeLeaves) { setPending(null); return; }
     getAllLeaveRequests('pending')
       .then(l => setPending(l.length))
       .catch(() => setPending(null));
-  }, []);
+  }, [canSeeLeaves]);
 
   async function handleLogout() {
     await signOut(auth);
@@ -61,18 +58,18 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3">
-        {NAV_GROUPS.map((group, gi) => (
-          <div key={gi} className={gi > 0 ? 'mt-5' : ''}>
+        {navGroups.map((group, gi) => (
+          <div key={group.label ?? gi} className={gi > 0 ? 'mt-5' : ''}>
             {group.label && (
               <div className="px-3 mb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#6B7480]">{group.label}</div>
             )}
             {group.items.map(item => {
-              const active = pathname === item.href || pathname.startsWith(item.href + '/');
+              const active = pathname === item.path || pathname.startsWith(item.path + '/');
               const badge  = item.badgeKey === 'pending' && pending ? pending : null;
               return (
                 <Link
-                  key={item.href}
-                  href={item.href}
+                  key={item.path}
+                  href={item.path}
                   className={`flex items-center gap-3 px-3 py-[8.5px] rounded-[9px] text-[13.5px] mb-0.5 transition-colors ${
                     active
                       ? 'bg-white/[0.08] text-white font-semibold'
