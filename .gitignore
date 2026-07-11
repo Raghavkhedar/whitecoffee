@@ -7,6 +7,10 @@ keystore.properties
 admin/.env.local
 **/.env.local
 firebase/functions/*.local
+# Service-account keys (belt-and-suspenders — never commit these anywhere)
+**/serviceAccount*.json
+**/*-serviceaccount*.json
+**/wckey.json
 
 # Android / Gradle
 android/.gradle/
@@ -14,6 +18,14 @@ android/.kotlin/
 android/build/
 android/app/build/
 android/local.properties
+# Build artifacts — regenerable, keep them out of git
+*.apk
+*.aab
+android/app/debug/
+android/app/release/
+
+# One-off design handoff bundle — not part of the build
+android/WhiteCoffe.zip
 
 # Node / Next.js
 admin/node_modules/
