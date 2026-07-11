@@ -240,8 +240,10 @@ private fun TodayStatusCard(
                 Spacer(Modifier.height(7.dp))
                 AttendanceStatusChip(todayStatus)
                 val location = (todayStatus as? TodayAttendanceStatus.Present)?.location
+                    ?: (todayStatus as? TodayAttendanceStatus.ShortLeave)?.location
                     ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.location
                 val since = (todayStatus as? TodayAttendanceStatus.Present)?.since
+                    ?: (todayStatus as? TodayAttendanceStatus.ShortLeave)?.since
                     ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.since
                 if (location != null) Text(location, color = WcColors.TextSecondary, fontSize = 10.5.sp, modifier = Modifier.padding(top = 6.dp))
                 if (since != null) Text("Since $since", color = WcColors.TextMuted, fontSize = 10.5.sp, modifier = Modifier.padding(top = 1.dp))
@@ -254,6 +256,7 @@ private fun TodayStatusCard(
 private fun AttendanceStatusChip(status: TodayAttendanceStatus) {
     val (bg, fg, label) = when (status) {
         is TodayAttendanceStatus.Present -> Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Present")
+        is TodayAttendanceStatus.ShortLeave -> Triple(WcColors.SlBg, WcColors.SlFg, "Short Leave")
         is TodayAttendanceStatus.HalfDay -> Triple(WcColors.WarnBg, WcColors.WarnFg, "Half Day")
         is TodayAttendanceStatus.NotCheckedIn -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Not checked in")
         is TodayAttendanceStatus.Loading -> Triple(WcColors.Border, WcColors.TextMuted, "Loading…")

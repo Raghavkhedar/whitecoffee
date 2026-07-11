@@ -48,6 +48,8 @@ object WcColors {
     val SuccessFg     = Color(0xFF0A5132)
     val WarnBg        = Color(0xFFFCEFC7)
     val WarnFg        = Color(0xFF8A6700)
+    val SlBg          = Color(0xFFFFE1C2)   // Short Leave — softer amber, distinct from Half Day
+    val SlFg          = Color(0xFF8A4B00)
     val DangerBg      = Color(0xFFFFDAD6)
     val DangerFg      = Color(0xFFBA1A1A)
 

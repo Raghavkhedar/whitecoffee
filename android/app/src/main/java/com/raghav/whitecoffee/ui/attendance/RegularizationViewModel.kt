@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
+import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.RegularizationRequest
 import com.raghav.whitecoffee.data.network.NetworkMonitor
@@ -99,42 +100,38 @@ class RegularizationViewModel @Inject constructor(
         }
     }
 
+    // Returns the day's live status only when it's NOT clean (i.e. worth regularizing):
+    // null = Present/on-time (nothing to fix), "SL" or "HalfDay" otherwise.
     private fun deriveLiveStatus(events: List<AttendanceRecord>): String? {
         if (events.isEmpty()) return null
 
-        return if (isOperations) {
-            val homeIn = events.firstOrNull { it.type == AttendanceType.HOME_IN }
-                ?: return null
-            val homeOut = events.lastOrNull { it.type == AttendanceType.HOME_OUT }
-            val inHour = hourOf(homeIn) ?: return "HalfDay"
-
-            if (homeOut != null) {
-                val outHour = hourOf(homeOut) ?: return "HalfDay"
-                if (inHour < 10 && outHour >= 18) null else "HalfDay"
-            } else {
-                if (inHour < 10) null else "HalfDay"
-            }
+        val inRec: AttendanceRecord
+        val outRec: AttendanceRecord?
+        if (isOperations) {
+            inRec = events.firstOrNull { it.type == AttendanceType.HOME_IN } ?: return null
+            outRec = events.lastOrNull { it.type == AttendanceType.HOME_OUT }
         } else {
-            val officeIn = events.firstOrNull { it.type == AttendanceType.OFFICE_IN }
-                ?: return null
-            val officeOut = events.lastOrNull { it.type == AttendanceType.OFFICE_OUT }
-            val inHour = hourOf(officeIn) ?: return "HalfDay"
-
+            inRec = events.firstOrNull { it.type == AttendanceType.OFFICE_IN } ?: return null
             val lastInIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_IN }
             val lastOutIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_OUT }
+            // Only count the checkout if it's the final event (they haven't re-entered since).
+            outRec = events.lastOrNull { it.type == AttendanceType.OFFICE_OUT }
+                ?.takeIf { lastOutIdx > lastInIdx }
+        }
 
-            if (officeOut != null && lastOutIdx > lastInIdx) {
-                val outHour = hourOf(officeOut) ?: return "HalfDay"
-                if (inHour < 10 && outHour >= 18) null else "HalfDay"
-            } else {
-                if (inHour < 10) null else "HalfDay"
-            }
+        val inMin = minutesOf(inRec) ?: return "HalfDay"
+        val outMin = outRec?.let { minutesOf(it) }
+        return when (AttendanceStatusRules.classify(inMin, outMin)) {
+            AttendanceStatusRules.DayStatus.PRESENT -> null
+            AttendanceStatusRules.DayStatus.SHORT_LEAVE -> "SL"
+            AttendanceStatusRules.DayStatus.HALF_DAY -> "HalfDay"
         }
     }
 
-    private fun hourOf(record: AttendanceRecord): Int? {
+    private fun minutesOf(record: AttendanceRecord): Int? {
         val date = record.timestamp?.toDate() ?: return null
-        return Calendar.getInstance().apply { time = date }.get(Calendar.HOUR_OF_DAY)
+        val cal = Calendar.getInstance().apply { time = date }
+        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     }
 
     fun submitRequest(date: String, originalStatus: String, reason: String) {
