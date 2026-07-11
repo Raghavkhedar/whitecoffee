@@ -105,6 +105,44 @@ function getMinuteIST(timestamp) {
   return new Date(istMs).getUTCMinutes();
 }
 
+// ── OT ledger (ported from admin/src/lib/otLedger.ts) ───────────────────────
+// Keep in sync with that file: it is the source of truth the admin portal uses
+// to show per-day OT. We replicate it here so the Attendance tab's "OT (mins)"
+// column equals the number an admin sees on the Employee Dashboard — the portal
+// computes OT live in the browser and never stores it, so it can't be copied.
+const DEFAULT_SHIFT_START_MIN = 10 * 60; // 10:00
+const DEFAULT_SHIFT_END_MIN   = 18 * 60; // 18:00
+
+function hhmmToMin(s) {
+  if (!s) return null;
+  const [h, m] = String(s).split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+// Per-day ledger for one ops worked day (both check-in and check-out present).
+// Mirrors computeDayLedger in otLedger.ts. Returns the OT parts we need.
+function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, otAuthorized }) {
+  const worked = Math.max(0, outMin - inMin);
+  if (isRestDay) {
+    // Sunday/holiday: every worked minute is OT, but only when admin-authorized.
+    if (otAuthorized) return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: worked, unauthorizedRestDay: false };
+    return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: true };
+  }
+  if (shiftEndMin > shiftStartMin) {
+    const otEarned = Math.max(0, outMin - shiftEndMin); // left late → OT (early-in earns nothing)
+    const declared = Math.max(0, declaredOtMins);
+    return {
+      autoOtMins: Math.min(otEarned, declared),
+      pendingExtraMins: Math.max(0, otEarned - declared),
+      restDayOtMins: 0,
+      unauthorizedRestDay: false,
+    };
+  }
+  // No shift and not a rest day → nothing accrues.
+  return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false };
+}
+
 // Resolve the owning user id for an exported doc, whether it's a top-level doc
 // (carries a userId field) or a subcollection doc under users/{uid}/...
 function uidOf(doc) {
@@ -364,15 +402,48 @@ exports.exportToSheets = onSchedule(
     const userRoleMap  = new Map(allUsersData.map((u) => [u.id, u.role || ""]));
     const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
     const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));
+    const userPlBalMap = new Map(allUsersData.map((u) => [u.id, u.plBalance || 0]));
 
     // ── userId__date → DailyStatus (for Attendance tab) ───────────────
     const statusSnap = await db.collectionGroup("attendance_status").get();
     const statusMap  = new Map();
+    // Regularized-to-Present days carry an admin-set effective in/out (missed-punch
+    // fix). These override raw events for OT, matching the admin ledger.
+    const otOverrideMap = new Map(); // `${uid}__${date}` → { inMin, outMin } IST min-of-day
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
       // Legacy docs stored "SLNF"; the status is now "LNF" (Log Not Found).
       const st = d.status === "SLNF" ? "LNF" : (d.status || "");
       statusMap.set(`${d.userId}__${d.date}`, st);
+      if (d.status === "Present" && d.inTime && d.outTime) {
+        const inMin = hhmmToMin(d.inTime), outMin = hhmmToMin(d.outTime);
+        if (inMin != null && outMin != null && outMin > inMin) {
+          otOverrideMap.set(`${d.userId}__${d.date}`, { inMin, outMin });
+        }
+      }
+    });
+
+    // ── OT ledger inputs (planned shift / declared OT / rest-day auth / approvals) ──
+    // Needed so the Attendance tab's OT column matches the admin portal exactly.
+    // All holidays (not just this month) — the Attendance tab spans all history.
+    const allHolidaySet = new Set((await db.collection("holidays").get()).docs.map((h) => h.id));
+    const plannedMap = new Map(); // `${uid}__${date}` → { startMin, endMin, declared } (valid windows only)
+    const otAuthSet  = new Set(); // `${uid}__${date}` where admin authorized rest-day OT
+    (await db.collectionGroup("planned_hours").get()).docs.forEach((doc) => {
+      const d = doc.data();
+      const uid = uidOf(doc);
+      const key = `${uid}__${d.date || ""}`;
+      const startMin = hhmmToMin(d.startTime), endMin = hhmmToMin(d.endTime);
+      // Inverted/mis-entered windows are treated as "no plan" → default 10–18 fallback.
+      if (startMin != null && endMin != null && endMin > startMin) {
+        plannedMap.set(key, { startMin, endMin, declared: Math.max(0, d.declaredOtMins || 0) });
+      }
+      if (d.otAuthorized) otAuthSet.add(key);
+    });
+    const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
+    (await db.collectionGroup("ot_approvals").get()).docs.forEach((doc) => {
+      const d = doc.data();
+      approvalMap.set(`${uidOf(doc)}__${d.date || ""}`, Number(d.approvedMins) || 0);
     });
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
@@ -407,8 +478,8 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("attendance").get();
       const header = [
         "Date", "Employee Name", "Employee ID", "Role",
-        "In Time", "In Location", "Site ID", "Out Time", "Out Location",
-        "All Activity", "OT", "Daily Status",
+        "In Time", "In Location", "In Site ID", "Out Time", "Out Location", "Out Site ID",
+        "All Activity", "OT (mins)", "Daily Status", "PL Balance",
       ];
 
       // Group all events by employee + date.
@@ -460,7 +531,46 @@ exports.exportToSheets = onSchedule(
           }).join("\n");
         }
 
-        const isOT  = isOps && lastOut && getHourIST(lastOut.timestamp) >= 18;
+        // OT (mins) — credited overtime, replicating the admin portal's Employee
+        // Dashboard number: declared auto-approved + authorized rest-day + admin-
+        // granted (incl. manual). Pending (un-reviewed) OT is excluded, exactly as
+        // the portal shows it. Ops only; office/admin have no OT in the model.
+        let otMins = 0;
+        if (isOps) {
+          // Effective worked window: a regularized-to-Present override wins; otherwise
+          // first-in / last-out across site AND market visits (matching the ledger).
+          const override = otOverrideMap.get(key);
+          let inMin = null, outMin = null;
+          if (override) {
+            inMin = override.inMin; outMin = override.outMin;
+          } else if (group) {
+            const ins  = group.events.filter((e) => OPS_IN_TYPES.has(e.type));
+            const outsAll = group.events.filter((e) => OPS_OUT_TYPES.has(e.type));
+            if (ins.length && outsAll.length) {
+              const inEv  = ins.reduce((a, b) => ((a.timestamp?.seconds || 0) <= (b.timestamp?.seconds || 0) ? a : b));
+              const outEv = outsAll.reduce((a, b) => ((a.timestamp?.seconds || 0) >= (b.timestamp?.seconds || 0) ? a : b));
+              const im = getHourIST(inEv.timestamp) * 60 + getMinuteIST(inEv.timestamp);
+              const om = getHourIST(outEv.timestamp) * 60 + getMinuteIST(outEv.timestamp);
+              if (om > im) { inMin = im; outMin = om; }
+            }
+          }
+          if (inMin != null && outMin != null) {
+            const plan = plannedMap.get(key);
+            const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+            const led = computeDayLedger({
+              shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
+              shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
+              inMin, outMin,
+              declaredOtMins: plan ? plan.declared : 0,
+              isRestDay: restDay,
+              otAuthorized: otAuthSet.has(key),
+            });
+            otMins += led.autoOtMins + led.restDayOtMins;
+          }
+          // Admin-granted OT (approvals, incl. manual for missed-punch days) is
+          // credited regardless of punches — matches the portal's granted total.
+          otMins += approvalMap.get(key) || 0;
+        }
 
         return [
           date,
@@ -468,14 +578,18 @@ exports.exportToSheets = onSchedule(
           userEmpIdMap.get(uid) ?? "",
           role,
           timeIST(firstIn?.timestamp), locOf(firstIn), siteIdOf(firstIn),
-          timeIST(lastOut?.timestamp), locOf(lastOut),
+          timeIST(lastOut?.timestamp), locOf(lastOut), siteIdOf(lastOut),
           allActivity,
-          isOT ? "Yes" : "",
+          otMins > 0 ? otMins : "",
           statusMap.get(`${uid}__${date}`) || "",
+          userPlBalMap.get(uid) ?? 0,
         ];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...rows]);
+      // Fill every blank cell in the data rows with θ so no attendance cell is
+      // left empty in the sheet (header row is left as-is).
+      const filledRows = rows.map((r) => r.map((cell) => (cell === "" || cell == null) ? "θ" : cell));
+      await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...filledRows]);
       console.log(`Attendance: ${rows.length} rows`);
     }
 
