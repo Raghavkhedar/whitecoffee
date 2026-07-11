@@ -4,6 +4,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
+import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.session.SessionManager
@@ -38,6 +39,28 @@ class AttendanceRepository @Inject constructor(
                 .mapNotNull { AttendanceRecord.fromDocument(it) }
                 .sortedBy { it.timestamp?.toDate()?.time ?: 0L }
             Result.success(Pair(deriveAttendanceState(events), events))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Today's admin-set planned shift window for this (operations) user, read from
+     * users/{uid}/planned_hours/{today}. Returns:
+     *  - success(null)          → no plan set (payroll leaves the day unmarked),
+     *  - success((start,end))   → resolved minutes-of-day window (10:00–18:00 fallback for an
+     *                             inverted/zero shift), mirroring computeDailyAttendanceStatus.
+     * Office/admin don't use this — their window is a fixed 10:00–18:00.
+     */
+    suspend fun getTodayPlannedWindow(): Result<Pair<Int, Int>?> {
+        return try {
+            val today = LocalDate.now().format(dateFormatter)
+            val doc = userDoc.collection("planned_hours").document(today).get().await()
+            val window = AttendanceStatusRules.resolveOpsWindow(
+                doc.getString("startTime"),
+                doc.getString("endTime"),
+            )
+            Result.success(window)
         } catch (e: Exception) {
             Result.failure(e)
         }
