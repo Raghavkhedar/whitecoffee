@@ -6,6 +6,13 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { google } = require("googleapis");
+// Attendance scoring rule — shared with the Android preview (see attendanceRules.js header).
+const {
+  OFFICE_START_MIN,
+  OFFICE_END_MIN,
+  classifyOffMinutes,
+  resolveOpsWindow,
+} = require("./attendanceRules");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -77,14 +84,6 @@ async function getRoadKm(lat1, lon1, lat2, lon2, apiKey) {
 function ts(timestamp) {
   if (!timestamp) return "";
   return timestamp.toDate().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-}
-
-// Parse a "HH:MM" 24h string into minutes-from-midnight; fallback if invalid.
-function toMinutes(hhmm, fallback) {
-  if (!hhmm || typeof hhmm !== "string") return fallback;
-  const [h, m] = hhmm.split(":").map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return fallback;
-  return h * 60 + m;
 }
 
 function timeIST(timestamp) {
@@ -244,12 +243,15 @@ exports.computeDailyAttendanceStatus = onSchedule(
       // no approved leave, leave the day unmarked (admin must enter a plan).
       if (isOps && !plan && !leave) continue;
 
-      // Working window: office is fixed 10:00–18:00; operations use the planned
-      // start/end the admin entered for the day.
-      let startMin = isOps ? toMinutes(plan?.startTime, 10 * 60) : 10 * 60;
-      let endMin   = isOps ? toMinutes(plan?.endTime,   18 * 60) : 18 * 60;
-      // Inverted/zero window (e.g. a mis-entered "06:00" end meaning 6 PM) → fall back to 10:00–18:00.
-      if (endMin <= startMin) { startMin = 10 * 60; endMin = 18 * 60; }
+      // Working window: office is fixed 10:00–18:00; operations use the planned shift the
+      // admin entered (resolveOpsWindow handles the inverted/zero-window fallback). A plan is
+      // guaranteed here for ops — the no-plan case already `continue`d above.
+      let startMin = OFFICE_START_MIN;
+      let endMin = OFFICE_END_MIN;
+      if (isOps) {
+        const window = resolveOpsWindow(plan?.startTime, plan?.endTime);
+        if (window) { startMin = window.startMin; endMin = window.endMin; }
+      }
 
       // Operations: in/out come from the first place they reached and the last
       // they left, across site and market visits. Office: office_in / office_out.
@@ -266,9 +268,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
         const earlyMinutes = Math.max(0, endMin - outMinutes);
         const offMinutes   = lateMinutes + earlyMinutes;
 
-        if (offMinutes === 0) status = "Present";
-        else if (offMinutes <= 120) status = "SL";
-        else status = "HalfDay";
+        status = classifyOffMinutes(offMinutes);
       } else if (checkIns.length > 0 || checkOuts.length > 0) {
         status = "LNF";
       } else {

@@ -3,7 +3,10 @@ package com.raghav.whitecoffee.data.model
 /**
  * Single source of truth for the client-side daily-status preview shown to
  * employees (home screen + regularization). Mirrors the authoritative cloud
- * function `computeDailyAttendanceStatus`:
+ * function `computeDailyAttendanceStatus`, whose scoring rule lives in
+ * firebase/functions/attendanceRules.js — keep the thresholds, off-minutes
+ * formula, and planned-window fallback in sync across both files (and both test
+ * suites: AttendanceStatusRulesTest.kt here, attendanceRules.test.js there):
  *
  *   offMinutes = late-in + early-out
  *     off == 0   -> Present
