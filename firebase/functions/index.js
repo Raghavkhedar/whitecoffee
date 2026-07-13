@@ -13,6 +13,8 @@ const {
   classifyOffMinutes,
   resolveOpsWindow,
 } = require("./attendanceRules");
+// Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
+const { buildManpowerVisits } = require("./manpowerVisits");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -53,6 +55,8 @@ const SHEET_ID_6 = "1Ar1d7kNwgOB5w6MSGX40MAXorR9dpzr3oN72Wa-JQE4";
 const SHEET_ID_7 = "1c2JtarmbteClXaADF666WYEGNmx4CozM7EKo7bcteKE";
 // Sheet8: Overtime Exception Report (ops OT days, current month)
 const SHEET_ID_OT = "1DNJKQfvm238ZmULF7ScJAXRtxzzjYjk87jV4QMR2VjA";
+// Sheet9: Site Manpower Time Utilisation (ops per-site visits, current month)
+const SHEET_ID_MANPOWER = "1U66-ldSNMm01f3rnJabJe0BxTUFvDglSX5rAFqXDJZ4";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -70,6 +74,7 @@ const TABS = {
   WORK_PROGRESS:      "Work Progress",
   LEAVE_REQUESTS:     "Leave Requests",
   OT_EXCEPTION:       "Overtime Exception Report",
+  MANPOWER:           "Manpower Utilisation",
 };
 
 async function getRoadKm(lat1, lon1, lat2, lon2, apiKey) {
@@ -414,6 +419,7 @@ exports.exportToSheets = onSchedule(
     const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
     const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));
     const userPlBalMap = new Map(allUsersData.map((u) => [u.id, u.plBalance || 0]));
+    const userCategoriesMap = new Map(allUsersData.map((u) => [u.id, Array.isArray(u.categories) ? u.categories : []]));
 
     // ── userId__date → DailyStatus (for Attendance tab) ───────────────
     const statusSnap = await db.collectionGroup("attendance_status").get();
@@ -731,6 +737,104 @@ exports.exportToSheets = onSchedule(
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
       await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION, [header, ...rows]);
       console.log(`OT Exception Report: ${rows.length} rows`);
+    }
+
+    // ── 1c. Site Manpower Time Utilisation — ops per-site visits, current month ──
+    // One row per ops site_in→site_out visit this month, written to its own
+    // spreadsheet (SHEET_ID_MANPOWER). Reproduces the client's manual "SITE MANPOWER
+    // TIME UTILISATION REPORT" (Aug-2024 format). work-done-time = time on site ÷ 8h
+    // (may exceed 1). Remarks carries the day's CREDITED OT (H:MM) on the visit with
+    // the latest departure. Pairing/fraction is the unit-tested buildManpowerVisits().
+    {
+      const header = [
+        "DATE", "SITE", "Cust ID", "Visit type", "TecH name",
+        "Category (as per daily schedule)", "work done-Category", "work done-time", "Remarks",
+      ];
+
+      // Ops site events for the current month, grouped by employee + day.
+      const snap = await db.collectionGroup("attendance")
+        .where("date", ">=", monthStart).where("date", "<=", today).get();
+      const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
+      snap.docs.forEach((doc) => {
+        const uid = uidOf(doc);
+        if (userRoleMap.get(uid) !== "operations") return;      // ops-only report
+        const d = doc.data();
+        if (d.type !== "site_in" && d.type !== "site_out") return; // market carries no visit fields
+        const key = `${uid}__${d.date || ""}`;
+        if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
+        groups.get(key).events.push(d);
+      });
+
+      const rows = [];
+      groups.forEach((group, key) => {
+        const { uid, date } = group;
+
+        // Chronological site events → the pure builder's shape.
+        const sorted = [...group.events].sort(
+          (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+        const visits = buildManpowerVisits(sorted.map((e) => ({
+          type: e.type,
+          min: getHourIST(e.timestamp) * 60 + getMinuteIST(e.timestamp),
+          siteName: e.siteName || "",
+          siteId: e.siteId || "",
+          visitType: e.visitType || "",
+          workDone: Array.isArray(e.workDoneCategories) ? e.workDoneCategories : [],
+        })));
+        if (!visits.length) return;
+
+        // Day's CREDITED OT — same number as the Attendance tab / Employee Dashboard.
+        // Effective window: regularized override wins; else first-in…last-out across
+        // site AND market events (matches the ledger).
+        const override = otOverrideMap.get(key);
+        let inMin = null, outMin = null;
+        if (override) {
+          inMin = override.inMin; outMin = override.outMin;
+        } else {
+          const ins  = group.events.filter((e) => OPS_IN_TYPES.has(e.type));
+          const outs = group.events.filter((e) => OPS_OUT_TYPES.has(e.type));
+          if (ins.length && outs.length) {
+            const inEv  = ins.reduce((a, b) => ((a.timestamp?.seconds || 0) <= (b.timestamp?.seconds || 0) ? a : b));
+            const outEv = outs.reduce((a, b) => ((a.timestamp?.seconds || 0) >= (b.timestamp?.seconds || 0) ? a : b));
+            const im = getHourIST(inEv.timestamp) * 60 + getMinuteIST(inEv.timestamp);
+            const om = getHourIST(outEv.timestamp) * 60 + getMinuteIST(outEv.timestamp);
+            if (om > im) { inMin = im; outMin = om; }
+          }
+        }
+        let creditedOt = 0;
+        if (inMin != null && outMin != null) {
+          const plan = plannedMap.get(key);
+          const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+          const led = computeDayLedger({
+            shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
+            shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
+            inMin, outMin,
+            declaredOtMins: plan ? plan.declared : 0,
+            isRestDay: restDay,
+            otAuthorized: otAuthSet.has(key),
+          });
+          creditedOt = led.autoOtMins + led.restDayOtMins;
+        }
+        creditedOt += approvalMap.get(key) || 0;
+
+        const categories = (userCategoriesMap.get(uid) || []).join(" ");
+        visits.forEach((v) => {
+          rows.push([
+            date,
+            v.siteName,
+            v.siteId,
+            v.visitType,
+            userNameMap.get(uid) ?? "",
+            categories,
+            v.workDone.join(" + "),
+            v.timeFraction == null ? "" : v.timeFraction,
+            (v.otTarget && creditedOt > 0) ? minToHHMM(creditedOt) : "",
+          ]);
+        });
+      });
+
+      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+      await writeTab(sheets, SHEET_ID_MANPOWER, TABS.MANPOWER, [header, ...rows]);
+      console.log(`Manpower Utilisation: ${rows.length} rows`);
     }
 
     // ── 2. MT Requests ────────────────────────────────────────────────
