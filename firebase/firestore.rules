@@ -70,11 +70,13 @@ service cloud.firestore {
       match /attendance/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
         allow create: if isLoggedIn() && isOwner(userId);
-        // Events are immutable once recorded EXCEPT the admin-filled Site ID:
-        // ops type a free-text site name at check-in and an admin (or attendance
-        // manager) later patches the `siteId` field from the Site IDs page
-        // (updateAttendanceSiteId). Restricting to siteId keeps the event tamper-proof.
-        allow update: if isLoggedIn() && (isAdmin() || isAttendanceMgr()) && changedKeysWithin(['siteId']);
+        // Events are immutable once recorded EXCEPT the admin-filled Site ID, Visit
+        // Type, and Work Done categories: ops type a free-text site name at check-in
+        // and an admin (or attendance manager) later patches `siteId` + `visitType` +
+        // `workDoneCategories` from the Site IDs page (updateAttendanceSiteId).
+        // Restricting to these keeps the event otherwise tamper-proof (timestamp/
+        // location/type stay immutable).
+        allow update: if isLoggedIn() && (isAdmin() || isAttendanceMgr()) && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
         allow delete: if false;
       }
 

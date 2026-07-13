@@ -5,6 +5,7 @@ import type { AttendanceRecord, User } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
+import { WORK_DONE_CATEGORIES, WORK_DONE_CATEGORY_SET, WORK_DONE_NA } from '@/lib/categories';
 
 function formatTime(ts: { toDate: () => Date } | undefined) {
   if (!ts) return '—';
@@ -21,7 +22,9 @@ export default function SiteIdsPage() {
   const [employeeFilter, setEmployeeFilter] = useState('');
 
   // Per-entry edit state: eventId → current input value, and saving/saved flags.
-  const [drafts, setDrafts]   = useState<Record<string, string>>({});
+  const [drafts, setDrafts]               = useState<Record<string, string>>({});   // siteId drafts
+  const [visitDrafts, setVisitDrafts]     = useState<Record<string, string>>({});   // visitType drafts
+  const [workDrafts, setWorkDrafts]       = useState<Record<string, string[]>>({}); // workDoneCategories drafts
   const [saving, setSaving]   = useState<Record<string, boolean>>({});
   const [savedOk, setSavedOk] = useState<Record<string, boolean>>({});
 
@@ -32,10 +35,18 @@ export default function SiteIdsPage() {
       const [evs, us] = await Promise.all([getAttendanceForDate(date), getAllUsers()]);
       setEvents(evs);
       setUsers(us);
-      // Seed drafts from the stored siteId so inputs show current values.
+      // Seed drafts from stored siteId + visitType + workDoneCategories.
       const seed: Record<string, string> = {};
-      evs.forEach(e => { seed[e.id] = e.siteId || ''; });
+      const visitSeed: Record<string, string> = {};
+      const workSeed: Record<string, string[]> = {};
+      evs.forEach(e => {
+        seed[e.id] = e.siteId || '';
+        visitSeed[e.id] = e.visitType || '';
+        workSeed[e.id] = (e.workDoneCategories || []).filter(c => WORK_DONE_CATEGORY_SET.has(c));
+      });
       setDrafts(seed);
+      setVisitDrafts(visitSeed);
+      setWorkDrafts(workSeed);
       setSavedOk({});
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -67,12 +78,14 @@ export default function SiteIdsPage() {
 
   async function handleSave(entry: AttendanceRecord) {
     const value = drafts[entry.id] ?? '';
+    const visit = visitDrafts[entry.id] ?? '';
+    const work  = workDrafts[entry.id] ?? [];
     setSaving(prev => ({ ...prev, [entry.id]: true }));
     setError('');
     try {
-      await updateAttendanceSiteId(entry.userId, entry.id, value);
-      // Reflect the saved value locally without a full reload.
-      setEvents(prev => prev.map(e => e.id === entry.id ? { ...e, siteId: value.trim() } : e));
+      await updateAttendanceSiteId(entry.userId, entry.id, value, visit, work);
+      // Reflect the saved values locally without a full reload.
+      setEvents(prev => prev.map(e => e.id === entry.id ? { ...e, siteId: value.trim(), visitType: visit.trim(), workDoneCategories: work } : e));
       setSavedOk(prev => ({ ...prev, [entry.id]: true }));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -93,6 +106,8 @@ export default function SiteIdsPage() {
       'In / Out': e.type === 'site_in' ? 'In' : 'Out',
       'Site Name': e.siteName || e.marketName || '',
       'Site ID': e.siteId || '',
+      'Visit Type': e.visitType || '',
+      'Work Done': (e.workDoneCategories || []).join(', '),
     })));
   }
 
@@ -158,14 +173,34 @@ export default function SiteIdsPage() {
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Time</th>
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">In / Out</th>
                   <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Site Name</th>
-                  <th className="text-left py-2.5 font-medium text-text-secondary">Site ID</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Site ID</th>
+                  <th className="text-left py-2.5 pr-4 font-medium text-text-secondary">Visit Type</th>
+                  <th className="text-left py-2.5 font-medium text-text-secondary">Work Done</th>
                 </tr>
               </thead>
               <tbody>
                 {siteEntries.map(entry => {
-                  const draft   = drafts[entry.id] ?? '';
-                  const isDirty = draft.trim() !== (entry.siteId || '').trim();
+                  const draft      = drafts[entry.id] ?? '';
+                  const visitDraft = visitDrafts[entry.id] ?? '';
+                  const workDraft  = workDrafts[entry.id] ?? [];
+                  const workSaved  = (entry.workDoneCategories || []).filter(c => WORK_DONE_CATEGORY_SET.has(c));
+                  const normWork   = (a: string[]) => [...a].sort().join('|');
+                  const isDirty = draft.trim() !== (entry.siteId || '').trim()
+                    || visitDraft.trim() !== (entry.visitType || '').trim()
+                    || normWork(workDraft) !== normWork(workSaved);
                   const isSaving = saving[entry.id] || false;
+                  // NA is exclusive: ticking NA clears the rest; ticking any trade clears NA.
+                  const toggleWork = (cat: string, checked: boolean) => {
+                    setWorkDrafts(prev => {
+                      const cur = prev[entry.id] ?? [];
+                      let next: string[];
+                      if (!checked) next = cur.filter(c => c !== cat);
+                      else if (cat === WORK_DONE_NA) next = [WORK_DONE_NA];
+                      else next = [...cur.filter(c => c !== WORK_DONE_NA && c !== cat), cat];
+                      return { ...prev, [entry.id]: next };
+                    });
+                    setSavedOk(prev => ({ ...prev, [entry.id]: false }));
+                  };
                   const isIn    = entry.type === 'site_in';
                   return (
                     <tr key={entry.id} className="border-b border-border/40 hover:bg-background/60 transition-colors">
@@ -186,27 +221,53 @@ export default function SiteIdsPage() {
                         </span>
                       </td>
                       <td className="py-3 pr-4 text-text-primary">{entry.siteName || entry.marketName || '—'}</td>
+                      <td className="py-3 pr-4">
+                        <input
+                          className="input !py-1.5 !w-36"
+                          value={draft}
+                          placeholder="Site ID"
+                          onChange={e => {
+                            const v = e.target.value;
+                            setDrafts(prev => ({ ...prev, [entry.id]: v }));
+                            setSavedOk(prev => ({ ...prev, [entry.id]: false }));
+                          }}
+                        />
+                      </td>
+                      <td className="py-3 pr-4">
+                        <input
+                          className="input !py-1.5 !w-44"
+                          value={visitDraft}
+                          placeholder="Visit type"
+                          onChange={e => {
+                            const v = e.target.value;
+                            setVisitDrafts(prev => ({ ...prev, [entry.id]: v }));
+                            setSavedOk(prev => ({ ...prev, [entry.id]: false }));
+                          }}
+                        />
+                      </td>
                       <td className="py-3">
-                        <div className="flex items-center gap-2">
-                          <input
-                            className="input !py-1.5 !w-36"
-                            value={draft}
-                            placeholder="Site ID"
-                            onChange={e => {
-                              const v = e.target.value;
-                              setDrafts(prev => ({ ...prev, [entry.id]: v }));
-                              setSavedOk(prev => ({ ...prev, [entry.id]: false }));
-                            }}
-                          />
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 max-w-[280px]">
+                            {WORK_DONE_CATEGORIES.map(cat => (
+                              <label key={cat} className="flex items-center gap-1.5 text-xs text-text-primary select-none cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={workDraft.includes(cat)}
+                                  onChange={e => toggleWork(cat, e.target.checked)}
+                                />
+                                {cat}
+                              </label>
+                            ))}
+                          </div>
                           <button
                             onClick={() => handleSave(entry)}
                             disabled={isSaving || !isDirty}
-                            className="btn-primary !py-1 !px-3 !text-xs disabled:opacity-40"
+                            className="btn-primary !py-1 !px-3 !text-xs disabled:opacity-40 shrink-0"
                           >
                             {isSaving ? 'Saving…' : 'Save'}
                           </button>
                           {savedOk[entry.id] && !isDirty && (
-                            <span className="text-green-600 text-xs">✓</span>
+                            <span className="text-green-600 text-xs shrink-0">✓</span>
                           )}
                         </div>
                       </td>

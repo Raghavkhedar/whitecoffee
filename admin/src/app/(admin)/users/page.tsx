@@ -12,6 +12,7 @@ import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { TAG_LABELS, ALL_TAGS } from '@/lib/portalAccess';
+import { EMPLOYEE_CATEGORIES, EMPLOYEE_CATEGORY_SET } from '@/lib/categories';
 
 const ROLES = ['operations', 'office', 'admin'] as const;
 type Role = typeof ROLES[number];
@@ -24,6 +25,7 @@ interface FormState {
   employeeId: string;
   role: Role;
   tags: string[];
+  categories: string[];
   salaryRate: string;
   homeLat: string;
   homeLng: string;
@@ -32,7 +34,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
-  tags: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
+  tags: [], categories: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
 // A short random temp password for new hires / admin resets (synthetic logins get no email link).
@@ -83,6 +85,7 @@ export default function UsersPage() {
       employeeId: u.employeeId ?? '',
       role: (u.role as Role) ?? 'operations',
       tags: (u.tags ?? []).filter(t => t in TAG_LABELS),
+      categories: (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)),
       salaryRate: u.salaryRate ? String(u.salaryRate) : '',
       homeLat: u.homeLat ? String(u.homeLat) : '',
       homeLng: u.homeLng ? String(u.homeLng) : '',
@@ -104,6 +107,8 @@ export default function UsersPage() {
       const homeLng = form.homeLng ? parseFloat(form.homeLng) : undefined;
       const conveyanceRateType = form.conveyanceRateType ? (parseInt(form.conveyanceRateType) as 1 | 2) : undefined;
       const contactEmail = form.contactEmail.trim().toLowerCase();
+      // Categories only apply to operations staff; switching to another role clears them.
+      const categories = form.role === 'operations' ? form.categories : [];
 
       if (editing) {
         // Login email goes through a Cloud Function (Auth + doc); validate before touching anything.
@@ -116,7 +121,7 @@ export default function UsersPage() {
         }
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
-          tags: form.tags, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
+          tags: form.tags, categories, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
         });
         if (loginChanged) await updateUserEmail(editing.id, nextLogin);
       } else {
@@ -140,7 +145,7 @@ export default function UsersPage() {
         }
         await createUserProfile(uid, {
           name: form.name.trim(), email: loginEmail, contactEmail,
-          role: form.role, tags: form.tags, employeeId: form.employeeId.trim(), salaryRate,
+          role: form.role, tags: form.tags, categories, employeeId: form.employeeId.trim(), salaryRate,
           homeLat, homeLng, conveyanceRateType,
         });
       }
@@ -210,6 +215,7 @@ export default function UsersPage() {
       'Employee ID': u.employeeId ?? '',
       Role: u.role ?? '',
       Tags: u.role !== 'admin' ? (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => TAG_LABELS[t]).join(', ') : '',
+      Categories: u.role === 'operations' ? (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).join(', ') : '',
       'Salary Rate': u.salaryRate ?? '',
       'PL Balance': u.plBalance ?? 0,
       'WO Balance': u.woBalance ?? 0,
@@ -279,6 +285,9 @@ export default function UsersPage() {
                         {u.role !== 'admin' && (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => (
                           <span key={t} className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{TAG_LABELS[t]}</span>
                         ))}
+                        {u.role === 'operations' && (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).map(c => (
+                          <span key={c} className="bg-[#F3EEFA] text-[#6A44B8] px-1.5 py-0.5 rounded-[6px] text-[11px] font-mono">{c}</span>
+                        ))}
                       </div>
                     </td>
                     <td className={`${TD} text-right font-mono text-[#2A241F]`}>{u.salaryRate ? `₹${u.salaryRate}` : '—'}</td>
@@ -335,6 +344,30 @@ export default function UsersPage() {
                   {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
                 </select>
               </div>
+
+              {form.role === 'operations' && (
+                <div>
+                  <label className="label">Category <span className="text-text-secondary font-normal">(operations classification — pick any that apply)</span></label>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                    {EMPLOYEE_CATEGORIES.map(cat => {
+                      const checked = form.categories.includes(cat);
+                      return (
+                        <label key={cat} className="flex items-center gap-2 text-[13.5px] text-[#2A241F] select-none cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => setForm(f => ({
+                              ...f,
+                              categories: e.target.checked ? [...f.categories, cat] : f.categories.filter(c => c !== cat),
+                            }))}
+                          />
+                          <span className="font-mono">{cat}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="label">Portal Access Tags <span className="text-text-secondary font-normal">(scoped admin-portal tabs)</span></label>

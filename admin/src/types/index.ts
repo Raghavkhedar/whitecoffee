@@ -11,6 +11,9 @@ export interface User {
    *  tab access to non-admin staff; ignored for role==='admin' (superuser). See
    *  src/lib/portalAccess.ts for the tag→tabs map. */
   tags?: string[];
+  /** Operations-role category codes (e.g. 'A1', 'E2', 'W') — multi-select, admin-assigned
+   *  on the Users page. Meaningful only for role==='operations'. See src/lib/categories.ts. */
+  categories?: string[];
   employeeId: string;
   salaryRate?: number;
   plBalance?: number;
@@ -185,6 +188,12 @@ export interface AttendanceRecord {
   latitude: number;
   longitude: number;
   siteId: string;
+  /** Admin-entered free-text visit type for this site event (filled on the Site IDs page,
+   *  alongside siteId). Empty until an admin sets it. */
+  visitType?: string;
+  /** Admin-selected work-done trade categories for this site event (multi-select, from
+   *  WORK_DONE_CATEGORIES; 'NA' is exclusive). Filled on the Site IDs page. */
+  workDoneCategories?: string[];
   siteName: string;
   marketName: string;
   autoLogout?: boolean;
