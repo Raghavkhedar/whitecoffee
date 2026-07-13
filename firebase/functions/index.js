@@ -15,6 +15,8 @@ const {
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
+// Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
+const { bannerFor, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab } = require("./dashboardHistory");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -1069,38 +1071,44 @@ exports.exportToSheets = onSchedule(
     {
       const TAB = TABS.EMPLOYEE_DASHBOARD;
 
-      // Read existing sheet to preserve manually-entered Imprest (salary rate now comes from Firestore).
-      // Locate columns by header name so this survives layout changes (e.g. added NP-breakdown columns).
-      const imprestMap = new Map(); // employeeId → imprest
+      // Read the existing tab and parse it into month-blocks (see dashboardHistory.js).
+      // Past months are frozen (kept verbatim); only the current month is rebuilt.
+      const currentKey = `${istYear}-${pad2(istMonth + 1)}`;
+      let existingRows = [];
       try {
         const existing = await sheets.spreadsheets.values.get({
           spreadsheetId: SHEET_ID_1,
           range: `${TAB}!A:Z`,
         });
-        const existingRows = existing.data.values || [];
-        const hdr        = existingRows[0] || [];
-        const empIdCol   = hdr.indexOf("EMP ID");
-        const imprestCol = hdr.findIndex((h) => String(h).toLowerCase().startsWith("imprest"));
-        if (empIdCol !== -1 && imprestCol !== -1) {
-          for (let i = 1; i < existingRows.length; i++) {
-            const r = existingRows[i];
-            if (!r || !r[empIdCol] || r[0] === "CF BAL" || r[0] === "TOTAL") continue;
-            const empId = String(r[empIdCol]).trim();
-            if (empId) imprestMap.set(empId, parseFloat(r[imprestCol]) || 0);
-          }
-        }
+        existingRows = existing.data.values || [];
       } catch (_) {
         // Tab doesn't exist yet — start fresh
       }
+      const { blocks, legacy } = parseBlocks(existingRows);
 
-      // Prior-month settlement (OT/shortage/WO) — paid in arrears. Read each user's LOCKED
-      // settlement for the previous month and add its cash to this month's TOTAL DUE.
-      const prevMonthDate = new Date(Date.UTC(istYear, istMonth - 1, 1));
-      const prevMonth = `${prevMonthDate.getUTCFullYear()}-${pad2(prevMonthDate.getUTCMonth() + 1)}`;
+      // Legacy = old single-block content from before month-history (no banner).
+      // Resolve which month it belongs to from an employee row's Date cell (= monthLabel).
+      let legacyKey = null, legacyLabel = null;
+      for (const r of legacy) {
+        const k = monthLabelToKey(r && r[0]);
+        if (k) { legacyKey = k; legacyLabel = String(r[0]).trim(); break; }
+      }
+
+      // Carry manually-entered Imprest into the rebuilt current block: from the
+      // current month's previous block if present, else legacy when it IS the
+      // current month. (Frozen past blocks keep their own imprest verbatim.)
+      const oldCurrentBlock  = blocks.find((b) => b.key === currentKey) || null;
+      const imprestSourceRows = oldCurrentBlock ? oldCurrentBlock.rows
+        : (legacyKey === currentKey ? legacy : []);
+      const imprestMap = imprestFromBlock(imprestSourceRows); // employeeId → imprest
+
+      // Current-month settlement (OT/shortage/WO) — the client settles month-to-month,
+      // NOT in arrears. Read each user's LOCKED settlement for THIS month and add its cash
+      // to TOTAL DUE. Shows 0 all month until Settle & Lock, then the month's own cash.
       const settlementCashMap = new Map(); // userId → settlement cash (locked only)
       await Promise.all(allUsersData.map(async (u) => {
         try {
-          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(prevMonth).get();
+          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(currentKey).get();
           const s = sdoc.data();
           if (s && s.locked) settlementCashMap.set(u.id, Number(s.settlementCash) || 0);
         } catch (_) { /* no settlement for this user — skip */ }
@@ -1111,7 +1119,7 @@ exports.exportToSheets = onSchedule(
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
-        "Covy Due (approx avg)", "Imprest Due MTD", `Prior Settlement ${prevMonth} (₹)`, "TOTAL DUE",
+        "Covy Due (approx avg)", "Imprest Due MTD", `Settlement ${currentKey} (₹)`, "TOTAL DUE",
       ];
 
       const sortedUsers = [...allUsersData].sort((a, b) => {
@@ -1177,8 +1185,27 @@ exports.exportToSheets = onSchedule(
       // TOTAL row — grand total of all dues
       const totalRow  = summaryRow("TOTAL", grandTotal);
 
-      await writeTab(sheets, SHEET_ID_1, TAB, [header, ...empRows, cfBalRow, totalRow]);
-      console.log(`Employee Dashboard: ${empRows.length} employees, total due ₹${grandTotal}`);
+      // Current-month block: banner + header + rows + summaries + a blank spacer.
+      const currentBlockRows = [
+        [bannerFor(currentKey, monthLabel)],
+        header,
+        ...empRows,
+        cfBalRow,
+        totalRow,
+        [""],
+      ];
+
+      // Freeze every other parsed block; migrate legacy (no-banner) content that
+      // belongs to a PAST month into its own frozen block so no snapshot is lost.
+      const frozenBlocks = blocks.filter((b) => b.key !== currentKey);
+      if (legacyKey && legacyKey !== currentKey) {
+        frozenBlocks.push({ key: legacyKey, rows: [[bannerFor(legacyKey, legacyLabel)], ...legacy] });
+      }
+
+      // Assemble: current month on top, frozen months newest→oldest below.
+      const outRows = assembleTab(currentBlockRows, currentKey, frozenBlocks);
+      await writeTab(sheets, SHEET_ID_1, TAB, outRows);
+      console.log(`Employee Dashboard: ${empRows.length} employees (current ${currentKey}), ${frozenBlocks.length} frozen month(s), total due ₹${grandTotal}`);
     }
 
     console.log("Full Sheets export complete.");
