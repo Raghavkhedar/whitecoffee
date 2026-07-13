@@ -759,7 +759,6 @@ exports.exportToSheets = onSchedule(
         const uid = uidOf(doc);
         if (userRoleMap.get(uid) !== "operations") return;      // ops-only report
         const d = doc.data();
-        if (d.type !== "site_in" && d.type !== "site_out") return; // market carries no visit fields
         const key = `${uid}__${d.date || ""}`;
         if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
         groups.get(key).events.push(d);
@@ -772,7 +771,9 @@ exports.exportToSheets = onSchedule(
         // Chronological site events → the pure builder's shape.
         const sorted = [...group.events].sort(
           (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
-        const visits = buildManpowerVisits(sorted.map((e) => ({
+        // Visit rows are site-only — market events carry none of the visit fields.
+        const siteEvents = sorted.filter((e) => e.type === "site_in" || e.type === "site_out");
+        const visits = buildManpowerVisits(siteEvents.map((e) => ({
           type: e.type,
           min: getHourIST(e.timestamp) * 60 + getMinuteIST(e.timestamp),
           siteName: e.siteName || "",
