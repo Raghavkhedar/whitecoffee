@@ -16,13 +16,13 @@ One tab, stacked month-blocks, **current month on top**, older months below in d
 
 ```
 ── MONTH: 2026-07 — July 2026 ──                          (banner row)
-Date | EMP Name | EMP ID | … | Prior Settlement 2026-06 (₹) | TOTAL DUE   (header row)
+Date | EMP Name | EMP ID | … | Settlement 2026-07 (₹) | TOTAL DUE   (header row)
 <employee rows — live/updating for the current month>
 CF BAL | … | <grandCfBal>
 TOTAL  | … | <grandTotal>
                                                           (blank spacer row)
 ── MONTH: 2026-06 — June 2026 ──                          (frozen, verbatim)
-Date | EMP Name | EMP ID | … | Prior Settlement 2026-05 (₹) | TOTAL DUE
+Date | EMP Name | EMP ID | … | Settlement 2026-06 (₹) | TOTAL DUE
 <June employee rows, exactly as last written on the June 30 run>
 CF BAL | … | <…>
 TOTAL  | … | <…>
@@ -32,7 +32,7 @@ TOTAL  | … | <…>
 ```
 
 - **Banner row:** first cell is the sentinel string `── MONTH: <YYYY-MM> — <Month Year> ──` (e.g. `── MONTH: 2026-07 — July 2026 ──`). The `YYYY-MM` key is the machine identifier; extracted with the regex `/MONTH:\s*(\d{4}-\d{2})/`. Remaining cells in the banner row are blank.
-- **Header row per block:** the existing 19-column header, repeated inside each block, so a frozen block stays self-describing even if the column layout changes in a later release, and each block's `Prior Settlement <prevMonth>` label is correct for its own month.
+- **Header row per block:** the existing 19-column header, repeated inside each block, so a frozen block stays self-describing even if the column layout changes in a later release, and each block's `Settlement <thisMonth>` label is correct for its own month.
 - **CF BAL and TOTAL** summary rows are **per block** (each month gets its own totals), matching today's two summary rows but scoped to the block.
 - **Blank spacer row** separates blocks visually.
 
@@ -42,7 +42,7 @@ TOTAL  | … | <…>
 2. Read the whole existing tab (`${TAB}!A:Z`).
 3. **Parse into blocks** by banner rows → `[{ key, rows }]`, where `rows` is the full block (banner + header + employee rows + CF BAL + TOTAL + spacer). Content appearing **before the first banner** is `legacy` (old single-block format from before this change).
 4. **Carry Imprest into the current block:** locate the source of manually-entered Imprest for the current month — the parsed block whose `key === currentKey` if present, otherwise `legacy` when its month resolves to `currentKey`. From that block's rows, build `empId → imprest` (header-aware: find the block's header row, then the `EMP ID` column and the column whose header starts with `imprest`, skipping `CF BAL`/`TOTAL` rows). Empty map when no source exists.
-5. **Build the current-month block** from fresh Firestore data using the exact same computation as today (attendance MTD, salary, conveyance, prior-month locked settlement, `daysNP`, `TOTAL DUE`), seeding Imprest per employee from the carried map. Prepend the banner and append CF BAL + TOTAL + spacer.
+5. **Build the current-month block** from fresh Firestore data using the same computation as today, except settlement now reads the **current** month's own locked settlement (not the prior month's — the client settles month-to-month, not in arrears): attendance MTD, salary, conveyance, `daysNP`, current-month locked settlement, `TOTAL DUE`. The `Settlement <thisMonth>` column shows `0` until that month is Settled & Locked, then its own `settlementCash`. Seed Imprest per employee from the carried map. Prepend the banner and append CF BAL + TOTAL + spacer.
 6. **Freeze the rest:** `frozenBlocks` = all parsed blocks with `key !== currentKey`, **plus** a migrated legacy block when `legacy` resolves to a month **other than** `currentKey` (wrap legacy verbatim under a banner for its month). Drop legacy when it resolves to `currentKey` (it is being rebuilt).
 7. **Assemble output:** `[current block] ++ frozenBlocks sorted by key descending`, flattened to a rows array.
 8. Write with `writeTab(sheets, SHEET_ID_1, TAB, rows)` (clear + write — the whole tab is authored from parsed history + the rebuilt current block, so a full rewrite is safe and idempotent).

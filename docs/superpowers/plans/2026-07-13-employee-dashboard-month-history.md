@@ -286,6 +286,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 1's `bannerFor`, `parseBlocks`, `imprestFromBlock`, `monthLabelToKey`, `assembleTab`; existing in-scope names `istYear`, `istMonth`, `pad2`, `monthLabel`, `SHEET_ID_1`, `TABS.EMPLOYEE_DASHBOARD`, `writeTab`, `sheets`, `allUsersData`, `userAttendanceMTD`, `conveyanceByUserId`, `daysPassed`, and the existing per-employee computation (settlement, salary, covy, daysNP).
+- **Settlement change (folded into this task):** the client settles **month-to-month, not in arrears**. Replace the "Prior Settlement `<prevMonth>`" column with the **current month's own** locked settlement, labelled `Settlement <currentKey> (₹)`. It reads each user's `settlements/{currentKey}` (only when `s.locked`), so it shows `0` all month until Settle & Lock, then the month's own `settlementCash`. `TOTAL DUE = salaryDue + covy + imprest + settlement` (unchanged formula, current-month value).
 - Produces: no code consumed by later tasks.
 
 - [ ] **Step 1: Require the helpers**
@@ -361,6 +362,55 @@ with:
         : (legacyKey === currentKey ? legacy : []);
       const imprestMap = imprestFromBlock(imprestSourceRows); // employeeId → imprest
 ```
+
+- [ ] **Step 2b: Swap prior-month settlement for the current month's own settlement**
+
+The client settles month-to-month, so the dashboard shows the current month's settlement (0 until locked), not the previous month's. In section 9, REPLACE this existing block:
+
+```js
+      // Prior-month settlement (OT/shortage/WO) — paid in arrears. Read each user's LOCKED
+      // settlement for the previous month and add its cash to this month's TOTAL DUE.
+      const prevMonthDate = new Date(Date.UTC(istYear, istMonth - 1, 1));
+      const prevMonth = `${prevMonthDate.getUTCFullYear()}-${pad2(prevMonthDate.getUTCMonth() + 1)}`;
+      const settlementCashMap = new Map(); // userId → settlement cash (locked only)
+      await Promise.all(allUsersData.map(async (u) => {
+        try {
+          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(prevMonth).get();
+          const s = sdoc.data();
+          if (s && s.locked) settlementCashMap.set(u.id, Number(s.settlementCash) || 0);
+        } catch (_) { /* no settlement for this user — skip */ }
+      }));
+```
+
+with (reads `currentKey`, which Step 2 already computes above this block):
+
+```js
+      // Current-month settlement (OT/shortage/WO) — the client settles month-to-month,
+      // NOT in arrears. Read each user's LOCKED settlement for THIS month and add its cash
+      // to TOTAL DUE. Shows 0 all month until Settle & Lock, then the month's own cash.
+      const settlementCashMap = new Map(); // userId → settlement cash (locked only)
+      await Promise.all(allUsersData.map(async (u) => {
+        try {
+          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(currentKey).get();
+          const s = sdoc.data();
+          if (s && s.locked) settlementCashMap.set(u.id, Number(s.settlementCash) || 0);
+        } catch (_) { /* no settlement for this user — skip */ }
+      }));
+```
+
+Then update the header column label — REPLACE:
+
+```js
+        "Covy Due (approx avg)", "Imprest Due MTD", `Prior Settlement ${prevMonth} (₹)`, "TOTAL DUE",
+```
+
+with:
+
+```js
+        "Covy Due (approx avg)", "Imprest Due MTD", `Settlement ${currentKey} (₹)`, "TOTAL DUE",
+```
+
+The per-employee `settlement`/`totalDue` computation is unchanged (it already reads `settlementCashMap.get(user.id)`).
 
 - [ ] **Step 3: Replace the final writeTab with block-assembly**
 
