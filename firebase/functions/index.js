@@ -51,6 +51,8 @@ const SHEET_ID_5 = "1Hy4GJ57Cn-uln7k3xXtJxI6Ka_VofDbJz1XYGqs2qGY";
 const SHEET_ID_6 = "1Ar1d7kNwgOB5w6MSGX40MAXorR9dpzr3oN72Wa-JQE4";
 // Sheet7: Work Progress
 const SHEET_ID_7 = "1c2JtarmbteClXaADF666WYEGNmx4CozM7EKo7bcteKE";
+// Sheet8: Overtime Exception Report (ops OT days, current month)
+const SHEET_ID_OT = "1DNJKQfvm238ZmULF7ScJAXRtxzzjYjk87jV4QMR2VjA";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -67,6 +69,7 @@ const TABS = {
   TOOL_TRANSFERS:     "Tool Transfers",
   WORK_PROGRESS:      "Work Progress",
   LEAVE_REQUESTS:     "Leave Requests",
+  OT_EXCEPTION:       "Overtime Exception Report",
 };
 
 async function getRoadKm(lat1, lon1, lat2, lon2, apiKey) {
@@ -118,6 +121,14 @@ function hhmmToMin(s) {
   const [h, m] = String(s).split(":").map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
+}
+
+// Minutes → "HH:MM" (e.g. 80 → "01:20", 0 → "00:00"). Used by the OT report for
+// both durations (OVER TIME / TIME APPROVED) and clock times (PRE-LOGIN /
+// POST-LOGOUT fallback when there's no raw event, i.e. a regularized override).
+function minToHHMM(mins) {
+  const n = Math.max(0, Math.round(mins || 0));
+  return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 }
 
 // Per-day ledger for one ops worked day (both check-in and check-out present).
@@ -441,9 +452,12 @@ exports.exportToSheets = onSchedule(
       if (d.otAuthorized) otAuthSet.add(key);
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
+    const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy } (for the OT Exception Report)
     (await db.collectionGroup("ot_approvals").get()).docs.forEach((doc) => {
       const d = doc.data();
-      approvalMap.set(`${uidOf(doc)}__${d.date || ""}`, Number(d.approvedMins) || 0);
+      const key = `${uidOf(doc)}__${d.date || ""}`;
+      approvalMap.set(key, Number(d.approvedMins) || 0);
+      otDecisionMap.set(key, { status: d.status || "", reason: d.reason || "", approvedBy: d.approvedBy || "" });
     });
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
@@ -591,6 +605,132 @@ exports.exportToSheets = onSchedule(
       const filledRows = rows.map((r) => r.map((cell) => (cell === "" || cell == null) ? "θ" : cell));
       await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...filledRows]);
       console.log(`Attendance: ${rows.length} rows`);
+    }
+
+    // ── 1b. Overtime Exception Report — ops OT days, current month ─────
+    // One row per ops employee per day they worked past shift end (or worked a
+    // rest day, or have an admin OT decision) this month. Mirrors the manual
+    // "OVERTIME EXCEPTION REPORT" sheet. OVER TIME = credited OT as H:MM (0 when
+    // not approved), from the same ledger the admin portal Employee Dashboard uses.
+    {
+      const header = [
+        "DATE", "NAME", "ESN NO", "PRE-LOGIN TIME", "PRE-LOGIN SITE",
+        "POST-LOGOUT TIME", "POST-LOGOUT SITE", "OVER TIME", "TIME APPROVED",
+        "APPROVED/NOT APPROVED/Pending", "Reasons", "APPROVED/REJECTED BY", "Remarks",
+      ];
+
+      // Ops attendance events for the current month, grouped by employee + day.
+      const snap = await db.collectionGroup("attendance")
+        .where("date", ">=", monthStart).where("date", "<=", today).get();
+      const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
+      snap.docs.forEach((doc) => {
+        const uid = uidOf(doc);
+        if (userRoleMap.get(uid) !== "operations") return; // OT is an ops-only concept
+        const d = doc.data();
+        const key = `${uid}__${d.date || ""}`;
+        if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
+        groups.get(key).events.push(d);
+      });
+
+      // Also surface ops days that only carry an admin OT decision this month
+      // (e.g. a manual OT grant for a missed-punch day — no post-shift event).
+      otDecisionMap.forEach((_v, key) => {
+        const sep = key.lastIndexOf("__");
+        const uid = key.slice(0, sep), date = key.slice(sep + 2);
+        if (userRoleMap.get(uid) !== "operations") return;
+        if (date < monthStart || date > today) return;
+        if (!groups.has(key)) groups.set(key, { uid, date, events: [] });
+      });
+
+      const rows = [];
+      groups.forEach((group, key) => {
+        const { uid, date } = group;
+
+        // Effective worked window: a regularized-to-Present override wins;
+        // otherwise first site/market arrival … last site/market departure.
+        const override = otOverrideMap.get(key);
+        let inMin = null, outMin = null, inEv = null, outEv = null;
+        if (override) {
+          inMin = override.inMin; outMin = override.outMin;
+        } else if (group.events.length) {
+          const ins  = group.events.filter((e) => OPS_IN_TYPES.has(e.type));
+          const outs = group.events.filter((e) => OPS_OUT_TYPES.has(e.type));
+          if (ins.length && outs.length) {
+            inEv  = ins.reduce((a, b) => ((a.timestamp?.seconds || 0) <= (b.timestamp?.seconds || 0) ? a : b));
+            outEv = outs.reduce((a, b) => ((a.timestamp?.seconds || 0) >= (b.timestamp?.seconds || 0) ? a : b));
+            const im = getHourIST(inEv.timestamp) * 60 + getMinuteIST(inEv.timestamp);
+            const om = getHourIST(outEv.timestamp) * 60 + getMinuteIST(outEv.timestamp);
+            if (om > im) { inMin = im; outMin = om; }
+          }
+        }
+
+        const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+        let led = { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false };
+        if (inMin != null && outMin != null) {
+          const plan = plannedMap.get(key);
+          led = computeDayLedger({
+            shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
+            shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
+            inMin, outMin,
+            declaredOtMins: plan ? plan.declared : 0,
+            isRestDay: restDay,
+            otAuthorized: otAuthSet.has(key),
+          });
+        }
+
+        // OVER TIME = actual overtime the portal detects (raw, before approval):
+        //   normal day → minutes past shift end; rest day → every worked minute.
+        // TIME APPROVED = the credited slice: auto-approved (declared) + authorized
+        //   rest-day + whatever the admin granted (approvalMap / manual).
+        let rawOtMins = 0, approvedOtMins = 0;
+        if (inMin != null && outMin != null) {
+          if (restDay) {
+            rawOtMins = Math.max(0, outMin - inMin);
+            approvedOtMins = led.restDayOtMins;
+          } else {
+            rawOtMins = led.autoOtMins + led.pendingExtraMins;
+            approvedOtMins = led.autoOtMins;
+          }
+        }
+        approvedOtMins += (approvalMap.get(key) || 0);
+
+        const decision = otDecisionMap.get(key);
+        // Is this day an OT "exception"? Left after shift end, worked a rest day,
+        // or an admin recorded an OT decision for it.
+        if (rawOtMins <= 0 && !decision) return;
+
+        // Status: an explicit admin decision wins; else auto-approved when credited
+        // > 0 (declared/authorized), otherwise still awaiting review.
+        let statusLabel;
+        if (decision && decision.status === "approved") statusLabel = "APPROVED";
+        else if (decision && decision.status === "rejected") statusLabel = "NOT APPROVED";
+        else if (approvedOtMins > 0) statusLabel = "APPROVED";
+        else statusLabel = "Pending";
+
+        const preLoginTime = inEv ? timeIST(inEv.timestamp)
+          : (inMin != null ? minToHHMM(inMin) : "");
+        const preLoginSite = inEv ? (inEv.siteName || "") : "";
+        const postLogoutTime = outEv ? timeIST(outEv.timestamp)
+          : (outMin != null ? minToHHMM(outMin) : "");
+        const postLogoutSite = outEv ? (outEv.siteName || "") : "";
+
+        rows.push([
+          date,
+          userNameMap.get(uid) ?? "",
+          userEmpIdMap.get(uid) ?? "",
+          preLoginTime, preLoginSite,
+          postLogoutTime, postLogoutSite,
+          minToHHMM(rawOtMins),            // OVER TIME — actual overtime detected
+          minToHHMM(approvedOtMins),       // TIME APPROVED — what the admin approved
+          statusLabel,
+          decision ? decision.reason : "",
+          decision ? decision.approvedBy : "",
+          "",                              // Remarks
+        ]);
+      });
+      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION, [header, ...rows]);
+      console.log(`OT Exception Report: ${rows.length} rows`);
     }
 
     // ── 2. MT Requests ────────────────────────────────────────────────
