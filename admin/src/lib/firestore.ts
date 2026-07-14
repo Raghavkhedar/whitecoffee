@@ -61,11 +61,17 @@ export async function deleteUserProfile(uid: string) {
   await deleteDoc(doc(db, 'users', uid));
 }
 
-// Offboard / reactivate. The client SDK can't disable another user's Auth account, so this
+// Suspend / reactivate. The client SDK can't disable another user's Auth account, so this
 // goes through the Admin-SDK Cloud Function, which sets `disabled` in Auth AND `active` on the
-// user doc. Data is never deleted — attendance/salary history is retained.
-export async function setUserActive(uid: string, active: boolean) {
-  await httpsCallable(functions, 'setUserActive')({ uid, active });
+// user doc. Data is never deleted — attendance/salary history is retained. Suspending requires
+// a reason (opts.reason) and may carry an optional expected-return date; the function records
+// who/when server-side and appends to suspensionHistory.
+export async function setUserActive(
+  uid: string,
+  active: boolean,
+  opts?: { reason?: string; expectedReturn?: string | null },
+) {
+  await httpsCallable(functions, 'setUserActive')({ uid, active, ...opts });
 }
 
 // Admin sets a new password directly (synthetic-email users can't receive reset links).

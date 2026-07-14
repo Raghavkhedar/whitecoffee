@@ -1,11 +1,28 @@
 import { Timestamp } from 'firebase/firestore';
 
+/** One entry in a user's suspension history log (see User.suspensionHistory). */
+export interface SuspensionEvent {
+  action: 'suspend' | 'reactivate';
+  reason?: string;         // present on suspend
+  by: string;              // acting admin's name (server-resolved)
+  at: Timestamp;           // server-clock time of the action
+  expectedReturn?: string; // present on suspend when an expected-return date was set
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;          // login email — SYNTHETIC (‹empId›@whitecoffee.internal) for new hires, real email for legacy users
   contactEmail?: string;  // real email/phone for notifications only — NOT a login credential
-  active?: boolean;       // false = offboarded (login disabled). MISSING must be treated as active.
+  active?: boolean;       // false = suspended (login disabled). MISSING must be treated as active.
+  /** Suspension metadata — present only while suspended (active===false), cleared on reactivate.
+   *  Set server-side by the setUserActive Cloud Function; see docs/superpowers/specs. */
+  suspendedReason?: string;   // required free-text reason captured on suspend
+  suspendedBy?: string;       // acting admin's name (server-resolved)
+  suspendedAt?: Timestamp;    // when suspended (server clock)
+  expectedReturn?: string | null; // "YYYY-MM-DD", optional/informational — no auto-reactivation
+  /** Append-only log of every suspend/reactivate action on this employee, oldest first. */
+  suspensionHistory?: SuspensionEvent[];
   role: 'operations' | 'office' | 'admin';
   /** Explicit portal tab paths this non-admin user may access; ignored for role==='admin'
    *  (superuser). Managed on /access. See src/lib/portalAccess.ts */
