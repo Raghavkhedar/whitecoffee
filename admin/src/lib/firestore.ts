@@ -552,8 +552,9 @@ export async function setConveyanceConfig(rate1: number, rate2: number): Promise
 // ── Site ID entry ────────────────────────────────────────────────────────
 // Ops type the site name at check-in but leave Site ID + Visit Type + Work Done
 // blank. Admin fills all three directly onto each individual attendance entry from
-// the portal. (Firestore rules allow admins/attendance-managers to change only
-// these three keys — the rest of the event stays immutable.)
+// the portal. (Firestore rules allow admins — and managers holding the Attendance or
+// Manpower Utilisation Input tab — to change only these three keys; the rest of the
+// event stays immutable.)
 export async function updateAttendanceSiteId(
   userId: string, eventId: string, siteId: string, visitType: string, workDoneCategories: string[],
 ): Promise<void> {
