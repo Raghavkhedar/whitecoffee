@@ -10,7 +10,7 @@ import { db, functions } from './firebase';
 import { istTodayStr } from './date';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -251,6 +251,58 @@ export async function getAttendanceForDate(date: string): Promise<AttendanceReco
       const tb = (b.timestamp as unknown as { seconds: number })?.seconds ?? 0;
       return ta - tb;
     });
+}
+
+// Same-day punch correction (Daily Activity page, admin-only). Rewinds one employee's
+// timeline to `keepEventId`: hard-deletes every punch recorded AFTER it and snapshots
+// those punches verbatim into users/{uid}/attendance_corrections/{autoId} with the
+// admin, reason, and kept event. One atomic batch. Re-reads today's events inside the
+// call so a stale client list can't delete the wrong punches. Returns the removed count.
+//
+// Callers MUST restrict this to the current IST day and enforce a non-empty reason;
+// past-day corrections belong to the Regularization flow.
+export async function restoreAttendanceToEvent(
+  uid: string,
+  date: string,
+  keepEventId: string,
+  reason: string,
+  adminName: string,
+  adminUid: string,
+): Promise<number> {
+  // Authoritative re-read of this employee's punches for the date, oldest first.
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'attendance'), where('date', '==', date)),
+  );
+  const events = snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AttendanceRecord))
+    .sort((a, b) => {
+      const ta = (a.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+      const tb = (b.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+      return ta - tb;
+    });
+
+  const keepIdx = events.findIndex(e => e.id === keepEventId);
+  if (keepIdx === -1) throw new Error('The punch to restore to no longer exists — reload and try again.');
+
+  const removed = events.slice(keepIdx + 1);
+  if (removed.length === 0) return 0; // already the last punch — nothing to undo
+
+  const batch = writeBatch(db);
+  removed.forEach(e => batch.delete(doc(db, 'users', uid, 'attendance', e.id)));
+
+  const logRef = doc(collection(db, 'users', uid, 'attendance_corrections'));
+  batch.set(logRef, {
+    date,
+    removedEvents: removed,
+    reason,
+    correctedBy: adminName,
+    correctedByUid: adminUid,
+    correctedAt: Timestamp.now(),
+    keptEventId: keepEventId,
+  } satisfies Omit<AttendanceCorrection, 'id'>);
+
+  await batch.commit();
+  return removed.length;
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────

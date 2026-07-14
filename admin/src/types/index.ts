@@ -215,6 +215,21 @@ export interface AttendanceRecord {
   autoLogout?: boolean;
 }
 
+// Audit record of an admin same-day punch correction (Daily Activity page). When an
+// admin rewinds an employee's timeline to a chosen punch, the trailing punches are
+// hard-deleted from users/{uid}/attendance and snapshotted here verbatim, so nothing
+// is lost. Immutable log — created only, never updated. See restoreAttendanceToEvent.
+export interface AttendanceCorrection {
+  id: string;
+  date: string;                     // IST day the correction applies to
+  removedEvents: AttendanceRecord[]; // full payloads of the deleted punches
+  reason: string;                   // mandatory admin reason
+  correctedBy: string;              // admin display name
+  correctedByUid: string;           // admin uid
+  correctedAt?: Timestamp;
+  keptEventId: string;              // the event that became the new last punch
+}
+
 export interface SentNotification {
   id: string;
   title: string;

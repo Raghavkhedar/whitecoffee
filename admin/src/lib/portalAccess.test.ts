@@ -59,8 +59,8 @@ eq('still cannot access /users', canAccess(strayAcc, '/users'), false);
 eq('still cannot access /access', canAccess(strayAcc, '/access'), false);
 
 console.log('Config integrity:');
-eq('exactly 3 admin-only tabs', TABS.filter(t => t.adminOnly).map(t => t.path),
-  ['/dashboard', '/users', '/access']);
+eq('exactly 4 admin-only tabs', TABS.filter(t => t.adminOnly).map(t => t.path),
+  ['/dashboard', '/users', '/access', '/daily-activity']);
 eq('10 grantable tabs', GRANTABLE.length, 10);
 
 console.log(`\n${passed} passed, ${failed} failed`);

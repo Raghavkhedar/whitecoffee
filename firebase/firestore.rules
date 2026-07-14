@@ -154,7 +154,18 @@ service cloud.firestore {
         // Utilisation Input page (updateAttendanceSiteId). Restricting to these keeps the
         // event otherwise tamper-proof (timestamp/location/type stay immutable).
         allow update: if isLoggedIn() && (isAdmin() || canWriteAttendance()) && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
-        allow delete: if false;
+        // Admin-only same-day punch correction (Daily Activity page): an admin rewinds a
+        // timeline by deleting erroneous trailing punches. Every deletion is snapshotted
+        // into attendance_corrections below, so nothing is lost. Non-admins never delete.
+        allow delete: if isLoggedIn() && isAdmin();
+      }
+
+      // ── /attendance_corrections/{docId} ───────────────────────────────
+      // Immutable audit log of admin punch corrections (see restoreAttendanceToEvent):
+      // full snapshots of deleted punches + who/why. Admin-only; create + read only.
+      match /attendance_corrections/{docId} {
+        allow read, create: if isLoggedIn() && isAdmin();
+        allow update, delete: if false;
       }
 
       // ── /material_requests/{docId} ────────────────────────────────────
