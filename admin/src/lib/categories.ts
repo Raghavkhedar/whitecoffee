@@ -12,8 +12,8 @@ export type EmployeeCategory = typeof EMPLOYEE_CATEGORIES[number];
 export const EMPLOYEE_CATEGORY_SET: ReadonlySet<string> = new Set(EMPLOYEE_CATEGORIES);
 
 // Work-done trade categories — multi-select, admin-assigned per site attendance
-// event on the Site IDs page and stored on the attendance doc as
-// workDoneCategories (string[]). 'NA' is exclusive (see the Site IDs page).
+// event on the Manpower Utilisation Input page and stored on the attendance doc as
+// workDoneCategories (string[]). 'NA' is exclusive (see the Manpower Utilisation Input page).
 export const WORK_DONE_CATEGORIES = [
   'Helper', 'Mech', 'Elec', 'Civil', 'Welder', 'NA',
 ] as const;

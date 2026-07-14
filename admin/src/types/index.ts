@@ -188,11 +188,11 @@ export interface AttendanceRecord {
   latitude: number;
   longitude: number;
   siteId: string;
-  /** Admin-entered free-text visit type for this site event (filled on the Site IDs page,
-   *  alongside siteId). Empty until an admin sets it. */
+  /** Admin-entered free-text visit type for this site event (filled on the Manpower
+   *  Utilisation Input page, alongside siteId). Empty until an admin sets it. */
   visitType?: string;
   /** Admin-selected work-done trade categories for this site event (multi-select, from
-   *  WORK_DONE_CATEGORIES; 'NA' is exclusive). Filled on the Site IDs page. */
+   *  WORK_DONE_CATEGORIES; 'NA' is exclusive). Filled on the Manpower Utilisation Input page. */
   workDoneCategories?: string[];
   siteName: string;
   marketName: string;

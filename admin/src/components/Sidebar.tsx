@@ -53,6 +53,7 @@ export default function Sidebar() {
         <div className="leading-tight">
           <div className="text-[14.5px] font-semibold text-white tracking-tight">WhiteCoffee</div>
           <div className="text-[11px] text-[#8A93A0] mt-0.5">Admin Portal</div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6B7480] mt-0.5">S.A.O</div>
         </div>
       </div>
 

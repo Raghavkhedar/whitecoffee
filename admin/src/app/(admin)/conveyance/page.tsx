@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getConveyanceForMonth } from '@/lib/firestore';
+import { getConveyanceForMonth, getConveyanceConfig, setConveyanceConfig } from '@/lib/firestore';
 import type { ConveyanceRecord } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadExcel } from '@/lib/excel';
@@ -14,6 +14,35 @@ export default function ConveyancePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
   const [employeeFilter, setEmployeeFilter] = useState('');
+
+  const [rate1, setRate1]           = useState('');
+  const [rate2, setRate2]           = useState('');
+  const [ratesLoading, setRatesLoading] = useState(true);
+  const [ratesSaving, setRatesSaving]   = useState(false);
+  const [ratesMsg, setRatesMsg]     = useState('');
+
+  useEffect(() => {
+    getConveyanceConfig()
+      .then(c => { setRate1(c.rate1 ? String(c.rate1) : ''); setRate2(c.rate2 ? String(c.rate2) : ''); })
+      .catch((err: unknown) => setRatesMsg(err instanceof Error ? err.message : String(err)))
+      .finally(() => setRatesLoading(false));
+  }, []);
+
+  async function saveRates() {
+    setRatesMsg('');
+    const r1 = parseFloat(rate1) || 0;
+    const r2 = parseFloat(rate2) || 0;
+    if (r1 <= 0 && r2 <= 0) { setRatesMsg('Enter at least one rate.'); return; }
+    setRatesSaving(true);
+    try {
+      await setConveyanceConfig(r1, r2);
+      setRatesMsg('Saved');
+      setTimeout(() => setRatesMsg(''), 2000);
+    } catch (err: unknown) {
+      setRatesMsg(err instanceof Error ? err.message : 'Failed to save.');
+    }
+    setRatesSaving(false);
+  }
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -77,6 +106,29 @@ export default function ConveyancePage() {
 
   return (
     <div>
+      {/* Conveyance rates */}
+      <div className="card mb-6">
+        <h2 className="font-bold text-text-primary mb-4">Conveyance Rates</h2>
+        {ratesLoading ? (
+          <div className="text-text-secondary text-sm">Loading…</div>
+        ) : (
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="label">Public Transport (₹/km)</label>
+              <input className="input" type="number" step="any" min="0" value={rate1} onChange={e => setRate1(e.target.value)} placeholder="e.g. 2.5" />
+            </div>
+            <div>
+              <label className="label">Personal Vechicle (₹/km)</label>
+              <input className="input" type="number" step="any" min="0" value={rate2} onChange={e => setRate2(e.target.value)} placeholder="e.g. 4.0" />
+            </div>
+            <div className="flex items-center gap-3">
+              <button className="btn-primary" onClick={saveRates} disabled={ratesSaving}>{ratesSaving ? 'Saving…' : 'Save Rates'}</button>
+              {ratesMsg && <span className={`text-sm ${ratesMsg === 'Saved' ? 'text-[#0A7A50]' : 'text-red-500'}`}>{ratesMsg}</span>}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Month picker + employee filter */}
       <div className="card mb-6">
         <div className="flex items-center justify-between">

@@ -22,13 +22,13 @@ export interface TabDef {
 export const TABS: TabDef[] = [
   { path: '/dashboard',          label: 'Dashboard',      icon: 'grid' },
   { path: '/users',              label: 'Employees',      icon: 'users',      group: 'People' },
-  { path: '/employee-dashboard', label: 'Emp Dashboard',  icon: 'userCircle', group: 'People' },
+  { path: '/working-hours-shortage-excess', label: 'Working Hours-Shortage/Excess',  icon: 'userCircle', group: 'People' },
   { path: '/leaves',             label: 'Leave Requests', icon: 'leave',      group: 'People', badgeKey: 'pending' },
   { path: '/regularization',     label: 'Regularization', icon: 'clock',      group: 'People' },
   { path: '/attendance',         label: 'Attendance',     icon: 'calendar',   group: 'Time & Sites' },
   { path: '/ot-shortage',        label: 'OT & Shortage',  icon: 'clock',      group: 'Time & Sites' },
-  { path: '/settlements',        label: 'Settlements',    icon: 'doc',        group: 'Time & Sites' },
-  { path: '/site-ids',           label: 'Site IDs',       icon: 'pin',        group: 'Time & Sites' },
+  { path: '/ot-settlements',     label: 'OT Settlements', icon: 'doc',        group: 'Time & Sites' },
+  { path: '/manpower-utilisation-input', label: 'Manpower Utilisation Input', icon: 'pin', group: 'Time & Sites' },
   { path: '/submissions',        label: 'Submissions',    icon: 'doc',        group: 'Records' },
   { path: '/conveyance',         label: 'Conveyance',     icon: 'car',        group: 'Records' },
   { path: '/notifications',      label: 'Notifications',  icon: 'bell',       group: 'Records' },
@@ -36,7 +36,7 @@ export const TABS: TabDef[] = [
 
 // Preset tag → allowed tab paths. Adding a new preset = one entry here (+ a label).
 export const TAG_TABS: Record<string, string[]> = {
-  'attendance-manager': ['/employee-dashboard', '/attendance', '/ot-shortage', '/settlements', '/site-ids'],
+  'attendance-manager': ['/working-hours-shortage-excess', '/attendance', '/ot-shortage', '/ot-settlements', '/manpower-utilisation-input'],
 };
 
 // Human-readable names for the /users assignment UI.

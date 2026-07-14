@@ -17,7 +17,7 @@ import { LAUNCH_DATE } from '@/lib/config';
 type Preset = 'custom' | '1d' | '7d' | '15d' | '30d' | '90d' | '180d' | '365d';
 
 const PRESETS: { key: Preset; label: string; days: number | null }[] = [
-  { key: 'custom', label: 'Custom Date', days: null },
+  { key: 'custom', label: 'Custom Range', days: null },
   { key: '1d',    label: 'Today',        days: 1   },
   { key: '7d',    label: 'Last 7 Days',  days: 7   },
   { key: '15d',   label: 'Last 15 Days', days: 15  },
@@ -35,8 +35,10 @@ function nDaysAgo(n: number): string {
   return istDaysAgoStr(n);
 }
 
-function dateRangeFromPreset(preset: Preset, customDate: string): { start: string; end: string } {
-  if (preset === 'custom') return { start: customDate, end: customDate };
+function dateRangeFromPreset(preset: Preset, customStart: string, customEnd: string): { start: string; end: string } {
+  if (preset === 'custom') {
+    return customStart <= customEnd ? { start: customStart, end: customEnd } : { start: customEnd, end: customStart };
+  }
   const p = PRESETS.find(p => p.key === preset)!;
   return { start: nDaysAgo(p.days!), end: todayStr() };
 }
@@ -116,6 +118,7 @@ interface EmployeeRow {
   workingMins: number | null;  // null = no plan (ops only)
   actualMins: number | null;   // null = no events
   shortageMins: number;        // sum of per-day shortfalls (only days worked with a known plan)
+  rawExcessMins: number;       // sum of per-day time worked past shift end, regardless of approval status
   pendingOt: DayOt[];          // OT days in range not yet approved
   pendingOtMins: number;
   autoOtRangeMins: number;     // pre-authorized (declared) OT worked in range — counts as approved
@@ -170,6 +173,7 @@ function aggregateForEmployee(
   let totalActualMins = 0;
   let hasAnyActual = false;
   let shortageMins = 0;
+  let rawExcessMins = 0;
   let autoOtRangeMins = 0;
   let restDayOtRangeMins = 0;
   const otDays: DayOt[] = [];
@@ -203,6 +207,9 @@ function aggregateForEmployee(
       shortageMins    += led.shortageMins;
       autoOtRangeMins += led.autoOtMins;
       restDayOtRangeMins += led.restDayOtMins;
+      // Raw excess = actual time worked past the decided shift end, regardless of approval status.
+      // On a rest day there's no decided shift, so any time worked at all counts as excess.
+      rawExcessMins += restDay ? Math.max(0, outMin - inMin) : Math.max(0, outMin - shiftEndMin);
       if (led.pendingExtraMins > 0) {
         otDays.push({ date, plannedMins: plannedDay, declaredOtMins: declaredDay, actualMins: dayMins, autoOtMins: led.autoOtMins, pendingExtraMins: led.pendingExtraMins });
       }
@@ -210,6 +217,7 @@ function aggregateForEmployee(
       // Office/admin: shortage only, edge-based vs the fixed 10:00–18:00 window (early in never
       // offsets early out); no OT, no rest-day, no holidays.
       shortageMins += Math.max(0, inMin - shiftStartMin) + Math.max(0, shiftEndMin - outMin);
+      rawExcessMins += Math.max(0, outMin - shiftEndMin);
     }
   };
 
@@ -257,6 +265,7 @@ function aggregateForEmployee(
     workingMins,
     actualMins: hasAnyActual ? totalActualMins : null,
     shortageMins,
+    rawExcessMins,
     pendingOt,
     pendingOtMins,
     autoOtRangeMins,
@@ -408,7 +417,8 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 
 export default function EmployeeDashboardPage() {
   const [preset, setPreset]           = useState<Preset>('1d');
-  const [customDate, setCustomDate]   = useState(todayStr());
+  const [customStart, setCustomStart] = useState(todayStr());
+  const [customEnd, setCustomEnd]     = useState(todayStr());
   const [users, setUsers]             = useState<User[]>([]);
   const [events, setEvents]           = useState<AttendanceRecord[]>([]);
   const [planned, setPlanned]         = useState<PlannedHours[]>([]);
@@ -423,8 +433,8 @@ export default function EmployeeDashboardPage() {
   const [otModalUserId, setOtModalUserId] = useState<string | null>(null);
 
   const { start, end } = useMemo(
-    () => dateRangeFromPreset(preset, customDate),
-    [preset, customDate],
+    () => dateRangeFromPreset(preset, customStart, customEnd),
+    [preset, customStart, customEnd],
   );
 
   const isSingleDay = start === end;
@@ -530,12 +540,20 @@ export default function EmployeeDashboardPage() {
 
         {preset === 'custom' && (
           <div className="flex items-center gap-2 pt-3 border-t border-border">
-            <label className="text-sm text-text-secondary whitespace-nowrap">Pick date:</label>
+            <label className="text-sm text-text-secondary whitespace-nowrap">From:</label>
             <input
               type="date"
-              value={customDate}
+              value={customStart}
               max={todayStr()}
-              onChange={e => setCustomDate(e.target.value)}
+              onChange={e => setCustomStart(e.target.value)}
+              className="input text-sm !py-1.5"
+            />
+            <label className="text-sm text-text-secondary whitespace-nowrap">To:</label>
+            <input
+              type="date"
+              value={customEnd}
+              max={todayStr()}
+              onChange={e => setCustomEnd(e.target.value)}
               className="input text-sm !py-1.5"
             />
           </div>
@@ -586,13 +604,12 @@ export default function EmployeeDashboardPage() {
                   <th className="text-left text-[11px] font-semibold tracking-[0.05em] uppercase text-[#A8A29E] px-[14px] py-3 bg-[#FCFBFA] border-b border-[#F0EEEB]">Actual</th>
                   {isSingleDay && <th className="text-left text-[11px] font-semibold tracking-[0.05em] uppercase text-[#A8A29E] px-[14px] py-3 bg-[#FCFBFA] border-b border-[#F0EEEB]">Check-in / Out</th>}
                   <th className="text-left text-[11px] font-semibold tracking-[0.05em] uppercase text-[#A8A29E] px-[14px] py-3 bg-[#FCFBFA] border-b border-[#F0EEEB]">Shortage</th>
-                  <th className="text-left text-[11px] font-semibold tracking-[0.05em] uppercase text-[#A8A29E] px-[14px] py-3 bg-[#FCFBFA] border-b border-[#F0EEEB] pr-[18px]">Overtime</th>
+                  <th className="text-left text-[11px] font-semibold tracking-[0.05em] uppercase text-[#A8A29E] px-[14px] py-3 bg-[#FCFBFA] border-b border-[#F0EEEB] pr-[18px]">Excess</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => {
-                  const { user, workingMins, actualMins, shortageMins, pendingOt, pendingOtMins, approvedOtRangeMins, autoOtRangeMins, restDayOtRangeMins, firstInSecs, lastOutSecs } = r;
-                  const totalApprovedOt = approvedOtRangeMins + autoOtRangeMins + restDayOtRangeMins;
+                  const { user, workingMins, actualMins, shortageMins, rawExcessMins, pendingOtMins, firstInSecs, lastOutSecs } = r;
                   return (
                     <tr key={user.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
                       <td className="px-[14px] py-3 pl-[18px] font-medium text-text-primary whitespace-nowrap">{user.name}</td>
@@ -640,15 +657,14 @@ export default function EmployeeDashboardPage() {
                         )}
                       </td>
                       <td className="px-[14px] py-3 pr-[18px] text-xs whitespace-nowrap">
-                        {pendingOtMins > 0 ? (
+                        {rawExcessMins > 0 ? (
                           <button onClick={() => setOtModalUserId(user.id)}
-                            className="inline-flex items-center gap-1.5 bg-[#FDF3E4] text-[#B26B07] hover:bg-[#FBEAD0] px-2.5 py-1 rounded-[7px] font-semibold transition-colors">
-                            Review +{minutesToDisplay(pendingOtMins)} · {pendingOt.length}d
-                          </button>
-                        ) : totalApprovedOt > 0 ? (
-                          <button onClick={() => setOtModalUserId(user.id)}
-                            className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded font-mono hover:bg-[#D8F0E4] transition-colors">
-                            +{minutesToDisplay(totalApprovedOt)}
+                            className={`px-2 py-0.5 rounded font-mono transition-colors ${
+                              pendingOtMins > 0
+                                ? 'bg-[#FDF3E4] text-[#B26B07] hover:bg-[#FBEAD0] font-semibold'
+                                : 'bg-[#EAF7F0] text-[#0A7A50] hover:bg-[#D8F0E4]'
+                            }`}>
+                            +{minutesToDisplay(rawExcessMins)}
                           </button>
                         ) : (
                           <span className="text-text-secondary/60">—</span>

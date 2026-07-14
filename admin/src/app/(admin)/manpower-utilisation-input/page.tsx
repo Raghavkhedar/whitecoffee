@@ -98,7 +98,7 @@ export default function SiteIdsPage() {
   });
 
   function exportXlsx() {
-    downloadSheet(`site_ids_${date}`, 'Site IDs', siteEntries.map(e => ({
+    downloadSheet(`manpower_utilisation_input_${date}`, 'Manpower Utilisation Input', siteEntries.map(e => ({
       Date: date,
       Employee: userNameMap.get(e.userId) || e.userName || '',
       'Emp ID': userEmpIdMap.get(e.userId) || e.employeeId || '',

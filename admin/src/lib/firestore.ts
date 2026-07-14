@@ -581,8 +581,12 @@ export async function getDashboardStats() {
     getDocs(collectionGroup(db, 'leave_requests')),
     getDocs(collectionGroup(db, 'attendance')),
   ]);
+  const activeEmployees = usersSnap.docs.filter(d => {
+    const u = d.data();
+    return u.role !== 'admin' && u.active !== false;
+  });
   return {
-    totalUsers:    usersSnap.size,
+    totalUsers:    activeEmployees.length,
     totalSites:    sitesSnap.size,
     pendingLeaves: leavesSnap.docs.filter(d => d.data().status === 'pending').length,
     todayCheckIns: attendanceSnap.docs.filter(d => d.data().date === today && d.data().type?.endsWith('_in')).length,
