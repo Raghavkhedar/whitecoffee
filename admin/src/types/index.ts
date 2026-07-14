@@ -7,10 +7,9 @@ export interface User {
   contactEmail?: string;  // real email/phone for notifications only — NOT a login credential
   active?: boolean;       // false = offboarded (login disabled). MISSING must be treated as active.
   role: 'operations' | 'office' | 'admin';
-  /** Portal access preset tags (e.g. 'attendance-manager'). Grant scoped admin-portal
-   *  tab access to non-admin staff; ignored for role==='admin' (superuser). See
-   *  src/lib/portalAccess.ts for the tag→tabs map. */
-  tags?: string[];
+  /** Explicit portal tab paths this non-admin user may access; ignored for role==='admin'
+   *  (superuser). Managed on /access. See src/lib/portalAccess.ts */
+  tabAccess?: string[];
   /** Operations-role category codes (e.g. 'A1', 'E2', 'W') — multi-select, admin-assigned
    *  on the Users page. Meaningful only for role==='operations'. See src/lib/categories.ts. */
   categories?: string[];
