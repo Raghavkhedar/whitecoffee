@@ -550,10 +550,18 @@ export async function setConveyanceConfig(rate1: number, rate2: number): Promise
 }
 
 // ── Site ID entry ────────────────────────────────────────────────────────
-// Ops type the site name at check-in but leave Site ID blank. Admin fills the
-// Site ID directly onto each individual attendance entry from the portal.
-export async function updateAttendanceSiteId(userId: string, eventId: string, siteId: string): Promise<void> {
-  await updateDoc(doc(db, 'users', userId, 'attendance', eventId), { siteId: siteId.trim() });
+// Ops type the site name at check-in but leave Site ID + Visit Type + Work Done
+// blank. Admin fills all three directly onto each individual attendance entry from
+// the portal. (Firestore rules allow admins/attendance-managers to change only
+// these three keys — the rest of the event stays immutable.)
+export async function updateAttendanceSiteId(
+  userId: string, eventId: string, siteId: string, visitType: string, workDoneCategories: string[],
+): Promise<void> {
+  await updateDoc(doc(db, 'users', userId, 'attendance', eventId), {
+    siteId: siteId.trim(),
+    visitType: visitType.trim(),
+    workDoneCategories,
+  });
 }
 
 // ── Conveyance Records ──────────────────────────────────────────────────
@@ -573,8 +581,12 @@ export async function getDashboardStats() {
     getDocs(collectionGroup(db, 'leave_requests')),
     getDocs(collectionGroup(db, 'attendance')),
   ]);
+  const activeEmployees = usersSnap.docs.filter(d => {
+    const u = d.data();
+    return u.role !== 'admin' && u.active !== false;
+  });
   return {
-    totalUsers:    usersSnap.size,
+    totalUsers:    activeEmployees.length,
     totalSites:    sitesSnap.size,
     pendingLeaves: leavesSnap.docs.filter(d => d.data().status === 'pending').length,
     todayCheckIns: attendanceSnap.docs.filter(d => d.data().date === today && d.data().type?.endsWith('_in')).length,

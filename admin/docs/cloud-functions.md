@@ -153,7 +153,7 @@ Authenticates to Google Sheets with the service-account JSON and rebuilds 9 tabs
    - **Salary Due** = `daysNP × salaryRate`.
    - **Imprest is preserved** across runs: the existing sheet is read first and the Imprest column is matched **by header name** (survives layout changes), keyed by EMP ID.
    - **Covy Due** = monthly conveyance total (operations only).
-   - **Prior Settlement** = the **previous month's locked** OT/shortage/WO `settlementCash`, read per user from `users/{uid}/settlements/{prevMonth}` (only when `locked`). OT is paid **in arrears** — June's settlement appears in July's export once June is locked on the portal Settlements page. `settlementCash = woDays×rate + netMins/480×rate`.
+   - **Prior Settlement** = the **previous month's locked** OT/shortage/WO `settlementCash`, read per user from `users/{uid}/settlements/{prevMonth}` (only when `locked`). OT is paid **in arrears** — June's settlement appears in July's export once June is locked on the portal OT Settlements page. `settlementCash = woDays×rate + netMins/480×rate`.
    - **TOTAL DUE** = `salaryDue + covy + imprest + priorSettlement`.
 
 ### Failure modes

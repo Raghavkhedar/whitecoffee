@@ -6,13 +6,14 @@ import Icon from './Icon';
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   '/dashboard':           { title: 'Dashboard',          subtitle: 'Live overview of your team today' },
-  '/employee-dashboard':  { title: 'Employee Dashboard',  subtitle: 'Expected vs actual working hours' },
+  '/working-hours-shortage-excess':  { title: 'Working Hours-Shortage/Excess',  subtitle: 'Expected vs actual working hours' },
   '/users':               { title: 'Employees',           subtitle: 'Manage roles, salary rates and leave balances' },
   '/leaves':              { title: 'Leave Requests',      subtitle: 'Review and approve time-off requests' },
   '/regularization':      { title: 'Regularization',      subtitle: 'Review attendance correction requests' },
   '/attendance':          { title: 'Attendance',          subtitle: 'Daily status & planned shifts' },
   '/ot-shortage':         { title: 'OT & Shortage',       subtitle: 'Review overtime and track shortage for operations' },
-  '/site-ids':            { title: 'Site IDs',            subtitle: 'Assign site codes to operations check-ins' },
+  '/ot-settlements':      { title: 'OT Settlements',      subtitle: 'Settle & lock monthly OT/shortage/WO into payroll' },
+  '/manpower-utilisation-input': { title: 'Manpower Utilisation Input', subtitle: 'Assign site codes to operations check-ins' },
   '/conveyance':          { title: 'Conveyance',          subtitle: 'Monthly travel reimbursements' },
   '/submissions':         { title: 'Submissions',         subtitle: 'Material, tools, work progress & conveyance' },
   '/notifications':       { title: 'Notifications',       subtitle: 'Send push alerts to your team' },

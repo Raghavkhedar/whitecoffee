@@ -13,6 +13,10 @@ const {
   classifyOffMinutes,
   resolveOpsWindow,
 } = require("./attendanceRules");
+// Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
+const { buildManpowerVisits } = require("./manpowerVisits");
+// Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
+const { bannerFor, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab } = require("./dashboardHistory");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -51,6 +55,10 @@ const SHEET_ID_5 = "1Hy4GJ57Cn-uln7k3xXtJxI6Ka_VofDbJz1XYGqs2qGY";
 const SHEET_ID_6 = "1Ar1d7kNwgOB5w6MSGX40MAXorR9dpzr3oN72Wa-JQE4";
 // Sheet7: Work Progress
 const SHEET_ID_7 = "1c2JtarmbteClXaADF666WYEGNmx4CozM7EKo7bcteKE";
+// Sheet8: Overtime Exception Report (ops OT days, current month)
+const SHEET_ID_OT = "1DNJKQfvm238ZmULF7ScJAXRtxzzjYjk87jV4QMR2VjA";
+// Sheet9: Site Manpower Time Utilisation (ops per-site visits, current month)
+const SHEET_ID_MANPOWER = "1U66-ldSNMm01f3rnJabJe0BxTUFvDglSX5rAFqXDJZ4";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -67,6 +75,8 @@ const TABS = {
   TOOL_TRANSFERS:     "Tool Transfers",
   WORK_PROGRESS:      "Work Progress",
   LEAVE_REQUESTS:     "Leave Requests",
+  OT_EXCEPTION:       "Overtime Exception Report",
+  MANPOWER:           "Manpower Utilisation",
 };
 
 async function getRoadKm(lat1, lon1, lat2, lon2, apiKey) {
@@ -118,6 +128,14 @@ function hhmmToMin(s) {
   const [h, m] = String(s).split(":").map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
+}
+
+// Minutes → "HH:MM" (e.g. 80 → "01:20", 0 → "00:00"). Used by the OT report for
+// both durations (OVER TIME / TIME APPROVED) and clock times (PRE-LOGIN /
+// POST-LOGOUT fallback when there's no raw event, i.e. a regularized override).
+function minToHHMM(mins) {
+  const n = Math.max(0, Math.round(mins || 0));
+  return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
 }
 
 // Per-day ledger for one ops worked day (both check-in and check-out present).
@@ -403,6 +421,7 @@ exports.exportToSheets = onSchedule(
     const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
     const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));
     const userPlBalMap = new Map(allUsersData.map((u) => [u.id, u.plBalance || 0]));
+    const userCategoriesMap = new Map(allUsersData.map((u) => [u.id, Array.isArray(u.categories) ? u.categories : []]));
 
     // ── userId__date → DailyStatus (for Attendance tab) ───────────────
     const statusSnap = await db.collectionGroup("attendance_status").get();
@@ -441,9 +460,12 @@ exports.exportToSheets = onSchedule(
       if (d.otAuthorized) otAuthSet.add(key);
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
+    const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy } (for the OT Exception Report)
     (await db.collectionGroup("ot_approvals").get()).docs.forEach((doc) => {
       const d = doc.data();
-      approvalMap.set(`${uidOf(doc)}__${d.date || ""}`, Number(d.approvedMins) || 0);
+      const key = `${uidOf(doc)}__${d.date || ""}`;
+      approvalMap.set(key, Number(d.approvedMins) || 0);
+      otDecisionMap.set(key, { status: d.status || "", reason: d.reason || "", approvedBy: d.approvedBy || "" });
     });
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
@@ -591,6 +613,231 @@ exports.exportToSheets = onSchedule(
       const filledRows = rows.map((r) => r.map((cell) => (cell === "" || cell == null) ? "θ" : cell));
       await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...filledRows]);
       console.log(`Attendance: ${rows.length} rows`);
+    }
+
+    // ── 1b. Overtime Exception Report — ops OT days, current month ─────
+    // One row per ops employee per day they worked past shift end (or worked a
+    // rest day, or have an admin OT decision) this month. Mirrors the manual
+    // "OVERTIME EXCEPTION REPORT" sheet. OVER TIME = credited OT as H:MM (0 when
+    // not approved), from the same ledger the admin portal Employee Dashboard uses.
+    {
+      const header = [
+        "DATE", "NAME", "ESN NO", "PRE-LOGIN TIME", "PRE-LOGIN SITE",
+        "POST-LOGOUT TIME", "POST-LOGOUT SITE", "OVER TIME", "TIME APPROVED",
+        "APPROVED/NOT APPROVED/Pending", "Reasons", "APPROVED/REJECTED BY", "Remarks",
+      ];
+
+      // Ops attendance events for the current month, grouped by employee + day.
+      const snap = await db.collectionGroup("attendance")
+        .where("date", ">=", monthStart).where("date", "<=", today).get();
+      const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
+      snap.docs.forEach((doc) => {
+        const uid = uidOf(doc);
+        if (userRoleMap.get(uid) !== "operations") return; // OT is an ops-only concept
+        const d = doc.data();
+        const key = `${uid}__${d.date || ""}`;
+        if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
+        groups.get(key).events.push(d);
+      });
+
+      // Also surface ops days that only carry an admin OT decision this month
+      // (e.g. a manual OT grant for a missed-punch day — no post-shift event).
+      otDecisionMap.forEach((_v, key) => {
+        const sep = key.lastIndexOf("__");
+        const uid = key.slice(0, sep), date = key.slice(sep + 2);
+        if (userRoleMap.get(uid) !== "operations") return;
+        if (date < monthStart || date > today) return;
+        if (!groups.has(key)) groups.set(key, { uid, date, events: [] });
+      });
+
+      const rows = [];
+      groups.forEach((group, key) => {
+        const { uid, date } = group;
+
+        // Effective worked window: a regularized-to-Present override wins;
+        // otherwise first site/market arrival … last site/market departure.
+        const override = otOverrideMap.get(key);
+        let inMin = null, outMin = null, inEv = null, outEv = null;
+        if (override) {
+          inMin = override.inMin; outMin = override.outMin;
+        } else if (group.events.length) {
+          const ins  = group.events.filter((e) => OPS_IN_TYPES.has(e.type));
+          const outs = group.events.filter((e) => OPS_OUT_TYPES.has(e.type));
+          if (ins.length && outs.length) {
+            inEv  = ins.reduce((a, b) => ((a.timestamp?.seconds || 0) <= (b.timestamp?.seconds || 0) ? a : b));
+            outEv = outs.reduce((a, b) => ((a.timestamp?.seconds || 0) >= (b.timestamp?.seconds || 0) ? a : b));
+            const im = getHourIST(inEv.timestamp) * 60 + getMinuteIST(inEv.timestamp);
+            const om = getHourIST(outEv.timestamp) * 60 + getMinuteIST(outEv.timestamp);
+            if (om > im) { inMin = im; outMin = om; }
+          }
+        }
+
+        const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+        let led = { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false };
+        if (inMin != null && outMin != null) {
+          const plan = plannedMap.get(key);
+          led = computeDayLedger({
+            shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
+            shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
+            inMin, outMin,
+            declaredOtMins: plan ? plan.declared : 0,
+            isRestDay: restDay,
+            otAuthorized: otAuthSet.has(key),
+          });
+        }
+
+        // OVER TIME = actual overtime the portal detects (raw, before approval):
+        //   normal day → minutes past shift end; rest day → every worked minute.
+        // TIME APPROVED = the credited slice: auto-approved (declared) + authorized
+        //   rest-day + whatever the admin granted (approvalMap / manual).
+        let rawOtMins = 0, approvedOtMins = 0;
+        if (inMin != null && outMin != null) {
+          if (restDay) {
+            rawOtMins = Math.max(0, outMin - inMin);
+            approvedOtMins = led.restDayOtMins;
+          } else {
+            rawOtMins = led.autoOtMins + led.pendingExtraMins;
+            approvedOtMins = led.autoOtMins;
+          }
+        }
+        approvedOtMins += (approvalMap.get(key) || 0);
+
+        const decision = otDecisionMap.get(key);
+        // Is this day an OT "exception"? Left after shift end, worked a rest day,
+        // or an admin recorded an OT decision for it.
+        if (rawOtMins <= 0 && !decision) return;
+
+        // Status: an explicit admin decision wins; else auto-approved when credited
+        // > 0 (declared/authorized), otherwise still awaiting review.
+        let statusLabel;
+        if (decision && decision.status === "approved") statusLabel = "APPROVED";
+        else if (decision && decision.status === "rejected") statusLabel = "NOT APPROVED";
+        else if (approvedOtMins > 0) statusLabel = "APPROVED";
+        else statusLabel = "Pending";
+
+        const preLoginTime = inEv ? timeIST(inEv.timestamp)
+          : (inMin != null ? minToHHMM(inMin) : "");
+        const preLoginSite = inEv ? (inEv.siteName || "") : "";
+        const postLogoutTime = outEv ? timeIST(outEv.timestamp)
+          : (outMin != null ? minToHHMM(outMin) : "");
+        const postLogoutSite = outEv ? (outEv.siteName || "") : "";
+
+        rows.push([
+          date,
+          userNameMap.get(uid) ?? "",
+          userEmpIdMap.get(uid) ?? "",
+          preLoginTime, preLoginSite,
+          postLogoutTime, postLogoutSite,
+          minToHHMM(rawOtMins),            // OVER TIME — actual overtime detected
+          minToHHMM(approvedOtMins),       // TIME APPROVED — what the admin approved
+          statusLabel,
+          decision ? decision.reason : "",
+          decision ? decision.approvedBy : "",
+          "",                              // Remarks
+        ]);
+      });
+      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION, [header, ...rows]);
+      console.log(`OT Exception Report: ${rows.length} rows`);
+    }
+
+    // ── 1c. Site Manpower Time Utilisation — ops per-site visits, current month ──
+    // One row per ops site_in→site_out visit this month, written to its own
+    // spreadsheet (SHEET_ID_MANPOWER). Reproduces the client's manual "SITE MANPOWER
+    // TIME UTILISATION REPORT" (Aug-2024 format). work-done-time = time on site ÷ 8h
+    // (may exceed 1). Remarks carries the day's CREDITED OT (H:MM) on the visit with
+    // the latest departure. Pairing/fraction is the unit-tested buildManpowerVisits().
+    {
+      const header = [
+        "DATE", "SITE", "Cust ID", "Visit type", "TecH name",
+        "Category (as per daily schedule)", "work done-Category", "work done-time", "Remarks",
+      ];
+
+      // Ops site events for the current month, grouped by employee + day.
+      const snap = await db.collectionGroup("attendance")
+        .where("date", ">=", monthStart).where("date", "<=", today).get();
+      const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
+      snap.docs.forEach((doc) => {
+        const uid = uidOf(doc);
+        if (userRoleMap.get(uid) !== "operations") return;      // ops-only report
+        const d = doc.data();
+        const key = `${uid}__${d.date || ""}`;
+        if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
+        groups.get(key).events.push(d);
+      });
+
+      const rows = [];
+      groups.forEach((group, key) => {
+        const { uid, date } = group;
+
+        // Chronological site events → the pure builder's shape.
+        const sorted = [...group.events].sort(
+          (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+        // Visit rows are site-only — market events carry none of the visit fields.
+        const siteEvents = sorted.filter((e) => e.type === "site_in" || e.type === "site_out");
+        const visits = buildManpowerVisits(siteEvents.map((e) => ({
+          type: e.type,
+          min: getHourIST(e.timestamp) * 60 + getMinuteIST(e.timestamp),
+          siteName: e.siteName || "",
+          siteId: e.siteId || "",
+          visitType: e.visitType || "",
+          workDone: Array.isArray(e.workDoneCategories) ? e.workDoneCategories : [],
+        })));
+        if (!visits.length) return;
+
+        // Day's CREDITED OT — same number as the Attendance tab / Employee Dashboard.
+        // Effective window: regularized override wins; else first-in…last-out across
+        // site AND market events (matches the ledger).
+        const override = otOverrideMap.get(key);
+        let inMin = null, outMin = null;
+        if (override) {
+          inMin = override.inMin; outMin = override.outMin;
+        } else {
+          const ins  = group.events.filter((e) => OPS_IN_TYPES.has(e.type));
+          const outs = group.events.filter((e) => OPS_OUT_TYPES.has(e.type));
+          if (ins.length && outs.length) {
+            const inEv  = ins.reduce((a, b) => ((a.timestamp?.seconds || 0) <= (b.timestamp?.seconds || 0) ? a : b));
+            const outEv = outs.reduce((a, b) => ((a.timestamp?.seconds || 0) >= (b.timestamp?.seconds || 0) ? a : b));
+            const im = getHourIST(inEv.timestamp) * 60 + getMinuteIST(inEv.timestamp);
+            const om = getHourIST(outEv.timestamp) * 60 + getMinuteIST(outEv.timestamp);
+            if (om > im) { inMin = im; outMin = om; }
+          }
+        }
+        let creditedOt = 0;
+        if (inMin != null && outMin != null) {
+          const plan = plannedMap.get(key);
+          const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+          const led = computeDayLedger({
+            shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
+            shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
+            inMin, outMin,
+            declaredOtMins: plan ? plan.declared : 0,
+            isRestDay: restDay,
+            otAuthorized: otAuthSet.has(key),
+          });
+          creditedOt = led.autoOtMins + led.restDayOtMins;
+        }
+        creditedOt += approvalMap.get(key) || 0;
+
+        const categories = (userCategoriesMap.get(uid) || []).join(" ");
+        visits.forEach((v) => {
+          rows.push([
+            date,
+            v.siteName,
+            v.siteId,
+            v.visitType,
+            userNameMap.get(uid) ?? "",
+            categories,
+            v.workDone.join(" + "),
+            v.timeFraction == null ? "" : v.timeFraction,
+            (v.otTarget && creditedOt > 0) ? minToHHMM(creditedOt) : "",
+          ]);
+        });
+      });
+
+      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+      await writeTab(sheets, SHEET_ID_MANPOWER, TABS.MANPOWER, [header, ...rows]);
+      console.log(`Manpower Utilisation: ${rows.length} rows`);
     }
 
     // ── 2. MT Requests ────────────────────────────────────────────────
@@ -824,38 +1071,44 @@ exports.exportToSheets = onSchedule(
     {
       const TAB = TABS.EMPLOYEE_DASHBOARD;
 
-      // Read existing sheet to preserve manually-entered Imprest (salary rate now comes from Firestore).
-      // Locate columns by header name so this survives layout changes (e.g. added NP-breakdown columns).
-      const imprestMap = new Map(); // employeeId → imprest
+      // Read the existing tab and parse it into month-blocks (see dashboardHistory.js).
+      // Past months are frozen (kept verbatim); only the current month is rebuilt.
+      const currentKey = `${istYear}-${pad2(istMonth + 1)}`;
+      let existingRows = [];
       try {
         const existing = await sheets.spreadsheets.values.get({
           spreadsheetId: SHEET_ID_1,
           range: `${TAB}!A:Z`,
         });
-        const existingRows = existing.data.values || [];
-        const hdr        = existingRows[0] || [];
-        const empIdCol   = hdr.indexOf("EMP ID");
-        const imprestCol = hdr.findIndex((h) => String(h).toLowerCase().startsWith("imprest"));
-        if (empIdCol !== -1 && imprestCol !== -1) {
-          for (let i = 1; i < existingRows.length; i++) {
-            const r = existingRows[i];
-            if (!r || !r[empIdCol] || r[0] === "CF BAL" || r[0] === "TOTAL") continue;
-            const empId = String(r[empIdCol]).trim();
-            if (empId) imprestMap.set(empId, parseFloat(r[imprestCol]) || 0);
-          }
-        }
+        existingRows = existing.data.values || [];
       } catch (_) {
         // Tab doesn't exist yet — start fresh
       }
+      const { blocks, legacy } = parseBlocks(existingRows);
 
-      // Prior-month settlement (OT/shortage/WO) — paid in arrears. Read each user's LOCKED
-      // settlement for the previous month and add its cash to this month's TOTAL DUE.
-      const prevMonthDate = new Date(Date.UTC(istYear, istMonth - 1, 1));
-      const prevMonth = `${prevMonthDate.getUTCFullYear()}-${pad2(prevMonthDate.getUTCMonth() + 1)}`;
+      // Legacy = old single-block content from before month-history (no banner).
+      // Resolve which month it belongs to from an employee row's Date cell (= monthLabel).
+      let legacyKey = null, legacyLabel = null;
+      for (const r of legacy) {
+        const k = monthLabelToKey(r && r[0]);
+        if (k) { legacyKey = k; legacyLabel = String(r[0]).trim(); break; }
+      }
+
+      // Carry manually-entered Imprest into the rebuilt current block: from the
+      // current month's previous block if present, else legacy when it IS the
+      // current month. (Frozen past blocks keep their own imprest verbatim.)
+      const oldCurrentBlock  = blocks.find((b) => b.key === currentKey) || null;
+      const imprestSourceRows = oldCurrentBlock ? oldCurrentBlock.rows
+        : (legacyKey === currentKey ? legacy : []);
+      const imprestMap = imprestFromBlock(imprestSourceRows); // employeeId → imprest
+
+      // Current-month settlement (OT/shortage/WO) — the client settles month-to-month,
+      // NOT in arrears. Read each user's LOCKED settlement for THIS month and add its cash
+      // to TOTAL DUE. Shows 0 all month until Settle & Lock, then the month's own cash.
       const settlementCashMap = new Map(); // userId → settlement cash (locked only)
       await Promise.all(allUsersData.map(async (u) => {
         try {
-          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(prevMonth).get();
+          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(currentKey).get();
           const s = sdoc.data();
           if (s && s.locked) settlementCashMap.set(u.id, Number(s.settlementCash) || 0);
         } catch (_) { /* no settlement for this user — skip */ }
@@ -866,7 +1119,7 @@ exports.exportToSheets = onSchedule(
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
-        "Covy Due (approx avg)", "Imprest Due MTD", `Prior Settlement ${prevMonth} (₹)`, "TOTAL DUE",
+        "Covy Due (approx avg)", "Imprest Due MTD", `Settlement ${currentKey} (₹)`, "TOTAL DUE",
       ];
 
       const sortedUsers = [...allUsersData].sort((a, b) => {
@@ -932,8 +1185,27 @@ exports.exportToSheets = onSchedule(
       // TOTAL row — grand total of all dues
       const totalRow  = summaryRow("TOTAL", grandTotal);
 
-      await writeTab(sheets, SHEET_ID_1, TAB, [header, ...empRows, cfBalRow, totalRow]);
-      console.log(`Employee Dashboard: ${empRows.length} employees, total due ₹${grandTotal}`);
+      // Current-month block: banner + header + rows + summaries + a blank spacer.
+      const currentBlockRows = [
+        [bannerFor(currentKey, monthLabel)],
+        header,
+        ...empRows,
+        cfBalRow,
+        totalRow,
+        [""],
+      ];
+
+      // Freeze every other parsed block; migrate legacy (no-banner) content that
+      // belongs to a PAST month into its own frozen block so no snapshot is lost.
+      const frozenBlocks = blocks.filter((b) => b.key !== currentKey);
+      if (legacyKey && legacyKey !== currentKey) {
+        frozenBlocks.push({ key: legacyKey, rows: [[bannerFor(legacyKey, legacyLabel)], ...legacy] });
+      }
+
+      // Assemble: current month on top, frozen months newest→oldest below.
+      const outRows = assembleTab(currentBlockRows, currentKey, frozenBlocks);
+      await writeTab(sheets, SHEET_ID_1, TAB, outRows);
+      console.log(`Employee Dashboard: ${empRows.length} employees (current ${currentKey}), ${frozenBlocks.length} frozen month(s), total due ₹${grandTotal}`);
     }
 
     console.log("Full Sheets export complete.");
