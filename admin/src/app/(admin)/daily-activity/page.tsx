@@ -3,8 +3,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { getAttendanceForDate, getAllUsers, restoreAttendanceToEvent } from '@/lib/firestore';
-import type { AttendanceRecord, User } from '@/types';
+import { getAttendanceForDate, getAllUsers, restoreAttendanceToEvent, getAttendanceCorrectionsForDate } from '@/lib/firestore';
+import type { AttendanceRecord, AttendanceCorrection, User } from '@/types';
 import { istTodayStr } from '@/lib/date';
 import { deriveState, eventLabel } from '@/lib/attendanceState';
 
@@ -33,6 +33,7 @@ export default function DailyActivityPage() {
   const todayStr = istTodayStr();
   const [date, setDate]             = useState(todayStr);
   const [events, setEvents]         = useState<AttendanceRecord[]>([]);
+  const [corrections, setCorrections] = useState<AttendanceCorrection[]>([]);
   const [users, setUsers]           = useState<User[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
@@ -62,9 +63,14 @@ export default function DailyActivityPage() {
     setLoading(true);
     setError('');
     try {
-      const [evs, us] = await Promise.all([getAttendanceForDate(date), getAllUsers()]);
+      const [evs, us, corr] = await Promise.all([
+        getAttendanceForDate(date),
+        getAllUsers(),
+        getAttendanceCorrectionsForDate(date),
+      ]);
       setEvents(evs);
       setUsers(us);
+      setCorrections(corr);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -95,6 +101,18 @@ export default function DailyActivityPage() {
         (ROLE_ORDER[a.user.role] ?? 3) - (ROLE_ORDER[b.user.role] ?? 3)
         || a.user.name.localeCompare(b.user.name));
   }, [events, userMap, roleFilter, employeeFilter]);
+
+  // Corrections grouped by employee (already newest-first from the query).
+  const correctionsByUser = useMemo(() => {
+    const m = new Map<string, AttendanceCorrection[]>();
+    for (const c of corrections) {
+      const uid = c.removedEvents[0]?.userId;
+      if (!uid) continue;
+      if (!m.has(uid)) m.set(uid, []);
+      m.get(uid)!.push(c);
+    }
+    return m;
+  }, [corrections]);
 
   const employeesWithEvents = useMemo(() => {
     const ids = new Set(events.map(e => e.userId));
@@ -222,6 +240,28 @@ export default function DailyActivityPage() {
                     );
                   })}
                 </ol>
+
+                {(correctionsByUser.get(user.id) ?? []).length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <p className="text-xs font-medium text-text-secondary mb-2">Corrections</p>
+                    <ul className="space-y-2">
+                      {(correctionsByUser.get(user.id) ?? []).map(c => (
+                        <li key={c.id} className="text-xs text-text-secondary">
+                          <span className="text-text-primary">⤺ Removed </span>
+                          {c.removedEvents.map((e, i) => (
+                            <span key={e.id} className="text-text-primary">
+                              {i > 0 && ', '}
+                              {eventLabel(e.type)}{(e.siteName || e.marketName) ? ` · ${e.siteName || e.marketName}` : ''} ({formatTime(e.timestamp as Parameters<typeof formatTime>[0])})
+                            </span>
+                          ))}
+                          {' — by '}<span className="text-text-primary">{c.correctedBy}</span>
+                          {c.reason && <> · “{c.reason}”</>}
+                          {c.correctedAt && <> · {formatTime(c.correctedAt as Parameters<typeof formatTime>[0])}</>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             );
           })}

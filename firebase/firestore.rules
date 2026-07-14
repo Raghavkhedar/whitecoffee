@@ -337,6 +337,10 @@ service cloud.firestore {
     match /{path=**}/work_progress/{docId} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
+    // Admin-only history read for the Daily Activity page (getAttendanceCorrectionsForDate).
+    match /{path=**}/attendance_corrections/{docId} {
+      allow read: if isLoggedIn() && isAdmin();
+    }
     match /{path=**}/attendance_status/{date} {
       allow read:  if isLoggedIn() && (isAdmin() || canReadAttendanceStatus());
       allow write: if isLoggedIn() && (isAdmin() || canWriteAttendanceStatus());

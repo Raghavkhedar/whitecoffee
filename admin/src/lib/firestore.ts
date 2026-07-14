@@ -305,6 +305,21 @@ export async function restoreAttendanceToEvent(
   return removed.length;
 }
 
+// All punch corrections made for a given date, across every employee (Daily Activity
+// history). Mirrors getAttendanceForDate: collectionGroup scan + client-side date
+// filter (no composite index needed). Newest first.
+export async function getAttendanceCorrectionsForDate(date: string): Promise<AttendanceCorrection[]> {
+  const snap = await getDocs(collectionGroup(db, 'attendance_corrections'));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AttendanceCorrection))
+    .filter(c => c.date === date)
+    .sort((a, b) => {
+      const ta = (a.correctedAt as unknown as { seconds: number })?.seconds ?? 0;
+      const tb = (b.correctedAt as unknown as { seconds: number })?.seconds ?? 0;
+      return tb - ta;
+    });
+}
+
 // ── Notifications ─────────────────────────────────────────────────────────
 
 /**
