@@ -4,12 +4,18 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavOptions
 import androidx.navigation.findNavController
 import com.raghav.whitecoffee.data.location.LocationProvider
+import com.raghav.whitecoffee.data.model.AccountStatus
+import com.raghav.whitecoffee.ui.account.AccountSuspendedBlock
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -27,6 +33,14 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        findViewById<ComposeView>(R.id.account_overlay).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val status by viewModel.accountStatus.collectAsStateWithLifecycle()
+                (status as? AccountStatus.Suspended)?.let { AccountSuspendedBlock(it) }
+            }
+        }
 
         viewModel.startMonitorIfLoggedIn()
 
