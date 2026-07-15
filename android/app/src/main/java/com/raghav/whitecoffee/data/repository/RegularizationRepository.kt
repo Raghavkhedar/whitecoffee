@@ -2,8 +2,11 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
 import com.raghav.whitecoffee.data.model.RegularizationRequest
 import com.raghav.whitecoffee.data.session.SessionManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,6 +33,13 @@ class RegularizationRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
+        regCol.whereEqualTo("date", date)
+            .snapshotsAsFlow()
+            .map { snap ->
+                snap.documents.mapNotNull { RegularizationRequest.fromDocument(it) }.firstOrNull()
+            }
 
     suspend fun submitRequest(
         date: String,

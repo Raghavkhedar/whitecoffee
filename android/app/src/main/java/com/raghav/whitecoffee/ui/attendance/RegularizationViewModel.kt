@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -62,44 +64,43 @@ class RegularizationViewModel @Inject constructor(
         loadToday()
     }
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     fun loadToday() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             if (!networkMonitor.isOnline.first()) {
                 _daysState.value = UiState.Offline
                 return@launch
             }
             _daysState.value = UiState.Loading()
-            try {
-                val dataResult = attendanceRepository.getTodayData()
-                if (dataResult.isFailure) {
-                    _daysState.value = UiState.Error("Failed to load attendance data.")
-                    return@launch
-                }
-                val (_, events) = dataResult.getOrThrow()
-                val plannedWindow = if (isOperations) {
-                    attendanceRepository.getTodayPlannedWindow().getOrNull()
-                } else null
-                val liveStatus = deriveLiveStatus(events, plannedWindow)
+            val plannedWindow = if (isOperations) {
+                attendanceRepository.getTodayPlannedWindow().getOrNull()
+            } else null
+            val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
+            combine(
+                attendanceRepository.observeTodayData(),
+                repository.observeRequestForDate(today)
+            ) { data, request ->
+                val liveStatus = deriveLiveStatus(data.second, plannedWindow)
                 if (liveStatus == null) {
-                    _daysState.value = UiState.Empty
-                    return@launch
+                    UiState.Empty
+                } else {
+                    UiState.Success(
+                        listOf(
+                            RegularizationDayItem(
+                                date = today,
+                                dayOfWeek = getDayOfWeek(today),
+                                originalStatus = liveStatus,
+                                request = request
+                            )
+                        )
+                    )
                 }
-
-                val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                val requestResult = repository.getRequestForDate(today)
-                val request = requestResult.getOrNull()
-
-                val item = RegularizationDayItem(
-                    date = today,
-                    dayOfWeek = getDayOfWeek(today),
-                    originalStatus = liveStatus,
-                    request = request
-                )
-                _daysState.value = UiState.Success(listOf(item))
-            } catch (e: Exception) {
-                _daysState.value = UiState.Error("Something went wrong.")
             }
+                .catch { _daysState.value = UiState.Error("Something went wrong.") }
+                .collect { _daysState.value = it }
         }
     }
 
@@ -156,7 +157,6 @@ class RegularizationViewModel @Inject constructor(
             val result = repository.submitRequest(date, originalStatus, reason)
             if (result.isSuccess) {
                 _submitState.value = UiState.Success(result.getOrThrow())
-                loadToday()
             } else {
                 _submitState.value = UiState.Error(
                     result.exceptionOrNull()?.message ?: "Submission failed."
