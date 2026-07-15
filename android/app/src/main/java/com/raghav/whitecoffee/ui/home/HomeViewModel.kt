@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -77,43 +78,43 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private var todayJob: kotlinx.coroutines.Job? = null
+
     fun loadTodayAttendance() {
-        viewModelScope.launch {
+        todayJob?.cancel()
+        todayJob = viewModelScope.launch {
             _todayStatus.value = TodayAttendanceStatus.Loading
-            val result = attendanceRepository.getTodayData()
-            if (result.isFailure) {
-                _todayStatus.value = TodayAttendanceStatus.Error
-                return@launch
-            }
-            val (_, events) = result.getOrThrow()
-
-            if (events.isEmpty()) {
-                _todayStatus.value = TodayAttendanceStatus.NotCheckedIn
-                return@launch
-            }
-
             val plannedWindow = if (isOperations) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
             } else null
-            val dailyStatus = if (isOperations) deriveOpsDailyStatus(events, plannedWindow)
-                              else deriveOfficeDailyStatus(events)
+            attendanceRepository.observeTodayData()
+                .map { (_, events) -> deriveTodayStatus(events, plannedWindow) }
+                .catch { _todayStatus.value = TodayAttendanceStatus.Error }
+                .collect { _todayStatus.value = it }
+        }
+    }
 
-            if (dailyStatus == DailyStatus.NOT_CHECKED_IN) {
-                _todayStatus.value = TodayAttendanceStatus.NotCheckedIn
-                return@launch
-            }
+    private fun deriveTodayStatus(
+        events: List<AttendanceRecord>,
+        plannedWindow: Pair<Int, Int>?,
+    ): TodayAttendanceStatus {
+        if (events.isEmpty()) return TodayAttendanceStatus.NotCheckedIn
 
-            val lastEvent = events.last()
-            val location = deriveLocation(lastEvent)
-            val since = lastEvent.displayTime()
+        val dailyStatus = if (isOperations) deriveOpsDailyStatus(events, plannedWindow)
+                          else deriveOfficeDailyStatus(events)
 
-            _todayStatus.value = when (dailyStatus) {
-                DailyStatus.PRESENT -> TodayAttendanceStatus.Present(location, since)
-                DailyStatus.SHORT_LEAVE -> TodayAttendanceStatus.ShortLeave(location, since)
-                DailyStatus.HALF_DAY -> TodayAttendanceStatus.HalfDay(location, since)
-                DailyStatus.PENDING -> TodayAttendanceStatus.Pending(location, since)
-                DailyStatus.NOT_CHECKED_IN -> TodayAttendanceStatus.NotCheckedIn
-            }
+        if (dailyStatus == DailyStatus.NOT_CHECKED_IN) return TodayAttendanceStatus.NotCheckedIn
+
+        val lastEvent = events.last()
+        val location = deriveLocation(lastEvent)
+        val since = lastEvent.displayTime()
+
+        return when (dailyStatus) {
+            DailyStatus.PRESENT -> TodayAttendanceStatus.Present(location, since)
+            DailyStatus.SHORT_LEAVE -> TodayAttendanceStatus.ShortLeave(location, since)
+            DailyStatus.HALF_DAY -> TodayAttendanceStatus.HalfDay(location, since)
+            DailyStatus.PENDING -> TodayAttendanceStatus.Pending(location, since)
+            DailyStatus.NOT_CHECKED_IN -> TodayAttendanceStatus.NotCheckedIn
         }
     }
 
