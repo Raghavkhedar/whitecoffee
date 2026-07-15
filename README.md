@@ -262,9 +262,10 @@ Android release artifacts (signed APK/AAB) are built with Gradle (`assembleRelea
 - **Backend lives only in `firebase/`.** Never re-add `firestore.rules` under `android/` or
   `admin/`.
 - **Each side builds independently** — there is no shared JS build graph (no Nx/Turborepo).
-- **Portal access model:** `role: 'admin'` = superuser; non-admins can be granted scoped
-  portal tabs via `tags` on their user doc (see `admin/src/lib/portalAccess.ts` and the
-  `isAttendanceMgr()` grants in `firestore.rules`).
+- **Portal access model:** `role: 'admin'` = superuser; non-admins are granted individual
+  portal tabs via an explicit `tabAccess: string[]` of tab paths on their user doc, assigned
+  by admins on the `/access` matrix page (see `admin/src/lib/portalAccess.ts` and the
+  per-tab `userTabs()`/`canRead*`/`canAccess*` grants in `firestore.rules`).
 - **Commit hygiene:** secrets (`.env.local`, `keystore.properties`, `*.jks`,
   `local.properties`, functions `*.local`) are gitignored — keep them that way.
 - Deeper, area-specific rules live in the per-directory `CLAUDE.md` files; read those before

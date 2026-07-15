@@ -11,11 +11,16 @@ import Icon from '@/components/Icon';
 import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
-import { TAG_LABELS, ALL_TAGS } from '@/lib/portalAccess';
+import { TABS } from '@/lib/portalAccess';
 import { EMPLOYEE_CATEGORIES, EMPLOYEE_CATEGORY_SET } from '@/lib/categories';
 
 const ROLES = ['operations', 'office', 'admin'] as const;
 type Role = typeof ROLES[number];
+
+// The tabs a non-admin can be granted (matrix columns / modal checkboxes).
+const GRANTABLE_TABS = TABS.filter(t => !t.adminOnly);
+const GRANTABLE_PATH_SET = new Set(GRANTABLE_TABS.map(t => t.path));
+const tabLabel = (path: string) => GRANTABLE_TABS.find(t => t.path === path)?.label ?? path;
 
 interface FormState {
   name: string;
@@ -24,7 +29,7 @@ interface FormState {
   password: string;
   employeeId: string;
   role: Role;
-  tags: string[];
+  tabAccess: string[];
   categories: string[];
   salaryRate: string;
   homeLat: string;
@@ -34,7 +39,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
-  tags: [], categories: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
+  tabAccess: [], categories: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
 // A short random temp password for new hires / admin resets (synthetic logins get no email link).
@@ -84,7 +89,7 @@ export default function UsersPage() {
       password: '',
       employeeId: u.employeeId ?? '',
       role: (u.role as Role) ?? 'operations',
-      tags: (u.tags ?? []).filter(t => t in TAG_LABELS),
+      tabAccess: (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)),
       categories: (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)),
       salaryRate: u.salaryRate ? String(u.salaryRate) : '',
       homeLat: u.homeLat ? String(u.homeLat) : '',
@@ -121,7 +126,7 @@ export default function UsersPage() {
         }
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
-          tags: form.tags, categories, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
+          tabAccess: form.tabAccess, categories, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
         });
         if (loginChanged) await updateUserEmail(editing.id, nextLogin);
       } else {
@@ -145,7 +150,7 @@ export default function UsersPage() {
         }
         await createUserProfile(uid, {
           name: form.name.trim(), email: loginEmail, contactEmail,
-          role: form.role, tags: form.tags, categories, employeeId: form.employeeId.trim(), salaryRate,
+          role: form.role, tabAccess: form.tabAccess, categories, employeeId: form.employeeId.trim(), salaryRate,
           homeLat, homeLng, conveyanceRateType,
         });
       }
@@ -214,7 +219,9 @@ export default function UsersPage() {
       Status: u.active === false ? 'Inactive' : 'Active',
       'Employee ID': u.employeeId ?? '',
       Role: u.role ?? '',
-      Tags: u.role !== 'admin' ? (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => TAG_LABELS[t]).join(', ') : '',
+      'Tab Access': u.role === 'admin'
+        ? 'Full access'
+        : (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)).map(tabLabel).join(', '),
       Categories: u.role === 'operations' ? (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).join(', ') : '',
       'Salary Rate': u.salaryRate ?? '',
       'PL Balance': u.plBalance ?? 0,
@@ -282,9 +289,14 @@ export default function UsersPage() {
                     <td className={TD}>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <RoleBadge role={u.role} />
-                        {u.role !== 'admin' && (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => (
-                          <span key={t} className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{TAG_LABELS[t]}</span>
-                        ))}
+                        {u.role === 'admin' ? (
+                          <span className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">Full access</span>
+                        ) : (() => {
+                          const n = (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)).length;
+                          return n > 0
+                            ? <span className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{n} tab{n === 1 ? '' : 's'}</span>
+                            : null;
+                        })()}
                         {u.role === 'operations' && (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).map(c => (
                           <span key={c} className="bg-[#F3EEFA] text-[#6A44B8] px-1.5 py-0.5 rounded-[6px] text-[11px] font-mono">{c}</span>
                         ))}
@@ -370,30 +382,32 @@ export default function UsersPage() {
               )}
 
               <div>
-                <label className="label">Portal Access Tags <span className="text-text-secondary font-normal">(scoped admin-portal tabs)</span></label>
+                <label className="label">Portal Tab Access <span className="text-text-secondary font-normal">(which admin-portal tabs this employee can use)</span></label>
                 {form.role === 'admin' ? (
-                  <p className="text-[12px] text-text-secondary">Admins always see the entire portal — tags don’t apply.</p>
+                  <p className="text-[12px] text-text-secondary">Admins always see the entire portal — tab access doesn’t apply.</p>
                 ) : (
                   <>
-                    <div className="flex flex-col gap-1.5">
-                      {ALL_TAGS.map(tag => {
-                        const checked = form.tags.includes(tag);
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                      {GRANTABLE_TABS.map(tab => {
+                        const checked = form.tabAccess.includes(tab.path);
                         return (
-                          <label key={tag} className="flex items-center gap-2 text-[13.5px] text-[#2A241F] select-none cursor-pointer">
+                          <label key={tab.path} className="flex items-center gap-2 text-[13.5px] text-[#2A241F] select-none cursor-pointer">
                             <input
                               type="checkbox"
                               checked={checked}
                               onChange={e => setForm(f => ({
                                 ...f,
-                                tags: e.target.checked ? [...f.tags, tag] : f.tags.filter(t => t !== tag),
+                                tabAccess: e.target.checked
+                                  ? [...f.tabAccess, tab.path]
+                                  : f.tabAccess.filter(p => p !== tab.path),
                               }))}
                             />
-                            {TAG_LABELS[tag]}
+                            {tab.label}
                           </label>
                         );
                       })}
                     </div>
-                    <p className="text-[12px] text-text-secondary mt-1">Tagged non-admins can sign into the portal and see only the tabs their tags grant.</p>
+                    <p className="text-[12px] text-text-secondary mt-1">Non-admins can sign into the portal and see only the tabs ticked here. Manage everyone at once on the Access Control page.</p>
                   </>
                 )}
               </div>
