@@ -3,8 +3,11 @@ package com.raghav.whitecoffee.data.repository
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
 import com.raghav.whitecoffee.data.model.LeaveRequest
 import com.raghav.whitecoffee.data.session.SessionManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,6 +49,11 @@ class LeaveRepository @Inject constructor(
             Result.failure(e)
         }
     }
+
+    fun observeMyLeaveRequests(): Flow<List<LeaveRequest>> =
+        leaveCol.orderBy("submittedAt", Query.Direction.DESCENDING)
+            .snapshotsAsFlow()
+            .map { snap -> snap.documents.mapNotNull { LeaveRequest.fromDocument(it) } }
 
     // Office role only — collectionGroup across all users.
     // Requires Firestore index: leave_requests / status ASC + submittedAt ASC
