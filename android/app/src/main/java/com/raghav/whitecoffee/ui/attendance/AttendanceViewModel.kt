@@ -9,6 +9,7 @@ import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.deriveAttendanceState
+import com.raghav.whitecoffee.data.model.isEventAllowed
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.session.SessionManager
@@ -65,6 +66,22 @@ class AttendanceViewModel @Inject constructor(
         }
     }
 
+    private fun currentAttendanceState(): AttendanceState =
+        (_attendanceState.value as? UiState.Success)?.data ?: AttendanceState.NoRecord
+
+    // Write-time guard against the button-visibility gate being stale (e.g. a check-in button
+    // still on screen for a moment after home_out landed). Checked right before every event write
+    // so an out-of-order tap can never reach Firestore, not just fail to render afterwards.
+    private fun guardEvent(type: String): Boolean {
+        val state = currentAttendanceState()
+        if (isEventAllowed(state, type)) return true
+        _actionState.value = ActionState.Error(
+            if (state is AttendanceState.DayComplete) "Your day is already complete."
+            else "That action isn't available right now. Pull down to refresh."
+        )
+        return false
+    }
+
     sealed interface ActionState {
         data object Idle : ActionState
         data object Loading : ActionState
@@ -96,6 +113,7 @@ class AttendanceViewModel @Inject constructor(
     // ── Home Check In ─────────────────────────────────────────────────────
 
     fun homeCheckIn() = submitEvent {
+        if (!guardEvent(AttendanceType.HOME_IN)) return@submitEvent
         _actionState.value = ActionState.Loading
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
@@ -120,6 +138,7 @@ class AttendanceViewModel @Inject constructor(
     // ── Home Check Out ────────────────────────────────────────────────────
 
     fun homeCheckOut() = submitEvent {
+        if (!guardEvent(AttendanceType.HOME_OUT)) return@submitEvent
         _actionState.value = ActionState.Loading
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
@@ -144,6 +163,7 @@ class AttendanceViewModel @Inject constructor(
     // ── Site Check In — Step 1: Show dialog for user to type Site Name + Site ID ──
 
     fun initiateSiteCheckIn() {
+        if (!guardEvent(AttendanceType.SITE_IN)) return
         _actionState.value = ActionState.SiteInputRequired
     }
 
@@ -156,6 +176,7 @@ class AttendanceViewModel @Inject constructor(
             return
         }
         submitEvent {
+            if (!guardEvent(AttendanceType.SITE_IN)) return@submitEvent
             _actionState.value = ActionState.Loading
             when (val location = locationProvider.getCurrentLocation()) {
                 is LocationState.Success -> {
@@ -183,6 +204,7 @@ class AttendanceViewModel @Inject constructor(
     // ── Site Check Out ────────────────────────────────────────────────────
 
     fun siteCheckOut(siteId: String, siteName: String) = submitEvent {
+        if (!guardEvent(AttendanceType.SITE_OUT)) return@submitEvent
         _actionState.value = ActionState.Loading
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
@@ -209,6 +231,7 @@ class AttendanceViewModel @Inject constructor(
     // ── Market Check In — Step 1: Get location first ──────────────────────
 
     fun initiateMarketCheckIn() = submitEvent {
+        if (!guardEvent(AttendanceType.MARKET_IN)) return@submitEvent
         _actionState.value = ActionState.Loading
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success ->
@@ -236,6 +259,7 @@ class AttendanceViewModel @Inject constructor(
             return
         }
         submitEvent {
+            if (!guardEvent(AttendanceType.MARKET_IN)) return@submitEvent
             _actionState.value = ActionState.Loading
 
             val currentState = (_attendanceState.value as? UiState.Success)?.data
@@ -283,6 +307,7 @@ class AttendanceViewModel @Inject constructor(
     // ── Market Check Out ──────────────────────────────────────────────────
 
     fun marketCheckOut(marketName: String) = submitEvent {
+        if (!guardEvent(AttendanceType.MARKET_OUT)) return@submitEvent
         _actionState.value = ActionState.Loading
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {

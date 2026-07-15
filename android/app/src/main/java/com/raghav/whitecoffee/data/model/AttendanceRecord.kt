@@ -101,9 +101,18 @@ data class AttendanceRecord(
     }
 }
 
-/** Derives the current AttendanceState from an ordered list of today's events. */
+/**
+ * Derives the current AttendanceState from an ordered list of today's events.
+ *
+ * HOME_OUT is terminal: once it has fired, the day stays DayComplete no matter what shows up
+ * after it in the list. Without this, a stray event recorded post-checkout (e.g. a UI race where
+ * a check-in button was tapped in the moment before the screen re-rendered to the closed state)
+ * would flip the day back open, since a naive "last event wins" read has no way to tell the
+ * difference between that and a legitimate new cycle.
+ */
 fun deriveAttendanceState(events: List<AttendanceRecord>): AttendanceState {
     if (events.isEmpty()) return AttendanceState.NoRecord
+    if (events.any { it.type == AttendanceType.HOME_OUT }) return AttendanceState.DayComplete
     return when (events.last().type) {
         AttendanceType.HOME_IN    -> AttendanceState.HomeCheckedIn(events.last())
         AttendanceType.HOME_OUT   -> AttendanceState.DayComplete
@@ -113,4 +122,20 @@ fun deriveAttendanceState(events: List<AttendanceRecord>): AttendanceState {
         AttendanceType.MARKET_OUT -> AttendanceState.HomeCheckedIn(events.last())
         else                      -> AttendanceState.NoRecord
     }
+}
+
+/**
+ * Whether recording an event of [type] is a legal transition from [state]. Write-time guard —
+ * checked by the ViewModel before it ever calls the repository — so a stray tap on a stale button
+ * (e.g. one still visible mid-recomposition right after home_out) can't reach Firestore, rather
+ * than relying solely on the UI only ever showing the "right" buttons.
+ */
+fun isEventAllowed(state: AttendanceState, type: String): Boolean = when (type) {
+    AttendanceType.HOME_IN    -> state is AttendanceState.NoRecord
+    AttendanceType.HOME_OUT   -> state is AttendanceState.HomeCheckedIn
+    AttendanceType.SITE_IN    -> state is AttendanceState.HomeCheckedIn
+    AttendanceType.SITE_OUT   -> state is AttendanceState.SiteCheckedIn
+    AttendanceType.MARKET_IN  -> state is AttendanceState.HomeCheckedIn || state is AttendanceState.SiteCheckedIn
+    AttendanceType.MARKET_OUT -> state is AttendanceState.MarketCheckedIn
+    else                      -> false
 }
