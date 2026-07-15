@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -32,32 +33,19 @@ class NotificationsViewModel @Inject constructor(
     fun loadNotifications() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading()
-            val result = notificationRepository.getNotifications()
-            _uiState.value = when {
-                result.isSuccess -> {
-                    val list = result.getOrThrow()
-                    if (list.isEmpty()) UiState.Empty else UiState.Success(list)
+            notificationRepository.observeNotifications()
+                .catch { _uiState.value = UiState.Error("Failed to load notifications.") }
+                .collect { list ->
+                    _uiState.value = if (list.isEmpty()) UiState.Empty else UiState.Success(list)
                 }
-                else -> UiState.Error("Failed to load notifications.")
-            }
         }
     }
 
     fun markAsRead(notifId: String) {
-        viewModelScope.launch {
-            notificationRepository.markAsRead(notifId)
-            val current = (_uiState.value as? UiState.Success)?.data ?: return@launch
-            _uiState.value = UiState.Success(
-                current.map { if (it.id == notifId) it.copy(isRead = true) else it }
-            )
-        }
+        viewModelScope.launch { notificationRepository.markAsRead(notifId) }
     }
 
     fun markAllAsRead() {
-        viewModelScope.launch {
-            notificationRepository.markAllAsRead()
-            val current = (_uiState.value as? UiState.Success)?.data ?: return@launch
-            _uiState.value = UiState.Success(current.map { it.copy(isRead = true) })
-        }
+        viewModelScope.launch { notificationRepository.markAllAsRead() }
     }
 }

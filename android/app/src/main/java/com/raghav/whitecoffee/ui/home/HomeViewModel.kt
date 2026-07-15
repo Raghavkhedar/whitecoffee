@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -64,13 +65,19 @@ class HomeViewModel @Inject constructor(
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
     init {
+        observeUnreadCount()
         loadTodayAttendance()
     }
 
-    fun loadTodayAttendance() {
+    private fun observeUnreadCount() {
         viewModelScope.launch {
-            _unreadCount.value = notificationRepository.getUnreadCount().getOrDefault(0)
+            notificationRepository.observeUnreadCount()
+                .catch { /* keep last known count on transient error */ }
+                .collect { _unreadCount.value = it }
         }
+    }
+
+    fun loadTodayAttendance() {
         viewModelScope.launch {
             _todayStatus.value = TodayAttendanceStatus.Loading
             val result = attendanceRepository.getTodayData()
