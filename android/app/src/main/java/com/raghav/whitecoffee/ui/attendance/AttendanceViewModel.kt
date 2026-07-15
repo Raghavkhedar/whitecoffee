@@ -8,7 +8,6 @@ import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
-import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.model.isEventAllowed
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
@@ -18,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -99,14 +99,12 @@ class AttendanceViewModel @Inject constructor(
     fun loadTodayData() {
         viewModelScope.launch {
             _attendanceState.value = UiState.Loading()
-            val result = attendanceRepository.getTodayData()
-            if (result.isFailure) {
-                _attendanceState.value = UiState.Error("Failed to load attendance. Try again.")
-                return@launch
-            }
-            val (state, events) = result.getOrThrow()
-            _attendanceState.value = UiState.Success(state)
-            _todayEvents.value = events
+            attendanceRepository.observeTodayData()
+                .catch { _attendanceState.value = UiState.Error("Failed to load attendance. Try again.") }
+                .collect { (state, events) ->
+                    _attendanceState.value = UiState.Success(state)
+                    _todayEvents.value = events
+                }
         }
     }
 
@@ -263,17 +261,12 @@ class AttendanceViewModel @Inject constructor(
             _actionState.value = ActionState.Loading
 
             val currentState = (_attendanceState.value as? UiState.Success)?.data
-            val previousEvents = _todayEvents.value
-            val previousState = _attendanceState.value
-
             if (currentState is AttendanceState.SiteCheckedIn) {
                 val siteRecord = currentState.record
                 val siteOutResult = attendanceRepository.recordEvent(
-                    type      = AttendanceType.SITE_OUT,
-                    latitude  = latitude,
-                    longitude = longitude,
-                    siteId    = siteRecord.siteId,
-                    siteName  = siteRecord.siteName
+                    type = AttendanceType.SITE_OUT,
+                    latitude = latitude, longitude = longitude,
+                    siteId = siteRecord.siteId, siteName = siteRecord.siteName,
                 )
                 if (siteOutResult.isFailure) {
                     _actionState.value = ActionState.Error(
@@ -281,25 +274,13 @@ class AttendanceViewModel @Inject constructor(
                     )
                     return@submitEvent
                 }
-                val withSiteOut = previousEvents + siteOutResult.getOrThrow()
-                _todayEvents.value = withSiteOut
-                _attendanceState.value = UiState.Success(deriveAttendanceState(withSiteOut))
             }
 
             val result = attendanceRepository.recordEvent(
-                type        = AttendanceType.MARKET_IN,
-                latitude    = latitude,
-                longitude   = longitude,
-                marketName  = marketName.trim()
+                type = AttendanceType.MARKET_IN,
+                latitude = latitude, longitude = longitude,
+                marketName = marketName.trim(),
             )
-            if (result.isFailure && currentState is AttendanceState.SiteCheckedIn) {
-                _todayEvents.value = previousEvents
-                _attendanceState.value = previousState
-                _actionState.value = ActionState.Error(
-                    result.exceptionOrNull()?.message ?: "Failed to check in to market. Site check-out was reverted."
-                )
-                return@submitEvent
-            }
             handleResult(result)
         }
     }
@@ -333,16 +314,9 @@ class AttendanceViewModel @Inject constructor(
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private fun handleResult(result: Result<AttendanceRecord>) {
-        if (result.isSuccess) {
-            val updatedEvents = _todayEvents.value + result.getOrThrow()
-            _todayEvents.value = updatedEvents
-            _attendanceState.value = UiState.Success(deriveAttendanceState(updatedEvents))
-            _actionState.value = ActionState.Success
-        } else {
-            _actionState.value = ActionState.Error(
-                result.exceptionOrNull()?.message ?: "Something went wrong. Try again."
-            )
-        }
+        _actionState.value =
+            if (result.isSuccess) ActionState.Success
+            else ActionState.Error(result.exceptionOrNull()?.message ?: "Something went wrong. Try again.")
     }
 
     fun resetActionState() {

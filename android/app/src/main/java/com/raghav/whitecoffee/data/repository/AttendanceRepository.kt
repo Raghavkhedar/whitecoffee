@@ -2,12 +2,15 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.session.SessionManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -41,6 +44,17 @@ class AttendanceRepository @Inject constructor(
             Result.success(Pair(deriveAttendanceState(events), events))
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /** Live version of getTodayData(): re-emits whenever today's attendance docs change. */
+    fun observeTodayData(): Flow<Pair<AttendanceState, List<AttendanceRecord>>> {
+        val today = LocalDate.now().format(dateFormatter)
+        return collection.whereEqualTo("date", today).snapshotsAsFlow().map { snapshot ->
+            val events = snapshot.documents
+                .mapNotNull { AttendanceRecord.fromDocument(it) }
+                .sortedBy { it.timestamp?.toDate()?.time ?: 0L }
+            Pair(deriveAttendanceState(events), events)
         }
     }
 
