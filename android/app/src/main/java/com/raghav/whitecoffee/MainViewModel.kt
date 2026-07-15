@@ -6,6 +6,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.location.LocationState
+import com.raghav.whitecoffee.data.model.AccountStatus
+import com.raghav.whitecoffee.data.model.accountStatusFrom
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
@@ -39,6 +41,9 @@ class MainViewModel @Inject constructor(
     private val _logoutComplete = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val logoutComplete: SharedFlow<Unit> = _logoutComplete.asSharedFlow()
 
+    private val _accountStatus = MutableStateFlow<AccountStatus>(AccountStatus.Active)
+    val accountStatus: StateFlow<AccountStatus> = _accountStatus.asStateFlow()
+
     private var listenerRegistration: ListenerRegistration? = null
 
     fun startMonitorIfLoggedIn() {
@@ -56,6 +61,12 @@ class MainViewModel @Inject constructor(
         listenerRegistration = firestore.collection("users").document(uid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                val active = snapshot.getBoolean("active") ?: true
+                _accountStatus.value = accountStatusFrom(
+                    active = active,
+                    reason = snapshot.getString("suspendedReason") ?: "",
+                    expectedReturn = snapshot.getString("expectedReturn") ?: "",
+                )
                 val firestoreToken = snapshot.getString("activeSessionToken") ?: return@addSnapshotListener
                 if (firestoreToken.isNotEmpty() && firestoreToken != localToken) {
                     _sessionInvalidated.tryEmit(Unit)
@@ -79,6 +90,7 @@ class MainViewModel @Inject constructor(
     fun logout() {
         listenerRegistration?.remove()
         listenerRegistration = null
+        _accountStatus.value = AccountStatus.Active
         authRepository.logout()
     }
 
