@@ -145,6 +145,7 @@ dependencies {
 
     // ── Testing ──
     testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
     androidTestImplementation(libs.junit.ext)
     androidTestImplementation(libs.espresso.core)
 }
