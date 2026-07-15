@@ -70,6 +70,15 @@ class LeaveRepository @Inject constructor(
         }
     }
 
+    // Live twin of getPendingLeaveRequests(). Same collectionGroup query + composite index
+    // (leave_requests: status ASC + submittedAt ASC). Office/admin only.
+    fun observePendingLeaveRequests(): Flow<List<LeaveRequest>> =
+        firestore.collectionGroup("leave_requests")
+            .whereEqualTo("status", "pending")
+            .orderBy("submittedAt", Query.Direction.ASCENDING)
+            .snapshotsAsFlow()
+            .map { snap -> snap.documents.mapNotNull { LeaveRequest.fromDocument(it) } }
+
     suspend fun approveLeave(
         targetUserId: String,
         requestId: String,

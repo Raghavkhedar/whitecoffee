@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -35,21 +36,21 @@ class LeaveApprovalsViewModel @Inject constructor(
 
     init { loadPending() }
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     fun loadPending() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             if (!networkMonitor.isOnline.first()) {
                 _approvalsState.value = UiState.Offline
                 return@launch
             }
             _approvalsState.value = UiState.Loading()
-            val result = leaveRepository.getPendingLeaveRequests()
-            _approvalsState.value = when {
-                result.isSuccess -> {
-                    val list = result.getOrThrow()
-                    if (list.isEmpty()) UiState.Empty else UiState.Success(list)
+            leaveRepository.observePendingLeaveRequests()
+                .catch { _approvalsState.value = UiState.Error("Failed to load requests. Check Firestore index.") }
+                .collect { list ->
+                    _approvalsState.value = if (list.isEmpty()) UiState.Empty else UiState.Success(list)
                 }
-                else -> UiState.Error("Failed to load requests. Check Firestore index.")
-            }
         }
     }
 
@@ -63,7 +64,6 @@ class LeaveApprovalsViewModel @Inject constructor(
             )
             if (result.isSuccess) {
                 _actionState.value = UiState.Success(Unit)
-                loadPending()
             } else {
                 _actionState.value = UiState.Error(
                     result.exceptionOrNull()?.message ?: "Approval failed."
@@ -83,7 +83,6 @@ class LeaveApprovalsViewModel @Inject constructor(
             )
             if (result.isSuccess) {
                 _actionState.value = UiState.Success(Unit)
-                loadPending()
             } else {
                 _actionState.value = UiState.Error(
                     result.exceptionOrNull()?.message ?: "Rejection failed."
