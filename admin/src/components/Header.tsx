@@ -1,7 +1,7 @@
 'use client';
 import { usePathname } from 'next/navigation';
 import { useAccess } from './AccessContext';
-import { TAG_LABELS, recognizedTags } from '@/lib/portalAccess';
+import { allowedPaths } from '@/lib/portalAccess';
 import Icon from './Icon';
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -14,6 +14,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   '/ot-shortage':         { title: 'OT & Shortage',       subtitle: 'Review overtime and track shortage for operations' },
   '/ot-settlements':      { title: 'OT Settlements',      subtitle: 'Settle & lock monthly OT/shortage/WO into payroll' },
   '/manpower-utilisation-input': { title: 'Manpower Utilisation Input', subtitle: 'Assign site codes to operations check-ins' },
+  '/access':              { title: 'Access Control',       subtitle: 'Grant portal tabs per employee' },
   '/conveyance':          { title: 'Conveyance',          subtitle: 'Monthly travel reimbursements' },
   '/submissions':         { title: 'Submissions',         subtitle: 'Material, tools, work progress & conveyance' },
   '/notifications':       { title: 'Notifications',       subtitle: 'Send push alerts to your team' },
@@ -27,10 +28,11 @@ export default function Header() {
   const pathname = usePathname();
   const { user } = useAccess();
   const name = user?.name || 'Admin';
-  // Accurate role label: admins say "Administrator"; tagged staff show their tag names.
+  // Accurate role label: admins say "Administrator"; scoped staff show their tab count.
+  const grantedCount = allowedPaths(user).length;
   const roleLabel = user?.role === 'admin'
     ? 'Administrator'
-    : (recognizedTags(user).map(t => TAG_LABELS[t]).join(', ') || 'Staff');
+    : (grantedCount > 0 ? `Scoped access · ${grantedCount} tab${grantedCount === 1 ? '' : 's'}` : 'Staff');
 
   const match = Object.keys(TITLES).find(k => pathname === k || pathname.startsWith(k + '/'));
   const meta  = match ? TITLES[match] : { title: 'WhiteCoffee', subtitle: 'Admin Portal' };

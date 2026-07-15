@@ -1,16 +1,32 @@
 import { Timestamp } from 'firebase/firestore';
 
+/** One entry in a user's suspension history log (see User.suspensionHistory). */
+export interface SuspensionEvent {
+  action: 'suspend' | 'reactivate';
+  reason?: string;         // present on suspend
+  by: string;              // acting admin's name (server-resolved)
+  at: Timestamp;           // server-clock time of the action
+  expectedReturn?: string; // present on suspend when an expected-return date was set
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;          // login email — SYNTHETIC (‹empId›@whitecoffee.internal) for new hires, real email for legacy users
   contactEmail?: string;  // real email/phone for notifications only — NOT a login credential
-  active?: boolean;       // false = offboarded (login disabled). MISSING must be treated as active.
+  active?: boolean;       // false = suspended (login disabled). MISSING must be treated as active.
+  /** Suspension metadata — present only while suspended (active===false), cleared on reactivate.
+   *  Set server-side by the setUserActive Cloud Function; see docs/superpowers/specs. */
+  suspendedReason?: string;   // required free-text reason captured on suspend
+  suspendedBy?: string;       // acting admin's name (server-resolved)
+  suspendedAt?: Timestamp;    // when suspended (server clock)
+  expectedReturn?: string | null; // "YYYY-MM-DD", optional/informational — no auto-reactivation
+  /** Append-only log of every suspend/reactivate action on this employee, oldest first. */
+  suspensionHistory?: SuspensionEvent[];
   role: 'operations' | 'office' | 'admin';
-  /** Portal access preset tags (e.g. 'attendance-manager'). Grant scoped admin-portal
-   *  tab access to non-admin staff; ignored for role==='admin' (superuser). See
-   *  src/lib/portalAccess.ts for the tag→tabs map. */
-  tags?: string[];
+  /** Explicit portal tab paths this non-admin user may access; ignored for role==='admin'
+   *  (superuser). Managed on /access. See src/lib/portalAccess.ts */
+  tabAccess?: string[];
   /** Operations-role category codes (e.g. 'A1', 'E2', 'W') — multi-select, admin-assigned
    *  on the Users page. Meaningful only for role==='operations'. See src/lib/categories.ts. */
   categories?: string[];
@@ -197,6 +213,21 @@ export interface AttendanceRecord {
   siteName: string;
   marketName: string;
   autoLogout?: boolean;
+}
+
+// Audit record of an admin same-day punch correction (Daily Activity page). When an
+// admin rewinds an employee's timeline to a chosen punch, the trailing punches are
+// hard-deleted from users/{uid}/attendance and snapshotted here verbatim, so nothing
+// is lost. Immutable log — created only, never updated. See restoreAttendanceToEvent.
+export interface AttendanceCorrection {
+  id: string;
+  date: string;                     // IST day the correction applies to
+  removedEvents: AttendanceRecord[]; // full payloads of the deleted punches
+  reason: string;                   // mandatory admin reason
+  correctedBy: string;              // admin display name
+  correctedByUid: string;           // admin uid
+  correctedAt?: Timestamp;
+  keptEventId: string;              // the event that became the new last punch
 }
 
 export interface SentNotification {

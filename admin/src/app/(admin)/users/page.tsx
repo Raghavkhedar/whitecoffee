@@ -11,11 +11,16 @@ import Icon from '@/components/Icon';
 import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
-import { TAG_LABELS, ALL_TAGS } from '@/lib/portalAccess';
+import { TABS } from '@/lib/portalAccess';
 import { EMPLOYEE_CATEGORIES, EMPLOYEE_CATEGORY_SET } from '@/lib/categories';
 
 const ROLES = ['operations', 'office', 'admin'] as const;
 type Role = typeof ROLES[number];
+
+// The tabs a non-admin can be granted (matrix columns / modal checkboxes).
+const GRANTABLE_TABS = TABS.filter(t => !t.adminOnly);
+const GRANTABLE_PATH_SET = new Set(GRANTABLE_TABS.map(t => t.path));
+const tabLabel = (path: string) => GRANTABLE_TABS.find(t => t.path === path)?.label ?? path;
 
 interface FormState {
   name: string;
@@ -24,7 +29,7 @@ interface FormState {
   password: string;
   employeeId: string;
   role: Role;
-  tags: string[];
+  tabAccess: string[];
   categories: string[];
   salaryRate: string;
   homeLat: string;
@@ -34,12 +39,17 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
-  tags: [], categories: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
+  tabAccess: [], categories: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
 // A short random temp password for new hires / admin resets (synthetic logins get no email link).
 function makeTempPassword() {
   return 'Wc' + Math.random().toString(36).slice(2, 8) + Math.floor(10 + Math.random() * 90);
+}
+
+// Firestore Timestamp → readable IST date/time (suspension log). Tolerates missing values.
+function fmtTs(t?: { toDate?: () => Date } | null) {
+  return t?.toDate ? t.toDate().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 }
 
 export default function UsersPage() {
@@ -53,6 +63,10 @@ export default function UsersPage() {
   const [formError, setFormError] = useState('');
   const [query, setQuery]       = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  // Inline suspend sub-form (inside the edit modal): required reason + optional return date.
+  const [suspendOpen, setSuspendOpen]     = useState(false);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [suspendReturn, setSuspendReturn] = useState('');
 
   async function load() {
     setLoading(true);
@@ -68,10 +82,17 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, []);
 
+  function resetSuspendForm() {
+    setSuspendOpen(false);
+    setSuspendReason('');
+    setSuspendReturn('');
+  }
+
   function openAdd() {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
     setFormError('');
+    resetSuspendForm();
     setShowModal(true);
   }
 
@@ -84,7 +105,7 @@ export default function UsersPage() {
       password: '',
       employeeId: u.employeeId ?? '',
       role: (u.role as Role) ?? 'operations',
-      tags: (u.tags ?? []).filter(t => t in TAG_LABELS),
+      tabAccess: (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)),
       categories: (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)),
       salaryRate: u.salaryRate ? String(u.salaryRate) : '',
       homeLat: u.homeLat ? String(u.homeLat) : '',
@@ -92,6 +113,7 @@ export default function UsersPage() {
       conveyanceRateType: u.conveyanceRateType ? String(u.conveyanceRateType) as '1' | '2' : '',
     });
     setFormError('');
+    resetSuspendForm();
     setShowModal(true);
   }
 
@@ -121,7 +143,7 @@ export default function UsersPage() {
         }
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
-          tags: form.tags, categories, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
+          tabAccess: form.tabAccess, categories, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
         });
         if (loginChanged) await updateUserEmail(editing.id, nextLogin);
       } else {
@@ -145,7 +167,7 @@ export default function UsersPage() {
         }
         await createUserProfile(uid, {
           name: form.name.trim(), email: loginEmail, contactEmail,
-          role: form.role, tags: form.tags, categories, employeeId: form.employeeId.trim(), salaryRate,
+          role: form.role, tabAccess: form.tabAccess, categories, employeeId: form.employeeId.trim(), salaryRate,
           homeLat, homeLng, conveyanceRateType,
         });
       }
@@ -181,18 +203,35 @@ export default function UsersPage() {
     setSaving(false);
   }
 
-  async function handleToggleActive() {
+  // Suspend the employee: reason required, expected-return optional (informational).
+  async function handleSuspend() {
     if (!editing) return;
-    const next = editing.active === false; // reactivate if currently inactive
-    const verb = next ? 'Reactivate' : 'Deactivate';
-    if (!window.confirm(`${verb} ${editing.name || 'this employee'}? ${next ? 'They will be able to log in again.' : 'Their login will be disabled; data is kept.'}`)) return;
+    const reason = suspendReason.trim();
+    if (!reason) { setFormError('A reason is required to suspend this employee.'); return; }
     setSaving(true);
+    setFormError('');
     try {
-      await setUserActive(editing.id, next);
+      await setUserActive(editing.id, false, { reason, expectedReturn: suspendReturn || null });
       setShowModal(false);
       await load();
     } catch (e: unknown) {
-      setFormError(e instanceof Error ? e.message : `${verb} failed. Try again.`);
+      setFormError(e instanceof Error ? e.message : 'Suspend failed. Try again.');
+    }
+    setSaving(false);
+  }
+
+  // End a suspension: re-enable login, clear suspension fields (handled server-side).
+  async function handleReactivate() {
+    if (!editing) return;
+    if (!window.confirm(`Reactivate ${editing.name || 'this employee'}? They will be able to log in again.`)) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      await setUserActive(editing.id, true);
+      setShowModal(false);
+      await load();
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'Reactivate failed. Try again.');
     }
     setSaving(false);
   }
@@ -211,10 +250,12 @@ export default function UsersPage() {
       Name: u.name ?? '',
       'Login Email': u.email ?? '',
       'Contact Email': u.contactEmail ?? '',
-      Status: u.active === false ? 'Inactive' : 'Active',
+      Status: u.active === false ? 'Suspended' : 'Active',
       'Employee ID': u.employeeId ?? '',
       Role: u.role ?? '',
-      Tags: u.role !== 'admin' ? (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => TAG_LABELS[t]).join(', ') : '',
+      'Tab Access': u.role === 'admin'
+        ? 'Full access'
+        : (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)).map(tabLabel).join(', '),
       Categories: u.role === 'operations' ? (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).join(', ') : '',
       'Salary Rate': u.salaryRate ?? '',
       'PL Balance': u.plBalance ?? 0,
@@ -236,7 +277,7 @@ export default function UsersPage() {
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[13px] text-text-secondary select-none cursor-pointer">
             <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-            Show inactive
+            Show suspended
           </label>
           <ExportButton onClick={exportXlsx} disabled={loading || shown.length === 0} />
           <button className="btn-primary flex items-center gap-1.5" onClick={openAdd}><Icon name="plus" size={16} />Add employee</button>
@@ -272,7 +313,7 @@ export default function UsersPage() {
                         <div>
                           <div className="font-medium text-[#2A241F] flex items-center gap-2">
                             {u.name}
-                            {u.active === false && <span className="bg-[#F3E9E7] text-[#B4463A] px-1.5 py-0.5 rounded-[6px] text-[11px] font-normal">Inactive</span>}
+                            {u.active === false && <span className="bg-[#F3E9E7] text-[#B4463A] px-1.5 py-0.5 rounded-[6px] text-[11px] font-normal">Suspended</span>}
                           </div>
                           <div className="text-[12px] text-[#9A938C]">{u.contactEmail || u.email}</div>
                         </div>
@@ -282,9 +323,14 @@ export default function UsersPage() {
                     <td className={TD}>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <RoleBadge role={u.role} />
-                        {u.role !== 'admin' && (u.tags ?? []).filter(t => t in TAG_LABELS).map(t => (
-                          <span key={t} className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{TAG_LABELS[t]}</span>
-                        ))}
+                        {u.role === 'admin' ? (
+                          <span className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">Full access</span>
+                        ) : (() => {
+                          const n = (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)).length;
+                          return n > 0
+                            ? <span className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{n} tab{n === 1 ? '' : 's'}</span>
+                            : null;
+                        })()}
                         {u.role === 'operations' && (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).map(c => (
                           <span key={c} className="bg-[#F3EEFA] text-[#6A44B8] px-1.5 py-0.5 rounded-[6px] text-[11px] font-mono">{c}</span>
                         ))}
@@ -370,30 +416,32 @@ export default function UsersPage() {
               )}
 
               <div>
-                <label className="label">Portal Access Tags <span className="text-text-secondary font-normal">(scoped admin-portal tabs)</span></label>
+                <label className="label">Portal Tab Access <span className="text-text-secondary font-normal">(which admin-portal tabs this employee can use)</span></label>
                 {form.role === 'admin' ? (
-                  <p className="text-[12px] text-text-secondary">Admins always see the entire portal — tags don’t apply.</p>
+                  <p className="text-[12px] text-text-secondary">Admins always see the entire portal — tab access doesn’t apply.</p>
                 ) : (
                   <>
-                    <div className="flex flex-col gap-1.5">
-                      {ALL_TAGS.map(tag => {
-                        const checked = form.tags.includes(tag);
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                      {GRANTABLE_TABS.map(tab => {
+                        const checked = form.tabAccess.includes(tab.path);
                         return (
-                          <label key={tag} className="flex items-center gap-2 text-[13.5px] text-[#2A241F] select-none cursor-pointer">
+                          <label key={tab.path} className="flex items-center gap-2 text-[13.5px] text-[#2A241F] select-none cursor-pointer">
                             <input
                               type="checkbox"
                               checked={checked}
                               onChange={e => setForm(f => ({
                                 ...f,
-                                tags: e.target.checked ? [...f.tags, tag] : f.tags.filter(t => t !== tag),
+                                tabAccess: e.target.checked
+                                  ? [...f.tabAccess, tab.path]
+                                  : f.tabAccess.filter(p => p !== tab.path),
                               }))}
                             />
-                            {TAG_LABELS[tag]}
+                            {tab.label}
                           </label>
                         );
                       })}
                     </div>
-                    <p className="text-[12px] text-text-secondary mt-1">Tagged non-admins can sign into the portal and see only the tabs their tags grant.</p>
+                    <p className="text-[12px] text-text-secondary mt-1">Non-admins can sign into the portal and see only the tabs ticked here. Manage everyone at once on the Access Control page.</p>
                   </>
                 )}
               </div>
@@ -426,10 +474,60 @@ export default function UsersPage() {
                   <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
                     Reset password (set a new temporary one)
                   </button>
+
                   {editing.active === false ? (
-                    <button className="btn-success w-full" onClick={handleToggleActive} disabled={saving}>Reactivate Employee</button>
+                    <>
+                      {/* Current suspension detail */}
+                      <div className="rounded-[10px] bg-[#FBF6F5] border border-[#EEDDDA] p-3 text-[13px]">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="bg-[#F3E9E7] text-[#B4463A] px-1.5 py-0.5 rounded-[6px] text-[11px]">Suspended</span>
+                        </div>
+                        <div className="text-[#6B635C] leading-relaxed">
+                          <div><span className="text-[#9A938C]">Reason:</span> {editing.suspendedReason || '—'}</div>
+                          <div><span className="text-[#9A938C]">By:</span> {editing.suspendedBy || '—'} · {fmtTs(editing.suspendedAt)}</div>
+                          {editing.expectedReturn && <div><span className="text-[#9A938C]">Expected return:</span> {editing.expectedReturn}</div>}
+                        </div>
+                      </div>
+                      <button className="btn-success w-full" onClick={handleReactivate} disabled={saving}>Reactivate Employee</button>
+                    </>
+                  ) : suspendOpen ? (
+                    <div className="rounded-[10px] bg-[#FBF6F5] border border-[#EEDDDA] p-3 space-y-3">
+                      <div>
+                        <label className="label">Reason <span className="text-[#B4463A]">*</span></label>
+                        <textarea className="input" rows={2} value={suspendReason} onChange={e => setSuspendReason(e.target.value)} placeholder="e.g. Unpaid leave until further notice" />
+                      </div>
+                      <div>
+                        <label className="label">Expected return <span className="text-text-secondary font-normal">(optional)</span></label>
+                        <input className="input" type="date" value={suspendReturn} onChange={e => setSuspendReturn(e.target.value)} />
+                      </div>
+                      <div className="flex gap-3">
+                        <button className="btn-danger flex-1" onClick={handleSuspend} disabled={saving}>{saving ? 'Suspending…' : 'Confirm suspension'}</button>
+                        <button className="btn-outline flex-1" onClick={resetSuspendForm} disabled={saving}>Cancel</button>
+                      </div>
+                    </div>
                   ) : (
-                    <button className="btn-danger w-full" onClick={handleToggleActive} disabled={saving}>Deactivate Employee</button>
+                    <button className="btn-danger w-full" onClick={() => { setFormError(''); setSuspendOpen(true); }} disabled={saving}>Suspend Employee</button>
+                  )}
+
+                  {/* History log (most recent first) */}
+                  {(editing.suspensionHistory?.length ?? 0) > 0 && (
+                    <div className="pt-2">
+                      <div className="text-[12px] font-medium text-[#9A938C] mb-1.5">Suspension history</div>
+                      <ul className="space-y-1.5">
+                        {editing.suspensionHistory!.slice().reverse().map((ev, i) => (
+                          <li key={i} className="text-[12.5px] text-[#6B635C] flex gap-2">
+                            <span className={`px-1.5 py-0.5 rounded-[6px] text-[11px] h-fit ${ev.action === 'suspend' ? 'bg-[#F3E9E7] text-[#B4463A]' : 'bg-[#E7F1EA] text-[#2E7D46]'}`}>
+                              {ev.action === 'suspend' ? 'Suspended' : 'Reactivated'}
+                            </span>
+                            <span className="leading-relaxed">
+                              {fmtTs(ev.at)} · {ev.by}
+                              {ev.reason && <> — {ev.reason}</>}
+                              {ev.expectedReturn && <> (return {ev.expectedReturn})</>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               )}

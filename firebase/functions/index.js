@@ -1396,15 +1396,67 @@ exports.onEmployeeLogout = onCall(async (request) => {
 // ── Offboarding / reactivation (Admin SDK) ────────────────────────────────────
 // Disables (or re-enables) the user's Auth account — blocks login server-side — and
 // mirrors it on the user doc. Never deletes data: attendance/salary history is retained.
+// Suspend / reactivate an employee. Same mechanic in both directions (Auth `disabled`
+// + doc `active` toggle together; NO data is ever deleted) but a suspension also records
+// a required reason, the acting admin, a server timestamp, an optional expected-return
+// date, and appends to an on-doc `suspensionHistory` log. Reactivating clears the
+// current-state fields and logs a `reactivate` event.
 exports.setUserActive = onCall(async (request) => {
-  await assertAdmin(request);
-  const { uid, active } = request.data || {};
+  const callerUid = await assertAdmin(request);
+  const { uid, active, reason, expectedReturn } = request.data || {};
   if (!uid || typeof active !== "boolean") {
     throw new HttpsError("invalid-argument", "uid and active (boolean) are required.");
   }
-  await admin.auth().updateUser(uid, { disabled: !active });
-  await admin.firestore().doc(`users/${uid}`).update({ active });
-  console.log(`setUserActive: ${uid} → active=${active}`);
+
+  const FieldValue = admin.firestore.FieldValue;
+  const Timestamp = admin.firestore.Timestamp;
+  const userRef = admin.firestore().doc(`users/${uid}`);
+
+  // Acting admin's display name (server-resolved, so who/when can't be spoofed by the client).
+  const callerSnap = await admin.firestore().doc(`users/${callerUid}`).get();
+  const byName = (callerSnap.exists && callerSnap.data().name) || request.auth?.token?.email || "admin";
+
+  if (active === false) {
+    const reasonText = typeof reason === "string" ? reason.trim() : "";
+    if (!reasonText) {
+      throw new HttpsError("invalid-argument", "A reason is required to suspend an employee.");
+    }
+    const ret = typeof expectedReturn === "string" && expectedReturn.trim() ? expectedReturn.trim() : null;
+
+    await admin.auth().updateUser(uid, { disabled: true });
+    await userRef.update({
+      active: false,
+      suspendedReason: reasonText,
+      suspendedBy: byName,
+      suspendedAt: FieldValue.serverTimestamp(),
+      expectedReturn: ret,
+      // serverTimestamp() sentinels are rejected inside arrayUnion elements — use a concrete
+      // server-clock Timestamp for the history entry.
+      suspensionHistory: FieldValue.arrayUnion({
+        action: "suspend",
+        reason: reasonText,
+        by: byName,
+        at: Timestamp.now(),
+        ...(ret ? { expectedReturn: ret } : {}),
+      }),
+    });
+    console.log(`setUserActive: ${uid} → suspended by ${byName}`);
+  } else {
+    await admin.auth().updateUser(uid, { disabled: false });
+    await userRef.update({
+      active: true,
+      suspendedReason: FieldValue.delete(),
+      suspendedBy: FieldValue.delete(),
+      suspendedAt: FieldValue.delete(),
+      expectedReturn: FieldValue.delete(),
+      suspensionHistory: FieldValue.arrayUnion({
+        action: "reactivate",
+        by: byName,
+        at: Timestamp.now(),
+      }),
+    });
+    console.log(`setUserActive: ${uid} → reactivated by ${byName}`);
+  }
   return { success: true };
 });
 

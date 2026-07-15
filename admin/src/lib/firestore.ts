@@ -10,7 +10,7 @@ import { db, functions } from './firebase';
 import { istTodayStr } from './date';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection } from '@/types';
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -61,11 +61,17 @@ export async function deleteUserProfile(uid: string) {
   await deleteDoc(doc(db, 'users', uid));
 }
 
-// Offboard / reactivate. The client SDK can't disable another user's Auth account, so this
+// Suspend / reactivate. The client SDK can't disable another user's Auth account, so this
 // goes through the Admin-SDK Cloud Function, which sets `disabled` in Auth AND `active` on the
-// user doc. Data is never deleted — attendance/salary history is retained.
-export async function setUserActive(uid: string, active: boolean) {
-  await httpsCallable(functions, 'setUserActive')({ uid, active });
+// user doc. Data is never deleted — attendance/salary history is retained. Suspending requires
+// a reason (opts.reason) and may carry an optional expected-return date; the function records
+// who/when server-side and appends to suspensionHistory.
+export async function setUserActive(
+  uid: string,
+  active: boolean,
+  opts?: { reason?: string; expectedReturn?: string | null },
+) {
+  await httpsCallable(functions, 'setUserActive')({ uid, active, ...opts });
 }
 
 // Admin sets a new password directly (synthetic-email users can't receive reset links).
@@ -244,6 +250,73 @@ export async function getAttendanceForDate(date: string): Promise<AttendanceReco
       const ta = (a.timestamp as unknown as { seconds: number })?.seconds ?? 0;
       const tb = (b.timestamp as unknown as { seconds: number })?.seconds ?? 0;
       return ta - tb;
+    });
+}
+
+// Same-day punch correction (Daily Activity page, admin-only). Rewinds one employee's
+// timeline to `keepEventId`: hard-deletes every punch recorded AFTER it and snapshots
+// those punches verbatim into users/{uid}/attendance_corrections/{autoId} with the
+// admin, reason, and kept event. One atomic batch. Re-reads today's events inside the
+// call so a stale client list can't delete the wrong punches. Returns the removed count.
+//
+// Callers MUST restrict this to the current IST day and enforce a non-empty reason;
+// past-day corrections belong to the Regularization flow.
+export async function restoreAttendanceToEvent(
+  uid: string,
+  date: string,
+  keepEventId: string,
+  reason: string,
+  adminName: string,
+  adminUid: string,
+): Promise<number> {
+  // Authoritative re-read of this employee's punches for the date, oldest first.
+  const snap = await getDocs(
+    query(collection(db, 'users', uid, 'attendance'), where('date', '==', date)),
+  );
+  const events = snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AttendanceRecord))
+    .sort((a, b) => {
+      const ta = (a.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+      const tb = (b.timestamp as unknown as { seconds: number })?.seconds ?? 0;
+      return ta - tb;
+    });
+
+  const keepIdx = events.findIndex(e => e.id === keepEventId);
+  if (keepIdx === -1) throw new Error('The punch to restore to no longer exists — reload and try again.');
+
+  const removed = events.slice(keepIdx + 1);
+  if (removed.length === 0) return 0; // already the last punch — nothing to undo
+
+  const batch = writeBatch(db);
+  removed.forEach(e => batch.delete(doc(db, 'users', uid, 'attendance', e.id)));
+
+  const logRef = doc(collection(db, 'users', uid, 'attendance_corrections'));
+  batch.set(logRef, {
+    date,
+    removedEvents: removed,
+    reason,
+    correctedBy: adminName,
+    correctedByUid: adminUid,
+    correctedAt: Timestamp.now(),
+    keptEventId: keepEventId,
+  } satisfies Omit<AttendanceCorrection, 'id'>);
+
+  await batch.commit();
+  return removed.length;
+}
+
+// All punch corrections made for a given date, across every employee (Daily Activity
+// history). Mirrors getAttendanceForDate: collectionGroup scan + client-side date
+// filter (no composite index needed). Newest first.
+export async function getAttendanceCorrectionsForDate(date: string): Promise<AttendanceCorrection[]> {
+  const snap = await getDocs(collectionGroup(db, 'attendance_corrections'));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as AttendanceCorrection))
+    .filter(c => c.date === date)
+    .sort((a, b) => {
+      const ta = (a.correctedAt as unknown as { seconds: number })?.seconds ?? 0;
+      const tb = (b.correctedAt as unknown as { seconds: number })?.seconds ?? 0;
+      return tb - ta;
     });
 }
 
@@ -552,8 +625,9 @@ export async function setConveyanceConfig(rate1: number, rate2: number): Promise
 // ── Site ID entry ────────────────────────────────────────────────────────
 // Ops type the site name at check-in but leave Site ID + Visit Type + Work Done
 // blank. Admin fills all three directly onto each individual attendance entry from
-// the portal. (Firestore rules allow admins/attendance-managers to change only
-// these three keys — the rest of the event stays immutable.)
+// the portal. (Firestore rules allow admins — and managers holding the Attendance or
+// Manpower Utilisation Input tab — to change only these three keys; the rest of the
+// event stays immutable.)
 export async function updateAttendanceSiteId(
   userId: string, eventId: string, siteId: string, visitType: string, workDoneCategories: string[],
 ): Promise<void> {

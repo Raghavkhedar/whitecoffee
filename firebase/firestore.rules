@@ -20,19 +20,96 @@ service cloud.firestore {
       return userRole() == 'admin';
     }
 
-    // Portal access tags (see admin/src/lib/portalAccess.ts). Non-admin staff can be
-    // granted scoped admin-portal access via `tags` on their user doc. The get() here
-    // hits the same user doc as userRole(), so it's cached — no extra billed read.
-    function userTags() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tags', []);
+    // Portal access is an explicit per-user list of allowed tab PATHS
+    // (`tabAccess: string[]` on the user doc; see admin/src/lib/portalAccess.ts).
+    // The get() here hits the same user doc as userRole(), so it's cached — no extra
+    // billed read. Each collection is unlocked only by the tab(s) that legitimately
+    // use it, via the per-domain helpers below. User-management writes stay admin-only,
+    // so a scoped manager can never create users or self-promote.
+    function userTabs() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tabAccess', []);
     }
-    // An attendance manager may read/write the attendance-domain collections (the tabs
-    // their tag grants: Attendance, OT & Shortage, Settlements, Site IDs, Emp Dashboard).
-    // NOTE (soft phase): any attendance-manager gets ALL of these; per-tab scoping and
-    // tighter field-level limits are a later hardening pass. User-management writes stay
-    // admin-only below, so a tagged manager still cannot create users or self-promote.
-    function isAttendanceMgr() {
-      return userTags().hasAny(['attendance-manager']);
+
+    // Attendance events: read for the tabs that surface attendance; update (siteId/
+    // visitType/workDoneCategories patch) only for Attendance + Manpower Utilisation Input.
+    function canReadAttendance() {
+      return userTabs().hasAny(['/attendance', '/working-hours-shortage-excess', '/ot-shortage', '/manpower-utilisation-input', '/regularization']);
+    }
+    function canWriteAttendance() {
+      return userTabs().hasAny(['/attendance', '/manpower-utilisation-input']);
+    }
+
+    // Computed daily status: read for attendance/OT views; write for Attendance +
+    // Regularization (the two tabs that set/adjust a day's status).
+    function canReadAttendanceStatus() {
+      return userTabs().hasAny(['/attendance', '/regularization', '/working-hours-shortage-excess', '/ot-shortage']);
+    }
+    function canWriteAttendanceStatus() {
+      return userTabs().hasAny(['/attendance', '/regularization']);
+    }
+
+    // Planned shift windows: read for attendance/OT views; write only for Attendance.
+    function canReadPlannedHours() {
+      return userTabs().hasAny(['/attendance', '/working-hours-shortage-excess', '/ot-shortage']);
+    }
+    function canWritePlannedHours() {
+      return userTabs().hasAny(['/attendance']);
+    }
+
+    // Per-day worked-hours record (Cloud Function writes; portal reads).
+    function canReadDailyHours() {
+      return userTabs().hasAny(['/ot-shortage', '/working-hours-shortage-excess', '/attendance']);
+    }
+
+    // OT approvals: read for attendance/OT/settlement views; write for Attendance +
+    // OT & Shortage (the two tabs that grant/adjust OT).
+    function canReadOtApprovals() {
+      return userTabs().hasAny(['/attendance', '/ot-shortage', '/working-hours-shortage-excess', '/ot-settlements']);
+    }
+    function canWriteOtApprovals() {
+      return userTabs().hasAny(['/attendance', '/ot-shortage']);
+    }
+
+    // Frozen monthly settlements: read + write for OT Settlements only.
+    function canAccessSettlements() {
+      return userTabs().hasAny(['/ot-settlements']);
+    }
+
+    // Holidays: any signed-in user may read; write for Attendance.
+    function canWriteHolidays() {
+      return userTabs().hasAny(['/attendance']);
+    }
+
+    // Leave approvals: read + status update for Leaves.
+    function canAccessLeaves() {
+      return userTabs().hasAny(['/leaves']);
+    }
+
+    // Regularization: read + status update for Regularization.
+    function canAccessRegularization() {
+      return userTabs().hasAny(['/regularization']);
+    }
+
+    // Submissions family (material_*, tool_transfers, work_progress, submission_edits):
+    // read + admin-style status update for Submissions.
+    function canAccessSubmissions() {
+      return userTabs().hasAny(['/submissions']);
+    }
+
+    // Conveyance records + config rate lookup: read + write for Conveyance.
+    function canAccessConveyance() {
+      return userTabs().hasAny(['/conveyance']);
+    }
+
+    // Notification send log + admin-portal notification creation: for Notifications.
+    function canAccessNotifications() {
+      return userTabs().hasAny(['/notifications']);
+    }
+
+    // User profiles: any grantable tab needs to resolve employee names/IDs/rates,
+    // so ANY of the ten grantable tabs unlocks a cross-user read (writes stay admin-only).
+    function canReadUsers() {
+      return userTabs().hasAny(['/working-hours-shortage-excess', '/leaves', '/regularization', '/attendance', '/ot-shortage', '/ot-settlements', '/manpower-utilisation-input', '/submissions', '/conveyance', '/notifications']);
     }
 
     // Returns true if the write touches ONLY the given fields (and no others).
@@ -53,9 +130,9 @@ service cloud.firestore {
     // ── /users/{userId} — User profiles ──────────────────────────────────
 
     match /users/{userId} {
-      // Users read their own profile; admin and attendance managers read all
-      // (managers resolve employee names/roles/rates across the attendance tabs).
-      allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
+      // Users read their own profile; admin and any scoped manager holding a grantable
+      // tab read all (managers resolve employee names/roles/rates across their tabs).
+      allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadUsers());
       // Only admin can create users (via secondary Firebase app in UserRepository)
       allow create: if isLoggedIn() && isAdmin();
       // Admin can update any field. A user may update ONLY their own session/FCM
@@ -68,26 +145,38 @@ service cloud.firestore {
 
       // ── /attendance/{docId} ───────────────────────────────────────────
       match /attendance/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadAttendance());
         allow create: if isLoggedIn() && isOwner(userId);
         // Events are immutable once recorded EXCEPT the admin-filled Site ID, Visit
         // Type, and Work Done categories: ops type a free-text site name at check-in
-        // and an admin (or attendance manager) later patches `siteId` + `visitType` +
-        // `workDoneCategories` from the Site IDs page (updateAttendanceSiteId).
-        // Restricting to these keeps the event otherwise tamper-proof (timestamp/
-        // location/type stay immutable).
-        allow update: if isLoggedIn() && (isAdmin() || isAttendanceMgr()) && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
-        allow delete: if false;
+        // and an admin (or a manager holding Attendance / Manpower Utilisation Input)
+        // later patches `siteId` + `visitType` + `workDoneCategories` from the Manpower
+        // Utilisation Input page (updateAttendanceSiteId). Restricting to these keeps the
+        // event otherwise tamper-proof (timestamp/location/type stay immutable).
+        allow update: if isLoggedIn() && (isAdmin() || canWriteAttendance()) && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
+        // Admin-only same-day punch correction (Daily Activity page): an admin rewinds a
+        // timeline by deleting erroneous trailing punches. Every deletion is snapshotted
+        // into attendance_corrections below, so nothing is lost. Non-admins never delete.
+        allow delete: if isLoggedIn() && isAdmin();
+      }
+
+      // ── /attendance_corrections/{docId} ───────────────────────────────
+      // Immutable audit log of admin punch corrections (see restoreAttendanceToEvent):
+      // full snapshots of deleted punches + who/why. Admin-only; create + read only.
+      match /attendance_corrections/{docId} {
+        allow read, create: if isLoggedIn() && isAdmin();
+        allow update, delete: if false;
       }
 
       // ── /material_requests/{docId} ────────────────────────────────────
       match /material_requests/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
-        // Owner may ONLY patch photoUrls (post-upload); admin can update status etc.
-        // Without this restriction an owner could flip their own status to "approved".
+        // Owner may ONLY patch photoUrls (post-upload); admin / a Submissions manager can
+        // update status etc. Without this restriction an owner could flip their own status.
         allow update: if isLoggedIn() && (
           isAdmin() ||
+          canAccessSubmissions() ||
           (isOwner(userId) && changedKeysWithin(['photoUrls']))
         );
         allow delete: if false;
@@ -95,10 +184,11 @@ service cloud.firestore {
 
       // ── /material_purchases/{docId} ───────────────────────────────────
       match /material_purchases/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
         allow update: if isLoggedIn() && (
           isAdmin() ||
+          canAccessSubmissions() ||
           (isOwner(userId) && changedKeysWithin(['photoUrls']))
         );
         allow delete: if false;
@@ -106,10 +196,11 @@ service cloud.firestore {
 
       // ── /material_transfers/{docId} ───────────────────────────────────
       match /material_transfers/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
         allow update: if isLoggedIn() && (
           isAdmin() ||
+          canAccessSubmissions() ||
           (isOwner(userId) && changedKeysWithin(['photoUrls']))
         );
         allow delete: if false;
@@ -117,10 +208,11 @@ service cloud.firestore {
 
       // ── /tool_transfers/{docId} ───────────────────────────────────────
       match /tool_transfers/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
         allow update: if isLoggedIn() && (
           isAdmin() ||
+          canAccessSubmissions() ||
           (isOwner(userId) && changedKeysWithin(['photoUrls']))
         );
         allow delete: if false;
@@ -128,10 +220,11 @@ service cloud.firestore {
 
       // ── /work_progress/{docId} ────────────────────────────────────────
       match /work_progress/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
         allow update: if isLoggedIn() && (
           isAdmin() ||
+          canAccessSubmissions() ||
           (isOwner(userId) && changedKeysWithin(['photoUrls']))
         );
         allow delete: if false;
@@ -139,21 +232,22 @@ service cloud.firestore {
 
       // ── /leave_requests/{docId} ───────────────────────────────────────
       match /leave_requests/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessLeaves());
         // Must be created pending — a self-approved leave would otherwise be
         // counted as PL by the nightly computeDailyAttendanceStatus function.
         allow create: if isLoggedIn() && isOwner(userId)
                       && request.resource.data.status == 'pending';
-        // Admin updates status (approved/rejected); user cannot change status
-        allow update: if isLoggedIn() && isAdmin();
+        // Admin / a Leaves manager updates status (approved/rejected); the owner
+        // (employee app) cannot change status.
+        allow update: if isLoggedIn() && (isAdmin() || canAccessLeaves());
         allow delete: if false;
       }
 
       // ── /notifications/{docId} ────────────────────────────────────────
       match /notifications/{docId} {
         allow read:   if isLoggedIn() && isOwner(userId);
-        // User's FcmService + admin portal sender can create
-        allow create: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        // User's FcmService + admin portal sender (admin or a Notifications manager) can create
+        allow create: if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessNotifications());
         // User marks as read; admin can also update
         allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
         allow delete: if false;
@@ -163,51 +257,53 @@ service cloud.firestore {
       // Written by Cloud Function (Admin SDK) for office/admin users (auto),
       // and by admin portal for operations users (manual).
       match /attendance_status/{date} {
-        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
-        allow write: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadAttendanceStatus());
+        allow write: if isLoggedIn() && (isAdmin() || canWriteAttendanceStatus());
       }
 
       // ── /planned_hours/{date} ─────────────────────────────────────────
       // Admin-set per-day shift window for operations employees. Read by the
-      // employee (their app), the admin, and attendance managers, who also set it.
+      // employee (their app), the admin, and managers holding the attendance/OT tabs,
+      // and written by managers holding Attendance.
       match /planned_hours/{date} {
-        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
-        allow write: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadPlannedHours());
+        allow write: if isLoggedIn() && (isAdmin() || canWritePlannedHours());
       }
 
       // ── /daily_hours/{date} ───────────────────────────────────────────
       // Per-day worked-hours record (planned/actual/shortage/OT) written by the
       // computeDailyAttendanceStatus Cloud Function (Admin SDK bypasses rules).
-      // Readable by the employee, the admin, and attendance managers.
+      // Readable by the employee, the admin, and managers holding the OT/hours tabs.
       match /daily_hours/{date} {
-        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadDailyHours());
         allow write: if isLoggedIn() && isAdmin();
       }
 
       // ── /ot_approvals/{date} ──────────────────────────────────────────
       // Admin-granted overtime (approveOt from the employee dashboard). Read by the
-      // employee, admin, and attendance managers, who also grant/adjust approvals.
+      // employee, admin, and managers holding the attendance/OT/settlement tabs; written
+      // by managers holding Attendance or OT & Shortage.
       match /ot_approvals/{date} {
-        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
-        allow write: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadOtApprovals());
+        allow write: if isLoggedIn() && (isAdmin() || canWriteOtApprovals());
       }
 
       // ── /settlements/{month} ──────────────────────────────────────────
-      // Frozen monthly OT/shortage/WO settlement (Settle & Lock on the Settlements
-      // page). Read by the employee, admin, and attendance managers, who also settle.
+      // Frozen monthly OT/shortage/WO settlement (Settle & Lock on the OT Settlements
+      // page). Read by the employee, admin, and managers holding OT Settlements, who also settle.
       match /settlements/{month} {
-        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || isAttendanceMgr());
-        allow write: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSettlements());
+        allow write: if isLoggedIn() && (isAdmin() || canAccessSettlements());
       }
 
       // ── /regularization_requests/{docId} ──────────────────────────────
       match /regularization_requests/{docId} {
-        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin());
-        // Must be created pending — only an admin approval may flip the linked
-        // attendance_status to Present (done via writeBatch in the admin portal).
+        allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessRegularization());
+        // Must be created pending — only an admin (or Regularization manager) approval may
+        // flip the linked attendance_status to Present (done via writeBatch in the portal).
         allow create: if isLoggedIn() && isOwner(userId)
                       && request.resource.data.status == 'pending';
-        allow update: if isLoggedIn() && isAdmin();
+        allow update: if isLoggedIn() && (isAdmin() || canAccessRegularization());
         allow delete: if false;
       }
     }
@@ -215,8 +311,8 @@ service cloud.firestore {
     // ── collectionGroup — leave_requests (admin Leave Approvals screen) ──
     // Required for LeaveApprovalsViewModel which does collectionGroup("leave_requests")
     match /{path=**}/leave_requests/{docId} {
-      allow read:   if isLoggedIn() && isAdmin();
-      allow update: if isLoggedIn() && isAdmin();
+      allow read:   if isLoggedIn() && (isAdmin() || canAccessLeaves());
+      allow update: if isLoggedIn() && (isAdmin() || canAccessLeaves());
     }
 
     // ── collectionGroup — admin portal Attendance & Submissions screens ──
@@ -224,57 +320,61 @@ service cloud.firestore {
     // cover collectionGroup() queries that scan across all users — each collection
     // needs its own top-level {path=**} rule for the admin portal's cross-user reads.
     match /{path=**}/attendance/{docId} {
-      allow read: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow read: if isLoggedIn() && (isAdmin() || canReadAttendance());
     }
     match /{path=**}/material_requests/{docId} {
-      allow read: if isLoggedIn() && isAdmin();
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
     match /{path=**}/material_purchases/{docId} {
-      allow read: if isLoggedIn() && isAdmin();
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
     match /{path=**}/material_transfers/{docId} {
-      allow read: if isLoggedIn() && isAdmin();
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
     match /{path=**}/tool_transfers/{docId} {
-      allow read: if isLoggedIn() && isAdmin();
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
     match /{path=**}/work_progress/{docId} {
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
+    }
+    // Admin-only history read for the Daily Activity page (getAttendanceCorrectionsForDate).
+    match /{path=**}/attendance_corrections/{docId} {
       allow read: if isLoggedIn() && isAdmin();
     }
     match /{path=**}/attendance_status/{date} {
-      allow read:  if isLoggedIn() && (isAdmin() || isAttendanceMgr());
-      allow write: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow read:  if isLoggedIn() && (isAdmin() || canReadAttendanceStatus());
+      allow write: if isLoggedIn() && (isAdmin() || canWriteAttendanceStatus());
     }
     // Required for getPlannedHoursForMonth() which does collectionGroup("planned_hours").
     // The specific /users/{userId}/planned_hours/{date} match above authorizes the
     // per-doc write, but a collectionGroup READ needs this {path=**} rule.
     match /{path=**}/planned_hours/{date} {
-      allow read: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow read: if isLoggedIn() && (isAdmin() || canReadPlannedHours());
     }
     // Required for getOtApprovalsForDateRange() which does collectionGroup("ot_approvals").
     match /{path=**}/ot_approvals/{date} {
-      allow read: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow read: if isLoggedIn() && (isAdmin() || canReadOtApprovals());
     }
     // Required for getSettlementsForMonth() which does collectionGroup("settlements").
     match /{path=**}/settlements/{month} {
-      allow read: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSettlements());
     }
     // Collection-group read for daily_hours (admin reporting / future dashboards).
     match /{path=**}/daily_hours/{date} {
-      allow read: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow read: if isLoggedIn() && (isAdmin() || canReadDailyHours());
     }
     match /{path=**}/regularization_requests/{docId} {
-      allow read, update: if isLoggedIn() && isAdmin();
+      allow read, update: if isLoggedIn() && (isAdmin() || canAccessRegularization());
     }
 
     // ── /sent_notifications/{docId} — Notification send log ─────────────
     match /sent_notifications/{docId} {
-      allow read, write: if isLoggedIn() && isAdmin();
+      allow read, write: if isLoggedIn() && (isAdmin() || canAccessNotifications());
     }
 
     // ── /submission_edits/{docId} — Audit log for admin edits ────────────
     match /submission_edits/{docId} {
-      allow read, write: if isLoggedIn() && isAdmin();
+      allow read, write: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
 
     // ── /sites/{siteId} — Site management ────────────────────────────────
@@ -286,23 +386,24 @@ service cloud.firestore {
 
     // ── /holidays/{date} — Company-wide holidays ────────────────────────
     // Any signed-in user may read (employees see holidays in their app); an admin
-    // or attendance manager may mark/unmark. A marked day is skipped like a Sunday
-    // by the nightly computeDailyAttendanceStatus function.
+    // or a manager holding Attendance may mark/unmark. A marked day is skipped like a
+    // Sunday by the nightly computeDailyAttendanceStatus function.
     match /holidays/{date} {
       allow read:  if isLoggedIn();
-      allow write: if isLoggedIn() && (isAdmin() || isAttendanceMgr());
+      allow write: if isLoggedIn() && (isAdmin() || canWriteHolidays());
     }
 
     // ── /config/{docId} — App configuration (conveyance rates, etc.) ────
+    // Read also allowed for a Conveyance manager (rate lookup); write stays admin-only.
     match /config/{docId} {
-      allow read:  if isLoggedIn() && isAdmin();
+      allow read:  if isLoggedIn() && (isAdmin() || canAccessConveyance());
       allow write: if isLoggedIn() && isAdmin();
     }
 
     // ── /conveyance/{docId} — Monthly conveyance records ────────────────
     match /conveyance/{docId} {
-      allow read:  if isLoggedIn() && isAdmin();
-      allow write: if isLoggedIn() && isAdmin();
+      allow read:  if isLoggedIn() && (isAdmin() || canAccessConveyance());
+      allow write: if isLoggedIn() && (isAdmin() || canAccessConveyance());
     }
   }
 }
