@@ -5,8 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
-import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.RegularizationRequest
+import com.raghav.whitecoffee.data.model.RoleCapabilities
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.RegularizationRepository
@@ -58,7 +58,10 @@ class RegularizationViewModel @Inject constructor(
         today.format(formatter)
     }
 
-    private val isOperations: Boolean get() = sessionManager.isOperations
+    private val role: String get() = sessionManager.role
+
+    /** Operations score against a planned shift; office/admin/sales use the fixed 10–18 window. */
+    private val usesFixedWindow: Boolean get() = RoleCapabilities.usesFixedWindow(role)
 
     init {
         loadToday()
@@ -74,7 +77,7 @@ class RegularizationViewModel @Inject constructor(
                 return@launch
             }
             _daysState.value = UiState.Loading()
-            val plannedWindow = if (isOperations) {
+            val plannedWindow = if (!usesFixedWindow) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
             } else null
             val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
@@ -106,35 +109,32 @@ class RegularizationViewModel @Inject constructor(
 
     // Returns the day's live status only when it's NOT clean (i.e. worth regularizing):
     // null = nothing to fix (Present/on-time, or a day payroll leaves unmarked), "SL"/"HalfDay"
-    // otherwise. Scoring mirrors computeDailyAttendanceStatus: ops uses the first site/market
-    // arrival → last departure against the day's planned shift; office uses office_in/out vs 10–18.
+    // otherwise. Scoring mirrors computeDailyAttendanceStatus: the window comes from the role's
+    // planned shift (ops) or the fixed 10–18 (office/admin/sales), and the in/out event types
+    // come from RoleCapabilities — so a sales SITE-visit day is regularizable, not invisible.
     private fun deriveLiveStatus(events: List<AttendanceRecord>, plannedWindow: Pair<Int, Int>?): String? {
         if (events.isEmpty()) return null
 
-        val inRec: AttendanceRecord
-        val outRec: AttendanceRecord?
         val startMin: Int
         val endMin: Int
-        if (isOperations) {
+        if (usesFixedWindow) {
+            startMin = AttendanceStatusRules.OFFICE_START_MIN
+            endMin = AttendanceStatusRules.OFFICE_END_MIN
+        } else {
             // No planned shift → payroll leaves the day unmarked; nothing to regularize.
             val window = plannedWindow ?: return null
             startMin = window.first
             endMin = window.second
-            inRec = events.firstOrNull { it.type in AttendanceType.OPS_IN_TYPES } ?: return null
-            val lastInIdx = events.indexOfLast { it.type in AttendanceType.OPS_IN_TYPES }
-            val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
-            outRec = events.lastOrNull { it.type in AttendanceType.OPS_OUT_TYPES }
-                ?.takeIf { lastOutIdx > lastInIdx }
-        } else {
-            startMin = AttendanceStatusRules.OFFICE_START_MIN
-            endMin = AttendanceStatusRules.OFFICE_END_MIN
-            inRec = events.firstOrNull { it.type == AttendanceType.OFFICE_IN } ?: return null
-            val lastInIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_IN }
-            val lastOutIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_OUT }
-            // Only count the checkout if it's the final event (they haven't re-entered since).
-            outRec = events.lastOrNull { it.type == AttendanceType.OFFICE_OUT }
-                ?.takeIf { lastOutIdx > lastInIdx }
         }
+
+        val inTypes = RoleCapabilities.attendanceInTypes(role)
+        val outTypes = RoleCapabilities.attendanceOutTypes(role)
+        val inRec = events.firstOrNull { it.type in inTypes } ?: return null
+        val lastInIdx = events.indexOfLast { it.type in inTypes }
+        val lastOutIdx = events.indexOfLast { it.type in outTypes }
+        // Only count the checkout if it's the final event (they haven't re-entered since).
+        val outRec = events.lastOrNull { it.type in outTypes }
+            ?.takeIf { lastOutIdx > lastInIdx }
 
         val inMin = minutesOf(inRec) ?: return "HalfDay"
         val outMin = outRec?.let { minutesOf(it) }
