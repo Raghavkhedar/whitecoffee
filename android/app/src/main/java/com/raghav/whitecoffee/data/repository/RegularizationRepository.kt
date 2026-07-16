@@ -19,21 +19,6 @@ class RegularizationRepository @Inject constructor(
     private val userDoc get() = firestore.collection("users").document(sessionManager.userId)
     private val regCol  get() = userDoc.collection("regularization_requests")
 
-    suspend fun getRequestForDate(date: String): Result<RegularizationRequest?> {
-        return try {
-            val snapshot = regCol
-                .whereEqualTo("date", date)
-                .get()
-                .await()
-            val request = snapshot.documents
-                .mapNotNull { RegularizationRequest.fromDocument(it) }
-                .firstOrNull()
-            Result.success(request)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         regCol.whereEqualTo("date", date)
             .snapshotsAsFlow()

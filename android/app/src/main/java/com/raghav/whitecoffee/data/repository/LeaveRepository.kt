@@ -38,40 +38,13 @@ class LeaveRepository @Inject constructor(
         }
     }
 
-    suspend fun getMyLeaveRequests(): Result<List<LeaveRequest>> {
-        return try {
-            val snapshot = leaveCol
-                .orderBy("submittedAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
-            Result.success(snapshot.documents.mapNotNull { LeaveRequest.fromDocument(it) })
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
     fun observeMyLeaveRequests(): Flow<List<LeaveRequest>> =
         leaveCol.orderBy("submittedAt", Query.Direction.DESCENDING)
             .snapshotsAsFlow()
             .map { snap -> snap.documents.mapNotNull { LeaveRequest.fromDocument(it) } }
 
-    // Office role only — collectionGroup across all users.
+    // Office/admin only — collectionGroup across all users.
     // Requires Firestore index: leave_requests / status ASC + submittedAt ASC
-    suspend fun getPendingLeaveRequests(): Result<List<LeaveRequest>> {
-        return try {
-            val snapshot = firestore.collectionGroup("leave_requests")
-                .whereEqualTo("status", "pending")
-                .orderBy("submittedAt", Query.Direction.ASCENDING)
-                .get()
-                .await()
-            Result.success(snapshot.documents.mapNotNull { LeaveRequest.fromDocument(it) })
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    // Live twin of getPendingLeaveRequests(). Same collectionGroup query + composite index
-    // (leave_requests: status ASC + submittedAt ASC). Office/admin only.
     fun observePendingLeaveRequests(): Flow<List<LeaveRequest>> =
         firestore.collectionGroup("leave_requests")
             .whereEqualTo("status", "pending")
