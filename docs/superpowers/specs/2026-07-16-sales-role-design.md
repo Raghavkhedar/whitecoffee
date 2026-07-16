@@ -138,11 +138,19 @@ Firestore rules.
 - ~~Whether any Firestore conveyance/attendance rule needs an explicit sales allowance~~ —
   resolved: none does (see §5).
 
+### 7. Notifications (added during implementation)
+- **Sales is its own recipient group** — `all` / `operations` / `office` / **`sales`** /
+  `specific`. `office` still means `role in ['office','admin']`; sales is **never** folded
+  into it despite sharing the fixed window. Both halves are required or the feature
+  half-works: the portal (`notifications/page.tsx` + `SentNotification['recipientType']`)
+  resolves the in-app recipients, and `sendPushNotification` in `functions/index.js` runs
+  the matching `where("role","==","sales")` query for the FCM push.
+
 ## Known gaps (deliberately not addressed)
-- **Notifications page**: the recipient groups are `all` / `operations` / `office` /
-  `specific`, where `office` means `role in ['office','admin']`. Sales staff are reachable
-  only via **All** or **Specific**, not as a group. Adding a Sales group is a UI/product
-  decision, not a correctness bug — out of scope here.
 - **Android**: sales sees the same home cards as office (M&T Request / Work Progress
   hidden); a site-visit day still requires a Home In punch first, matching ops. No Android
   unit tests were added for `RoleCapabilities` (the app has no test suite for this layer).
+- **Sales `siteId` is always blank** in the Sheets Attendance tab: `siteId` is filled by an
+  admin on Manpower Utilisation Input, from which sales is excluded by design. The
+  free-text `siteName` still shows in the Location column. Correct per "sales site visits
+  are attendance + conveyance only".

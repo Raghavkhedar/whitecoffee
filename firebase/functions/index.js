@@ -1279,6 +1279,9 @@ exports.sendPushNotification = onDocumentCreated(
       } else if (recipientType === "office") {
         // isOffice is true for both office and admin roles
         query = query.where("role", "in", ["office", "admin"]);
+      } else if (recipientType === "sales") {
+        // Sales is its own group — never folded into "office" despite sharing its window.
+        query = query.where("role", "==", "sales");
       }
       // "all" — no role filter
       const snap = await query.get();

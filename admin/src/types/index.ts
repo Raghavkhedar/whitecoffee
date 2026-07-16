@@ -235,7 +235,7 @@ export interface SentNotification {
   title: string;
   body: string;
   type: string;
-  recipientType: 'all' | 'operations' | 'office' | 'specific';
+  recipientType: 'all' | 'operations' | 'office' | 'sales' | 'specific';
   recipientCount: number;
   sentByName: string;
   sentAt?: Timestamp;
