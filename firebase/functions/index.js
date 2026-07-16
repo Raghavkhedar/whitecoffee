@@ -17,6 +17,17 @@ const {
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
 const { bannerFor, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab } = require("./dashboardHistory");
+// Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
+// office/operations/sales/admin decisions through predicates instead of `isOps`.
+const {
+  attendanceInTypes,
+  attendanceOutTypes,
+  usesFixedWindow,
+  usesOtShortageLedger,
+  usesConveyance,
+  inManpowerReports,
+  rolesWith,
+} = require("./roleCapabilities");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -254,7 +265,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
     // Status is evaluated against that window. No plan → day left unmarked.
     const plannedHours = new Map(); // userId → { startTime, endTime }
     const planChecks = allUsers
-      .filter((u) => u.role === "operations")
+      .filter((u) => !usesFixedWindow(u.role)) // planned-shift roles (operations) only
       .map(async (user) => {
         const planDoc = await db.doc(`users/${user.id}/planned_hours/${today}`).get();
         if (planDoc.exists) {
@@ -291,28 +302,33 @@ exports.computeDailyAttendanceStatus = onSchedule(
         (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
       );
 
-      const isOps = user.role === "operations";
+      const role        = user.role;
+      const fixedWindow = usesFixedWindow(role); // office/admin/sales: fixed 10–18; operations: planned shift
       const plan  = plannedHours.get(user.id);
       const leave = leavesToday.get(user.id);
 
-      // Operations need a planned shift to be auto-evaluated. With no plan and
-      // no approved leave, leave the day unmarked (admin must enter a plan).
-      if (isOps && !plan && !leave) continue;
+      // Planned-shift roles (operations) need a planned shift to be auto-evaluated.
+      // With no plan and no approved leave, leave the day unmarked (admin must enter
+      // a plan). Fixed-window roles (office/admin/sales) never need a plan.
+      if (!fixedWindow && !plan && !leave) continue;
 
-      // Working window: office is fixed 10:00–18:00; operations use the planned shift the
-      // admin entered (resolveOpsWindow handles the inverted/zero-window fallback). A plan is
-      // guaranteed here for ops — the no-plan case already `continue`d above.
+      // Working window: fixed-window roles use 10:00–18:00; operations use the planned
+      // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
+      // fallback). A plan is guaranteed for ops here — the no-plan case already `continue`d.
       let startMin = OFFICE_START_MIN;
       let endMin = OFFICE_END_MIN;
-      if (isOps) {
+      if (!fixedWindow) {
         const window = resolveOpsWindow(plan?.startTime, plan?.endTime);
         if (window) { startMin = window.startMin; endMin = window.endMin; }
       }
 
-      // Operations: in/out come from the first place they reached and the last
-      // they left, across site and market visits. Office: office_in / office_out.
-      const checkIns  = events.filter((e) => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === "office_in");
-      const checkOuts = events.filter((e) => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === "office_out");
+      // First check-in / last check-out across this role's event types. Operations:
+      // site + market. Office/admin: office. Sales (hybrid): office + site + market —
+      // scored against the same fixed window as office.
+      const inTypes  = attendanceInTypes(role);
+      const outTypes = attendanceOutTypes(role);
+      const checkIns  = events.filter((e) => inTypes.includes(e.type));
+      const checkOuts = events.filter((e) => outTypes.includes(e.type));
       let status;
 
       if (checkIns.length > 0 && checkOuts.length > 0) {
@@ -350,8 +366,9 @@ exports.computeDailyAttendanceStatus = onSchedule(
       });
 
       // Per-day worked hours → shortage (auto) and overtime (admin-approved later).
-      // Only on fully-worked days; absent / leave / log-not-found never accrue.
-      if (checkIns.length > 0 && checkOuts.length > 0) {
+      // Only on fully-worked days, and only for roles that run the OT/shortage ledger
+      // (operations). Fixed-window roles (office/admin/sales) have no OT/shortage.
+      if (usesOtShortageLedger(role) && checkIns.length > 0 && checkOuts.length > 0) {
         const firstIn    = checkIns[0];
         const lastOut     = checkOuts[checkOuts.length - 1];
         const inMin       = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
@@ -525,23 +542,35 @@ exports.exportToSheets = onSchedule(
         const date  = group ? group.date : key.slice(sep + 2);
         const role  = userRoleMap.get(uid) || "";
         const isOps = role === "operations";
+        const inTypes  = attendanceInTypes(role);
+        const outTypes = attendanceOutTypes(role);
 
         const locOf = (e) => {
           if (!e) return "";
           if (isOps) return e.siteName || "Site";
+          // Sales is hybrid: name site/market visits like ops, office/home like office.
+          if (e.type === "site_in"   || e.type === "site_out")   return e.siteName   || "Site";
+          if (e.type === "market_in" || e.type === "market_out") return e.marketName || "Market";
           // Office/admin now log from home too (enforced for BO) — distinguish
           // home_in/home_out from office_in/office_out so the timeline is honest.
           if (e.type === "home_in" || e.type === "home_out") return "Home";
           return e.locationName || "Office";
         };
         // Site ID is filled in per-entry by the admin (Site IDs page) on the attendance doc.
-        const siteIdOf = (e) => (isOps && e) ? (e.siteId || "") : "";
+        const siteIdOf = (e) => {
+          if (!e) return "";
+          if (isOps) return e.siteId || "";
+          if (e.type === "site_in" || e.type === "site_out") return e.siteId || ""; // sales site visits
+          return "";
+        };
 
         let firstIn, lastOut, allActivity = "";
         if (group) {
           group.events.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
-          firstIn = group.events.filter((e) => e.type === (isOps ? "site_in"  : "office_in"))[0];
-          const outs = group.events.filter((e) => e.type === (isOps ? "site_out" : "office_out"));
+          // In/Out time: ops keeps its site_in/site_out anchors (market excluded, as today);
+          // office → office_in/out; sales (hybrid) → first/last across all its in/out types.
+          firstIn = group.events.filter((e) => isOps ? e.type === "site_in" : inTypes.includes(e.type))[0];
+          const outs = group.events.filter((e) => isOps ? e.type === "site_out" : outTypes.includes(e.type));
           lastOut = outs[outs.length - 1];
 
           // Full chronological log of every check-in / check-out and site visited,
@@ -633,7 +662,7 @@ exports.exportToSheets = onSchedule(
       const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
       snap.docs.forEach((doc) => {
         const uid = uidOf(doc);
-        if (userRoleMap.get(uid) !== "operations") return; // OT is an ops-only concept
+        if (!usesOtShortageLedger(userRoleMap.get(uid))) return; // OT is a ledger-role (operations) concept
         const d = doc.data();
         const key = `${uid}__${d.date || ""}`;
         if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
@@ -645,7 +674,7 @@ exports.exportToSheets = onSchedule(
       otDecisionMap.forEach((_v, key) => {
         const sep = key.lastIndexOf("__");
         const uid = key.slice(0, sep), date = key.slice(sep + 2);
-        if (userRoleMap.get(uid) !== "operations") return;
+        if (!usesOtShortageLedger(userRoleMap.get(uid))) return;
         if (date < monthStart || date > today) return;
         if (!groups.has(key)) groups.set(key, { uid, date, events: [] });
       });
@@ -759,7 +788,7 @@ exports.exportToSheets = onSchedule(
       const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
       snap.docs.forEach((doc) => {
         const uid = uidOf(doc);
-        if (userRoleMap.get(uid) !== "operations") return;      // ops-only report
+        if (!inManpowerReports(userRoleMap.get(uid))) return;   // ops-only report (sales excluded)
         const d = doc.data();
         const key = `${uid}__${d.date || ""}`;
         if (!groups.has(key)) groups.set(key, { uid, date: d.date || "", events: [] });
@@ -968,8 +997,9 @@ exports.exportToSheets = onSchedule(
       const convConfig     = convConfigSnap.exists ? convConfigSnap.data() : {};
       const rateValues     = { 1: convConfig.rate1 || CONVEYANCE_RATE_FALLBACK, 2: convConfig.rate2 || CONVEYANCE_RATE_FALLBACK };
 
-      const opsUsersSnap = await db.collection("users").where("role", "==", "operations").get();
-      const opsUsers   = new Map(opsUsersSnap.docs.map((d) => [d.id, d.data()]));
+      // Conveyance-earning roles: operations + sales (see roleCapabilities.usesConveyance).
+      const convUsersSnap = await db.collection("users").where("role", "in", rolesWith("usesConveyance")).get();
+      const convUsers   = new Map(convUsersSnap.docs.map((d) => [d.id, d.data()]));
 
       const attendSnap = await db.collectionGroup("attendance")
         .where("date", ">=", monthStart)
@@ -979,7 +1009,7 @@ exports.exportToSheets = onSchedule(
       const grouped = new Map();
       attendSnap.docs.forEach((doc) => {
         const d = doc.data();
-        const user = opsUsers.get(d.userId);
+        const user = convUsers.get(d.userId);
         if (!user) return;
         const hasGPS  = d.latitude && d.longitude;
         const isHome  = d.type === "home_in" || d.type === "home_out";
@@ -1018,7 +1048,7 @@ exports.exportToSheets = onSchedule(
         const batch   = entries.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ([key, events]) => {
           const userId = key.split("__")[0];
-          const user   = opsUsers.get(userId) || {};
+          const user   = convUsers.get(userId) || {};
           const ratePerKm = rateValues[user.conveyanceRateType] || rateValues[1] || CONVEYANCE_RATE_FALLBACK;
           let totalKm  = 0;
           for (let j = 0; j < events.length - 1; j++) {
@@ -1123,8 +1153,8 @@ exports.exportToSheets = onSchedule(
       ];
 
       const sortedUsers = [...allUsersData].sort((a, b) => {
-        const roleOrder = { office: 0, admin: 1, operations: 2 };
-        return (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3) || (a.name || "").localeCompare(b.name || "");
+        const roleOrder = { office: 0, admin: 1, operations: 2, sales: 3 };
+        return (roleOrder[a.role] ?? 4) - (roleOrder[b.role] ?? 4) || (a.name || "").localeCompare(b.name || "");
       });
 
       let grandTotal    = 0;
@@ -1142,8 +1172,8 @@ exports.exportToSheets = onSchedule(
         const salaryRate = user.salaryRate || 0;
         const salaryDue  = parseFloat((daysNP * salaryRate).toFixed(2));
 
-        // Conveyance: operations only, from conveyanceByUserId built in section 8
-        const covy       = user.role === "operations"
+        // Conveyance: operations + sales (usesConveyance), from conveyanceByUserId built in section 8
+        const covy       = usesConveyance(user.role)
           ? parseFloat((conveyanceByUserId.get(user.id) || 0).toFixed(2))
           : 0;
 

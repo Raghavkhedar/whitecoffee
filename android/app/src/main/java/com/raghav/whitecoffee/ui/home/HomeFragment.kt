@@ -60,10 +60,14 @@ class HomeFragment : Fragment() {
                 onBellClick      = { findNavController().navigate(R.id.action_homeFragment_to_notificationsFragment) },
                 onLogout         = { mainViewModel.logoutWithAutoCheckout() },
                 onAttendanceClick = {
-                    if (viewModel.isOperations)
-                        findNavController().navigate(R.id.action_homeFragment_to_attendanceFragment)
-                    else
-                        findNavController().navigate(R.id.action_homeFragment_to_officeAttendanceFragment)
+                    when {
+                        viewModel.isSales ->
+                            findNavController().navigate(R.id.action_homeFragment_to_salesAttendanceFragment)
+                        viewModel.isOperations ->
+                            findNavController().navigate(R.id.action_homeFragment_to_attendanceFragment)
+                        else ->
+                            findNavController().navigate(R.id.action_homeFragment_to_officeAttendanceFragment)
+                    }
                 },
                 onMtRequestClick        = { findNavController().navigate(R.id.action_homeFragment_to_materialToolRequestFragment) },
                 onMtBuyClick            = { findNavController().navigate(R.id.action_homeFragment_to_materialToolBuyFragment) },

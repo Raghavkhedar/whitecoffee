@@ -32,6 +32,15 @@ const admin = require("firebase-admin");
 admin.initializeApp({ projectId: "white-coffee-92c27" });
 const db = admin.firestore();
 
+// Per-role behavior axes — same module the cloud function uses, so the backfill
+// scores each role identically (see roleCapabilities.js).
+const {
+  attendanceInTypes,
+  attendanceOutTypes,
+  usesFixedWindow,
+  usesOtShortageLedger,
+} = require("./roleCapabilities");
+
 // ── Config (env-overridable) ─────────────────────────────────────────────────
 const DRY_RUN   = process.env.DRY_RUN !== "false";      // default: dry run
 const APPLY_PL  = process.env.APPLY_PL === "true";       // default: do NOT touch plBalance
@@ -41,9 +50,6 @@ const START     = process.env.START || "2026-07-01";
 const END        = process.env.END   || istYesterday();  // never backfill "today"
 
 // ── Helpers copied verbatim from functions/index.js so behaviour matches ──────
-const OPS_IN_TYPES  = new Set(["site_in", "market_in"]);
-const OPS_OUT_TYPES = new Set(["site_out", "market_out"]);
-
 function toMinutes(hhmm, fallback) {
   if (!hhmm || typeof hhmm !== "string") return fallback;
   const [h, m] = hhmm.split(":").map(Number);
@@ -153,11 +159,12 @@ function* dateRange(start, end) {
       const events = (eventsByUser.get(user.id) || []).sort(
         (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
       );
-      const isOps = user.role === "operations";
+      const role        = user.role;
+      const fixedWindow = usesFixedWindow(role); // office/admin/sales: fixed 10–18; operations: planned shift
       const leave = leavesOnDate.get(user.id);
 
       let plan = null;
-      if (isOps) {
+      if (!fixedWindow) {
         const planDoc = await db.doc(`users/${user.id}/planned_hours/${date}`).get();
         if (planDoc.exists) {
           const p = planDoc.data();
@@ -165,15 +172,20 @@ function* dateRange(start, end) {
         }
       }
 
-      // Ops with neither plan nor leave -> day left unmarked (same as the function).
-      if (isOps && !plan && !leave) continue;
+      // Planned-shift roles (ops) with neither plan nor leave -> day left unmarked
+      // (same as the function). Fixed-window roles never need a plan.
+      if (!fixedWindow && !plan && !leave) continue;
 
-      let startMin = isOps ? toMinutes(plan?.startTime, 10 * 60) : 10 * 60;
-      let endMin   = isOps ? toMinutes(plan?.endTime,   18 * 60) : 18 * 60;
+      let startMin = fixedWindow ? 10 * 60 : toMinutes(plan?.startTime, 10 * 60);
+      let endMin   = fixedWindow ? 18 * 60 : toMinutes(plan?.endTime,   18 * 60);
       if (endMin <= startMin) { startMin = 10 * 60; endMin = 18 * 60; }
 
-      const checkIns  = events.filter((e) => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === "office_in");
-      const checkOuts = events.filter((e) => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === "office_out");
+      // First check-in / last check-out across this role's event types (ops: site+market;
+      // office/admin: office; sales hybrid: office+site+market against the fixed window).
+      const inTypes  = attendanceInTypes(role);
+      const outTypes = attendanceOutTypes(role);
+      const checkIns  = events.filter((e) => inTypes.includes(e.type));
+      const checkOuts = events.filter((e) => outTypes.includes(e.type));
       let status;
 
       if (checkIns.length > 0 && checkOuts.length > 0) {
@@ -206,8 +218,9 @@ function* dateRange(start, end) {
         });
       }
 
-      // daily_hours only on fully-worked days.
-      if (checkIns.length > 0 && checkOuts.length > 0) {
+      // daily_hours only on fully-worked days, and only for OT/shortage-ledger roles
+      // (operations). Fixed-window roles (office/admin/sales) have no OT/shortage.
+      if (usesOtShortageLedger(role) && checkIns.length > 0 && checkOuts.length > 0) {
         const firstIn = checkIns[0];
         const lastOut = checkOuts[checkOuts.length - 1];
         const inMin   = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);

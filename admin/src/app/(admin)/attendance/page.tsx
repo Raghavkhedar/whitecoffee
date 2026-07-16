@@ -7,6 +7,7 @@ import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
 import { LAUNCH_DATE } from '@/lib/config';
+import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger } from '@/lib/roleCapabilities';
 import { auth } from '@/lib/firebase';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -31,11 +32,14 @@ type Visit = { in?: AttendanceRecord; out?: AttendanceRecord };
 // Pair check-ins with check-outs chronologically so a visit's "out" is always the
 // next out *after* its "in" — never matched by list position (which broke when the
 // counts/order of in/out events didn't alternate cleanly, e.g. auto-logouts or
-// mixed site+market visits). Ops spans site+market events; office uses office_in/out.
-function buildVisits(events: AttendanceRecord[], isOps: boolean): Visit[] {
+// mixed site+market visits). Event types come from the role's capabilities: ops spans
+// site+market, office uses office_in/out, sales (hybrid) pairs across all of them.
+function buildVisits(events: AttendanceRecord[], role: string): Visit[] {
   const ts    = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
-  const isIn  = (e: AttendanceRecord) => isOps ? (e.type === 'site_in'  || e.type === 'market_in')  : e.type === 'office_in';
-  const isOut = (e: AttendanceRecord) => isOps ? (e.type === 'site_out' || e.type === 'market_out') : e.type === 'office_out';
+  const inTypes  = new Set<string>(attendanceInTypes(role));
+  const outTypes = new Set<string>(attendanceOutTypes(role));
+  const isIn  = (e: AttendanceRecord) => inTypes.has(e.type);
+  const isOut = (e: AttendanceRecord) => outTypes.has(e.type);
   const ordered = events.filter(e => isIn(e) || isOut(e)).sort((a, b) => ts(a) - ts(b));
   const visits: Visit[] = [];
   let current: Visit | null = null;
@@ -78,6 +82,7 @@ function VisitCell({ visit }: { visit?: Visit | null }) {
 // Mirrors the computeDailyAttendanceStatus Cloud Function for live (pre-23:59) display.
 // Office/admin: fixed 10:00–18:00 window, office_in/office_out events.
 // Operations: planned shift window (required), first site_in / last site_out events.
+// Sales: hybrid — first/last across office+site+market, scored against the fixed window.
 function deriveStatus(
   role: string,
   userEvents: AttendanceRecord[],
@@ -88,13 +93,16 @@ function deriveStatus(
   const dayOfWeek = new Date(date + 'T00:00:00').getDay();
   if (dayOfWeek === 0) return null; // Sunday — no status
 
-  const isOps = role === 'operations';
-  if (isOps && (!planned?.startTime || !planned?.endTime)) return null; // no plan → unmarked
+  const fixedWindow = usesFixedWindow(role);
+  if (!fixedWindow && (!planned?.startTime || !planned?.endTime)) return null; // no plan → unmarked
 
   const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
-  // Ops field-work spans both site and market visits; office uses office_in/out.
-  const isIn  = (e: AttendanceRecord) => isOps ? (e.type === 'site_in'  || e.type === 'market_in')  : e.type === 'office_in';
-  const isOut = (e: AttendanceRecord) => isOps ? (e.type === 'site_out' || e.type === 'market_out') : e.type === 'office_out';
+  // Event types per role — ops spans site+market, office uses office_in/out, and sales
+  // (hybrid) counts all three so a site-visit day is not misread as Absent.
+  const inTypes  = new Set<string>(attendanceInTypes(role));
+  const outTypes = new Set<string>(attendanceOutTypes(role));
+  const isIn  = (e: AttendanceRecord) => inTypes.has(e.type);
+  const isOut = (e: AttendanceRecord) => outTypes.has(e.type);
   const checkIns  = userEvents.filter(isIn).sort((a, b) => ts(a) - ts(b));
   const checkOuts = userEvents.filter(isOut).sort((a, b) => ts(a) - ts(b));
   if (checkIns.length === 0 && checkOuts.length === 0) return 'Absent';
@@ -111,8 +119,8 @@ function deriveStatus(
   const outIST = toIST(lastOutDate);
   const inMinutes  = inIST.getUTCHours() * 60 + inIST.getUTCMinutes();
   const outMinutes = outIST.getUTCHours() * 60 + outIST.getUTCMinutes();
-  const startMin   = isOps ? hhmmToMinutes(planned?.startTime, 10 * 60) : 10 * 60;
-  const endMin     = isOps ? hhmmToMinutes(planned?.endTime,   18 * 60) : 18 * 60;
+  const startMin   = fixedWindow ? 10 * 60 : hhmmToMinutes(planned?.startTime, 10 * 60);
+  const endMin     = fixedWindow ? 18 * 60 : hhmmToMinutes(planned?.endTime,   18 * 60);
   const lateMinutes  = Math.max(0, inMinutes - startMin);
   const earlyMinutes = Math.max(0, endMin - outMinutes);
   const offMinutes   = lateMinutes + earlyMinutes;
@@ -430,24 +438,25 @@ export default function AttendancePage() {
     const list = [...users]
       .filter(u => !employeeFilter || u.id === employeeFilter)
       .sort((a, b) => {
-        const order: Record<string, number> = { office: 0, admin: 1, operations: 2 };
-        return (order[a.role] ?? 3) - (order[b.role] ?? 3) || a.name.localeCompare(b.name);
+        const order: Record<string, number> = { office: 0, admin: 1, operations: 2, sales: 3 };
+        return (order[a.role] ?? 4) - (order[b.role] ?? 4) || a.name.localeCompare(b.name);
       });
     const rows = list.map(user => {
-      const isOps = user.role === 'operations';
+      const fixedWindow = usesFixedWindow(user.role);
       const evs   = selectedEvents.filter(e => e.userId === user.id);
-      // Ops field-work spans both site and market visits (matches buildVisits / status logic).
-      const isIn  = (e: AttendanceRecord) => isOps ? (e.type === 'site_in'  || e.type === 'market_in')  : e.type === 'office_in';
-      const isOut = (e: AttendanceRecord) => isOps ? (e.type === 'site_out' || e.type === 'market_out') : e.type === 'office_out';
-      const ins   = evs.filter(isIn).sort((a, b) => tsOf(a) - tsOf(b));
-      const outs  = evs.filter(isOut).sort((a, b) => tsOf(a) - tsOf(b));
+      // Event types per role (matches buildVisits / status logic) — sales counts its
+      // office+site+market punches, so a site-visit day exports real In/Out times.
+      const inTypes  = new Set<string>(attendanceInTypes(user.role));
+      const outTypes = new Set<string>(attendanceOutTypes(user.role));
+      const ins   = evs.filter(e => inTypes.has(e.type)).sort((a, b) => tsOf(a) - tsOf(b));
+      const outs  = evs.filter(e => outTypes.has(e.type)).sort((a, b) => tsOf(a) - tsOf(b));
       const plan  = selectedPlanMap.get(user.id);
       return {
         Date: selectedDate,
         Name: user.name,
         'Emp ID': user.employeeId || '',
         Role: user.role,
-        'Planned Shift': isOps ? (plan?.startTime && plan?.endTime ? `${plan.startTime}–${plan.endTime}` : '') : '10:00–18:00',
+        'Planned Shift': fixedWindow ? '10:00–18:00' : (plan?.startTime && plan?.endTime ? `${plan.startTime}–${plan.endTime}` : ''),
         Status: effectiveStatuses.get(user.id) ?? '',
         'First In': formatTime(ins[0]?.timestamp as Parameters<typeof formatTime>[0]),
         'Last Out': formatTime(outs[outs.length - 1]?.timestamp as Parameters<typeof formatTime>[0]),
@@ -724,13 +733,16 @@ export default function AttendancePage() {
                 {[...users]
                   .filter(u => !employeeFilter || u.id === employeeFilter)
                   .sort((a, b) => {
-                    const roleOrder: Record<string, number> = { office: 0, admin: 1, operations: 2 };
-                    return (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3) || a.name.localeCompare(b.name);
+                    const roleOrder: Record<string, number> = { office: 0, admin: 1, operations: 2, sales: 3 };
+                    return (roleOrder[a.role] ?? 4) - (roleOrder[b.role] ?? 4) || a.name.localeCompare(b.name);
                   })
                   .map(user => {
                     const statusDoc  = selectedDayMap.get(user.id);
                     const status     = statusDoc?.status;
-                    const isOps      = user.role === 'operations';
+                    // Planned shift + WO are ledger concepts: operations only. Sales, like
+                    // office/admin, is scored on the fixed window and has no plan or WO.
+                    const hasShift   = !usesFixedWindow(user.role);
+                    const hasWo      = usesOtShortageLedger(user.role);
                     const saveKey    = `${user.id}__${selectedDate}`;
                     const isSaving   = saving[saveKey] || false;
                     const isDirty    = dirtyPlans.has(saveKey);
@@ -738,7 +750,7 @@ export default function AttendancePage() {
                     const userEvents   = eventsLoading ? [] : selectedEvents.filter(e => e.userId === user.id);
 
                     // Chronologically paired visits; first/last visit drive the two columns.
-                    const visits     = buildVisits(userEvents, isOps);
+                    const visits     = buildVisits(userEvents, user.role);
                     const firstVisit = visits[0] ?? null;
                     const lastVisit  = visits.length > 1 ? visits[visits.length - 1] : null;
                     const planned      = selectedPlanMap.get(user.id);
@@ -756,7 +768,7 @@ export default function AttendancePage() {
                         <td className="py-3 pr-4 text-text-secondary text-xs">{user.employeeId || '—'}</td>
                         <td className="py-3 pr-4"><RoleBadge role={user.role} /></td>
                         <td className="py-3 pr-4">
-                          {isOps ? (selectedIsRestDay ? (
+                          {hasShift ? (selectedIsRestDay ? (
                             <label className="flex items-center gap-2 text-xs cursor-pointer" title="Sunday/holiday: authorize this person's work so all hours count as OT">
                               <input
                                 type="checkbox"
@@ -823,12 +835,12 @@ export default function AttendancePage() {
                                   <span className="text-[10px] text-text-secondary italic">live</span>
                                 )}
                               </>
-                            ) : isOps && !hasPlan ? (
+                            ) : hasShift && !hasPlan ? (
                               <span className="text-xs text-text-secondary italic">Set plan</span>
                             ) : (
                               <span className="text-xs text-text-secondary italic">No data</span>
                             )}
-                            {isOps && (status === 'WO' ? (
+                            {hasWo && (status === 'WO' ? (
                               <button onClick={() => clearWo(user.id, selectedDate)} disabled={isSaving}
                                 className="text-[11px] text-text-secondary underline hover:text-primary disabled:opacity-50">clear</button>
                             ) : (

@@ -11,6 +11,7 @@ import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
+import { attendanceInTypes, attendanceOutTypes } from '@/lib/roleCapabilities';
 
 interface Stats { totalUsers: number; totalSites: number; pendingLeaves: number; pendingActions: number; earliestPendingSeconds: number | null; todayCheckIns: number; }
 
@@ -59,13 +60,13 @@ export default function DashboardPage() {
       .then(([users, events]) => {
         const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
         const statuses: LiveStatus[] = users.map(user => {
-          const isOps = user.role === 'operations';
           const userEvents = events.filter(e => e.userId === user.id).sort((a, b) => ts(a) - ts(b));
-          // Ops are "in the field" across both site and market visits; office uses office_in/out.
-          const isIn  = (e: AttendanceRecord) => isOps ? (e.type === 'site_in'  || e.type === 'market_in')  : e.type === 'office_in';
-          const isOut = (e: AttendanceRecord) => isOps ? (e.type === 'site_out' || e.type === 'market_out') : e.type === 'office_out';
-          const ins  = userEvents.filter(isIn);
-          const outs = userEvents.filter(isOut);
+          // Ops are "in the field" across both site and market visits; office uses
+          // office_in/out; sales (hybrid) counts either, so a site day still reads as in.
+          const inTypes  = new Set<string>(attendanceInTypes(user.role));
+          const outTypes = new Set<string>(attendanceOutTypes(user.role));
+          const ins  = userEvents.filter(e => inTypes.has(e.type));
+          const outs = userEvents.filter(e => outTypes.has(e.type));
           const lastIn  = ins.length > 0 ? ins[ins.length - 1] : null;
           const lastOut = outs.length > 0 ? outs[outs.length - 1] : null;
           const checkedIn = lastIn != null && (lastOut == null || ts(lastIn) > ts(lastOut));

@@ -11,6 +11,7 @@ import { downloadSheet } from '@/lib/excel';
 import { istTodayStr, istDaysAgoStr } from '@/lib/date';
 import { computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
 import { LAUNCH_DATE } from '@/lib/config';
+import { tracksShortage } from '@/lib/roleCapabilities';
 
 // ── Date range helpers ────────────────────────────────────────────────────────
 
@@ -718,6 +719,7 @@ export default function OtShortagePage() {
 
   const rows = useMemo<EmpRow[]>(() => {
     return [...users]
+      .filter(u => tracksShortage(u.role)) // sales has no OT/shortage — keep it off this page
       .filter(u => !roleFilter || u.role === roleFilter)
       .filter(u => !empFilter  || u.id   === empFilter)
       .sort((a, b) => {

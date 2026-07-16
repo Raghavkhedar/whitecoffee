@@ -20,8 +20,12 @@ package com.raghav.whitecoffee.data.model
  * Times are minutes-of-day in the device's local timezone (IST for the field
  * team), matching how attendance is recorded.
  *
- * Scoring window by role, matching the cloud function:
+ * Scoring window by role, matching the cloud function (the event source per role comes from
+ * [RoleCapabilities], keep both in lockstep):
  *  - office/admin: fixed [OFFICE_START_MIN]–[OFFICE_END_MIN], scored on office_in/office_out.
+ *  - sales:        fixed [OFFICE_START_MIN]–[OFFICE_END_MIN] (same buckets as office), but scored
+ *    on the first check-in of ANY type and the last check-out of ANY type — the hybrid role may do
+ *    an office day (office_in/out) OR a site day (site_in/out, market_in/out). No OT/shortage.
  *  - operations:   the day's admin-set planned shift (see [resolveOpsWindow]), scored on the
  *    first site_in/market_in and the last site_out/market_out. With no planned shift the cloud
  *    leaves the day unmarked — the client preview shows a neutral "pending" instead of guessing.

@@ -13,8 +13,9 @@ import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { TABS } from '@/lib/portalAccess';
 import { EMPLOYEE_CATEGORIES, EMPLOYEE_CATEGORY_SET } from '@/lib/categories';
+import { getsCategories } from '@/lib/roleCapabilities';
 
-const ROLES = ['operations', 'office', 'admin'] as const;
+const ROLES = ['operations', 'office', 'sales', 'admin'] as const;
 type Role = typeof ROLES[number];
 
 // The tabs a non-admin can be granted (matrix columns / modal checkboxes).
@@ -129,8 +130,8 @@ export default function UsersPage() {
       const homeLng = form.homeLng ? parseFloat(form.homeLng) : undefined;
       const conveyanceRateType = form.conveyanceRateType ? (parseInt(form.conveyanceRateType) as 1 | 2) : undefined;
       const contactEmail = form.contactEmail.trim().toLowerCase();
-      // Categories only apply to operations staff; switching to another role clears them.
-      const categories = form.role === 'operations' ? form.categories : [];
+      // Categories only apply to roles that get them (operations); switching to another role clears them.
+      const categories = getsCategories(form.role) ? form.categories : [];
 
       if (editing) {
         // Login email goes through a Cloud Function (Auth + doc); validate before touching anything.
@@ -256,7 +257,7 @@ export default function UsersPage() {
       'Tab Access': u.role === 'admin'
         ? 'Full access'
         : (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)).map(tabLabel).join(', '),
-      Categories: u.role === 'operations' ? (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).join(', ') : '',
+      Categories: getsCategories(u.role) ? (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).join(', ') : '',
       'Salary Rate': u.salaryRate ?? '',
       'PL Balance': u.plBalance ?? 0,
       'WO Balance': u.woBalance ?? 0,
@@ -331,7 +332,7 @@ export default function UsersPage() {
                             ? <span className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{n} tab{n === 1 ? '' : 's'}</span>
                             : null;
                         })()}
-                        {u.role === 'operations' && (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).map(c => (
+                        {getsCategories(u.role) && (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).map(c => (
                           <span key={c} className="bg-[#F3EEFA] text-[#6A44B8] px-1.5 py-0.5 rounded-[6px] text-[11px] font-mono">{c}</span>
                         ))}
                       </div>
@@ -391,7 +392,7 @@ export default function UsersPage() {
                 </select>
               </div>
 
-              {form.role === 'operations' && (
+              {getsCategories(form.role) && (
                 <div>
                   <label className="label">Category <span className="text-text-secondary font-normal">(operations classification — pick any that apply)</span></label>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5">

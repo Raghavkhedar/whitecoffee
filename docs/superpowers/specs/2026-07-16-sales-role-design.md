@@ -51,9 +51,17 @@ each side and unit-tested on each side.
 | `attendanceOutTypes` | `office_out` | `site_out`,`market_out` | `office_out`,`site_out`,`market_out` |
 | `usesFixedWindow` (10–18 for status) | ✓ | ✗ (planned_hours) | ✓ |
 | `usesOtShortageLedger` | ✗ | ✓ | ✗ |
+| `tracksShortage` | ✓ | ✓ | ✗ |
 | `usesConveyance` | ✗ | ✓ | ✓ |
 | `getsCategories` | ✗ | ✓ | ✗ |
 | `inManpowerReports` | ✗ | ✓ | ✗ |
+
+`tracksShortage` was added during implementation (8th axis). It cannot be derived from the
+others: office/admin show shortage on the Working Hours page but run **no** ledger, so
+`usesOtShortageLedger` is false for them while shortage is still true. Sales is the only
+role with a fixed window scored for **status only**. Without this axis the pages had to
+infer "is sales" from `usesFixedWindow && !usesConveyance`, which silently couples shortage
+to conveyance and would break for any future fixed-window role that earns conveyance.
 
 `admin` continues to behave as office for attendance and remains the only role gated in
 Firestore rules.
@@ -105,9 +113,12 @@ Firestore rules.
 
 ### 5. Firestore rules (`firebase/firestore.rules`)
 - Sales is a normal employee governed by `tabAccess`, like office/ops; **only `admin`
-  stays role-gated**. Confirm the conveyance-write rule permits sales and that no rule
-  assumes a binary office/ops split. Expected to be small or no change — verified during
-  implementation. Deploy from repo root; verify with `firebase_get_security_rules`.
+  stays role-gated**. **Verified during implementation: NO rules change is needed.**
+  `attendance` create is `isLoggedIn() && isOwner(userId)` with no role check, so a sales
+  user may write `office_in` *and* `site_in`; the `conveyance` collection is written by the
+  Cloud Function via the Admin SDK (which bypasses rules) and read via `canAccessConveyance()`
+  (tab-based, not role-based); `role` appears only inside `isAdmin()`. Nothing assumes a
+  binary office/ops split. Rules were **not** modified, so no rules deploy is required.
 
 ### 6. Testing
 - Capability tables unit-tested on all three sides.
@@ -123,6 +134,15 @@ Firestore rules.
 - No sales-specific manpower/labor reporting.
 
 ## Open items to verify during implementation
-- Exact current file/page names (the code is authoritative; some admin CLAUDE.md entries
-  lag behind the live source).
-- Whether any Firestore conveyance/attendance rule needs an explicit sales allowance.
+- ~~Exact current file/page names~~ — resolved against the live code.
+- ~~Whether any Firestore conveyance/attendance rule needs an explicit sales allowance~~ —
+  resolved: none does (see §5).
+
+## Known gaps (deliberately not addressed)
+- **Notifications page**: the recipient groups are `all` / `operations` / `office` /
+  `specific`, where `office` means `role in ['office','admin']`. Sales staff are reachable
+  only via **All** or **Specific**, not as a group. Adding a Sales group is a UI/product
+  decision, not a correctness bug — out of scope here.
+- **Android**: sales sees the same home cards as office (M&T Request / Work Progress
+  hidden); a site-visit day still requires a Home In punch first, matching ops. No Android
+  unit tests were added for `RoleCapabilities` (the app has no test suite for this layer).

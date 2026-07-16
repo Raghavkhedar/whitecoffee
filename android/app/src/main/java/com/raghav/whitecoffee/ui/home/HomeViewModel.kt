@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.RoleCapabilities
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.NotificationRepository
@@ -48,6 +49,7 @@ class HomeViewModel @Inject constructor(
     val userRole: String get() = sessionManager.role
     val isOperations: Boolean get() = sessionManager.isOperations
     val isOffice: Boolean get() = sessionManager.isOffice
+    val isSales: Boolean get() = sessionManager.isSales
     val isAdmin: Boolean get() = sessionManager.isAdmin
 
     val greeting: String = run {
@@ -100,8 +102,11 @@ class HomeViewModel @Inject constructor(
     ): TodayAttendanceStatus {
         if (events.isEmpty()) return TodayAttendanceStatus.NotCheckedIn
 
-        val dailyStatus = if (isOperations) deriveOpsDailyStatus(events, plannedWindow)
-                          else deriveOfficeDailyStatus(events)
+        val dailyStatus = when {
+            isOperations -> deriveOpsDailyStatus(events, plannedWindow)
+            isSales      -> deriveSalesDailyStatus(events)
+            else         -> deriveOfficeDailyStatus(events)
+        }
 
         if (dailyStatus == DailyStatus.NOT_CHECKED_IN) return TodayAttendanceStatus.NotCheckedIn
 
@@ -143,6 +148,25 @@ class HomeViewModel @Inject constructor(
         val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
         val outMin = if (lastOutIdx > lastInIdx) minutesOf(events[lastOutIdx]) else null
         return AttendanceStatusRules.classify(inMin, outMin, window.first, window.second).toDaily()
+    }
+
+    // Sales: hybrid role. Scored on the FIXED 10:00–18:00 window (like office) but over the first
+    // check-in of ANY type and the last check-out of ANY type — office_in/site_in/market_in and
+    // office_out/site_out/market_out. Event source comes from RoleCapabilities so this stays in
+    // lockstep with the backend. No OT/shortage, no planned shift. Matches computeDailyAttendanceStatus.
+    private fun deriveSalesDailyStatus(events: List<AttendanceRecord>): DailyStatus {
+        val inTypes = RoleCapabilities.attendanceInTypes(SessionManager.ROLE_SALES).toSet()
+        val outTypes = RoleCapabilities.attendanceOutTypes(SessionManager.ROLE_SALES).toSet()
+
+        val firstIn = events.firstOrNull { it.type in inTypes } ?: return DailyStatus.NOT_CHECKED_IN
+        val inMin = minutesOf(firstIn) ?: return DailyStatus.HALF_DAY
+
+        val lastInIdx = events.indexOfLast { it.type in inTypes }
+        val lastOutIdx = events.indexOfLast { it.type in outTypes }
+        // Only score a checkout that's the user's final event; otherwise the day is in progress.
+        val outMin = if (lastOutIdx > lastInIdx) minutesOf(events[lastOutIdx]) else null
+
+        return AttendanceStatusRules.classify(inMin, outMin).toDaily()
     }
 
     private fun deriveOfficeDailyStatus(events: List<AttendanceRecord>): DailyStatus {
