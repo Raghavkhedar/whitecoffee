@@ -41,6 +41,14 @@ class SessionManager @Inject constructor(
     val isOffice: Boolean
         get() = _role == ROLE_OFFICE || _role == ROLE_ADMIN
 
+    /**
+     * True if the current user has the sales role. Sales is a hybrid: it may do either an
+     * office day (office_in/office_out) or a site-visit day (site_in/site_out), chosen per day.
+     * It is scored on the fixed 10:00–18:00 window like office (see [RoleCapabilities]).
+     */
+    val isSales: Boolean
+        get() = _role == ROLE_SALES
+
     /** True if the current user has the admin role. */
     val isAdmin: Boolean
         get() = _role == ROLE_ADMIN
@@ -104,6 +112,7 @@ class SessionManager @Inject constructor(
     companion object {
         const val ROLE_OPERATIONS = "operations"
         const val ROLE_OFFICE     = "office"
+        const val ROLE_SALES      = "sales"
         const val ROLE_ADMIN      = "admin"
     }
 }

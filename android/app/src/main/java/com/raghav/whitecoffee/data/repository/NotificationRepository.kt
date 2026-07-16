@@ -1,10 +1,12 @@
 package com.raghav.whitecoffee.data.repository
 
-import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
 import com.raghav.whitecoffee.data.model.AppNotification
 import com.raghav.whitecoffee.data.session.SessionManager
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,31 +22,18 @@ class NotificationRepository @Inject constructor(
         .document(sessionManager.userId)
         .collection("notifications")
 
-    suspend fun getNotifications(): Result<List<AppNotification>> {
-        return try {
-            val snapshot = collection()
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(50)
-                .get()
-                .await()
-            Result.success(snapshot.documents.mapNotNull { AppNotification.fromDocument(it) })
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    fun observeNotifications(): Flow<List<AppNotification>> =
+        collection()
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(50)
+            .snapshotsAsFlow()
+            .map { snap -> snap.documents.mapNotNull { AppNotification.fromDocument(it) } }
 
-    suspend fun getUnreadCount(): Result<Int> {
-        return try {
-            val result = collection()
-                .whereEqualTo("isRead", false)
-                .count()
-                .get(AggregateSource.SERVER)
-                .await()
-            Result.success(result.count.toInt())
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    fun observeUnreadCount(): Flow<Int> =
+        collection()
+            .whereEqualTo("isRead", false)
+            .snapshotsAsFlow()
+            .map { it.size() }
 
     suspend fun markAsRead(notifId: String): Result<Unit> {
         return try {

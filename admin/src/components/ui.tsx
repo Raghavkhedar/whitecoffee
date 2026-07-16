@@ -20,6 +20,7 @@ const ROLE_MAP: Record<string, { label: string; bg: string; color: string }> = {
   admin:      { label: 'Admin',  bg: '#FBECEC', color: '#B4322F' },
   office:     { label: 'Office', bg: '#ECF1FC', color: '#2456C7' },
   operations: { label: 'Ops',    bg: '#F7EFE3', color: '#9A5B1E' },
+  sales:      { label: 'Sales',  bg: '#E9F6EF', color: '#1E7A4E' },
 };
 
 export function RoleBadge({ role }: { role: string }) {

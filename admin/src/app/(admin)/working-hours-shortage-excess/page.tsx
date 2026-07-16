@@ -11,6 +11,7 @@ import { downloadSheet } from '@/lib/excel';
 import { istTodayStr, istDaysAgoStr } from '@/lib/date';
 import { computeDayLedger, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
 import { LAUNCH_DATE } from '@/lib/config';
+import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger, tracksShortage } from '@/lib/roleCapabilities';
 
 // ── Date range helpers ────────────────────────────────────────────────────────
 
@@ -92,9 +93,9 @@ function istHHMMToSecs(date: string, hhmm: string): number {
 
 const OFFICE_DAY_MINS = 8 * 60;
 
-// Field-work event types for operations (home events excluded — commute bookends)
-const OPS_IN_TYPES  = new Set(['site_in', 'market_in']);
-const OPS_OUT_TYPES = new Set(['site_out', 'market_out']);
+// Attendance in/out event types per role now come from roleCapabilities
+// (attendanceInTypes/attendanceOutTypes) — office_in/out for office/admin, site/market
+// for operations, and all three for the hybrid sales role.
 
 function formatTime(secs: number): string {
   return new Date(secs * 1000).toLocaleTimeString('en-IN', {
@@ -141,7 +142,12 @@ function aggregateForEmployee(
   holidays: Set<string>,
 ): EmployeeRow {
   const isSingleDay = start === end;
-  const isOps = user.role === 'operations';
+  const role = user.role;
+  const usesLedger  = usesOtShortageLedger(role); // operations — planned windows + OT/shortage ledger
+  const fixedWindow = usesFixedWindow(role);      // office/admin/sales — fixed 10:00–18:00 window
+  const showsShort  = tracksShortage(role);       // office/admin/ops track shortage/OT here; sales does not
+  const inTypeSet   = new Set<string>(attendanceInTypes(role));
+  const outTypeSet  = new Set<string>(attendanceOutTypes(role));
   const userEvents = allEvents.filter(e => e.userId === user.id);
 
   // Planned shift + declared-OT minutes per date (ops use admin-set windows; office/admin fixed 8h)
@@ -155,11 +161,13 @@ function aggregateForEmployee(
 
   // ── Working minutes (range expected) ───────────────────────────────────
   let workingMins: number | null;
-  if (isOps) {
+  if (!fixedWindow) {
+    // operations: expected = admin-set shift windows
     let total = 0;
     plannedByDate.forEach(d => { total += d.planned; }); // expected = shift windows only (declared OT is overtime)
     workingMins = total > 0 ? total : null;
   } else {
+    // office/admin/sales: fixed 8h × Mon–Sat working days
     workingMins = countWorkingDays(start, end, holidays) * OFFICE_DAY_MINS;
   }
 
@@ -192,14 +200,14 @@ function aggregateForEmployee(
     // Otherwise (normal working day with a shift): declared OT is a pre-approval ceiling, not an
     // obligation — shortage is vs the plain shift; OT up to declared is auto-approved, beyond needs review.
     const restDay     = new Date(date + 'T12:00:00').getDay() === 0 || holidays.has(date);
-    const planInfo    = isOps ? plannedByDate.get(date) : undefined;
-    // Ops: admin window, or the default 10:00–18:00 when no valid plan. Office/admin: fixed 10:00–18:00.
-    const shiftStartMin = isOps && planInfo ? hhmmToMinutes(planInfo.startTime) : DEFAULT_SHIFT_START_MIN;
-    const shiftEndMin   = isOps && planInfo ? hhmmToMinutes(planInfo.endTime)   : DEFAULT_SHIFT_END_MIN;
+    const planInfo    = usesLedger ? plannedByDate.get(date) : undefined;
+    // Ops: admin window, or the default 10:00–18:00 when no valid plan. Office/admin/sales: fixed 10:00–18:00.
+    const shiftStartMin = usesLedger && planInfo ? hhmmToMinutes(planInfo.startTime) : DEFAULT_SHIFT_START_MIN;
+    const shiftEndMin   = usesLedger && planInfo ? hhmmToMinutes(planInfo.endTime)   : DEFAULT_SHIFT_END_MIN;
     const plannedDay    = shiftEndMin - shiftStartMin;
     const declaredDay   = planInfo?.declared ?? 0;
     const inMin = istMinuteOfDay(firstIn), outMin = istMinuteOfDay(lastOut);
-    if (isOps) {
+    if (usesLedger) {
       const led = computeDayLedger({
         shiftStartMin, shiftEndMin, inMin, outMin,
         declaredOtMins: declaredDay, isRestDay: restDay, otAuthorized: otAuthByDate.has(date),
@@ -213,9 +221,10 @@ function aggregateForEmployee(
       if (led.pendingExtraMins > 0) {
         otDays.push({ date, plannedMins: plannedDay, declaredOtMins: declaredDay, actualMins: dayMins, autoOtMins: led.autoOtMins, pendingExtraMins: led.pendingExtraMins });
       }
-    } else if (!restDay) {
+    } else if (showsShort && !restDay) {
       // Office/admin: shortage only, edge-based vs the fixed 10:00–18:00 window (early in never
-      // offsets early out); no OT, no rest-day, no holidays.
+      // offsets early out); no OT, no rest-day, no holidays. Sales is skipped here — its fixed
+      // window scores status only, so it carries no shortage/excess (actual minutes still count).
       shortageMins += Math.max(0, inMin - shiftStartMin) + Math.max(0, shiftEndMin - outMin);
       rawExcessMins += Math.max(0, outMin - shiftEndMin);
     }
@@ -224,7 +233,7 @@ function aggregateForEmployee(
   // Regularized-to-Present days carry admin-set effective in/out (missed-punch fix); these
   // override raw events for the date so the corrected day can carry shortage/OT (ops only).
   const overrideByDate = new Map<string, { inSecs: number; outSecs: number }>();
-  if (isOps) {
+  if (usesLedger) {
     statuses.filter(s => s.userId === user.id && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
       const inSecs = istHHMMToSecs(s.date, s.inTime!), outSecs = istHHMMToSecs(s.date, s.outTime!);
       if (outSecs > inSecs) overrideByDate.set(s.date, { inSecs, outSecs });
@@ -233,8 +242,8 @@ function aggregateForEmployee(
 
   eventsByDate.forEach((dayEvents, date) => {
     if (overrideByDate.has(date)) return; // regularization in/out is authoritative for this date
-    const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
-    const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
+    const inEvents  = dayEvents.filter(e => inTypeSet.has(e.type));
+    const outEvents = dayEvents.filter(e => outTypeSet.has(e.type));
     if (inEvents.length === 0) return; // no check-in → nothing to show
 
     const firstIn  = Math.min(...inEvents.map(tsSeconds));
@@ -492,21 +501,24 @@ export default function EmployeeDashboardPage() {
   const colCount = isSingleDay ? 10 : 9;
 
   function exportXlsx() {
-    downloadSheet('employee_hours', 'Hours', rows.map(r => ({
-      Name: r.user.name,
-      'Emp ID': r.user.employeeId ?? '',
-      Role: r.user.role,
-      'PL Balance': r.user.plBalance ?? 0,
-      'WO Balance': r.user.woBalance ?? 0,
-      'Working Hrs': r.workingMins !== null ? minutesToDisplay(r.workingMins) : '',
-      'Actual Hrs': r.actualMins !== null ? minutesToDisplay(r.actualMins) : '',
-      'Shortage (mins)': r.shortageMins,
-      'Pending OT (mins)': r.pendingOtMins,
-      'Auto-approved OT (mins)': r.autoOtRangeMins,
-      'Rest-day OT (mins)': r.restDayOtRangeMins,
-      'Granted OT (mins)': r.approvedOtRangeMins,
-      'Total Approved OT (mins)': r.autoOtRangeMins + r.restDayOtRangeMins + r.approvedOtRangeMins,
-    })));
+    downloadSheet('employee_hours', 'Hours', rows.map(r => {
+      const showsShort = tracksShortage(r.user.role); // sales: no shortage/OT — leave those cells blank
+      return {
+        Name: r.user.name,
+        'Emp ID': r.user.employeeId ?? '',
+        Role: r.user.role,
+        'PL Balance': r.user.plBalance ?? 0,
+        'WO Balance': r.user.woBalance ?? 0,
+        'Working Hrs': r.workingMins !== null ? minutesToDisplay(r.workingMins) : '',
+        'Actual Hrs': r.actualMins !== null ? minutesToDisplay(r.actualMins) : '',
+        'Shortage (mins)': showsShort ? r.shortageMins : '',
+        'Pending OT (mins)': showsShort ? r.pendingOtMins : '',
+        'Auto-approved OT (mins)': showsShort ? r.autoOtRangeMins : '',
+        'Rest-day OT (mins)': showsShort ? r.restDayOtRangeMins : '',
+        'Granted OT (mins)': showsShort ? r.approvedOtRangeMins : '',
+        'Total Approved OT (mins)': showsShort ? r.autoOtRangeMins + r.restDayOtRangeMins + r.approvedOtRangeMins : '',
+      };
+    }));
   }
 
   return (
@@ -566,6 +578,7 @@ export default function EmployeeDashboardPage() {
           <option value="">All Roles</option>
           <option value="office">Office</option>
           <option value="operations">Operations</option>
+          <option value="sales">Sales</option>
           <option value="admin">Admin</option>
         </select>
         <select value={empFilter} onChange={e => setEmpFilter(e.target.value)} className="input text-sm !py-2 !w-auto min-w-[180px]">
@@ -610,6 +623,7 @@ export default function EmployeeDashboardPage() {
               <tbody>
                 {rows.map(r => {
                   const { user, workingMins, actualMins, shortageMins, rawExcessMins, pendingOtMins, firstInSecs, lastOutSecs } = r;
+                  const showsShort = tracksShortage(user.role); // sales: fixed window for status only, no shortage/OT
                   return (
                     <tr key={user.id} className="border-t border-[#F4F2EF] hover:bg-[#FBFAF8] transition-colors">
                       <td className="px-[14px] py-3 pl-[18px] font-medium text-text-primary whitespace-nowrap">{user.name}</td>
@@ -648,7 +662,9 @@ export default function EmployeeDashboardPage() {
                         </td>
                       )}
                       <td className="px-[14px] py-3 text-xs whitespace-nowrap">
-                        {actualMins === null ? (
+                        {!showsShort ? (
+                          <span className="text-text-secondary/60">NA</span>
+                        ) : actualMins === null ? (
                           <span className="text-text-secondary/60">—</span>
                         ) : shortageMins > 0 ? (
                           <span className="bg-[#FBEAEA] text-[#C42B2B] px-2 py-0.5 rounded font-mono">-{minutesToDisplay(shortageMins)}</span>
@@ -657,7 +673,9 @@ export default function EmployeeDashboardPage() {
                         )}
                       </td>
                       <td className="px-[14px] py-3 pr-[18px] text-xs whitespace-nowrap">
-                        {rawExcessMins > 0 ? (
+                        {!showsShort ? (
+                          <span className="text-text-secondary/60">NA</span>
+                        ) : rawExcessMins > 0 ? (
                           <button onClick={() => setOtModalUserId(user.id)}
                             className={`px-2 py-0.5 rounded font-mono transition-colors ${
                               pendingOtMins > 0

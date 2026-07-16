@@ -649,20 +649,30 @@ export async function getConveyanceForMonth(month: string): Promise<ConveyanceRe
 
 export async function getDashboardStats() {
   const today = istTodayStr();
-  const [usersSnap, sitesSnap, leavesSnap, attendanceSnap] = await Promise.all([
+  const [usersSnap, sitesSnap, leavesSnap, regsSnap, attendanceSnap] = await Promise.all([
     getDocs(collection(db, 'users')),
     getDocs(collection(db, 'sites')),
     getDocs(collectionGroup(db, 'leave_requests')),
+    getDocs(collectionGroup(db, 'regularization_requests')),
     getDocs(collectionGroup(db, 'attendance')),
   ]);
   const activeEmployees = usersSnap.docs.filter(d => {
     const u = d.data();
     return u.role !== 'admin' && u.active !== false;
   });
+  const pendingLeaveDocs = leavesSnap.docs.filter(d => d.data().status === 'pending');
+  const pendingRegDocs   = regsSnap.docs.filter(d => d.data().status === 'pending');
+  // Oldest pending action across both queues (leaves + regularizations), by submittedAt.
+  const earliestPendingSeconds = [...pendingLeaveDocs, ...pendingRegDocs]
+    .map(d => (d.data().submittedAt as { seconds?: number } | undefined)?.seconds)
+    .filter((s): s is number => typeof s === 'number')
+    .reduce<number | null>((min, s) => (min === null || s < min ? s : min), null);
   return {
     totalUsers:    activeEmployees.length,
     totalSites:    sitesSnap.size,
-    pendingLeaves: leavesSnap.docs.filter(d => d.data().status === 'pending').length,
+    pendingLeaves: pendingLeaveDocs.length,
+    pendingActions: pendingLeaveDocs.length + pendingRegDocs.length,
+    earliestPendingSeconds,
     todayCheckIns: attendanceSnap.docs.filter(d => d.data().date === today && d.data().type?.endsWith('_in')).length,
   };
 }

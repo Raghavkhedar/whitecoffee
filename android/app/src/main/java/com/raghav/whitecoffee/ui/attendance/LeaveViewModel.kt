@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -32,14 +33,11 @@ class LeaveViewModel @Inject constructor(
     fun loadLeaves() {
         viewModelScope.launch {
             _leavesState.value = UiState.Loading()
-            val result = leaveRepository.getMyLeaveRequests()
-            _leavesState.value = when {
-                result.isSuccess -> {
-                    val list = result.getOrThrow()
-                    if (list.isEmpty()) UiState.Empty else UiState.Success(list)
+            leaveRepository.observeMyLeaveRequests()
+                .catch { _leavesState.value = UiState.Error("Failed to load leave requests.") }
+                .collect { list ->
+                    _leavesState.value = if (list.isEmpty()) UiState.Empty else UiState.Success(list)
                 }
-                else -> UiState.Error("Failed to load leave requests.")
-            }
         }
     }
 }

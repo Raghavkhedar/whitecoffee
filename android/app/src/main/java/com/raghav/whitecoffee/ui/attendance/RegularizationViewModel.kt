@@ -5,8 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
-import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.RegularizationRequest
+import com.raghav.whitecoffee.data.model.RoleCapabilities
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.RegularizationRepository
@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -56,84 +58,83 @@ class RegularizationViewModel @Inject constructor(
         today.format(formatter)
     }
 
-    private val isOperations: Boolean get() = sessionManager.isOperations
+    private val role: String get() = sessionManager.role
+
+    /** Operations score against a planned shift; office/admin/sales use the fixed 10–18 window. */
+    private val usesFixedWindow: Boolean get() = RoleCapabilities.usesFixedWindow(role)
 
     init {
         loadToday()
     }
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     fun loadToday() {
-        viewModelScope.launch {
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             if (!networkMonitor.isOnline.first()) {
                 _daysState.value = UiState.Offline
                 return@launch
             }
             _daysState.value = UiState.Loading()
-            try {
-                val dataResult = attendanceRepository.getTodayData()
-                if (dataResult.isFailure) {
-                    _daysState.value = UiState.Error("Failed to load attendance data.")
-                    return@launch
-                }
-                val (_, events) = dataResult.getOrThrow()
-                val plannedWindow = if (isOperations) {
-                    attendanceRepository.getTodayPlannedWindow().getOrNull()
-                } else null
-                val liveStatus = deriveLiveStatus(events, plannedWindow)
+            val plannedWindow = if (!usesFixedWindow) {
+                attendanceRepository.getTodayPlannedWindow().getOrNull()
+            } else null
+            val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
+            combine(
+                attendanceRepository.observeTodayData(),
+                repository.observeRequestForDate(today)
+            ) { data, request ->
+                val liveStatus = deriveLiveStatus(data.second, plannedWindow)
                 if (liveStatus == null) {
-                    _daysState.value = UiState.Empty
-                    return@launch
+                    UiState.Empty
+                } else {
+                    UiState.Success(
+                        listOf(
+                            RegularizationDayItem(
+                                date = today,
+                                dayOfWeek = getDayOfWeek(today),
+                                originalStatus = liveStatus,
+                                request = request
+                            )
+                        )
+                    )
                 }
-
-                val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                val requestResult = repository.getRequestForDate(today)
-                val request = requestResult.getOrNull()
-
-                val item = RegularizationDayItem(
-                    date = today,
-                    dayOfWeek = getDayOfWeek(today),
-                    originalStatus = liveStatus,
-                    request = request
-                )
-                _daysState.value = UiState.Success(listOf(item))
-            } catch (e: Exception) {
-                _daysState.value = UiState.Error("Something went wrong.")
             }
+                .catch { _daysState.value = UiState.Error("Something went wrong.") }
+                .collect { _daysState.value = it }
         }
     }
 
     // Returns the day's live status only when it's NOT clean (i.e. worth regularizing):
     // null = nothing to fix (Present/on-time, or a day payroll leaves unmarked), "SL"/"HalfDay"
-    // otherwise. Scoring mirrors computeDailyAttendanceStatus: ops uses the first site/market
-    // arrival → last departure against the day's planned shift; office uses office_in/out vs 10–18.
+    // otherwise. Scoring mirrors computeDailyAttendanceStatus: the window comes from the role's
+    // planned shift (ops) or the fixed 10–18 (office/admin/sales), and the in/out event types
+    // come from RoleCapabilities — so a sales SITE-visit day is regularizable, not invisible.
     private fun deriveLiveStatus(events: List<AttendanceRecord>, plannedWindow: Pair<Int, Int>?): String? {
         if (events.isEmpty()) return null
 
-        val inRec: AttendanceRecord
-        val outRec: AttendanceRecord?
         val startMin: Int
         val endMin: Int
-        if (isOperations) {
+        if (usesFixedWindow) {
+            startMin = AttendanceStatusRules.OFFICE_START_MIN
+            endMin = AttendanceStatusRules.OFFICE_END_MIN
+        } else {
             // No planned shift → payroll leaves the day unmarked; nothing to regularize.
             val window = plannedWindow ?: return null
             startMin = window.first
             endMin = window.second
-            inRec = events.firstOrNull { it.type in AttendanceType.OPS_IN_TYPES } ?: return null
-            val lastInIdx = events.indexOfLast { it.type in AttendanceType.OPS_IN_TYPES }
-            val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
-            outRec = events.lastOrNull { it.type in AttendanceType.OPS_OUT_TYPES }
-                ?.takeIf { lastOutIdx > lastInIdx }
-        } else {
-            startMin = AttendanceStatusRules.OFFICE_START_MIN
-            endMin = AttendanceStatusRules.OFFICE_END_MIN
-            inRec = events.firstOrNull { it.type == AttendanceType.OFFICE_IN } ?: return null
-            val lastInIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_IN }
-            val lastOutIdx = events.indexOfLast { it.type == AttendanceType.OFFICE_OUT }
-            // Only count the checkout if it's the final event (they haven't re-entered since).
-            outRec = events.lastOrNull { it.type == AttendanceType.OFFICE_OUT }
-                ?.takeIf { lastOutIdx > lastInIdx }
         }
+
+        val inTypes = RoleCapabilities.attendanceInTypes(role)
+        val outTypes = RoleCapabilities.attendanceOutTypes(role)
+        val inRec = events.firstOrNull { it.type in inTypes } ?: return null
+        val lastInIdx = events.indexOfLast { it.type in inTypes }
+        val lastOutIdx = events.indexOfLast { it.type in outTypes }
+        // Only count the checkout if it's the final event (they haven't re-entered since).
+        val outRec = events.lastOrNull { it.type in outTypes }
+            ?.takeIf { lastOutIdx > lastInIdx }
 
         val inMin = minutesOf(inRec) ?: return "HalfDay"
         val outMin = outRec?.let { minutesOf(it) }
@@ -156,7 +157,6 @@ class RegularizationViewModel @Inject constructor(
             val result = repository.submitRequest(date, originalStatus, reason)
             if (result.isSuccess) {
                 _submitState.value = UiState.Success(result.getOrThrow())
-                loadToday()
             } else {
                 _submitState.value = UiState.Error(
                     result.exceptionOrNull()?.message ?: "Submission failed."

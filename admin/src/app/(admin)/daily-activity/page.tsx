@@ -17,9 +17,12 @@ function tsSecs(e: AttendanceRecord): number {
   return (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
 }
 
-const ROLE_ORDER: Record<string, number> = { office: 0, admin: 1, operations: 2 };
+const ROLE_ORDER: Record<string, number> = { office: 0, admin: 1, operations: 2, sales: 3 };
 const roleBadge = (role: string) =>
-  role === 'admin' ? 'badge-admin' : role === 'office' ? 'badge-office' : 'badge-ops';
+  role === 'admin' ? 'badge-admin'
+    : role === 'office' ? 'badge-office'
+      : role === 'sales' ? 'badge-sales'
+        : 'badge-ops';
 
 // A pending "restore to here" awaiting confirmation.
 interface PendingRestore {
@@ -168,6 +171,7 @@ export default function DailyActivityPage() {
               <option value="office">Office</option>
               <option value="admin">Admin</option>
               <option value="operations">Operations</option>
+              <option value="sales">Sales</option>
             </select>
           </div>
           <div>

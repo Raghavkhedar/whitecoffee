@@ -48,4 +48,5 @@ body {
   .badge-admin    { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FBECEC] text-[#B4322F]; }
   .badge-office   { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#ECF1FC] text-[#2456C7]; }
   .badge-ops      { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#F7EFE3] text-[#9A5B1E]; }
+  .badge-sales    { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#E9F6EF] text-[#1E7A4E]; }
 }

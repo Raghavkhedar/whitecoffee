@@ -7,7 +7,7 @@ import type { User, SentNotification } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 
-type RecipientType = 'all' | 'operations' | 'office' | 'specific';
+type RecipientType = 'all' | 'operations' | 'office' | 'sales' | 'specific';
 
 const NOTIF_TYPES = [
   { value: 'general',        label: 'General Announcement' },
@@ -66,7 +66,9 @@ export default function NotificationsPage() {
     switch (recipientType) {
       case 'all':        return users.map(u => u.id);
       case 'operations': return users.filter(u => u.role === 'operations').map(u => u.id);
+      // 'office' covers admin too (admin ⊃ office); sales is its own group, never folded in.
       case 'office':     return users.filter(u => u.role === 'office' || u.role === 'admin').map(u => u.id);
+      case 'sales':      return users.filter(u => u.role === 'sales').map(u => u.id);
       case 'specific':   return specificUserId ? [specificUserId] : [];
     }
   }
@@ -120,6 +122,7 @@ export default function NotificationsPage() {
     all:        'All employees',
     operations: 'Operations team',
     office:     'Office & Admin',
+    sales:      'Sales team',
     specific:   'Specific employee',
   };
 
@@ -184,8 +187,8 @@ export default function NotificationsPage() {
         {/* Recipients */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Recipients</label>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {(['all', 'operations', 'office', 'specific'] as RecipientType[]).map(r => (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {(['all', 'operations', 'office', 'sales', 'specific'] as RecipientType[]).map(r => (
               <button
                 key={r}
                 onClick={() => setRecipientType(r)}

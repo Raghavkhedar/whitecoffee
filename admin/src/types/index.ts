@@ -23,7 +23,7 @@ export interface User {
   expectedReturn?: string | null; // "YYYY-MM-DD", optional/informational — no auto-reactivation
   /** Append-only log of every suspend/reactivate action on this employee, oldest first. */
   suspensionHistory?: SuspensionEvent[];
-  role: 'operations' | 'office' | 'admin';
+  role: 'operations' | 'office' | 'admin' | 'sales';
   /** Explicit portal tab paths this non-admin user may access; ignored for role==='admin'
    *  (superuser). Managed on /access. See src/lib/portalAccess.ts */
   tabAccess?: string[];
@@ -235,7 +235,7 @@ export interface SentNotification {
   title: string;
   body: string;
   type: string;
-  recipientType: 'all' | 'operations' | 'office' | 'specific';
+  recipientType: 'all' | 'operations' | 'office' | 'sales' | 'specific';
   recipientCount: number;
   sentByName: string;
   sentAt?: Timestamp;

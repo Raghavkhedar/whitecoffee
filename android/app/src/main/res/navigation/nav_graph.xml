@@ -29,6 +29,9 @@
             android:id="@+id/action_homeFragment_to_officeAttendanceFragment"
             app:destination="@id/officeAttendanceFragment" />
         <action
+            android:id="@+id/action_homeFragment_to_salesAttendanceFragment"
+            app:destination="@id/salesAttendanceFragment" />
+        <action
             android:id="@+id/action_homeFragment_to_materialToolRequestFragment"
             app:destination="@id/materialToolRequestFragment" />
         <action
@@ -97,6 +100,19 @@
         android:id="@+id/officeAttendanceFragment"
         android:name="com.raghav.whitecoffee.ui.attendance.OfficeAttendanceFragment"
         android:label="Attendance" />
+
+    <!-- ── Sales Attendance (hybrid chooser → Office day or Site visit) ── -->
+    <fragment
+        android:id="@+id/salesAttendanceFragment"
+        android:name="com.raghav.whitecoffee.ui.attendance.SalesAttendanceFragment"
+        android:label="Attendance">
+        <action
+            android:id="@+id/action_salesAttendanceFragment_to_officeAttendanceFragment"
+            app:destination="@id/officeAttendanceFragment" />
+        <action
+            android:id="@+id/action_salesAttendanceFragment_to_attendanceFragment"
+            app:destination="@id/attendanceFragment" />
+    </fragment>
 
     <!-- ── Work Progress ── -->
     <fragment

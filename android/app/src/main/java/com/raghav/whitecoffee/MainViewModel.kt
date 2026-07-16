@@ -6,6 +6,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.location.LocationState
+import com.raghav.whitecoffee.data.model.AccountStatus
+import com.raghav.whitecoffee.data.model.accountStatusFrom
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
@@ -39,6 +41,9 @@ class MainViewModel @Inject constructor(
     private val _logoutComplete = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val logoutComplete: SharedFlow<Unit> = _logoutComplete.asSharedFlow()
 
+    private val _accountStatus = MutableStateFlow<AccountStatus>(AccountStatus.Active)
+    val accountStatus: StateFlow<AccountStatus> = _accountStatus.asStateFlow()
+
     private var listenerRegistration: ListenerRegistration? = null
 
     fun startMonitorIfLoggedIn() {
@@ -56,6 +61,12 @@ class MainViewModel @Inject constructor(
         listenerRegistration = firestore.collection("users").document(uid)
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                val active = snapshot.getBoolean("active") ?: true
+                _accountStatus.value = accountStatusFrom(
+                    active = active,
+                    reason = snapshot.getString("suspendedReason") ?: "",
+                    expectedReturn = snapshot.getString("expectedReturn") ?: "",
+                )
                 val firestoreToken = snapshot.getString("activeSessionToken") ?: return@addSnapshotListener
                 if (firestoreToken.isNotEmpty() && firestoreToken != localToken) {
                     _sessionInvalidated.tryEmit(Unit)
@@ -79,6 +90,7 @@ class MainViewModel @Inject constructor(
     fun logout() {
         listenerRegistration?.remove()
         listenerRegistration = null
+        _accountStatus.value = AccountStatus.Active
         authRepository.logout()
     }
 
@@ -90,7 +102,12 @@ class MainViewModel @Inject constructor(
         val location = locationProvider.getCurrentLocation()
         if (location !is LocationState.Success) return
 
-        if (sessionManager.isOperations) {
+        // Sales is hybrid — the same person may be at a site OR in the office today — so close
+        // whichever day is actually open instead of inferring it from the role. Sending a
+        // site-checked-in sales user down the office path would leave the site_in unclosed, and
+        // the nightly compute scores a day with no check-out as LNF (half pay).
+        val inField = state is AttendanceState.SiteCheckedIn || state is AttendanceState.MarketCheckedIn
+        if (sessionManager.isOperations || (sessionManager.isSales && inField)) {
             autoCheckoutOperations(state, location)
         } else {
             autoCheckoutOffice(events, location)

@@ -6,6 +6,7 @@ import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
 import { WORK_DONE_CATEGORIES, WORK_DONE_CATEGORY_SET, WORK_DONE_NA } from '@/lib/categories';
+import { inManpowerReports } from '@/lib/roleCapabilities';
 
 function formatTime(ts: { toDate: () => Date } | undefined) {
   if (!ts) return '—';
@@ -58,22 +59,29 @@ export default function SiteIdsPage() {
 
   const userNameMap = useMemo(() => new Map(users.map(u => [u.id, u.name])), [users]);
   const userEmpIdMap = useMemo(() => new Map(users.map(u => [u.id, u.employeeId])), [users]);
+  // Only roles that feed the manpower reports (operations) belong here — sales does site
+  // visits for attendance + conveyance only and is excluded from manpower/labor tracking.
+  const manpowerUserIds = useMemo(
+    () => new Set(users.filter(u => inManpowerReports(u.role)).map(u => u.id)),
+    [users],
+  );
 
   // Only site check-in/out entries carry a site name + Site ID.
   const siteEntries = useMemo(() => {
     const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
     return events
       .filter(e => e.type === 'site_in' || e.type === 'site_out')
+      .filter(e => manpowerUserIds.has(e.userId))
       .filter(e => !employeeFilter || e.userId === employeeFilter)
       .sort((a, b) =>
         (userNameMap.get(a.userId) || a.userName || '').localeCompare(userNameMap.get(b.userId) || b.userName || '')
         || ts(a) - ts(b));
-  }, [events, employeeFilter, userNameMap]);
+  }, [events, employeeFilter, userNameMap, manpowerUserIds]);
 
   // Employees that appear in the (unfiltered) site entries — for the filter dropdown.
   const employeesWithEntries = useMemo(() => {
     const ids = new Set(events.filter(e => e.type === 'site_in' || e.type === 'site_out').map(e => e.userId));
-    return users.filter(u => ids.has(u.id)).sort((a, b) => a.name.localeCompare(b.name));
+    return users.filter(u => ids.has(u.id) && inManpowerReports(u.role)).sort((a, b) => a.name.localeCompare(b.name));
   }, [events, users]);
 
   async function handleSave(entry: AttendanceRecord) {

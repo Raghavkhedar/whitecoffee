@@ -151,7 +151,8 @@ private fun HomeHeader(
     val initials = userName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase()
     val roleLabel = when (userRole.lowercase()) {
         "admin" -> "Administrator"
-        "office" -> "Office / Sales"
+        "office" -> "Office"
+        "sales" -> "Sales"
         else -> "Operations Team"
     }
     Column(

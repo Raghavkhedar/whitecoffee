@@ -10,6 +10,7 @@ import {
 } from '@/lib/firestore';
 import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus, Settlement } from '@/types';
 import { computeRangeLedger, settlementCash, type RangeLedger } from '@/lib/otAggregate';
+import { usesOtShortageLedger } from '@/lib/roleCapabilities';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 
@@ -100,7 +101,7 @@ export default function SettlementsPage() {
 
   const rows = useMemo<Row[]>(() => {
     return users
-      .filter(u => u.role === 'operations')
+      .filter(u => usesOtShortageLedger(u.role)) // OT/shortage settlement is ledger-only (operations)
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(u => {
         const ledger = computeRangeLedger(u.id, events, planned, approvals, statuses, holidaySet);

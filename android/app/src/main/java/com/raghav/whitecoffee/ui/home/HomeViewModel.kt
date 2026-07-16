@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.RoleCapabilities
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.NotificationRepository
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -46,6 +49,7 @@ class HomeViewModel @Inject constructor(
     val userRole: String get() = sessionManager.role
     val isOperations: Boolean get() = sessionManager.isOperations
     val isOffice: Boolean get() = sessionManager.isOffice
+    val isSales: Boolean get() = sessionManager.isSales
     val isAdmin: Boolean get() = sessionManager.isAdmin
 
     val greeting: String = run {
@@ -64,49 +68,58 @@ class HomeViewModel @Inject constructor(
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
     init {
+        observeUnreadCount()
         loadTodayAttendance()
     }
 
-    fun loadTodayAttendance() {
+    private fun observeUnreadCount() {
         viewModelScope.launch {
-            _unreadCount.value = notificationRepository.getUnreadCount().getOrDefault(0)
+            notificationRepository.observeUnreadCount()
+                .catch { /* keep last known count on transient error */ }
+                .collect { _unreadCount.value = it }
         }
-        viewModelScope.launch {
+    }
+
+    private var todayJob: kotlinx.coroutines.Job? = null
+
+    fun loadTodayAttendance() {
+        todayJob?.cancel()
+        todayJob = viewModelScope.launch {
             _todayStatus.value = TodayAttendanceStatus.Loading
-            val result = attendanceRepository.getTodayData()
-            if (result.isFailure) {
-                _todayStatus.value = TodayAttendanceStatus.Error
-                return@launch
-            }
-            val (_, events) = result.getOrThrow()
-
-            if (events.isEmpty()) {
-                _todayStatus.value = TodayAttendanceStatus.NotCheckedIn
-                return@launch
-            }
-
             val plannedWindow = if (isOperations) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
             } else null
-            val dailyStatus = if (isOperations) deriveOpsDailyStatus(events, plannedWindow)
-                              else deriveOfficeDailyStatus(events)
+            attendanceRepository.observeTodayData()
+                .map { (_, events) -> deriveTodayStatus(events, plannedWindow) }
+                .catch { _todayStatus.value = TodayAttendanceStatus.Error }
+                .collect { _todayStatus.value = it }
+        }
+    }
 
-            if (dailyStatus == DailyStatus.NOT_CHECKED_IN) {
-                _todayStatus.value = TodayAttendanceStatus.NotCheckedIn
-                return@launch
-            }
+    private fun deriveTodayStatus(
+        events: List<AttendanceRecord>,
+        plannedWindow: Pair<Int, Int>?,
+    ): TodayAttendanceStatus {
+        if (events.isEmpty()) return TodayAttendanceStatus.NotCheckedIn
 
-            val lastEvent = events.last()
-            val location = deriveLocation(lastEvent)
-            val since = lastEvent.displayTime()
+        val dailyStatus = when {
+            isOperations -> deriveOpsDailyStatus(events, plannedWindow)
+            isSales      -> deriveSalesDailyStatus(events)
+            else         -> deriveOfficeDailyStatus(events)
+        }
 
-            _todayStatus.value = when (dailyStatus) {
-                DailyStatus.PRESENT -> TodayAttendanceStatus.Present(location, since)
-                DailyStatus.SHORT_LEAVE -> TodayAttendanceStatus.ShortLeave(location, since)
-                DailyStatus.HALF_DAY -> TodayAttendanceStatus.HalfDay(location, since)
-                DailyStatus.PENDING -> TodayAttendanceStatus.Pending(location, since)
-                DailyStatus.NOT_CHECKED_IN -> TodayAttendanceStatus.NotCheckedIn
-            }
+        if (dailyStatus == DailyStatus.NOT_CHECKED_IN) return TodayAttendanceStatus.NotCheckedIn
+
+        val lastEvent = events.last()
+        val location = deriveLocation(lastEvent)
+        val since = lastEvent.displayTime()
+
+        return when (dailyStatus) {
+            DailyStatus.PRESENT -> TodayAttendanceStatus.Present(location, since)
+            DailyStatus.SHORT_LEAVE -> TodayAttendanceStatus.ShortLeave(location, since)
+            DailyStatus.HALF_DAY -> TodayAttendanceStatus.HalfDay(location, since)
+            DailyStatus.PENDING -> TodayAttendanceStatus.Pending(location, since)
+            DailyStatus.NOT_CHECKED_IN -> TodayAttendanceStatus.NotCheckedIn
         }
     }
 
@@ -135,6 +148,25 @@ class HomeViewModel @Inject constructor(
         val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
         val outMin = if (lastOutIdx > lastInIdx) minutesOf(events[lastOutIdx]) else null
         return AttendanceStatusRules.classify(inMin, outMin, window.first, window.second).toDaily()
+    }
+
+    // Sales: hybrid role. Scored on the FIXED 10:00–18:00 window (like office) but over the first
+    // check-in of ANY type and the last check-out of ANY type — office_in/site_in/market_in and
+    // office_out/site_out/market_out. Event source comes from RoleCapabilities so this stays in
+    // lockstep with the backend. No OT/shortage, no planned shift. Matches computeDailyAttendanceStatus.
+    private fun deriveSalesDailyStatus(events: List<AttendanceRecord>): DailyStatus {
+        val inTypes = RoleCapabilities.attendanceInTypes(SessionManager.ROLE_SALES).toSet()
+        val outTypes = RoleCapabilities.attendanceOutTypes(SessionManager.ROLE_SALES).toSet()
+
+        val firstIn = events.firstOrNull { it.type in inTypes } ?: return DailyStatus.NOT_CHECKED_IN
+        val inMin = minutesOf(firstIn) ?: return DailyStatus.HALF_DAY
+
+        val lastInIdx = events.indexOfLast { it.type in inTypes }
+        val lastOutIdx = events.indexOfLast { it.type in outTypes }
+        // Only score a checkout that's the user's final event; otherwise the day is in progress.
+        val outMin = if (lastOutIdx > lastInIdx) minutesOf(events[lastOutIdx]) else null
+
+        return AttendanceStatusRules.classify(inMin, outMin).toDaily()
     }
 
     private fun deriveOfficeDailyStatus(events: List<AttendanceRecord>): DailyStatus {

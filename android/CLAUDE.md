@@ -196,7 +196,7 @@ com.raghav.whitecoffee
 | userId | String | Denormalized |
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
-| role | String | operations / office / admin |
+| role | String | operations / office / sales / admin |
 | status | String | Present / SL / HalfDay / LNF / Absent / PL / LWP / WO |
 | markedBy | String | auto (Cloud Function) / admin (manual override) / backfill |
 | updatedAt | Timestamp | |
@@ -238,7 +238,7 @@ com.raghav.whitecoffee
 | employeeId | String | HR ID e.g. "EMP001" |
 | name | String | Display name |
 | email | String | Lowercase |
-| role | String | "operations", "office", or "admin" |
+| role | String | "operations", "office", "sales", or "admin" |
 | salaryRate | Double | ₹/day — set via admin portal, used in Employee Dashboard Sheets export |
 | fcmToken | String | FCM device token — saved on login + token refresh |
 | createdAt | Timestamp | |
@@ -404,7 +404,7 @@ Same schema as material_transfers (no photoUrls field).
 | title | String | |
 | body | String | |
 | type | String | general / leave_update / work_reminder / urgent |
-| recipientType | String | all / operations / office / specific |
+| recipientType | String | all / operations / office / sales / specific |
 | recipientCount | Int | Number of users notified |
 | sentByName | String | Admin's display name |
 | sentAt | Timestamp | |
@@ -535,23 +535,35 @@ see it as a new version. Signed release APK output: `app/build/outputs/apk/relea
 
 ## ROLE-BASED ACCESS
 
-| Feature | Operations | Office | Admin |
-|---|---|---|---|
-| Attendance | Full GPS flow (Home→Site→Market) | Multi-cycle check-in/out + location name | Same as Office |
-| M&T Request | ✅ Visible | ❌ Hidden | ❌ Hidden |
-| M&T Buy | ✅ | ✅ | ✅ |
-| Material Transfer | ✅ | ✅ | ✅ |
-| Tool Transfer | ✅ | ✅ | ✅ |
-| Work Progress | ✅ Visible | ❌ Hidden | ❌ Hidden |
-| Leave (apply + my history) | ✅ | ✅ | ✅ |
-| Leave Approvals | ❌ Hidden | ❌ Hidden | ✅ Admin only |
-| User Management | ❌ | ❌ | ✅ Web portal only (not in Android app) |
-| Site Management | ❌ | ❌ | ✅ Web portal only (not in Android app) |
+| Feature | Operations | Office | Sales | Admin |
+|---|---|---|---|---|
+| Attendance | Full GPS flow (Home→Site→Market) | Multi-cycle check-in/out + location name | **Chooser**: Office Day *or* Site Visit, per day (routes to the two screens below — no duplicate flow) | Same as Office |
+| M&T Request | ✅ Visible | ❌ Hidden | ❌ Hidden | ❌ Hidden |
+| M&T Buy | ✅ | ✅ | ✅ | ✅ |
+| Material Transfer | ✅ | ✅ | ✅ | ✅ |
+| Tool Transfer | ✅ | ✅ | ✅ | ✅ |
+| Work Progress | ✅ Visible | ❌ Hidden | ❌ Hidden | ❌ Hidden |
+| Leave (apply + my history) | ✅ | ✅ | ✅ | ✅ |
+| Leave Approvals | ❌ Hidden | ❌ Hidden | ❌ Hidden | ✅ Admin only |
+| User Management | ❌ | ❌ | ❌ | ✅ Web portal only (not in Android app) |
+| Site Management | ❌ | ❌ | ❌ | ✅ Web portal only (not in Android app) |
 
-Role checked via `sessionManager.isOperations` / `sessionManager.isOffice` / `sessionManager.isAdmin`
+Role checked via `sessionManager.isOperations` / `sessionManager.isOffice` / `sessionManager.isSales` / `sessionManager.isAdmin`
 
 **Note:** `isOffice` returns true for both office AND admin roles (admin ⊃ office capabilities).
-Use `isAdmin` for Leave Approvals and admin screens — NOT `isOffice`.
+Use `isAdmin` for Leave Approvals and admin screens — NOT `isOffice`. **`isOffice` is FALSE for
+sales** — sales is its own role, never folded into office.
+
+**⚠️ Do NOT branch on `isOperations` for behavior that differs per role** — that binary drops
+`sales` into the office branch silently. Sales is a deliberate *mix* (office-style fixed window,
+ops-style hybrid check-ins + conveyance), so it rides neither branch. Use
+**`RoleCapabilities`** (`data/model/RoleCapabilities.kt`) — `attendanceInTypes` /
+`attendanceOutTypes` / `usesFixedWindow` / `usesOtShortageLedger` / `tracksShortage` /
+`usesConveyance` / `getsCategories` / `inManpowerReports`. The table is **mirrored** in
+`admin/src/lib/roleCapabilities.ts` and `firebase/functions/roleCapabilities.js` — change all
+three together. Two real bugs came from this exact binary: a sales site day was unregularizable,
+and logout auto-checkout left a `site_in` unclosed (scored LNF = half pay). Design:
+`docs/superpowers/specs/2026-07-16-sales-role-design.md`
 
 ---
 
@@ -587,10 +599,25 @@ State machine (5 phases): `NotStarted → DayStarted ↔ InOffice → DayEnded`
 - `deriveOfficeState()` uses home_in/home_out as once-per-day gates; office_in/out cycle between them.
 - Full event timeline shown below the buttons (AttendanceTimelineAdapter already labels home events).
 
+### Sales users — hybrid day (SalesAttendanceFragment)
+Sales split their time between the office and customer/site visits, choosing **per day**. The
+attendance card routes to a **chooser** (`ui/attendance/SalesAttendanceFragment` + `…Screen`) —
+a thin stateless picker with two options that navigate to the **existing, unchanged** screens:
+- **Office Day** → `officeAttendanceFragment` (`office_in`/`office_out`, Home→Office→Home)
+- **Site Visit** → `attendanceFragment` (`site_in`/`site_out`, Home→Site→Home)
+
+No duplicate attendance flow exists. Status is scored on the **fixed 10:00–18:00** window over
+the first check-in / last check-out of **any** type (`HomeViewModel.deriveSalesDailyStatus`).
+Sales has **no OT/shortage/WO/categories** and is excluded from manpower reports, but **does**
+earn conveyance.
+
 ### HomeFragment routing:
 ```kotlin
-if (viewModel.isOperations) navigate(attendanceFragment)
-else navigate(officeAttendanceFragment)
+when {
+    viewModel.isSales      -> navigate(salesAttendanceFragment)   // chooser: office day or site visit
+    viewModel.isOperations -> navigate(attendanceFragment)
+    else                   -> navigate(officeAttendanceFragment)
+}
 ```
 
 ---
@@ -673,7 +700,7 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
   - Leave Approvals ✅ (admin only)
   - User Management ✅ (admin — WEB PORTAL ONLY, no Android screen)
   - Site Management ✅ (admin — WEB PORTAL ONLY, no Android screen)
-- 3 roles: operations / office / admin
+- 4 roles: operations / office / sales / admin (sales added 2026-07-16 — see RoleCapabilities.kt)
 - SessionManager persists to SharedPreferences (survives process kill)
 - nav_graph: 15 destinations wired
 
@@ -873,17 +900,17 @@ Deploy: `npm run deploy` from the admin portal directory
 23. **Push to background = Cloud Functions** — `FcmService.onMessageReceived` only fires when app is foregrounded. Sending push to backgrounded devices requires a Cloud Function that reads `/sent_notifications/` docs and calls FCM HTTP v1 API. Deferred to Phase 4.
 24. **FCM token saved two ways** — proactively on login via `FirebaseMessaging.getInstance().token.await()`, and automatically on refresh via `FcmService.onNewToken()`. Both call `notificationRepository.saveToken()`.
 25. **Salary rate in Firestore** — `salaryRate` (₹/day) stored on `/users/{uid}` doc, set via admin portal. Cloud Function `exportToSheets` reads it from the user doc directly (not from the Google Sheet). Imprest is still manually entered in the sheet and preserved across exports.
-26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Office/admin are scored on `office_in`/`office_out` vs a fixed 10:00–18:00 window; operations on the first `site_in`/`market_in` → last `site_out`/`market_out` vs the day's admin-set `planned_hours` (no plan → day left **unmarked**). Status = off-minutes (late-in + early-out): `0` Present, `≤120` SL, else HalfDay; a single punch → LNF. `home_in`/`home_out` are commute markers only and are never scored. The rule lives in `firebase/functions/attendanceRules.js` (shared, `npm test`) and is mirrored by `AttendanceStatusRules.kt` for the app preview — **change both together**.
+26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Office/admin are scored on `office_in`/`office_out` vs a fixed 10:00–18:00 window; operations on the first `site_in`/`market_in` → last `site_out`/`market_out` vs the day's admin-set `planned_hours` (no plan → day left **unmarked**); **sales** on the first check-in / last check-out across **all** of office+site+market vs the **fixed** 10:00–18:00 window (never needs a plan). Status = off-minutes (late-in + early-out): `0` Present, `≤120` SL, else HalfDay; a single punch → LNF. `home_in`/`home_out` are commute markers only and are never scored. The rule lives in `firebase/functions/attendanceRules.js` (shared, `npm test`) and is mirrored by `AttendanceStatusRules.kt` for the app preview — **change both together**. The **event types + window per role** come from `RoleCapabilities` / `roleCapabilities.js` — never re-derive them from an `isOperations` binary.
 27. **Regularization = employee-initiated, admin-approved** — employee submits reason per flagged day, admin approves/rejects in admin portal only (no Android admin screen). Approval atomically updates both `regularization_requests` and `attendance_status` via `writeBatch`.
 28. **Admin overrides protected** — `computeDailyAttendanceStatus` skips any user whose `attendance_status` doc has `markedBy === "admin"`. This prevents nightly auto-compute from overwriting approved regularizations.
 29. **Duplicate prevention** — `RegularizationRepository.submitRequest()` checks for existing pending/approved request for the same date before creating a new one.
 30. **Monthly in-app reminder** — `regularizationReminder` Cloud Function runs on the 25th, creates in-app notification for all admin users about pending regularization requests. No email dependency (SendGrid removed).
 31. **Firestore rules = field-level least privilege (Session 22)** — owner-update rules NEVER use a bare `isOwner` allow. Owner may only patch a whitelisted set of fields (`changedKeysWithin([...])`): user doc → `activeSessionToken`/`fcmToken`; request/purchase/transfer/work_progress docs → `photoUrls`. Status/role/salary changes are admin-only. Never widen these without a matching app write.
 32. **No in-app admin user/site screens** — User & Site management are WEB-PORTAL ONLY. There is no `ui/admin/` package. `UserRepository` admin methods exist but are unused.
-33. **Office home events are data-only** — `home_in`/`home_out` for office users are recorded purely for record-keeping. Conveyance is operations-only; `computeDailyAttendanceStatus` for office keys on office_in/out. Never wire office home events into pay/status logic.
+33. **Office home events are data-only** — `home_in`/`home_out` for office users are recorded purely for record-keeping. Conveyance is **operations + sales** (`usesConveyance`), never office/admin; `computeDailyAttendanceStatus` for office keys on office_in/out. Never wire office home events into pay/status logic.
 34. **`MainViewModel` (app root) owns session + logout** — `@HiltViewModel` scoped to `MainActivity`. Two responsibilities:
     (a) **Single-device session enforcement** — `startMonitor()` attaches a Firestore snapshot listener on `users/{uid}.activeSessionToken`; if the server token diverges from the cached `SessionManager.sessionToken` (account logged in elsewhere) it emits `sessionInvalidated`. Started via `startMonitorIfLoggedIn()` / `onLoginSuccess()`, torn down in `logout()` + `onCleared()`.
-    (b) **Logout auto-checkout** — `logoutWithAutoCheckout()` records closing attendance events before signing out: operations → `SITE_OUT`/`MARKET_OUT` then `HOME_OUT` based on current `AttendanceState`; office → `OFFICE_OUT` (if still in office) then `HOME_OUT`. Guarded by `_logoutInProgress`; auto-checkout failures are swallowed so logout always completes (offline-safe by design — do not "fix" the empty catch without preserving guaranteed logout).
+    (b) **Logout auto-checkout** — `logoutWithAutoCheckout()` records closing attendance events before signing out: operations → `SITE_OUT`/`MARKET_OUT` then `HOME_OUT` based on current `AttendanceState`; office → `OFFICE_OUT` (if still in office) then `HOME_OUT`. **Sales dispatches on the actual `AttendanceState`, NOT the role** — site/market checked-in takes the operations path, anything else the office path. This is load-bearing: sales is hybrid, so the open day cannot be inferred from the role, and sending a site-checked-in sales user down the office path leaves the `site_in` unclosed → the nightly compute scores the day **LNF = half pay**. Guarded by `_logoutInProgress`; auto-checkout failures are swallowed so logout always completes (offline-safe by design — do not "fix" the empty catch without preserving guaranteed logout).
 
 ---
 
