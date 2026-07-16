@@ -102,7 +102,12 @@ class MainViewModel @Inject constructor(
         val location = locationProvider.getCurrentLocation()
         if (location !is LocationState.Success) return
 
-        if (sessionManager.isOperations) {
+        // Sales is hybrid — the same person may be at a site OR in the office today — so close
+        // whichever day is actually open instead of inferring it from the role. Sending a
+        // site-checked-in sales user down the office path would leave the site_in unclosed, and
+        // the nightly compute scores a day with no check-out as LNF (half pay).
+        val inField = state is AttendanceState.SiteCheckedIn || state is AttendanceState.MarketCheckedIn
+        if (sessionManager.isOperations || (sessionManager.isSales && inField)) {
             autoCheckoutOperations(state, location)
         } else {
             autoCheckoutOffice(events, location)
