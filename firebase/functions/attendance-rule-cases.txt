@@ -1,0 +1,49 @@
+# SHARED attendance-scoring cases — the single source of truth for the rule's behaviour.
+#
+# Read and asserted by BOTH sides of the mirror:
+#   firebase/functions/attendanceRules.test.js          → npm test          (payroll authority)
+#   android/…/AttendanceStatusRulesTest.kt              → ./gradlew :app:testDebugUnitTest
+#
+# WHY THIS FILE EXISTS
+# The rule is implemented four times (attendanceRules.js, AttendanceStatusRules.kt,
+# otLedger.ts, deriveStatus in the admin attendance page) because the copies cannot be merged:
+# Kotlin can't import JS, the monorepo deliberately has no shared JS build graph, and the app's
+# preview must work offline so it can't ask the server. Parity used to rest entirely on a comment
+# saying "keep these in sync" — and it drifted twice for real. An hour-granular `inHour < 10`
+# preview shipped and wrongly scored 10:00 arrivals as Half Day; and the two test suites had
+# quietly grown different cases from each other.
+#
+# So: add a case here and BOTH suites pick it up automatically. Change the rule on one side only
+# and the other side's suite goes red. That is the whole point — do not copy these cases into a
+# language-specific test instead.
+#
+# FORMAT   name | inMin | outMin | startMin | endMin | expected
+#   minutes-of-day (600 = 10:00, 1080 = 18:00)
+#   outMin "-"  = day still in progress, no completed check-out yet → only late-in is scored,
+#                 because early-out cannot be known. The nightly run never passes this (a
+#                 one-sided day is LNF before it reaches classify); the app's live preview does.
+#   expected    = the wire value stored in attendance_status.status: Present | SL | HalfDay
+
+# ── Fixed 10:00–18:00 window (office / admin / sales, and ops with no planned shift) ──
+check-in at exactly 10:00 with a full day is Present   | 600 | 1080 | 600 | 1080 | Present
+check-in before 10:00 is Present                       | 585 | 1080 | 600 | 1080 | Present
+one minute late is SL, not HalfDay                     | 601 | 1080 | 600 | 1080 | SL
+check-in at 10:45 is SL                                | 645 | 1080 | 600 | 1080 | SL
+exactly 120 off-minutes is SL                          | 720 | 1080 | 600 | 1080 | SL
+121 off-minutes is HalfDay                             | 721 | 1080 | 600 | 1080 | HalfDay
+
+# ── Early-out is scored on its own edge; edges never cancel ──
+early out by 30 min is SL                              | 600 | 1050 | 600 | 1080 | SL
+early out by 3 hours is HalfDay                        | 600 |  900 | 600 | 1080 | HalfDay
+late in plus early out combine past the threshold      | 660 | 1019 | 600 | 1080 | HalfDay
+leaving after the window end earns nothing here        | 600 | 1200 | 600 | 1080 | Present
+
+# ── Day still in progress (no check-out yet) — late-in only ──
+in-progress on-time day is Present                     | 600 |   -  | 600 | 1080 | Present
+in-progress 15 min late is SL                          | 615 |   -  | 600 | 1080 | SL
+in-progress 3 hours late is HalfDay                    | 780 |   -  | 600 | 1080 | HalfDay
+
+# ── Operations planned shift (custom window) ──
+ops on-time against a 12:00-20:00 shift is Present     | 720 | 1200 | 720 | 1200 | Present
+ops 30 min late against a 12:00-20:00 shift is SL      | 750 | 1200 | 720 | 1200 | SL
+ops early-out against a 12:00-20:00 shift grades       | 720 | 1000 | 720 | 1200 | HalfDay

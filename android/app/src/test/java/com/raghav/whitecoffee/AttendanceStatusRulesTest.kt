@@ -2,12 +2,73 @@ package com.raghav.whitecoffee
 
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules.DayStatus
+import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AttendanceStatusRulesTest {
 
     private fun m(h: Int, min: Int = 0) = h * 60 + min
+
+    // ── Shared cases, mirrored with the Cloud Function ───────────────────────
+    // These are NOT written here. They come from firebase/functions/attendance-rule-cases.txt,
+    // which attendanceRules.test.js (npm test) reads and asserts against too. That file is the
+    // single source of truth for what the rule does: add a case there and both suites pick it up;
+    // change the rule on one side only and the other side goes red. This is what stops the app's
+    // preview drifting from payroll — it has drifted before (an hour-granular `inHour < 10`
+    // check once scored 10:00 arrivals as Half Day).
+
+    private data class Case(
+        val name: String,
+        val inMin: Int,
+        val outMin: Int?,
+        val startMin: Int,
+        val endMin: Int,
+        val expected: String,
+    )
+
+    /** DayStatus → the wire value stored in attendance_status.status (what the JS side returns). */
+    private fun DayStatus.wire(): String = when (this) {
+        DayStatus.PRESENT -> "Present"
+        DayStatus.SHORT_LEAVE -> "SL"
+        DayStatus.HALF_DAY -> "HalfDay"
+    }
+
+    private fun loadSharedCases(): List<Case> {
+        val root = System.getProperty("repoRoot")
+            ?: error("repoRoot system property not set — see tasks.withType<Test> in app/build.gradle.kts")
+        val file = File(root, "firebase/functions/attendance-rule-cases.txt")
+        check(file.exists()) { "Shared case file missing: ${file.absolutePath}" }
+        return file.readLines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .map { line ->
+                val p = line.split("|").map { it.trim() }
+                Case(
+                    name = p[0],
+                    inMin = p[1].toInt(),
+                    outMin = if (p[2] == "-") null else p[2].toInt(),
+                    startMin = p[3].toInt(),
+                    endMin = p[4].toInt(),
+                    expected = p[5],
+                )
+            }
+    }
+
+    @Test fun `shared cases score identically to the cloud function`() {
+        val cases = loadSharedCases()
+        // Guards the silent-pass failure mode: a moved or emptied case file must fail loudly
+        // rather than register zero cases and look green.
+        assertTrue("expected the shared cases, got ${cases.size}", cases.size >= 10)
+        cases.forEach { c ->
+            assertEquals(
+                c.name,
+                c.expected,
+                AttendanceStatusRules.classify(c.inMin, c.outMin, c.startMin, c.endMin).wire(),
+            )
+        }
+    }
 
     // --- The bug we're fixing: 10:00 login must NOT be Half Day ---
     @Test fun `checkin at exactly 10 00 with full day is Present`() {

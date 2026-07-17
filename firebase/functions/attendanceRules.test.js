@@ -1,11 +1,18 @@
 "use strict";
 
-// Boundary suite for the shared attendance rule. Mirrors AttendanceStatusRulesTest.kt in the
-// Android app — keep the two in sync so the employee preview never drifts from payroll.
+// Boundary suite for the shared attendance rule.
+//
+// The `classify` cases are NOT written here — they are loaded from the shared case file
+// attendance-rule-cases.txt, which AttendanceStatusRulesTest.kt in the Android app reads and
+// asserts against too. Add a case there and both suites pick it up; change the rule on one side
+// only and the other goes red. See that file's header for why the copies can't just be merged.
+//
 // Run: `npm test` (node --test, no extra deps).
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const {
   toMinutes,
   classify,
@@ -15,64 +22,35 @@ const {
 
 const m = (h, min = 0) => h * 60 + min;
 
-// NOTE: `classify` is imported, NOT redefined here. This file used to declare its own local copy
-// of the off-minutes formula and assert against that — which meant the arithmetic actually used
-// by computeDailyAttendanceStatus had zero coverage, and a wrong edit to it left `npm test`
-// green. The cases below now exercise the real production function.
+// ── Shared cases (mirrored with the Android suite) ───────────────────────────
+const CASE_FILE = path.join(__dirname, "attendance-rule-cases.txt");
+const sharedCases = fs.readFileSync(CASE_FILE, "utf8")
+  .split("\n")
+  .map((l) => l.trim())
+  .filter((l) => l && !l.startsWith("#"))
+  .map((line) => {
+    const [name, inMin, outMin, startMin, endMin, expected] = line.split("|").map((s) => s.trim());
+    return {
+      name,
+      inMin: Number(inMin),
+      outMin: outMin === "-" ? null : Number(outMin),
+      startMin: Number(startMin),
+      endMin: Number(endMin),
+      expected,
+    };
+  });
 
-test("check-in at exactly 10:00 with a full day is Present", () => {
-  assert.equal(classify(m(10, 0), m(18, 0)), "Present");
+test("shared case file is present and non-empty", () => {
+  // Guards the silent-pass failure mode: a moved/emptied file must fail loudly, not
+  // quietly register zero cases and look green.
+  assert.ok(sharedCases.length >= 10, `expected the shared cases, got ${sharedCases.length}`);
 });
 
-test("check-in before 10:00 is Present", () => {
-  assert.equal(classify(m(9, 45), m(18, 0)), "Present");
-});
-
-test("one minute late is SL, not HalfDay", () => {
-  assert.equal(classify(m(10, 1), m(18, 0)), "SL");
-});
-
-test("exactly 120 off-minutes is SL", () => {
-  assert.equal(classify(m(12, 0), m(18, 0)), "SL");
-});
-
-test("121 off-minutes is HalfDay", () => {
-  assert.equal(classify(m(12, 1), m(18, 0)), "HalfDay");
-});
-
-test("early out by 30 min is SL", () => {
-  assert.equal(classify(m(10, 0), m(17, 30)), "SL");
-});
-
-test("late in plus early out combine past the threshold", () => {
-  // 60 late + 61 early = 121 off → HalfDay
-  assert.equal(classify(m(11, 0), m(16, 59)), "HalfDay");
-});
-
-test("in-progress day (no checkout) scores late-in only", () => {
-  assert.equal(classify(m(10, 15), null), "SL");
-  assert.equal(classify(m(10, 0), null), "Present");
-});
-
-test("ops planned 12:00–20:00 shift: on-time arrival/leave is Present", () => {
-  // Would be HalfDay against a fixed 10–18 window; Present against the real shift.
-  assert.equal(classify(m(12, 0), m(20, 0), m(12, 0), m(20, 0)), "Present");
-});
-
-// The three cases below existed only in AttendanceStatusRulesTest.kt — the two suites are
-// supposed to mirror each other, and had already drifted. Added to close the gap.
-
-test("check-in at 10:45 is SL", () => {
-  assert.equal(classify(m(10, 45), m(18, 0)), "SL");
-});
-
-test("early out by 3 hours is HalfDay", () => {
-  assert.equal(classify(m(10, 0), m(15, 0)), "HalfDay");
-});
-
-test("ops late against a 12:00–20:00 planned shift grades to SL", () => {
-  assert.equal(classify(m(12, 30), m(20, 0), m(12, 0), m(20, 0)), "SL");
-});
+for (const c of sharedCases) {
+  test(`[shared] ${c.name}`, () => {
+    assert.equal(classify(c.inMin, c.outMin, c.startMin, c.endMin), c.expected);
+  });
+}
 
 test("toMinutes parses valid time and falls back otherwise", () => {
   assert.equal(toMinutes("14:30", 0), m(14, 30));
