@@ -42,11 +42,35 @@ import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
 import com.raghav.whitecoffee.ui.theme.SectionLabel
 import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcDialog
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
 // An action presented inside the teal status card.
 private data class AttAction(val label: String, val icon: String, val onClick: () -> Unit)
+
+/**
+ * Confirmation for home check-out — shared by the operations and office hosts.
+ *
+ * home_out is terminal: deriveAttendanceState and deriveOfficeState both close the day for good,
+ * and isEventAllowed then rejects every later punch (HOME_IN needs NoRecord, SITE_IN needs
+ * HomeCheckedIn). A stray tap therefore costs the employee the rest of their day and can leave
+ * them with no scored work events at all, so this is the one attendance action that confirms
+ * before it writes.
+ */
+@Composable
+fun HomeOutConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) = WhiteCoffeeTheme {
+    WcDialog(
+        title = "End your day?",
+        subtitle = "This ends your day. You won't be able to check in again today.",
+        confirmText = "End Day",
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    ) {}
+}
 
 // ───────────────────────── Operations attendance ─────────────────────────────
 
