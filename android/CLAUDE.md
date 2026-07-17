@@ -538,7 +538,7 @@ see it as a new version. Signed release APK output: `app/build/outputs/apk/relea
 | Feature | Operations | Office | Sales | Admin |
 |---|---|---|---|---|
 | Attendance | Full GPS flow (Home→Site→Market) | Multi-cycle check-in/out + location name | **Chooser**: Office Day *or* Site Visit, per day (routes to the two screens below — no duplicate flow) | Same as Office |
-| M&T Request | ✅ Visible | ❌ Hidden | ❌ Hidden | ❌ Hidden |
+| M&T Request | ✅ Visible | ✅ Visible | ❌ Hidden | ❌ Hidden |
 | M&T Buy | ✅ | ✅ | ✅ | ✅ |
 | Material Transfer | ✅ | ✅ | ✅ | ✅ |
 | Tool Transfer | ✅ | ✅ | ✅ | ✅ |

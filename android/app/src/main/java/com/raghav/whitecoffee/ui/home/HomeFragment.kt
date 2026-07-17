@@ -53,6 +53,7 @@ class HomeFragment : Fragment() {
                 userRole         = viewModel.userRole,
                 todayStatus      = todayStatus,
                 isOperations     = viewModel.isOperations,
+                isOffice         = viewModel.isOffice,
                 isAdmin          = viewModel.isAdmin,
                 isOnline         = isOnline,
                 unreadCount      = unreadCount,

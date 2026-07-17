@@ -58,6 +58,7 @@ fun HomeScreen(
     userRole: String,
     todayStatus: TodayAttendanceStatus,
     isOperations: Boolean,
+    isOffice: Boolean,
     isAdmin: Boolean,
     isOnline: Boolean,
     unreadCount: Int,
@@ -74,16 +75,19 @@ fun HomeScreen(
     onLeaveApprovalsClick: () -> Unit,
     onRegularizationClick: () -> Unit,
 ) = WhiteCoffeeTheme {
+    // Which roles see which tile. Every entry states its audience: an unguarded `add` means all
+    // four roles by decision, not by oversight, so a new role defaults to seeing it. Note
+    // `isOffice` is true for admin as well, hence the explicit `!isAdmin` where admin is excluded.
     val modules = buildList {
-        add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTiles.Attendance, onAttendanceClick))
-        if (isOperations) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTiles.MtRequest, onMtRequestClick))
-        add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTiles.MtBuy, onMtBuyClick))
-        add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTiles.MaterialXfer, onMaterialTransferClick))
-        add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTiles.ToolXfer, onToolTransferClick))
-        if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTiles.Work, onWorkProgressClick))
-        add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTiles.Leave, onLeaveClick))
-        if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTiles.Approvals, onLeaveApprovalsClick))
-        add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTiles.Regularization, onRegularizationClick))
+        /* all roles  */ add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTiles.Attendance, onAttendanceClick))
+        /* ops+office */ if (isOperations || (isOffice && !isAdmin)) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTiles.MtRequest, onMtRequestClick))
+        /* all roles  */ add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTiles.MtBuy, onMtBuyClick))
+        /* all roles  */ add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTiles.MaterialXfer, onMaterialTransferClick))
+        /* all roles  */ add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTiles.ToolXfer, onToolTransferClick))
+        /* ops only   */ if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTiles.Work, onWorkProgressClick))
+        /* all roles  */ add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTiles.Leave, onLeaveClick))
+        /* admin only */ if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTiles.Approvals, onLeaveApprovalsClick))
+        /* all roles  */ add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTiles.Regularization, onRegularizationClick))
     }
 
     Column(
@@ -316,7 +320,7 @@ private fun HomeScreenPreview() {
     HomeScreen(
         greeting = "Good morning", userName = "Raghav Khedar", userRole = "operations",
         todayStatus = TodayAttendanceStatus.Present("At Home", "8:30 AM"),
-        isOperations = true, isAdmin = false, isOnline = true, unreadCount = 2, isLoggingOut = false,
+        isOperations = true, isOffice = false, isAdmin = false, isOnline = true, unreadCount = 2, isLoggingOut = false,
         onBellClick = {}, onLogout = {}, onAttendanceClick = {}, onMtRequestClick = {}, onMtBuyClick = {},
         onMaterialTransferClick = {}, onToolTransferClick = {}, onWorkProgressClick = {}, onLeaveClick = {},
         onLeaveApprovalsClick = {}, onRegularizationClick = {},
