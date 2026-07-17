@@ -38,6 +38,32 @@ function classifyOffMinutes(offMinutes) {
 }
 
 /**
+ * Score a day against a working window: off-minutes (late-in + early-out) → status.
+ *
+ * This is the whole rule, and it lives here rather than inline in the caller for a reason.
+ * The off-minutes formula used to sit in computeDailyAttendanceStatus while this module
+ * exported only the thresholds — so the arithmetic that decides everybody's pay had NO test
+ * covering it, because attendanceRules.test.js defined its own local copy of the formula and
+ * graded that instead. A wrong edit to the real one kept `npm test` green.
+ *
+ * MIRRORS AttendanceStatusRules.classify in the Android app — same signature, same defaults,
+ * same null-outMin semantics. Keep them in lockstep.
+ *
+ * @param inMin    check-in minutes-of-day.
+ * @param outMin   check-out minutes-of-day, or null/undefined when the day is still in progress
+ *                 (no completed check-out yet) — then only late-in is scored, because early-out
+ *                 cannot be known yet. The nightly run never passes null (one-sided days are
+ *                 LNF before they reach here); the app's live preview does.
+ * @param startMin window start (default 10:00).
+ * @param endMin   window end (default 18:00).
+ */
+function classify(inMin, outMin, startMin = OFFICE_START_MIN, endMin = OFFICE_END_MIN) {
+  const late = Math.max(0, inMin - startMin);
+  const off = outMin == null ? late : late + Math.max(0, endMin - outMin);
+  return classifyOffMinutes(off);
+}
+
+/**
  * Whether computeDailyAttendanceStatus should score a day at all.
  *
  * Fixed-window roles (office/admin/sales) are always evaluated — they never need a plan.
@@ -84,6 +110,7 @@ module.exports = {
   SL_THRESHOLD_MIN,
   toMinutes,
   classifyOffMinutes,
+  classify,
   resolveOpsWindow,
   shouldEvaluateDay,
 };

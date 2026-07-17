@@ -10,7 +10,7 @@ const { google } = require("googleapis");
 const {
   OFFICE_START_MIN,
   OFFICE_END_MIN,
-  classifyOffMinutes,
+  classify,
   resolveOpsWindow,
   shouldEvaluateDay,
 } = require("./attendanceRules");
@@ -337,15 +337,14 @@ exports.computeDailyAttendanceStatus = onSchedule(
       let status;
 
       if (checkIns.length > 0 && checkOuts.length > 0) {
-      const firstIn  = checkIns[0];
-      const lastOut  = checkOuts[checkOuts.length - 1];
-      const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-      const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-      const lateMinutes  = Math.max(0, inMinutes - startMin);
-        const earlyMinutes = Math.max(0, endMin - outMinutes);
-        const offMinutes   = lateMinutes + earlyMinutes;
+        const firstIn  = checkIns[0];
+        const lastOut  = checkOuts[checkOuts.length - 1];
+        const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+        const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
 
-        status = classifyOffMinutes(offMinutes);
+        // The off-minutes formula lives in attendanceRules.classify, not inline here — inline it
+        // had no test coverage, since the test suite graded its own copy of the arithmetic.
+        status = classify(inMinutes, outMinutes, startMin, endMin);
       } else if (checkIns.length > 0 || checkOuts.length > 0) {
         status = "LNF";
       } else {

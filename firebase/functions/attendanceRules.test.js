@@ -8,20 +8,17 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   toMinutes,
-  classifyOffMinutes,
+  classify,
   resolveOpsWindow,
   shouldEvaluateDay,
-  OFFICE_START_MIN,
-  OFFICE_END_MIN,
 } = require("./attendanceRules");
 
 const m = (h, min = 0) => h * 60 + min;
-// Convenience: score in/out minutes against a window the way computeDailyAttendanceStatus does.
-const classify = (inMin, outMin, startMin = OFFICE_START_MIN, endMin = OFFICE_END_MIN) => {
-  const late = Math.max(0, inMin - startMin);
-  const early = outMin == null ? 0 : Math.max(0, endMin - outMin);
-  return classifyOffMinutes(late + early);
-};
+
+// NOTE: `classify` is imported, NOT redefined here. This file used to declare its own local copy
+// of the off-minutes formula and assert against that — which meant the arithmetic actually used
+// by computeDailyAttendanceStatus had zero coverage, and a wrong edit to it left `npm test`
+// green. The cases below now exercise the real production function.
 
 test("check-in at exactly 10:00 with a full day is Present", () => {
   assert.equal(classify(m(10, 0), m(18, 0)), "Present");
@@ -60,6 +57,21 @@ test("in-progress day (no checkout) scores late-in only", () => {
 test("ops planned 12:00–20:00 shift: on-time arrival/leave is Present", () => {
   // Would be HalfDay against a fixed 10–18 window; Present against the real shift.
   assert.equal(classify(m(12, 0), m(20, 0), m(12, 0), m(20, 0)), "Present");
+});
+
+// The three cases below existed only in AttendanceStatusRulesTest.kt — the two suites are
+// supposed to mirror each other, and had already drifted. Added to close the gap.
+
+test("check-in at 10:45 is SL", () => {
+  assert.equal(classify(m(10, 45), m(18, 0)), "SL");
+});
+
+test("early out by 3 hours is HalfDay", () => {
+  assert.equal(classify(m(10, 0), m(15, 0)), "HalfDay");
+});
+
+test("ops late against a 12:00–20:00 planned shift grades to SL", () => {
+  assert.equal(classify(m(12, 30), m(20, 0), m(12, 0), m(20, 0)), "SL");
 });
 
 test("toMinutes parses valid time and falls back otherwise", () => {
