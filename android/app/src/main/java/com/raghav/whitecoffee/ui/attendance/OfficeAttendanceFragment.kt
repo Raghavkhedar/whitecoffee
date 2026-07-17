@@ -10,6 +10,8 @@ import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
@@ -51,6 +53,7 @@ class OfficeAttendanceFragment : Fragment() {
             val state by viewModel.state.collectAsStateWithLifecycle()
             val events by viewModel.todayEvents.collectAsStateWithLifecycle()
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+            var showHomeOutConfirm by remember { mutableStateOf(false) }
 
             OfficeAttendanceScreen(
                 state = state,
@@ -66,8 +69,18 @@ class OfficeAttendanceFragment : Fragment() {
                         viewModel.checkOut(it.locationName)
                     }
                 },
-                onHomeOut = viewModel::homeOut,
+                onHomeOut = { showHomeOutConfirm = true },
             )
+
+            if (showHomeOutConfirm) {
+                HomeOutConfirmDialog(
+                    onConfirm = {
+                        showHomeOutConfirm = false
+                        viewModel.homeOut()
+                    },
+                    onDismiss = { showHomeOutConfirm = false },
+                )
+            }
         }
     }
 

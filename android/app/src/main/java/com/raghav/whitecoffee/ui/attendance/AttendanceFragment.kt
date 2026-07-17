@@ -69,6 +69,7 @@ class AttendanceFragment : Fragment() {
             val events by viewModel.todayEvents.collectAsStateWithLifecycle()
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val action by viewModel.actionState.collectAsStateWithLifecycle()
+            var showHomeOutConfirm by remember { mutableStateOf(false) }
 
             LaunchedEffect(action) {
                 if (action is ActionState.Success) viewModel.resetActionState()
@@ -93,7 +94,7 @@ class AttendanceFragment : Fragment() {
                     val s = (viewModel.attendanceState.value as? UiState.Success)?.data
                     (s as? AttendanceState.MarketCheckedIn)?.record?.let { viewModel.marketCheckOut(it.marketName) }
                 },
-                onHomeOut = viewModel::homeCheckOut,
+                onHomeOut = { showHomeOutConfirm = true },
             )
 
             // Manual site / market entry — Compose dialogs (replace the old View AlertDialogs).
@@ -107,6 +108,16 @@ class AttendanceFragment : Fragment() {
                     onDismiss = { viewModel.resetActionState() },
                 )
                 else -> {}
+            }
+
+            if (showHomeOutConfirm) {
+                HomeOutConfirmDialog(
+                    onConfirm = {
+                        showHomeOutConfirm = false
+                        viewModel.homeCheckOut()
+                    },
+                    onDismiss = { showHomeOutConfirm = false },
+                )
             }
         }
     }
