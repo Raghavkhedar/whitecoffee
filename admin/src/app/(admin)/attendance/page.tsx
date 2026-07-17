@@ -7,6 +7,7 @@ import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
 import { LAUNCH_DATE } from '@/lib/config';
+import { classify, resolveOpsWindow, OFFICE_START_MIN, OFFICE_END_MIN } from '@/lib/attendanceRules';
 import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger } from '@/lib/roleCapabilities';
 import { auth } from '@/lib/firebase';
 
@@ -129,15 +130,18 @@ function deriveStatus(
   const outIST = toIST(lastOutDate);
   const inMinutes  = inIST.getUTCHours() * 60 + inIST.getUTCMinutes();
   const outMinutes = outIST.getUTCHours() * 60 + outIST.getUTCMinutes();
-  const startMin   = fixedWindow ? 10 * 60 : hhmmToMinutes(planned?.startTime, 10 * 60);
-  const endMin     = fixedWindow ? 18 * 60 : hhmmToMinutes(planned?.endTime,   18 * 60);
-  const lateMinutes  = Math.max(0, inMinutes - startMin);
-  const earlyMinutes = Math.max(0, endMin - outMinutes);
-  const offMinutes   = lateMinutes + earlyMinutes;
 
-  if (offMinutes === 0) return 'Present';
-  if (offMinutes <= 120) return 'SL';
-  return 'HalfDay';
+  // Window: fixed for office/admin/sales; ops use the planned shift via resolveOpsWindow, which
+  // also handles the inverted/mis-entered case (an end of "06:00" meaning 6pm is a real data-entry
+  // mistake) by falling back to 10:00–18:00. Scored literally, an inverted window clamps BOTH
+  // edges to zero off-minutes and reports every such day as Present.
+  const window = fixedWindow ? null : resolveOpsWindow(planned?.startTime, planned?.endTime);
+  const startMin = window ? window.startMin : OFFICE_START_MIN;
+  const endMin   = window ? window.endMin   : OFFICE_END_MIN;
+
+  // The formula itself lives in lib/attendanceRules, asserted against the same shared case file
+  // as the Cloud Function and the app — inline here is how this copy drifted in the first place.
+  return classify(inMinutes, outMinutes, startMin, endMin);
 }
 
 export default function AttendancePage() {
