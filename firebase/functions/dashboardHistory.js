@@ -56,29 +56,11 @@ function monthLabelToKey(label) {
   return `${m[2]}-${String(idx + 1).padStart(2, "0")}`;
 }
 
-// Build empId → imprest from one block's rows. Header-aware: finds the row that
-// contains an "EMP ID" cell, then reads the "EMP ID" column and the column whose
-// header starts with "imprest". Skips CF BAL / TOTAL summary rows. Empty map when
-// the block has no header or no imprest column.
-function imprestFromBlock(blockRows) {
-  const map = new Map();
-  const rows = blockRows || [];
-  const hdrIdx = rows.findIndex(
-    (r) => Array.isArray(r) && r.some((c) => String(c).trim() === "EMP ID"));
-  if (hdrIdx === -1) return map;
-  const hdr = rows[hdrIdx];
-  const empIdCol   = hdr.findIndex((c) => String(c).trim() === "EMP ID");
-  const imprestCol = hdr.findIndex((c) => String(c).toLowerCase().startsWith("imprest"));
-  if (empIdCol === -1 || imprestCol === -1) return map;
-  for (let i = hdrIdx + 1; i < rows.length; i++) {
-    const r = rows[i];
-    if (!r || !r[empIdCol]) continue;
-    if (r[0] === "CF BAL" || r[0] === "TOTAL") continue;
-    const empId = String(r[empIdCol]).trim();
-    if (empId) map.set(empId, parseFloat(r[imprestCol]) || 0);
-  }
-  return map;
-}
+// NOTE: `imprestFromBlock` was deleted on 2026-07-17. It carried the manually-typed Imprest
+// column from the Sheet into each rebuilt current block. Imprest is now COMPUTED from
+// user.imprestPercent (see payrollDeductions.js) and the computed value replaces the manual
+// column outright, so nothing reads the old value any more. Frozen past blocks still keep
+// their manual imprest — they are never recomputed, and this file never touches their cells.
 
 // Assemble the full tab: current block first, then frozen blocks sorted by key
 // descending (newest first). Any frozen block whose key equals currentKey is
@@ -92,4 +74,4 @@ function assembleTab(currentBlockRows, currentKey, frozenBlocks) {
   return out;
 }
 
-module.exports = { bannerFor, keyOfBanner, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab };
+module.exports = { bannerFor, keyOfBanner, parseBlocks, monthLabelToKey, assembleTab };

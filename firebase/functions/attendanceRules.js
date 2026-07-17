@@ -64,30 +64,6 @@ function classify(inMin, outMin, startMin = OFFICE_START_MIN, endMin = OFFICE_EN
 }
 
 /**
- * Whether computeDailyAttendanceStatus should score a day at all.
- *
- * Fixed-window roles (office/admin/sales) are always evaluated — they never need a plan.
- * Operations are evaluated when ANY of these hold:
- *   - a planned shift exists (the normal case), or
- *   - approved leave exists (produces PL/LWP), or
- *   - they actually worked — a worked day is scored against the default 10:00–18:00 shift
- *     rather than left unmarked just because an admin forgot to enter the plan.
- *
- * With none of the three the day is *unscheduled*: leave it alone. This is the load-bearing
- * part — without the `worked` guard, dropping the no-plan skip would mark every unscheduled
- * ops day Absent (-2 days), penalising people for days they were never rostered.
- *
- * Backend-only orchestration, deliberately NOT mirrored in AttendanceStatusRules.kt: the app
- * expresses the same "not scored" idea as its neutral "pending" chip, not as a skip. The
- * mirror contract in this file's header covers the thresholds / off-minutes formula / window
- * fallback — none of which this touches.
- */
-function shouldEvaluateDay({ fixedWindow, hasPlan, hasLeave, worked }) {
-  if (fixedWindow) return true;
-  return Boolean(hasPlan || hasLeave || worked);
-}
-
-/**
  * Resolve an operations user's planned shift into a scoring window.
  *   null                 → no usable plan (both times must be set); the caller leaves the day
  *                          unmarked (and the app preview shows "pending").
@@ -112,5 +88,4 @@ module.exports = {
   classifyOffMinutes,
   classify,
   resolveOpsWindow,
-  shouldEvaluateDay,
 };

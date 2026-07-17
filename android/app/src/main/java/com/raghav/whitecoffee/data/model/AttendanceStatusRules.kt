@@ -29,9 +29,7 @@ package com.raghav.whitecoffee.data.model
  *  - operations:   the day's admin-set planned shift (see [resolveOpsWindow]), scored on the
  *    first site_in/market_in and the last site_out/market_out. With NO planned shift a worked
  *    day still scores, against the default [OFFICE_START_MIN]–[OFFICE_END_MIN] — mirroring the
- *    cloud's shouldEvaluateDay + window fallback and the portal's otLedger DEFAULT_SHIFT_*_MIN.
- *    An ops day with no plan, no leave AND no work events is unscheduled: the cloud skips it
- *    rather than penalising it as Absent.
+ *    cloud's window fallback and the portal's otLedger DEFAULT_SHIFT_*_MIN.
  */
 object AttendanceStatusRules {
     const val OFFICE_START_MIN = 10 * 60 // 10:00

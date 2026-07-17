@@ -1,11 +1,25 @@
-# Ops evaluation model + payroll percentages — open decisions
+# Ops evaluation model + payroll percentages — decisions
 
-**Date:** 2026-07-17
-**Status:** 🟡 DISCUSSION — nothing here is implemented. Read this before touching ops attendance
-scoring or the Employee Dashboard payroll columns.
+**Date:** 2026-07-17 (decisions answered same day)
+**Status:** 🟢 ALL FOUR ANSWERED. Read this before touching ops attendance scoring or the
+Employee Dashboard payroll columns.
 
-This captures a discussion that was cut short. It is written for a reader with no memory of that
-conversation. Everything in "Already shipped" is live; everything in "Open decisions" is not.
+This captured a discussion that was cut short; the four open questions were put back to the user
+on 2026-07-17 and all four are now answered. Each section below records the **answer** and what
+was done about it.
+
+## Answers at a glance
+
+| # | Question | Answer | Code change |
+|---|---|---|---|
+| 1 | Evaluate every ops day Mon–Sat? | **Yes — blank day = Absent** | ✅ done (`shouldEvaluateDay` deleted) |
+| 2 | Rest-day OT automatic or authorized? | **Authorized — the gate stays** | none — code was already right |
+| 3 | Is a WO netting to ₹0 without OT intended? | **Yes, intended** | none — code was already right |
+| 4 | Is the PF/ESI base Salary Due MTD? | **Yes — `daysNP × salaryRate`** | ⬜ to build |
+
+Two of the four resolved *against* the model as originally stated (2 and 3): the code was correct
+and the verbal spec was wrong. That is why they are recorded here rather than silently left alone —
+without this note the next reader would see the same divergence and "fix" it.
 
 ---
 
@@ -41,9 +55,19 @@ Point 2 is already live (#16, #22). Points 1, 3 and 4 are where the code and the
 
 ---
 
-## Open decision 1 — flip ops to "always evaluated" (Mon–Sat)
+## Decision 1 — flip ops to "always evaluated" (Mon–Sat) — ✅ ANSWERED YES, BUILT
 
-### Current behaviour
+**Answered 2026-07-17: yes, mark them Absent.** Built the same day — `shouldEvaluateDay` is gone
+from `attendanceRules.js`, its call site in `index.js`, and the mirrored guard in the portal's
+`deriveStatus`. The five unit tests went with it: the predicate became `() => true`, so the unit
+disappeared along with the decision it modelled. **Net effect: the "no punches → Absent" rule is
+now untested** — it lives in `index.js`, which has no test harness (the boundary suite is pure
+functions only). The remaining skips (Sunday, holiday, `active !== false`, admin override) are all
+function-level guards, unchanged and also untested.
+
+**The 63 past days were left alone**, per the recommendation below — not re-scored, not backfilled.
+
+### Behaviour before the flip (kept for context)
 
 `shouldEvaluateDay` in `firebase/functions/attendanceRules.js`:
 
@@ -95,7 +119,14 @@ ever writes *today*, so going forward this problem doesn't recur; it's purely ab
 
 ---
 
-## Open decision 2 — is rest-day OT automatic or authorized?
+## Decision 2 — is rest-day OT automatic or authorized? — ✅ ANSWERED: AUTHORIZED, NO CHANGE
+
+**Answered 2026-07-17: keep the gate exactly as the code has it.** The verbal model ("all Sunday
+work goes straight to OT") was the thing that was wrong, not the code. Nothing was built. Do not
+remove the `otAuthorized` gate — an employee must not be able to create OT liability by turning up
+unasked. Recorded in `admin/CLAUDE.md` so it isn't re-litigated.
+
+### The divergence that prompted the question (kept for context)
 
 The user said *"on holidays and sundays all the work done is going straight to OT"*. The code
 disagrees — `computeDayLedger` in `admin/src/lib/otLedger.ts`:
@@ -111,13 +142,17 @@ Rest-day work credits OT **only when an admin has toggled "Authorize OT"** (`pla
 which replaces the shift inputs on Sundays/holidays). Unauthorized Sunday work credits **zero** and
 is flagged "unauthorized" in the OT/Shortage modal.
 
-**Question:** is that gate intentional (admin must pre-approve rest-day work), or should all
-rest-day work credit OT automatically? The user's phrasing suggests automatic; the code and
-`admin/CLAUDE.md` both say authorized. **Unresolved.**
+The question was whether that gate was intentional. It is. **Resolved: authorized.**
 
 ---
 
-## Open decision 3 — confirm WO semantics
+## Decision 3 — WO semantics — ✅ ANSWERED: INTENDED, NO CHANGE
+
+**Answered 2026-07-17: yes, a WO netting to ₹0 without OT is intended.** The WO is advance credit
+against hours the employee is expected to make up as OT that month. Nothing was built; the −480
+debit stays. Recorded in `admin/CLAUDE.md`.
+
+### The shape that prompted the question (kept for context)
 
 Understanding to confirm (from `admin/CLAUDE.md` + `otLedger.ts`):
 
@@ -127,14 +162,14 @@ Understanding to confirm (from `admin/CLAUDE.md` + `otLedger.ts`):
 - It debits a standard 8h (`WO_DEBIT_MINS`) from the monthly ledger, repayable by OT that month.
 - It settles as `settlementCash = woDays × rate + netMins/480 × rate`.
 
-**The bit needing confirmation:** those two combine so that **a WO with no OT nets to zero**. One
-WO, no overtime → `netMins = −480` → `settlementCash = rate − rate = 0`. So the employee only keeps
-WO pay if they worked 8h of OT elsewhere that month. A "paid day off" that pays nothing unless you
-make up the hours is a strange shape — is it intended?
+Those two combine so that **a WO with no OT nets to zero**. One WO, no overtime → `netMins = −480`
+→ `settlementCash = rate − rate = 0`. So the employee only keeps WO pay if they worked 8h of OT
+elsewhere that month. That looked like a strange shape for a "paid day off", which is why it was
+raised — **confirmed intended.**
 
 ---
 
-## Open decision 4 — PF / ESI / Imprest wiring
+## Decision 4 — PF / ESI / Imprest wiring — ✅ BLOCKER ANSWERED, READY TO BUILD
 
 Fields exist on the user doc and save from the `/users` modal (#17). **Nothing reads them.**
 
@@ -165,15 +200,14 @@ Still unknown for later: what the efficiency matrix actually is (the Manpower Ut
 it's per-employee-per-month or a daily average. Note that manpower fraction is **uncapped and can
 exceed 1**, so if it becomes the source, a >100% month would pay more than the full imprest slice.
 
-### ⛔ THE ONE BLOCKER — do not implement until answered
+### ✅ THE BLOCKER — ANSWERED 2026-07-17
 
-**Is the base "Salary Due MTD"** — i.e. `daysNP × salaryRate`, what they have actually earned so
-far this month? On the 17th, someone at ₹1000/day with 14 days NP has Salary Due MTD = ₹14,000, so
-PF at 8% = ₹1,120, growing as they earn.
+**The base IS "Salary Due MTD"** — `daysNP × salaryRate`, what they have actually earned so far
+this month. Confirmed by the user against a worked example: someone at ₹1,000/day with 14 days NP
+on the 17th has Salary Due MTD = ₹14,000, so PF at 8% = ₹1,120, growing as they earn. The
+alternative (a flat full-month salary regardless of days worked) was explicitly rejected.
 
-The alternative is a full month's salary regardless of days worked. The user's *"it should be MTD
-as well just like salary"* strongly implies the former, but they said they didn't understand the
-question when asked, so **it was never confirmed**. It is pay — do not guess.
+This was the last thing blocking the build.
 
 ---
 
@@ -195,16 +229,12 @@ the Attendance page.
 
 ---
 
-## Suggested order for the next session
+## What's left
 
-1. **Answer the PF/ESI base question** (Open decision 4) — smallest, fully specified otherwise,
-   and immediately buildable.
-2. **Confirm WO semantics** (3) and **rest-day OT** (2) — both are quick yes/no, and both may
-   change what "correct" means for the flip.
-3. **Then the ops flip** (1) — biggest blast radius; it changes pay in the direction of taking it
-   away, so it wants the other answers settled first. Keep the 63 past days out of scope unless
-   explicitly decided otherwise.
-4. **Portal warning** (5) — independent, can be done any time.
+1. **PF/ESI/Imprest** (4) — fully specified now, nothing blocking. Not built.
+2. **Portal warning for retroactive shifts** (5) — decided, independent, not built.
+
+Done: the ops flip (1); decisions 2 and 3 confirmed as no-change.
 
 ## Things that must not be quietly undone
 

@@ -96,7 +96,6 @@ function deriveStatus(
   if (dayOfWeek === 0) return null; // Sunday — no status
 
   const fixedWindow = usesFixedWindow(role);
-  const hasPlan = Boolean(planned?.startTime && planned?.endTime);
 
   const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
   // Event types per role — ops spans site+market, office uses office_in/out, and sales
@@ -109,13 +108,10 @@ function deriveStatus(
   const checkOuts = userEvents.filter(isOut).sort((a, b) => ts(a) - ts(b));
   const worked = checkIns.length > 0 || checkOuts.length > 0;
 
-  // Mirrors shouldEvaluateDay in firebase/functions/attendanceRules.js: an ops day with no
-  // planned shift and no work events is *unscheduled* — render it blank rather than penalising
-  // it as Absent. A day that WAS worked scores against the default 10:00–18:00 below, which is
-  // what the Cloud Function now writes and what otLedger.ts has always used. (Approved leave
-  // isn't visible here; PL/LWP always arrive via the stored doc the nightly run writes.)
-  if (!fixedWindow && !hasPlan && !worked) return null;
-
+  // Ops are scored every working day like everyone else (flipped 2026-07-17) — a day with no
+  // plan and no punches is a no-show, not an unscheduled day. Callers guard Sundays/holidays,
+  // matching the Cloud Function's function-level skips. (Approved leave isn't visible here;
+  // PL/LWP always arrive via the stored doc the nightly run writes.)
   if (!worked) return 'Absent';
 
   if (checkIns.length === 0 || checkOuts.length === 0) return 'LNF';
@@ -163,6 +159,10 @@ export default function AttendancePage() {
   const [eventsLoading, setEventsLoading] = useState(false);
   const [saving, setSaving]             = useState<Record<string, boolean>>({});
   const [saveError, setSaveError]       = useState('');
+  // Shown after saving a shift for a PAST date — the nightly run only ever writes *today*,
+  // so a retroactively-entered shift never re-scores its day. Warning, not a block: the
+  // admin may still want the roster on record.
+  const [planWarning, setPlanWarning]   = useState('');
   const [dirtyPlans, setDirtyPlans]     = useState<Set<string>>(new Set());
   const [employeeFilter, setEmployeeFilter] = useState('');
   // Holiday editor (for the selected day)
@@ -293,9 +293,25 @@ export default function AttendancePage() {
 
     setSaving(prev => ({ ...prev, [key]: true }));
     setSaveError('');
+    setPlanWarning('');
     try {
       await setPlannedHours(userId, date, planned.startTime, planned.endTime, planned.declaredOtMins ?? 0);
       setDirtyPlans(prev => { const next = new Set(prev); next.delete(key); return next; });
+
+      // The nightly run only ever scores *today*, so a shift saved for a past date is stored
+      // but never applied — that day keeps whatever it was already scored against (the default
+      // 10:00–18:00 when no plan existed at the time). Observed for real: a planned_hours doc
+      // for 2026-07-09 created on 07-10 changed nothing. Harmless for a standard shift, but a
+      // non-standard one (e.g. 12:00–20:00) silently fails to apply — hence the warning.
+      if (date < istTodayStr()) {
+        const emp = users.find(u => u.id === userId);
+        setPlanWarning(
+          `Saved, but this shift will NOT re-score ${date}${emp?.name ? ` for ${emp.name}` : ''}. ` +
+          `The nightly run only scores the current day, so a shift entered after the fact never ` +
+          `applies — that day keeps the status it already has. To change a past day's status, use ` +
+          `Regularization instead.`
+        );
+      }
     } catch (err) {
       setSaveError('Failed to save planned hours. Please try again.');
       console.error(err);
@@ -723,6 +739,19 @@ export default function AttendancePage() {
         {saveError && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
             {saveError}
+          </div>
+        )}
+
+        {planWarning && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm flex items-start justify-between gap-3">
+            <span>{planWarning}</span>
+            <button
+              onClick={() => setPlanWarning('')}
+              className="text-amber-600 hover:text-amber-800 font-medium shrink-0"
+              aria-label="Dismiss warning"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 

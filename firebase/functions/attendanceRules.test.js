@@ -17,7 +17,6 @@ const {
   toMinutes,
   classify,
   resolveOpsWindow,
-  shouldEvaluateDay,
 } = require("./attendanceRules");
 
 const m = (h, min = 0) => h * 60 + min;
@@ -69,41 +68,12 @@ test("resolveOpsWindow: parsed window, with 10–18 fallback for an inverted shi
   assert.deepEqual(resolveOpsWindow("20:00", "12:00"), { startMin: m(10, 0), endMin: m(18, 0) });
 });
 
-// --- shouldEvaluateDay: which days computeDailyAttendanceStatus scores at all ---
-
-test("shouldEvaluateDay: fixed-window roles are always evaluated, plan or not", () => {
-  const fixed = { fixedWindow: true, hasPlan: false, hasLeave: false, worked: false };
-  assert.equal(shouldEvaluateDay(fixed), true);
-  assert.equal(shouldEvaluateDay({ ...fixed, worked: true }), true);
-});
-
-test("shouldEvaluateDay: ops with a plan is evaluated", () => {
-  assert.equal(
-    shouldEvaluateDay({ fixedWindow: false, hasPlan: true, hasLeave: false, worked: false }),
-    true
-  );
-});
-
-test("shouldEvaluateDay: ops with approved leave is evaluated (PL/LWP)", () => {
-  assert.equal(
-    shouldEvaluateDay({ fixedWindow: false, hasPlan: false, hasLeave: true, worked: false }),
-    true
-  );
-});
-
-test("shouldEvaluateDay: ops who worked with NO plan is evaluated (scored vs default 10–18)", () => {
-  // The Pending/unmarked bug: a full day of site work used to be skipped outright
-  // because the admin never entered a shift.
-  assert.equal(
-    shouldEvaluateDay({ fixedWindow: false, hasPlan: false, hasLeave: false, worked: true }),
-    true
-  );
-});
-
-test("shouldEvaluateDay: ops unscheduled day (no plan, no leave, no work) is skipped", () => {
-  // Load-bearing: without this, an unscheduled ops day falls through to Absent (-2 days).
-  assert.equal(
-    shouldEvaluateDay({ fixedWindow: false, hasPlan: false, hasLeave: false, worked: false }),
-    false
-  );
-});
+// NOTE: `shouldEvaluateDay` was deleted on 2026-07-17 when operations were flipped to
+// "always evaluated" (Mon–Sat), matching office/admin/sales. It had encoded the ops-only
+// three-way skip (plan OR leave OR punches); with ops scored every working day the predicate
+// was always true and the unit disappeared with the decision it modelled.
+//
+// The remaining "is this day scored at all?" rules now live inline in
+// computeDailyAttendanceStatus and are NOT covered here (this suite is pure functions only):
+// the Sunday skip, the holidays/{date} skip, the `active !== false` filter, and the
+// markedBy === "admin" override. All four are function-level guards, unchanged by the flip.

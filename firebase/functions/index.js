@@ -12,12 +12,13 @@ const {
   OFFICE_END_MIN,
   classify,
   resolveOpsWindow,
-  shouldEvaluateDay,
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
-const { bannerFor, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab } = require("./dashboardHistory");
+const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
+// PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
+const { computeDeductions } = require("./payrollDeductions");
 // Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
 // office/operations/sales/admin decisions through predicates instead of `isOps`.
 const {
@@ -318,10 +319,11 @@ exports.computeDailyAttendanceStatus = onSchedule(
       const checkOuts = events.filter((e) => outTypes.includes(e.type));
       const worked = checkIns.length > 0 || checkOuts.length > 0;
 
-      // Skip only a genuinely unscheduled day — operations with no plan, no approved
-      // leave, and no work events. An ops day that WAS worked is scored even without a
-      // plan (against the default 10:00–18:00 below). See shouldEvaluateDay.
-      if (!shouldEvaluateDay({ fixedWindow, hasPlan: Boolean(plan), hasLeave: Boolean(leave), worked })) continue;
+      // Every active user is scored on every working day, all roles alike. Sundays and
+      // holidays never reach this loop (both return above), offboarded users are filtered
+      // out of allUsers, and admin-marked days (WO / regularization) are skipped at the top.
+      // So an ops day reaching here with no plan, no leave and no punches is a no-show and
+      // scores Absent — days off must be marked WO or leave.
 
       // Working window: fixed-window roles use 10:00–18:00; operations use the planned
       // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
@@ -1128,13 +1130,11 @@ exports.exportToSheets = onSchedule(
         if (k) { legacyKey = k; legacyLabel = String(r[0]).trim(); break; }
       }
 
-      // Carry manually-entered Imprest into the rebuilt current block: from the
-      // current month's previous block if present, else legacy when it IS the
-      // current month. (Frozen past blocks keep their own imprest verbatim.)
-      const oldCurrentBlock  = blocks.find((b) => b.key === currentKey) || null;
-      const imprestSourceRows = oldCurrentBlock ? oldCurrentBlock.rows
-        : (legacyKey === currentKey ? legacy : []);
-      const imprestMap = imprestFromBlock(imprestSourceRows); // employeeId → imprest
+      // NOTE: Imprest is no longer carried forward from the Sheet. It is computed from
+      // user.imprestPercent (see payrollDeductions.js), which REPLACES the manual column
+      // that used to be typed in and preserved across runs. Until the percentages are
+      // populated the rebuilt current block shows ₹0 — decided 2026-07-17, not a bug.
+      // Frozen past blocks keep their own manual imprest verbatim.
 
       // Current-month settlement (OT/shortage/WO) — the client settles month-to-month,
       // NOT in arrears. Read each user's LOCKED settlement for THIS month and add its cash
@@ -1153,7 +1153,8 @@ exports.exportToSheets = onSchedule(
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
-        "Covy Due (approx avg)", "Imprest Due MTD", `Settlement ${currentKey} (₹)`, "TOTAL DUE",
+        "Covy Due (approx avg)", "Imprest Due MTD", `Settlement ${currentKey} (₹)`,
+        "PF (−)", "ESI (−)", "TOTAL DUE",
       ];
 
       const sortedUsers = [...allUsersData].sort((a, b) => {
@@ -1181,9 +1182,17 @@ exports.exportToSheets = onSchedule(
           ? parseFloat((conveyanceByUserId.get(user.id) || 0).toFixed(2))
           : 0;
 
-        const imprest    = imprestMap.get(empId) || 0;
         const settlement = parseFloat((settlementCashMap.get(user.id) || 0).toFixed(2));
-        const totalDue   = parseFloat((salaryDue + covy + imprest + settlement).toFixed(2));
+
+        // PF / ESI / Imprest are percentages of Salary Due MTD (payrollDeductions.js).
+        // PF and ESI are DEDUCTED from TOTAL DUE; Imprest is added. `efficiency` is not
+        // passed — the matrix doesn't exist yet, so it defaults to 1. Do NOT pass 0.
+        const { pf, esi, imprest, totalDue } = computeDeductions({
+          salaryDue, covy, settlement,
+          pfPercent: user.pfPercent,
+          esiPercent: user.esiPercent,
+          imprestPercent: user.imprestPercent,
+        });
 
         grandTotal += totalDue;
         grandCfBal += user.plBalance || 0;
@@ -1201,6 +1210,8 @@ exports.exportToSheets = onSchedule(
           covy,
           imprest,
           settlement,
+          pf,
+          esi,
           totalDue,
         ]);
       });
