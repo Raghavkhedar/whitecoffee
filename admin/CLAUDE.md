@@ -66,7 +66,9 @@ Required composite indexes (Firebase Console):
 | LWP (Leave Without Pay) | Approved leave, no balance | 0 |
 | Absent | No events, no approved leave (ops: only when a plan exists — no plan + no events = unscheduled, skipped) | -2 |
 
-`markedBy: 'auto'` on function-written docs; `markedBy: 'admin'` docs (regularization) are skipped on recompute. The attendance page mirrors this logic client-side until the nightly run writes it.
+`markedBy: 'auto'` on function-written docs; `markedBy: 'admin'` docs (regularization) are skipped on recompute. The attendance page mirrors this logic client-side until the nightly run writes it (`deriveStatus`, a 4th copy of the rule — keep it in lockstep with `attendanceRules.js`).
+
+**`markedBy: 'backfill'` — 22 docs, 2026-07-09..16, 5 ops employees (S106/S271/S276/S353/S369), written 2026-07-17.** One-time recovery of ops days that were *worked* but never scored, because the pre-2026-07-17 function skipped any ops day with no `planned_hours`. Scored by the same rule the nightly now uses (plan if present, else default 10:00–18:00). **Punches-only** — no Absent/PL/LWP was ever created retroactively, so the backfill could only add days people worked, never remove pay; days with no punches were left unmarked. Existing docs (incl. admin regularizations) were never overwritten. The HTTP function was deployed, dry-run, committed, then deleted — it is not in source, matching the earlier `backfillAttendanceStatus` precedent. Note some recovered days had a plan entered *late* (e.g. a `planned_hours/2026-07-09` created on 07-10), after that night's run had already skipped them: **entering a shift retroactively does not re-score the day** — the nightly only ever writes today.
 
 **Days NP**: `present + SL×0.75 + halfDay×0.5 + LNF×0.5 + PL - absent×2` (LWP = 0)
 
