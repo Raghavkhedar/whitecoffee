@@ -88,6 +88,23 @@ android {
     }
 }
 
+// AttendanceStatusRulesTest reads firebase/functions/attendance-rule-cases.txt — the case file
+// shared with the Cloud Function's npm-test suite — so the app preview provably scores days the
+// same way payroll does. Passed as an absolute path rather than resolved relatively, so the test
+// doesn't silently depend on Gradle's working directory. rootProject here is `android/`; its
+// parent is the monorepo root.
+//
+// inputs.file() is load-bearing, not decoration. The case file lives outside this module, so
+// without declaring it Gradle sees no input change when a case is edited, reports the test task
+// UP-TO-DATE, and never re-runs it — the shared cases would then silently stop guarding anything
+// on the Kotlin side. Verified: with this line, editing a case re-runs the test and a mismatch
+// fails the build; without it, the same edit passed in under a second.
+tasks.withType<Test>().configureEach {
+    val ruleCases = rootProject.projectDir.parentFile.resolve("firebase/functions/attendance-rule-cases.txt")
+    systemProperty("repoRoot", rootProject.projectDir.parentFile.absolutePath)
+    inputs.file(ruleCases).withPropertyName("attendanceRuleCases")
+}
+
 dependencies {
     // Photo Upload
     implementation(libs.glide)
