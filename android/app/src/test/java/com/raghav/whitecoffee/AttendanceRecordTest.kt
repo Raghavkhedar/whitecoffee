@@ -5,6 +5,7 @@ import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.model.isEventAllowed
+import com.raghav.whitecoffee.data.model.willLogoutCloseDay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -80,5 +81,60 @@ class AttendanceRecordTest {
     @Test fun `site_out is only allowed while checked into a site`() {
         assertTrue(isEventAllowed(AttendanceState.SiteCheckedIn(event(AttendanceType.SITE_IN)), AttendanceType.SITE_OUT))
         assertFalse(isEventAllowed(AttendanceState.HomeCheckedIn(event(AttendanceType.HOME_IN)), AttendanceType.SITE_OUT))
+    }
+
+    // ── willLogoutCloseDay: does logging out cost the user the rest of their day? ──
+    // Load-bearing: MainViewModel.autoCheckout guards on this, and the home screen's logout
+    // confirmation is shown from it. If the two disagreed, the app would either warn about a
+    // day it doesn't end, or silently end one it never warned about.
+
+    private fun opsAt(state: AttendanceState) = willLogoutCloseDay(state, emptyList(), isOperations = true, isSales = false)
+
+    @Test fun `ops checked in at a site - logout would close the day`() {
+        assertTrue(opsAt(AttendanceState.SiteCheckedIn(event(AttendanceType.SITE_IN))))
+    }
+
+    @Test fun `ops at market - logout would close the day`() {
+        assertTrue(opsAt(AttendanceState.MarketCheckedIn(event(AttendanceType.MARKET_IN))))
+    }
+
+    @Test fun `ops home checked in - logout would close the day`() {
+        assertTrue(opsAt(AttendanceState.HomeCheckedIn(event(AttendanceType.HOME_IN))))
+    }
+
+    @Test fun `ops with nothing recorded - logout costs nothing`() {
+        assertFalse(opsAt(AttendanceState.NoRecord))
+    }
+
+    @Test fun `ops already checked out - logout costs nothing`() {
+        assertFalse(opsAt(AttendanceState.DayComplete))
+    }
+
+    @Test fun `office mid-day - logout would close the day`() {
+        // deriveAttendanceState has no office_in branch and reports NoRecord mid-office-day, so
+        // the office path must key on the home_in/home_out gates, not the state.
+        val events = listOf(event(AttendanceType.HOME_IN), event(AttendanceType.OFFICE_IN))
+        assertTrue(willLogoutCloseDay(AttendanceState.NoRecord, events, isOperations = false, isSales = false))
+    }
+
+    @Test fun `office who never started the day - logout costs nothing`() {
+        assertFalse(willLogoutCloseDay(AttendanceState.NoRecord, emptyList(), isOperations = false, isSales = false))
+    }
+
+    @Test fun `office already home out - logout costs nothing`() {
+        val events = listOf(event(AttendanceType.HOME_IN), event(AttendanceType.HOME_OUT))
+        assertFalse(willLogoutCloseDay(AttendanceState.NoRecord, events, isOperations = false, isSales = false))
+    }
+
+    @Test fun `sales at a site takes the ops path, not the office one`() {
+        // The bug this guards: inferring sales' open day from the role sends a site-checked-in
+        // sales user down the office path, which keys on home gates and would answer false.
+        val state = AttendanceState.SiteCheckedIn(event(AttendanceType.SITE_IN))
+        assertTrue(willLogoutCloseDay(state, emptyList(), isOperations = false, isSales = true))
+    }
+
+    @Test fun `sales on an office day takes the office path`() {
+        val events = listOf(event(AttendanceType.HOME_IN), event(AttendanceType.OFFICE_IN))
+        assertTrue(willLogoutCloseDay(AttendanceState.NoRecord, events, isOperations = false, isSales = true))
     }
 }

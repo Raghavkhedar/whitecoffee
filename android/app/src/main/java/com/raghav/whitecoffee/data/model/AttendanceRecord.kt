@@ -139,3 +139,33 @@ fun isEventAllowed(state: AttendanceState, type: String): Boolean = when (type) 
     AttendanceType.MARKET_OUT -> state is AttendanceState.MarketCheckedIn
     else                      -> false
 }
+
+/**
+ * Whether logging out right now would close the user's day — i.e. whether MainViewModel's
+ * auto-checkout would write a HOME_OUT, which is terminal (see [deriveAttendanceState]).
+ *
+ * Single source of truth for that question, used by BOTH the auto-checkout itself (as its guard)
+ * and the home screen (to decide whether logging out needs a confirmation). Answering it in two
+ * places would let the warning drift from the behaviour it warns about.
+ *
+ * The two branches differ and must: operations act on the live [AttendanceState], while office
+ * keys on the once-per-day home_in/home_out gates because [deriveAttendanceState] has no branch
+ * for office_in/office_out and reports NoRecord mid-office-day. **Sales dispatches on the actual
+ * state, NOT the role** — it is hybrid, so the open day cannot be inferred from the role.
+ */
+fun willLogoutCloseDay(
+    state: AttendanceState,
+    events: List<AttendanceRecord>,
+    isOperations: Boolean,
+    isSales: Boolean,
+): Boolean {
+    val inField = state is AttendanceState.SiteCheckedIn || state is AttendanceState.MarketCheckedIn
+    return if (isOperations || (isSales && inField)) {
+        state is AttendanceState.SiteCheckedIn ||
+            state is AttendanceState.MarketCheckedIn ||
+            state is AttendanceState.HomeCheckedIn
+    } else {
+        events.any { it.type == AttendanceType.HOME_IN } &&
+            events.none { it.type == AttendanceType.HOME_OUT }
+    }
+}

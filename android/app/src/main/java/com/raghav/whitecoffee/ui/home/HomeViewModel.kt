@@ -6,6 +6,7 @@ import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.RoleCapabilities
+import com.raghav.whitecoffee.data.model.willLogoutCloseDay
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.NotificationRepository
@@ -64,6 +65,18 @@ class HomeViewModel @Inject constructor(
     private val _todayStatus = MutableStateFlow<TodayAttendanceStatus>(TodayAttendanceStatus.Loading)
     val todayStatus: StateFlow<TodayAttendanceStatus> = _todayStatus.asStateFlow()
 
+    /**
+     * True when logging out right now would close the user's day — i.e. auto-checkout would write
+     * a terminal HOME_OUT. Drives the logout confirmation: an accidental logout ends the day just
+     * as irreversibly as an accidental "End Day" tap, so it gets the same gate. False (the day is
+     * not open) means logging out costs nothing and needs no confirmation.
+     *
+     * Answered by the same willLogoutCloseDay the auto-checkout itself guards on, so the warning
+     * cannot drift from the write.
+     */
+    private val _logoutWouldEndDay = MutableStateFlow(false)
+    val logoutWouldEndDay: StateFlow<Boolean> = _logoutWouldEndDay.asStateFlow()
+
     private val _unreadCount = MutableStateFlow(0)
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
@@ -90,9 +103,12 @@ class HomeViewModel @Inject constructor(
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
             } else null
             attendanceRepository.observeTodayData()
-                .map { (_, events) -> deriveTodayStatus(events, plannedWindow) }
                 .catch { _todayStatus.value = TodayAttendanceStatus.Error }
-                .collect { _todayStatus.value = it }
+                .collect { (state, events) ->
+                    _todayStatus.value = deriveTodayStatus(events, plannedWindow)
+                    _logoutWouldEndDay.value =
+                        willLogoutCloseDay(state, events, isOperations, isSales)
+                }
         }
     }
 
