@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### For use with Claude Code in Android Studio Terminal
-### Last Updated: attendance-status rule parity (ops planned-shift/site scoring) + exportToSheets TZ fix; released v1.5 / versionCode 5
+### Last Updated: home check-out confirmation (#15) + ops no-plan default 10:00–18:00 scoring (#16); released v1.7 / versionCode 7
 
 ---
 
@@ -915,6 +915,7 @@ Deploy: `npm run deploy` from the admin portal directory
 34. **`MainViewModel` (app root) owns session + logout** — `@HiltViewModel` scoped to `MainActivity`. Two responsibilities:
     (a) **Single-device session enforcement** — `startMonitor()` attaches a Firestore snapshot listener on `users/{uid}.activeSessionToken`; if the server token diverges from the cached `SessionManager.sessionToken` (account logged in elsewhere) it emits `sessionInvalidated`. Started via `startMonitorIfLoggedIn()` / `onLoginSuccess()`, torn down in `logout()` + `onCleared()`.
     (b) **Logout auto-checkout** — `logoutWithAutoCheckout()` records closing attendance events before signing out: operations → `SITE_OUT`/`MARKET_OUT` then `HOME_OUT` based on current `AttendanceState`; office → `OFFICE_OUT` (if still in office) then `HOME_OUT`. **Sales dispatches on the actual `AttendanceState`, NOT the role** — site/market checked-in takes the operations path, anything else the office path. This is load-bearing: sales is hybrid, so the open day cannot be inferred from the role, and sending a site-checked-in sales user down the office path leaves the `site_in` unclosed → the nightly compute scores the day **LNF = half pay**. Guarded by `_logoutInProgress`; auto-checkout failures are swallowed so logout always completes (offline-safe by design — do not "fix" the empty catch without preserving guaranteed logout).
+35. **Home check-out confirms before it writes (v1.7)** — `home_out` is the one attendance action gated by a dialog (`HomeOutConfirmDialog` in `ui/attendance/AttendanceScreen.kt`, hosted by `AttendanceFragment` + `OfficeAttendanceFragment`; sales inherits it via the chooser). Rationale: `home_out` is **terminal** — `deriveAttendanceState` returns `DayComplete` for good and `isEventAllowed` then blocks `HOME_IN` (needs `NoRecord`) and `SITE_IN` (needs `HomeCheckedIn`), so a stray tap cost the employee the rest of their day, and `home_in` → mis-tap left the day closed with **zero scored punches** (ops day unmarked/Absent). **A self-serve undo window and a biometric gate were both proposed and explicitly rejected** — if the dialog proves too easy to tap through, upgrade it to slide-to-confirm rather than adding undo or a fingerprint dependency. ⚠️ Known gap: `MainViewModel.logoutWithAutoCheckout()` still writes `HOME_OUT` with **no** prompt, so an accidental logout ends the day silently — same consequence, different door.
 
 ---
 
