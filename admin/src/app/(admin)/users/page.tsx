@@ -33,6 +33,9 @@ interface FormState {
   tabAccess: string[];
   categories: string[];
   salaryRate: string;
+  pfPercent: string;
+  esiPercent: string;
+  imprestPercent: string;
   homeLat: string;
   homeLng: string;
   conveyanceRateType: '' | '1' | '2';
@@ -40,7 +43,8 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
-  tabAccess: [], categories: [], salaryRate: '', homeLat: '', homeLng: '', conveyanceRateType: '',
+  tabAccess: [], categories: [], salaryRate: '', pfPercent: '', esiPercent: '', imprestPercent: '',
+  homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
 // A short random temp password for new hires / admin resets (synthetic logins get no email link).
@@ -109,6 +113,9 @@ export default function UsersPage() {
       tabAccess: (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)),
       categories: (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)),
       salaryRate: u.salaryRate ? String(u.salaryRate) : '',
+      pfPercent: u.pfPercent ? String(u.pfPercent) : '',
+      esiPercent: u.esiPercent ? String(u.esiPercent) : '',
+      imprestPercent: u.imprestPercent ? String(u.imprestPercent) : '',
       homeLat: u.homeLat ? String(u.homeLat) : '',
       homeLng: u.homeLng ? String(u.homeLng) : '',
       conveyanceRateType: u.conveyanceRateType ? String(u.conveyanceRateType) as '1' | '2' : '',
@@ -126,6 +133,9 @@ export default function UsersPage() {
     setSaving(true);
     try {
       const salaryRate = form.salaryRate ? parseFloat(form.salaryRate) : 0;
+      const pfPercent = form.pfPercent ? parseFloat(form.pfPercent) : 0;
+      const esiPercent = form.esiPercent ? parseFloat(form.esiPercent) : 0;
+      const imprestPercent = form.imprestPercent ? parseFloat(form.imprestPercent) : 0;
       const homeLat = form.homeLat ? parseFloat(form.homeLat) : undefined;
       const homeLng = form.homeLng ? parseFloat(form.homeLng) : undefined;
       const conveyanceRateType = form.conveyanceRateType ? (parseInt(form.conveyanceRateType) as 1 | 2) : undefined;
@@ -144,7 +154,8 @@ export default function UsersPage() {
         }
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
-          tabAccess: form.tabAccess, categories, contactEmail, salaryRate, homeLat, homeLng, conveyanceRateType,
+          tabAccess: form.tabAccess, categories, contactEmail, salaryRate,
+          pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType,
         });
         if (loginChanged) await updateUserEmail(editing.id, nextLogin);
       } else {
@@ -169,7 +180,7 @@ export default function UsersPage() {
         await createUserProfile(uid, {
           name: form.name.trim(), email: loginEmail, contactEmail,
           role: form.role, tabAccess: form.tabAccess, categories, employeeId: form.employeeId.trim(), salaryRate,
-          homeLat, homeLng, conveyanceRateType,
+          pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType,
         });
       }
       setShowModal(false);
@@ -259,6 +270,9 @@ export default function UsersPage() {
         : (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)).map(tabLabel).join(', '),
       Categories: getsCategories(u.role) ? (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)).join(', ') : '',
       'Salary Rate': u.salaryRate ?? '',
+      'PF %': u.pfPercent ?? '',
+      'ESI %': u.esiPercent ?? '',
+      'Imprest %': u.imprestPercent ?? '',
       'PL Balance': u.plBalance ?? 0,
       'WO Balance': u.woBalance ?? 0,
       Conveyance: u.conveyanceRateType ? `Conveyance ${u.conveyanceRateType}` : '',
@@ -448,6 +462,10 @@ export default function UsersPage() {
               </div>
 
               <div><label className="label">Salary Rate (₹/day)</label><input className="input" type="number" step="any" min="0" value={form.salaryRate} onChange={e => setForm(f => ({ ...f, salaryRate: e.target.value }))} placeholder="e.g. 800" /></div>
+              {/* Payroll percentages — recorded only; nothing reads them yet (see User type). */}
+              <div><label className="label">PF (%)</label><input className="input" type="number" step="any" min="0" max="100" value={form.pfPercent} onChange={e => setForm(f => ({ ...f, pfPercent: e.target.value }))} placeholder="e.g. 12" /></div>
+              <div><label className="label">ESI (%)</label><input className="input" type="number" step="any" min="0" max="100" value={form.esiPercent} onChange={e => setForm(f => ({ ...f, esiPercent: e.target.value }))} placeholder="e.g. 0.75" /></div>
+              <div><label className="label">Imprest (%)</label><input className="input" type="number" step="any" min="0" max="100" value={form.imprestPercent} onChange={e => setForm(f => ({ ...f, imprestPercent: e.target.value }))} placeholder="e.g. 5" /></div>
 
               <div>
                 <label className="label">Conveyance Rate</label>

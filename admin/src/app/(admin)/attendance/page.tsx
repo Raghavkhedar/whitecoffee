@@ -81,7 +81,8 @@ function VisitCell({ visit }: { visit?: Visit | null }) {
 
 // Mirrors the computeDailyAttendanceStatus Cloud Function for live (pre-23:59) display.
 // Office/admin: fixed 10:00–18:00 window, office_in/office_out events.
-// Operations: planned shift window (required), first site_in / last site_out events.
+// Operations: planned shift window, falling back to the default 10:00–18:00 when the admin
+//   never entered one; first site_in / last site_out events.
 // Sales: hybrid — first/last across office+site+market, scored against the fixed window.
 function deriveStatus(
   role: string,
@@ -94,7 +95,7 @@ function deriveStatus(
   if (dayOfWeek === 0) return null; // Sunday — no status
 
   const fixedWindow = usesFixedWindow(role);
-  if (!fixedWindow && (!planned?.startTime || !planned?.endTime)) return null; // no plan → unmarked
+  const hasPlan = Boolean(planned?.startTime && planned?.endTime);
 
   const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
   // Event types per role — ops spans site+market, office uses office_in/out, and sales
@@ -105,7 +106,16 @@ function deriveStatus(
   const isOut = (e: AttendanceRecord) => outTypes.has(e.type);
   const checkIns  = userEvents.filter(isIn).sort((a, b) => ts(a) - ts(b));
   const checkOuts = userEvents.filter(isOut).sort((a, b) => ts(a) - ts(b));
-  if (checkIns.length === 0 && checkOuts.length === 0) return 'Absent';
+  const worked = checkIns.length > 0 || checkOuts.length > 0;
+
+  // Mirrors shouldEvaluateDay in firebase/functions/attendanceRules.js: an ops day with no
+  // planned shift and no work events is *unscheduled* — render it blank rather than penalising
+  // it as Absent. A day that WAS worked scores against the default 10:00–18:00 below, which is
+  // what the Cloud Function now writes and what otLedger.ts has always used. (Approved leave
+  // isn't visible here; PL/LWP always arrive via the stored doc the nightly run writes.)
+  if (!fixedWindow && !hasPlan && !worked) return null;
+
+  if (!worked) return 'Absent';
 
   if (checkIns.length === 0 || checkOuts.length === 0) return 'LNF';
 
