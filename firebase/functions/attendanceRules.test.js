@@ -10,6 +10,7 @@ const {
   toMinutes,
   classifyOffMinutes,
   resolveOpsWindow,
+  shouldEvaluateDay,
   OFFICE_START_MIN,
   OFFICE_END_MIN,
 } = require("./attendanceRules");
@@ -76,4 +77,43 @@ test("resolveOpsWindow: null when either time missing", () => {
 test("resolveOpsWindow: parsed window, with 10–18 fallback for an inverted shift", () => {
   assert.deepEqual(resolveOpsWindow("12:00", "20:00"), { startMin: m(12, 0), endMin: m(20, 0) });
   assert.deepEqual(resolveOpsWindow("20:00", "12:00"), { startMin: m(10, 0), endMin: m(18, 0) });
+});
+
+// --- shouldEvaluateDay: which days computeDailyAttendanceStatus scores at all ---
+
+test("shouldEvaluateDay: fixed-window roles are always evaluated, plan or not", () => {
+  const fixed = { fixedWindow: true, hasPlan: false, hasLeave: false, worked: false };
+  assert.equal(shouldEvaluateDay(fixed), true);
+  assert.equal(shouldEvaluateDay({ ...fixed, worked: true }), true);
+});
+
+test("shouldEvaluateDay: ops with a plan is evaluated", () => {
+  assert.equal(
+    shouldEvaluateDay({ fixedWindow: false, hasPlan: true, hasLeave: false, worked: false }),
+    true
+  );
+});
+
+test("shouldEvaluateDay: ops with approved leave is evaluated (PL/LWP)", () => {
+  assert.equal(
+    shouldEvaluateDay({ fixedWindow: false, hasPlan: false, hasLeave: true, worked: false }),
+    true
+  );
+});
+
+test("shouldEvaluateDay: ops who worked with NO plan is evaluated (scored vs default 10–18)", () => {
+  // The Pending/unmarked bug: a full day of site work used to be skipped outright
+  // because the admin never entered a shift.
+  assert.equal(
+    shouldEvaluateDay({ fixedWindow: false, hasPlan: false, hasLeave: false, worked: true }),
+    true
+  );
+});
+
+test("shouldEvaluateDay: ops unscheduled day (no plan, no leave, no work) is skipped", () => {
+  // Load-bearing: without this, an unscheduled ops day falls through to Absent (-2 days).
+  assert.equal(
+    shouldEvaluateDay({ fixedWindow: false, hasPlan: false, hasLeave: false, worked: false }),
+    false
+  );
 });

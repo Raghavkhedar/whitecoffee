@@ -132,13 +132,17 @@ class HomeViewModel @Inject constructor(
     }
 
     // Ops: scored on arrival at the first site/market and departure from the last, against the
-    // day's planned shift — matching computeDailyAttendanceStatus. No planned shift (window null)
-    // or not-yet-at-any-site → PENDING (payroll leaves such days unmarked; don't guess a verdict).
+    // day's planned shift — matching computeDailyAttendanceStatus. With no planned shift the day
+    // is scored against the default 10:00–18:00 instead (mirrors the cloud function's
+    // shouldEvaluateDay + window fallback, and the portal's otLedger DEFAULT_SHIFT_*_MIN, which
+    // already scored no-plan days that way). Not-yet-at-any-site → PENDING: the day genuinely has
+    // no verdict yet, and payroll skips it entirely if they never turn up.
     private fun deriveOpsDailyStatus(
         events: List<AttendanceRecord>,
         window: Pair<Int, Int>?,
     ): DailyStatus {
-        if (window == null) return DailyStatus.PENDING
+        val (startMin, endMin) = window
+            ?: (AttendanceStatusRules.OFFICE_START_MIN to AttendanceStatusRules.OFFICE_END_MIN)
         val firstIn = events.firstOrNull { it.type in AttendanceType.OPS_IN_TYPES }
             ?: return DailyStatus.PENDING
         val inMin = minutesOf(firstIn) ?: return DailyStatus.PENDING
@@ -147,7 +151,7 @@ class HomeViewModel @Inject constructor(
         val lastInIdx = events.indexOfLast { it.type in AttendanceType.OPS_IN_TYPES }
         val lastOutIdx = events.indexOfLast { it.type in AttendanceType.OPS_OUT_TYPES }
         val outMin = if (lastOutIdx > lastInIdx) minutesOf(events[lastOutIdx]) else null
-        return AttendanceStatusRules.classify(inMin, outMin, window.first, window.second).toDaily()
+        return AttendanceStatusRules.classify(inMin, outMin, startMin, endMin).toDaily()
     }
 
     // Sales: hybrid role. Scored on the FIXED 10:00–18:00 window (like office) but over the first

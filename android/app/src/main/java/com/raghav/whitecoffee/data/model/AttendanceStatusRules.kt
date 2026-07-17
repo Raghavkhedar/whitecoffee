@@ -27,8 +27,11 @@ package com.raghav.whitecoffee.data.model
  *    on the first check-in of ANY type and the last check-out of ANY type — the hybrid role may do
  *    an office day (office_in/out) OR a site day (site_in/out, market_in/out). No OT/shortage.
  *  - operations:   the day's admin-set planned shift (see [resolveOpsWindow]), scored on the
- *    first site_in/market_in and the last site_out/market_out. With no planned shift the cloud
- *    leaves the day unmarked — the client preview shows a neutral "pending" instead of guessing.
+ *    first site_in/market_in and the last site_out/market_out. With NO planned shift a worked
+ *    day still scores, against the default [OFFICE_START_MIN]–[OFFICE_END_MIN] — mirroring the
+ *    cloud's shouldEvaluateDay + window fallback and the portal's otLedger DEFAULT_SHIFT_*_MIN.
+ *    An ops day with no plan, no leave AND no work events is unscheduled: the cloud skips it
+ *    rather than penalising it as Absent.
  */
 object AttendanceStatusRules {
     const val OFFICE_START_MIN = 10 * 60 // 10:00
@@ -50,8 +53,10 @@ object AttendanceStatusRules {
     /**
      * Resolve an operations user's planned shift into a scoring window, mirroring
      * `computeDailyAttendanceStatus`:
-     *  - null            → no usable plan (both times must be set); payroll leaves the day
-     *                      unmarked, so the preview shows "pending" rather than a verdict.
+     *  - null            → no usable plan (both times must be set). Callers score a worked day
+     *                      against the default [OFFICE_START_MIN]–[OFFICE_END_MIN] window; this
+     *                      function stays honest about the plan being absent rather than baking
+     *                      the policy in (the JS side defaults at the call site too).
      *  - (startMin,endMin) otherwise, falling back to [OFFICE_START_MIN]–[OFFICE_END_MIN] for an
      *                      inverted/zero window (e.g. a mis-entered end before start).
      */
