@@ -53,7 +53,7 @@ Required composite indexes (Firebase Console):
 
 **Events and window by role** (event types + window come from `roleCapabilities`, not a hardcoded branch):
 - **Office/admin**: `office_in` / `office_out`; fixed 10:00–18:00 IST
-- **Operations**: first in / last out across both site and market visits (`site_in`/`market_in` and `site_out`/`market_out`); window from `planned_hours/{date}`. **No plan + no approved leave → day skipped (no status doc).** Approved leave still produces PL/LWP.
+- **Operations**: first in / last out across both site and market visits (`site_in`/`market_in` and `site_out`/`market_out`); window from `planned_hours/{date}`. **No plan but they worked → scored against the default 10:00–18:00** (matching `otLedger.ts`'s `DEFAULT_SHIFT_START_MIN`/`DEFAULT_SHIFT_END_MIN`, which already scored these days that way — the function used to skip them, so the ledger and payroll disagreed). **No plan + no approved leave + no work events → day skipped (no status doc)** — an unscheduled day, deliberately not penalised as Absent. The three-way decision is the pure, unit-tested `shouldEvaluateDay` in `firebase/functions/attendanceRules.js`. Approved leave still produces PL/LWP.
 - **Sales**: hybrid — first in / last out across **all** of `office_in`/`site_in`/`market_in` → `office_out`/`site_out`/`market_out`, scored against the **fixed 10:00–18:00** window (never a `planned_hours` shift, so no plan is ever needed). Same status buckets. **No** `daily_hours`/`ot_approvals` are written — sales has no OT/shortage/WO concept.
 
 | Status | Condition | Salary (days) |
@@ -64,7 +64,7 @@ Required composite indexes (Firebase Console):
 | LNF (Log Not Found) | Exactly one punch (missing check-in OR check-out); formerly SLNF | 0.5 |
 | PL (Paid Leave) | Approved leave + PL balance | 1 |
 | LWP (Leave Without Pay) | Approved leave, no balance | 0 |
-| Absent | No events, no approved leave (ops: only when plan exists) | -2 |
+| Absent | No events, no approved leave (ops: only when a plan exists — no plan + no events = unscheduled, skipped) | -2 |
 
 `markedBy: 'auto'` on function-written docs; `markedBy: 'admin'` docs (regularization) are skipped on recompute. The attendance page mirrors this logic client-side until the nightly run writes it.
 

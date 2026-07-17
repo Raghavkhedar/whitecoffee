@@ -12,6 +12,7 @@ const {
   OFFICE_END_MIN,
   classifyOffMinutes,
   resolveOpsWindow,
+  shouldEvaluateDay,
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
@@ -307,14 +308,25 @@ exports.computeDailyAttendanceStatus = onSchedule(
       const plan  = plannedHours.get(user.id);
       const leave = leavesToday.get(user.id);
 
-      // Planned-shift roles (operations) need a planned shift to be auto-evaluated.
-      // With no plan and no approved leave, leave the day unmarked (admin must enter
-      // a plan). Fixed-window roles (office/admin/sales) never need a plan.
-      if (!fixedWindow && !plan && !leave) continue;
+      // First check-in / last check-out across this role's event types. Operations:
+      // site + market. Office/admin: office. Sales (hybrid): office + site + market —
+      // scored against the same fixed window as office. Resolved BEFORE the skip below,
+      // which needs to know whether the user actually worked.
+      const inTypes  = attendanceInTypes(role);
+      const outTypes = attendanceOutTypes(role);
+      const checkIns  = events.filter((e) => inTypes.includes(e.type));
+      const checkOuts = events.filter((e) => outTypes.includes(e.type));
+      const worked = checkIns.length > 0 || checkOuts.length > 0;
+
+      // Skip only a genuinely unscheduled day — operations with no plan, no approved
+      // leave, and no work events. An ops day that WAS worked is scored even without a
+      // plan (against the default 10:00–18:00 below). See shouldEvaluateDay.
+      if (!shouldEvaluateDay({ fixedWindow, hasPlan: Boolean(plan), hasLeave: Boolean(leave), worked })) continue;
 
       // Working window: fixed-window roles use 10:00–18:00; operations use the planned
       // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
-      // fallback). A plan is guaranteed for ops here — the no-plan case already `continue`d.
+      // fallback). Ops with no plan keeps the 10:00–18:00 default — matching the portal's
+      // otLedger DEFAULT_SHIFT_START_MIN/END_MIN, which already scored these days that way.
       let startMin = OFFICE_START_MIN;
       let endMin = OFFICE_END_MIN;
       if (!fixedWindow) {
@@ -322,13 +334,6 @@ exports.computeDailyAttendanceStatus = onSchedule(
         if (window) { startMin = window.startMin; endMin = window.endMin; }
       }
 
-      // First check-in / last check-out across this role's event types. Operations:
-      // site + market. Office/admin: office. Sales (hybrid): office + site + market —
-      // scored against the same fixed window as office.
-      const inTypes  = attendanceInTypes(role);
-      const outTypes = attendanceOutTypes(role);
-      const checkIns  = events.filter((e) => inTypes.includes(e.type));
-      const checkOuts = events.filter((e) => outTypes.includes(e.type));
       let status;
 
       if (checkIns.length > 0 && checkOuts.length > 0) {

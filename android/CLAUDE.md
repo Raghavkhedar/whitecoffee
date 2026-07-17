@@ -217,9 +217,13 @@ com.raghav.whitecoffee
 > For **operations** the preview reads that day's `planned_hours` (via
 > `AttendanceRepository.getTodayPlannedWindow()`) and scores `site_in`/`market_in` →
 > `site_out`/`market_out` against it — matching payroll's event source + window, NOT
-> `home_in`/`home_out`. No plan (or not yet at any site) → a neutral **Pending** chip (payroll
-> leaves such days unmarked). The JS side is the shared `firebase/functions/attendanceRules.js`
-> (`npm test` = `node --test`); it and `AttendanceStatusRules.kt` must stay in lockstep.
+> `home_in`/`home_out`. **No plan → the day is scored against the default 10:00–18:00**, not left
+> unmarked: payroll's `shouldEvaluateDay` evaluates any ops day that has a plan OR approved leave
+> OR actual work events, and the window falls back to 10:00–18:00 when the plan is missing. Only
+> **not yet at any site** still shows the neutral **Pending** chip (no verdict yet; if they never
+> turn up, the day is unscheduled and payroll skips it rather than marking Absent). The JS side is
+> the shared `firebase/functions/attendanceRules.js` (`npm test` = `node --test`); it and
+> `AttendanceStatusRules.kt` must stay in lockstep.
 
 > **HalfDay vs "short leave" — there is NO short-leave concept (known gap).** HalfDay is derived
 > purely from punch TIMES (late in / early out); no employee intent is attached. Leave is
@@ -900,7 +904,7 @@ Deploy: `npm run deploy` from the admin portal directory
 23. **Push to background = Cloud Functions** — `FcmService.onMessageReceived` only fires when app is foregrounded. Sending push to backgrounded devices requires a Cloud Function that reads `/sent_notifications/` docs and calls FCM HTTP v1 API. Deferred to Phase 4.
 24. **FCM token saved two ways** — proactively on login via `FirebaseMessaging.getInstance().token.await()`, and automatically on refresh via `FcmService.onNewToken()`. Both call `notificationRepository.saveToken()`.
 25. **Salary rate in Firestore** — `salaryRate` (₹/day) stored on `/users/{uid}` doc, set via admin portal. Cloud Function `exportToSheets` reads it from the user doc directly (not from the Google Sheet). Imprest is still manually entered in the sheet and preserved across exports.
-26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Office/admin are scored on `office_in`/`office_out` vs a fixed 10:00–18:00 window; operations on the first `site_in`/`market_in` → last `site_out`/`market_out` vs the day's admin-set `planned_hours` (no plan → day left **unmarked**); **sales** on the first check-in / last check-out across **all** of office+site+market vs the **fixed** 10:00–18:00 window (never needs a plan). Status = off-minutes (late-in + early-out): `0` Present, `≤120` SL, else HalfDay; a single punch → LNF. `home_in`/`home_out` are commute markers only and are never scored. The rule lives in `firebase/functions/attendanceRules.js` (shared, `npm test`) and is mirrored by `AttendanceStatusRules.kt` for the app preview — **change both together**. The **event types + window per role** come from `RoleCapabilities` / `roleCapabilities.js` — never re-derive them from an `isOperations` binary.
+26. **`attendance_status` for all roles** — `computeDailyAttendanceStatus` runs nightly at 23:59 IST for ALL users. Office/admin are scored on `office_in`/`office_out` vs a fixed 10:00–18:00 window; operations on the first `site_in`/`market_in` → last `site_out`/`market_out` vs the day's admin-set `planned_hours`, **falling back to the default 10:00–18:00 when no plan exists** (an ops day with no plan, no leave AND no work events is *unscheduled* and skipped — never Absent; the decision is the tested `shouldEvaluateDay`); **sales** on the first check-in / last check-out across **all** of office+site+market vs the **fixed** 10:00–18:00 window (never needs a plan). Status = off-minutes (late-in + early-out): `0` Present, `≤120` SL, else HalfDay; a single punch → LNF. `home_in`/`home_out` are commute markers only and are never scored. The rule lives in `firebase/functions/attendanceRules.js` (shared, `npm test`) and is mirrored by `AttendanceStatusRules.kt` for the app preview — **change both together**. The **event types + window per role** come from `RoleCapabilities` / `roleCapabilities.js` — never re-derive them from an `isOperations` binary.
 27. **Regularization = employee-initiated, admin-approved** — employee submits reason per flagged day, admin approves/rejects in admin portal only (no Android admin screen). Approval atomically updates both `regularization_requests` and `attendance_status` via `writeBatch`.
 28. **Admin overrides protected** — `computeDailyAttendanceStatus` skips any user whose `attendance_status` doc has `markedBy === "admin"`. This prevents nightly auto-compute from overwriting approved regularizations.
 29. **Duplicate prevention** — `RegularizationRepository.submitRequest()` checks for existing pending/approved request for the same date before creating a new one.
