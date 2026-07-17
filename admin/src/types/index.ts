@@ -32,6 +32,14 @@ export interface User {
   categories?: string[];
   employeeId: string;
   salaryRate?: number;
+  /** Payroll percentages, admin-set on /users. Stored as the percent VALUE (12 = 12%), not a
+   *  fraction. Currently recorded only — no Cloud Function or export reads them yet, so setting
+   *  one has no effect on Employee Dashboard salary or TOTAL DUE. Wiring them up is a separate
+   *  decision: PF/ESI are statutory *deductions* (they'd subtract), whereas the existing manual
+   *  `Imprest` column *adds* to TOTAL DUE (index.js), so the signs are not the same. */
+  pfPercent?: number;
+  esiPercent?: number;
+  imprestPercent?: number;
   plBalance?: number;
   woBalance?: number;
   /** @deprecated Retired in the OT redesign (step 7). OT/shortage now net per-month in the

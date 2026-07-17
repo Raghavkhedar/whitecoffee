@@ -24,10 +24,13 @@ export async function getAllUsers(includeInactive = false): Promise<User[]> {
 }
 
 export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
-  const { salaryRate, homeLat, homeLng, conveyanceRateType, ...rest } = data;
+  const { salaryRate, pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType, ...rest } = data;
   await setDoc(doc(db, 'users', uid), {
     ...rest,
     salaryRate: salaryRate || 0,
+    pfPercent: pfPercent || 0,
+    esiPercent: esiPercent || 0,
+    imprestPercent: imprestPercent || 0,
     homeLat: homeLat || null,
     homeLng: homeLng || null,
     conveyanceRateType: conveyanceRateType || null,
