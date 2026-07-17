@@ -10,8 +10,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
@@ -22,6 +26,8 @@ import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.MainViewModel
 import com.raghav.whitecoffee.R
+import com.raghav.whitecoffee.ui.theme.WcDialog
+import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -41,6 +47,8 @@ class HomeFragment : Fragment() {
             val isOnline     by viewModel.isOnline.collectAsStateWithLifecycle()
             val isLoggingOut by mainViewModel.logoutInProgress.collectAsStateWithLifecycle()
             val unreadCount  by viewModel.unreadCount.collectAsStateWithLifecycle()
+            val logoutEndsDay by viewModel.logoutWouldEndDay.collectAsStateWithLifecycle()
+            var showLogoutConfirm by remember { mutableStateOf(false) }
 
             // Collect logout-complete event and navigate once it fires.
             LaunchedEffect(Unit) {
@@ -59,7 +67,13 @@ class HomeFragment : Fragment() {
                 unreadCount      = unreadCount,
                 isLoggingOut     = isLoggingOut,
                 onBellClick      = { findNavController().navigate(R.id.action_homeFragment_to_notificationsFragment) },
-                onLogout         = { mainViewModel.logoutWithAutoCheckout() },
+                // Logging out closes an open day by writing a terminal HOME_OUT, so it costs the
+                // rest of the day exactly like an accidental "End Day" tap — confirm it. When no
+                // day is open, auto-checkout writes nothing, so don't nag: log straight out.
+                onLogout         = {
+                    if (logoutEndsDay) showLogoutConfirm = true
+                    else mainViewModel.logoutWithAutoCheckout()
+                },
                 onAttendanceClick = {
                     when {
                         viewModel.isSales ->
@@ -79,6 +93,16 @@ class HomeFragment : Fragment() {
                 onLeaveApprovalsClick   = { findNavController().navigate(R.id.action_homeFragment_to_leaveApprovalsFragment) },
                 onRegularizationClick   = { findNavController().navigate(R.id.action_homeFragment_to_regularizationFragment) },
             )
+
+            if (showLogoutConfirm) {
+                LogoutEndsDayDialog(
+                    onConfirm = {
+                        showLogoutConfirm = false
+                        mainViewModel.logoutWithAutoCheckout()
+                    },
+                    onDismiss = { showLogoutConfirm = false },
+                )
+            }
         }
     }
 
@@ -126,4 +150,27 @@ class HomeFragment : Fragment() {
             .setNegativeButton("Not now", null)
             .show()
     }
+}
+
+/**
+ * Confirmation for a logout that would close an open day.
+ *
+ * Logging out runs MainViewModel's auto-checkout, which writes a terminal HOME_OUT — so an
+ * accidental logout costs the employee the rest of their day exactly like an accidental "End Day"
+ * tap does, just through a different door. Only shown when willLogoutCloseDay says a day is
+ * actually open; a logout that writes nothing goes straight through.
+ */
+@Composable
+private fun LogoutEndsDayDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) = WhiteCoffeeTheme {
+    WcDialog(
+        title = "Log out and end your day?",
+        subtitle = "You're still checked in. Logging out will check you out for the day, " +
+            "and you won't be able to check in again today.",
+        confirmText = "Log out",
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    ) {}
 }

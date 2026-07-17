@@ -10,6 +10,7 @@ import com.raghav.whitecoffee.data.model.AccountStatus
 import com.raghav.whitecoffee.data.model.accountStatusFrom
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.willLogoutCloseDay
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.AuthRepository
 import com.raghav.whitecoffee.data.session.SessionManager
@@ -98,6 +99,11 @@ class MainViewModel @Inject constructor(
         val result = attendanceRepository.getTodayData()
         if (result.isFailure) return
         val (state, events) = result.getOrThrow()
+
+        // Nothing open → nothing to close. Shares its answer with the home screen's logout
+        // confirmation via willLogoutCloseDay, so the warning the user sees and the write that
+        // follows can never disagree about whether the day ends.
+        if (!willLogoutCloseDay(state, events, sessionManager.isOperations, sessionManager.isSales)) return
 
         val location = locationProvider.getCurrentLocation()
         if (location !is LocationState.Success) return
