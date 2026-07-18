@@ -12,12 +12,19 @@ const {
   OFFICE_END_MIN,
   classify,
   resolveOpsWindow,
-  shouldEvaluateDay,
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
-const { bannerFor, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab } = require("./dashboardHistory");
+const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
+// PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
+const { computeDeductions } = require("./payrollDeductions");
+// Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
+const {
+  computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
+} = require("./otLedger");
+// Range/month OT/shortage/WO aggregation for the Employee Dashboard's live column (otAggregate.js).
+const { computeRangeLedger, settlementCash } = require("./otAggregate");
 // Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
 // office/operations/sales/admin decisions through predicates instead of `isOps`.
 const {
@@ -127,13 +134,11 @@ function getMinuteIST(timestamp) {
   return new Date(istMs).getUTCMinutes();
 }
 
-// ── OT ledger (ported from admin/src/lib/otLedger.ts) ───────────────────────
-// Keep in sync with that file: it is the source of truth the admin portal uses
-// to show per-day OT. We replicate it here so the Attendance tab's "OT (mins)"
-// column equals the number an admin sees on the Employee Dashboard — the portal
-// computes OT live in the browser and never stores it, so it can't be copied.
-const DEFAULT_SHIFT_START_MIN = 10 * 60; // 10:00
-const DEFAULT_SHIFT_END_MIN   = 18 * 60; // 18:00
+// ── OT ledger ─────────────────────────────────────────────────────────────
+// computeDayLedger / DEFAULT_SHIFT_* imported from ./otLedger (shared with the
+// Android preview via admin/src/lib/otLedger.ts) so the Attendance tab's
+// "OT (mins)" column equals the number an admin sees on the Employee
+// Dashboard — the portal computes OT live in the browser and never stores it.
 
 function hhmmToMin(s) {
   if (!s) return null;
@@ -148,29 +153,6 @@ function hhmmToMin(s) {
 function minToHHMM(mins) {
   const n = Math.max(0, Math.round(mins || 0));
   return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
-}
-
-// Per-day ledger for one ops worked day (both check-in and check-out present).
-// Mirrors computeDayLedger in otLedger.ts. Returns the OT parts we need.
-function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, otAuthorized }) {
-  const worked = Math.max(0, outMin - inMin);
-  if (isRestDay) {
-    // Sunday/holiday: every worked minute is OT, but only when admin-authorized.
-    if (otAuthorized) return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: worked, unauthorizedRestDay: false };
-    return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: true };
-  }
-  if (shiftEndMin > shiftStartMin) {
-    const otEarned = Math.max(0, outMin - shiftEndMin); // left late → OT (early-in earns nothing)
-    const declared = Math.max(0, declaredOtMins);
-    return {
-      autoOtMins: Math.min(otEarned, declared),
-      pendingExtraMins: Math.max(0, otEarned - declared),
-      restDayOtMins: 0,
-      unauthorizedRestDay: false,
-    };
-  }
-  // No shift and not a rest day → nothing accrues.
-  return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false };
 }
 
 // Resolve the owning user id for an exported doc, whether it's a top-level doc
@@ -318,10 +300,11 @@ exports.computeDailyAttendanceStatus = onSchedule(
       const checkOuts = events.filter((e) => outTypes.includes(e.type));
       const worked = checkIns.length > 0 || checkOuts.length > 0;
 
-      // Skip only a genuinely unscheduled day — operations with no plan, no approved
-      // leave, and no work events. An ops day that WAS worked is scored even without a
-      // plan (against the default 10:00–18:00 below). See shouldEvaluateDay.
-      if (!shouldEvaluateDay({ fixedWindow, hasPlan: Boolean(plan), hasLeave: Boolean(leave), worked })) continue;
+      // Every active user is scored on every working day, all roles alike. Sundays and
+      // holidays never reach this loop (both return above), offboarded users are filtered
+      // out of allUsers, and admin-marked days (WO / regularization) are skipped at the top.
+      // So an ops day reaching here with no plan, no leave and no punches is a no-show and
+      // scores Absent — days off must be marked WO or leave.
 
       // Working window: fixed-window roles use 10:00–18:00; operations use the planned
       // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
@@ -469,7 +452,8 @@ exports.exportToSheets = onSchedule(
     const allHolidaySet = new Set((await db.collection("holidays").get()).docs.map((h) => h.id));
     const plannedMap = new Map(); // `${uid}__${date}` → { startMin, endMin, declared } (valid windows only)
     const otAuthSet  = new Set(); // `${uid}__${date}` where admin authorized rest-day OT
-    (await db.collectionGroup("planned_hours").get()).docs.forEach((doc) => {
+    const plannedSnap = await db.collectionGroup("planned_hours").get();
+    plannedSnap.docs.forEach((doc) => {
       const d = doc.data();
       const uid = uidOf(doc);
       const key = `${uid}__${d.date || ""}`;
@@ -482,7 +466,8 @@ exports.exportToSheets = onSchedule(
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
     const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy } (for the OT Exception Report)
-    (await db.collectionGroup("ot_approvals").get()).docs.forEach((doc) => {
+    const approvalSnap = await db.collectionGroup("ot_approvals").get();
+    approvalSnap.docs.forEach((doc) => {
       const d = doc.data();
       const key = `${uidOf(doc)}__${d.date || ""}`;
       approvalMap.set(key, Number(d.approvedMins) || 0);
@@ -1101,6 +1086,32 @@ exports.exportToSheets = onSchedule(
       console.log(`Conveyance: ${allRows.length} rows`);
     }
 
+    // ── 8b. Live OT/WO amount per ops employee (for the Employee Dashboard) ──
+    // Authorized OT − shortage − WO, netted for the current month, converted to
+    // rupees via settlementCash — the SAME math the OT Settlements page locks, but
+    // computed live each night instead of waiting for Settle & Lock. Pending and
+    // unauthorized-rest-day OT are excluded (not yet authorized). Non-ledger roles
+    // (office/admin/sales) are skipped → 0.
+    const monthStatuses = statusSnap.docs
+      .map((doc) => ({ ...doc.data(), userId: doc.data().userId }))
+      .filter((s) => s.date >= monthStart && s.date <= today);
+    const monthPlanned = plannedSnap.docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }))
+      .filter((p) => p.date >= monthStart && p.date <= today);
+    const monthApprovals = approvalSnap.docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }))
+      .filter((a) => a.date >= monthStart && a.date <= today);
+    const monthAttSnap = await db.collectionGroup("attendance")
+      .where("date", ">=", monthStart).where("date", "<=", today).get();
+    const monthEvents = monthAttSnap.docs.map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+
+    const otWoAmountByUserId = new Map();
+    allUsersData.forEach((u) => {
+      if (!usesOtShortageLedger(u.role)) return;
+      const led = computeRangeLedger(u.id, monthEvents, monthPlanned, monthApprovals, monthStatuses, holidaySet);
+      otWoAmountByUserId.set(u.id, settlementCash(u.salaryRate || 0, led.woDates.length, led.netMins));
+    });
+
     // ── 9. Employee Dashboard — MTD summary, one row per employee ─────
     {
       const TAB = TABS.EMPLOYEE_DASHBOARD;
@@ -1128,32 +1139,19 @@ exports.exportToSheets = onSchedule(
         if (k) { legacyKey = k; legacyLabel = String(r[0]).trim(); break; }
       }
 
-      // Carry manually-entered Imprest into the rebuilt current block: from the
-      // current month's previous block if present, else legacy when it IS the
-      // current month. (Frozen past blocks keep their own imprest verbatim.)
-      const oldCurrentBlock  = blocks.find((b) => b.key === currentKey) || null;
-      const imprestSourceRows = oldCurrentBlock ? oldCurrentBlock.rows
-        : (legacyKey === currentKey ? legacy : []);
-      const imprestMap = imprestFromBlock(imprestSourceRows); // employeeId → imprest
-
-      // Current-month settlement (OT/shortage/WO) — the client settles month-to-month,
-      // NOT in arrears. Read each user's LOCKED settlement for THIS month and add its cash
-      // to TOTAL DUE. Shows 0 all month until Settle & Lock, then the month's own cash.
-      const settlementCashMap = new Map(); // userId → settlement cash (locked only)
-      await Promise.all(allUsersData.map(async (u) => {
-        try {
-          const sdoc = await db.collection("users").doc(u.id).collection("settlements").doc(currentKey).get();
-          const s = sdoc.data();
-          if (s && s.locked) settlementCashMap.set(u.id, Number(s.settlementCash) || 0);
-        } catch (_) { /* no settlement for this user — skip */ }
-      }));
+      // NOTE: Imprest is no longer carried forward from the Sheet. It is computed from
+      // user.imprestPercent (see payrollDeductions.js), which REPLACES the manual column
+      // that used to be typed in and preserved across runs. Until the percentages are
+      // populated the rebuilt current block shows ₹0 — decided 2026-07-17, not a bug.
+      // Frozen past blocks keep their own manual imprest verbatim.
 
       const header = [
         "Date", "EMP Name", "EMP ID", "Days Passed in Month",
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
-        "Covy Due (approx avg)", "Imprest Due MTD", `Settlement ${currentKey} (₹)`, "TOTAL DUE",
+        "Covy Due (approx avg)", "Imprest Due MTD", "OT/WO amount (₹)",
+        "PF (−)", "ESI (−)", "TOTAL DUE",
       ];
 
       const sortedUsers = [...allUsersData].sort((a, b) => {
@@ -1181,9 +1179,17 @@ exports.exportToSheets = onSchedule(
           ? parseFloat((conveyanceByUserId.get(user.id) || 0).toFixed(2))
           : 0;
 
-        const imprest    = imprestMap.get(empId) || 0;
-        const settlement = parseFloat((settlementCashMap.get(user.id) || 0).toFixed(2));
-        const totalDue   = parseFloat((salaryDue + covy + imprest + settlement).toFixed(2));
+        const settlement = parseFloat((otWoAmountByUserId.get(user.id) || 0).toFixed(2));
+
+        // PF / ESI / Imprest are percentages of Salary Due MTD (payrollDeductions.js).
+        // PF and ESI are DEDUCTED from TOTAL DUE; Imprest is added. `efficiency` is not
+        // passed — the matrix doesn't exist yet, so it defaults to 1. Do NOT pass 0.
+        const { pf, esi, imprest, totalDue } = computeDeductions({
+          salaryDue, covy, settlement,
+          pfPercent: user.pfPercent,
+          esiPercent: user.esiPercent,
+          imprestPercent: user.imprestPercent,
+        });
 
         grandTotal += totalDue;
         grandCfBal += user.plBalance || 0;
@@ -1201,6 +1207,8 @@ exports.exportToSheets = onSchedule(
           covy,
           imprest,
           settlement,
+          pf,
+          esi,
           totalDue,
         ]);
       });

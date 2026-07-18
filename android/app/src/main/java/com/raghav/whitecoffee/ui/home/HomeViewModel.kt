@@ -149,10 +149,10 @@ class HomeViewModel @Inject constructor(
 
     // Ops: scored on arrival at the first site/market and departure from the last, against the
     // day's planned shift — matching computeDailyAttendanceStatus. With no planned shift the day
-    // is scored against the default 10:00–18:00 instead (mirrors the cloud function's
-    // shouldEvaluateDay + window fallback, and the portal's otLedger DEFAULT_SHIFT_*_MIN, which
-    // already scored no-plan days that way). Not-yet-at-any-site → PENDING: the day genuinely has
-    // no verdict yet, and payroll skips it entirely if they never turn up.
+    // is scored against the default 10:00–18:00 instead (mirrors the cloud function's window
+    // fallback, and the portal's otLedger DEFAULT_SHIFT_*_MIN, which already scored no-plan days
+    // that way). Not-yet-at-any-site → PENDING: the day has no verdict *yet* — they may still
+    // turn up. It is only a preview: if they never do, the nightly scores the day Absent.
     private fun deriveOpsDailyStatus(
         events: List<AttendanceRecord>,
         window: Pair<Int, Int>?,

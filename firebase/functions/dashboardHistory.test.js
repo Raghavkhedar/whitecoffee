@@ -6,7 +6,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  bannerFor, keyOfBanner, parseBlocks, imprestFromBlock, monthLabelToKey, assembleTab,
+  bannerFor, keyOfBanner, parseBlocks, monthLabelToKey, assembleTab,
 } = require("./dashboardHistory");
 
 // A minimal block's rows for month `key`/`label` with one employee carrying an imprest.
@@ -52,17 +52,9 @@ test("parseBlocks puts pre-banner rows into legacy", () => {
   assert.equal(blocks[0].key, "2026-07");
 });
 
-test("imprestFromBlock reads empId→imprest, header-aware, skipping summaries", () => {
-  const m = imprestFromBlock(block("2026-07", "July 2026", "E9", 123));
-  assert.equal(m.get("E9"), 123);
-  assert.equal(m.has("CF BAL"), false);
-  assert.equal(m.has("TOTAL"), false);
-});
-
-test("imprestFromBlock returns empty map when no header/imprest column", () => {
-  assert.equal(imprestFromBlock([["random"], ["rows"]]).size, 0);
-  assert.equal(imprestFromBlock([]).size, 0);
-});
+// The two `imprestFromBlock` cases were removed on 2026-07-17 with the function itself —
+// Imprest is computed from user.imprestPercent now (payrollDeductions.js + its suite), and
+// the manual Sheet column is no longer read back.
 
 test("monthLabelToKey reverses the long-month label", () => {
   assert.equal(monthLabelToKey("July 2026"), "2026-07");
