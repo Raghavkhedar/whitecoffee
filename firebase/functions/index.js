@@ -19,6 +19,10 @@ const { buildManpowerVisits } = require("./manpowerVisits");
 const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
 const { computeDeductions } = require("./payrollDeductions");
+// Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
+const {
+  computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
+} = require("./otLedger");
 // Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
 // office/operations/sales/admin decisions through predicates instead of `isOps`.
 const {
@@ -128,13 +132,11 @@ function getMinuteIST(timestamp) {
   return new Date(istMs).getUTCMinutes();
 }
 
-// ── OT ledger (ported from admin/src/lib/otLedger.ts) ───────────────────────
-// Keep in sync with that file: it is the source of truth the admin portal uses
-// to show per-day OT. We replicate it here so the Attendance tab's "OT (mins)"
-// column equals the number an admin sees on the Employee Dashboard — the portal
-// computes OT live in the browser and never stores it, so it can't be copied.
-const DEFAULT_SHIFT_START_MIN = 10 * 60; // 10:00
-const DEFAULT_SHIFT_END_MIN   = 18 * 60; // 18:00
+// ── OT ledger ─────────────────────────────────────────────────────────────
+// computeDayLedger / DEFAULT_SHIFT_* imported from ./otLedger (shared with the
+// Android preview via admin/src/lib/otLedger.ts) so the Attendance tab's
+// "OT (mins)" column equals the number an admin sees on the Employee
+// Dashboard — the portal computes OT live in the browser and never stores it.
 
 function hhmmToMin(s) {
   if (!s) return null;
@@ -149,29 +151,6 @@ function hhmmToMin(s) {
 function minToHHMM(mins) {
   const n = Math.max(0, Math.round(mins || 0));
   return `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
-}
-
-// Per-day ledger for one ops worked day (both check-in and check-out present).
-// Mirrors computeDayLedger in otLedger.ts. Returns the OT parts we need.
-function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, otAuthorized }) {
-  const worked = Math.max(0, outMin - inMin);
-  if (isRestDay) {
-    // Sunday/holiday: every worked minute is OT, but only when admin-authorized.
-    if (otAuthorized) return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: worked, unauthorizedRestDay: false };
-    return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: true };
-  }
-  if (shiftEndMin > shiftStartMin) {
-    const otEarned = Math.max(0, outMin - shiftEndMin); // left late → OT (early-in earns nothing)
-    const declared = Math.max(0, declaredOtMins);
-    return {
-      autoOtMins: Math.min(otEarned, declared),
-      pendingExtraMins: Math.max(0, otEarned - declared),
-      restDayOtMins: 0,
-      unauthorizedRestDay: false,
-    };
-  }
-  // No shift and not a rest day → nothing accrues.
-  return { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false };
 }
 
 // Resolve the owning user id for an exported doc, whether it's a top-level doc
