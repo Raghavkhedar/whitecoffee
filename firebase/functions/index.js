@@ -1602,18 +1602,7 @@ exports.onPunchWritten = onDocumentCreated(
     // The server clock is the trusted one; the client timestamp is only ever evidence.
     const receivedAt = Date.now();
 
-    let site = null;
-    if (punch.siteId) {
-      try {
-        const siteSnap = await admin.firestore().doc(`sites/${punch.siteId}`).get();
-        if (siteSnap.exists) site = siteSnap.data();
-      } catch (e) {
-        // A site lookup failure must not cost us the verdict on the rest of the punch.
-        console.warn(`onPunchWritten: site ${punch.siteId} lookup failed: ${e.message}`);
-      }
-    }
-
-    const patch = assessPunch(punch, receivedAt, site);
+    const patch = assessPunch(punch, receivedAt);
     try {
       await snap.ref.update(patch);
     } catch (e) {
@@ -1626,8 +1615,7 @@ exports.onPunchWritten = onDocumentCreated(
     if (patch.integrity.flags.length > 0) {
       console.warn(
         `onPunchWritten: ${event.params.userId} ${punch.type} flagged ` +
-        `[${patch.integrity.flags.join(", ")}] skew=${patch.integrity.clockSkewMinutes}m ` +
-        `dist=${patch.integrity.distanceM}m`
+        `[${patch.integrity.flags.join(", ")}] skew=${patch.integrity.clockSkewMinutes}m`
       );
     }
   }

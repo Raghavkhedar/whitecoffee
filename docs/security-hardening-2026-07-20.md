@@ -42,9 +42,9 @@ Rated by what an attacker actually gains, not by how exotic the bug is.
   the Firebase console, which is a separate control.)
 - **Self-promotion was already airtight** — `changedKeysWithin(['activeSessionToken','fcmToken'])`
   on the user doc.
-- **`sites` stays world-readable to signed-in users.** The app needs geofence coordinates
-  to check in at all. This does hand an attacker the coordinates to spoof to, but hiding
-  them is not the fix — location is client-supplied regardless. The real fix is #1.
+- **`sites` stays world-readable to signed-in users.** The app needs the site list to
+  check in at all, and there is no geofencing in this deployment, so the coordinates are
+  not a control being protected.
 - **`activeSessionToken` stays self-writable.** `AuthRepository` writes it on login. The
   worst a user achieves by tampering is failing to log *themselves* out.
 
@@ -144,14 +144,20 @@ firebase deploy --only firestore:rules     # from the REPO ROOT — the Firebase
 # 3. Portal
 cd admin && npm run deploy
 
-# 4. Migrate pay — dry run first, read the output
+# 4. BACK UP FIRST — the purge in step 6 is the only irreversible step in this work.
+node firebase/scripts/backup-users.js
+#    Verify the file: it must list every user and a non-zero "carrying inline pay" count.
+#    Dry-run the restore now, not after something goes wrong:
+node firebase/scripts/restore-users-pay.js firebase/scripts/backups/<file>.json
+
+# 5. Migrate pay — dry run first, read the output
 node firebase/scripts/migrate-compensation.js
 node firebase/scripts/migrate-compensation.js --commit
 
-# 5. VERIFY a payroll run looks correct. Until step 6, pay is still on the user doc,
+# 6. VERIFY a payroll run looks correct. Until step 7, pay is still on the user doc,
 #    so the exposure is NOT yet closed — but nothing is lost either.
 
-# 6. Only then remove the inline fields. This is the step that closes the exposure.
+# 7. Only then remove the inline fields. This is the step that closes the exposure.
 node firebase/scripts/migrate-compensation.js --purge --commit
 ```
 
@@ -191,6 +197,10 @@ reconnect, which is what makes check-in work offline at a site with no signal. R
 punches through a callable would require connectivity and would **lose** those punches.
 So the write is bounded in rules and scored on arrival instead.
 
+**No geofencing.** Sites in this deployment carry no geofence coordinates, so there is
+nothing to measure a punch against; distance checking was removed rather than left in
+place computing meaningless numbers against absent data.
+
 **Rules bound what can be written:** the eight real punch types only; the timestamp must
 be no more than 5 minutes in the future (clock skew) and no more than **12 hours** in the
 past (the offline window); `date` must be well-formed and coordinates numeric. Backdating
@@ -201,10 +211,8 @@ existing recovery path for a missed punch.
 
 **The `onPunchWritten` trigger records a verdict, never a rejection.** It corrects `date`
 from the trusted timestamp (rules have no timezone arithmetic, and the scorer queries by
-`date`, so a forged `date` would reassign a punch to another day), measures distance from
-the site geofence, reports client/server clock skew, and flags mock locations. A punch
-outside a geofence is still recorded: GPS drifts indoors and a site's stored coordinates
-may be wrong, so refusing it would cost a real employee a real day's pay.
+`date`, so a forged `date` would reassign a punch to another day), reports client/server
+clock skew, and flags mock locations. It does not read the site document at all.
 
 **This is detection, not prevention — by necessity.** Offline support and hard prevention
 are mutually exclusive here. The bounds remove the high-value forgery (backdating); the
@@ -245,15 +253,15 @@ writing **someone else's** uid is denied, so the self-reported actor cannot be f
 path that misses it. Clients stamp first → the audit log confirms coverage → enforcement
 follows. Same discipline as the pay migration, for the same reason.
 
-### There is no IP address, and no code can add one
+### No IP addresses — decided, not deferred
 
-Firestore security rules have **no `request.ip`**, and neither do triggers. Both clients
-write through the client SDK, so no server sees the connection. `lastModifiedBy` tells you
-*which user account* made every change; it cannot tell you from which network.
+IP capture was considered and **dropped by decision**. It is also not achievable in code:
+Firestore rules have no `request.ip`, and neither do triggers, so with both clients using
+the client SDK no server ever sees the connection. Capturing caller IP would have required
+enabling GCP Cloud Audit Logs (Data Access) — console configuration, billed by volume.
 
-The only mechanism that captures caller IP for client-SDK writes is **GCP Cloud Audit Logs
-(Data Access) for Firestore** — console configuration, not code, billed by volume with a
-default 30-day retention. Not enabled; deliberately deferred.
+`lastModifiedBy` identifies **which user account** made every change, which is the
+attribution this system needs.
 
 ### Cost note
 
@@ -266,6 +274,6 @@ Worth revisiting if the Firestore bill moves noticeably.
 - **Database-wide enforcement of `lastModifiedBy`** — the stamp is written everywhere but
   only *enforced* on the six widened rules. Turn it on globally once the audit log shows
   full coverage.
-- **GCP Cloud Audit Logs** for real IP capture, if you want network-level forensics.
-- **Mock-location flags are recorded but nothing surfaces them** — no portal view lists
-  flagged punches yet, so today they are only visible in Firestore or the function logs.
+- **Flags are recorded but nothing surfaces them** — no portal view lists flagged punches
+  (mock location, date mismatch, large clock skew), so today they are visible only in
+  Firestore or the function logs. Nobody will notice a flag unless they go looking.
