@@ -11,7 +11,7 @@ import { istTodayStr } from './date';
 import { PAY_FIELDS, type Pay } from './compensation';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection, AuditEntry } from '@/types';
 
 // ── Write attribution ─────────────────────────────────────────────────────
 //
@@ -786,4 +786,27 @@ export async function getDashboardStats() {
     earliestPendingSeconds,
     todayCheckIns: attendanceSnap.docs.filter(d => d.data().date === today && d.data().type?.endsWith('_in')).length,
   };
+}
+
+// ── Audit log ─────────────────────────────────────────────────────────────
+
+/**
+ * Recent audit entries, newest first.
+ *
+ * Deliberately filters ONLY on `atMillis` — the same field it orders by — so Firestore
+ * needs no composite index. Collection/user/actor narrowing is done in the page, on an
+ * already-bounded result set. Adding a `where` on another field here would require a new
+ * index and the page would silently fail until someone created it.
+ *
+ * Admin-only: firestore.rules restricts audit_log reads to admins.
+ */
+export async function getAuditLog(fromMillis: number, toMillis: number, max = 500): Promise<AuditEntry[]> {
+  const snap = await getDocs(query(
+    collection(db, 'audit_log'),
+    where('atMillis', '>=', fromMillis),
+    where('atMillis', '<=', toMillis),
+    orderBy('atMillis', 'desc'),
+    limit(max),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditEntry));
 }

@@ -292,7 +292,13 @@ Worth revisiting if the Firestore bill moves noticeably.
 
 ## Where to see all of this
 
-**The audit trail** — Firebase Console → Firestore Database → the top-level **`audit_log`**
+**The audit trail** — the admin portal, **Records → Audit Trail** (`/audit`). Two tabs:
+*All changes* (filter by date range, employee and collection; expand any row for the
+before/after diff) and *Flagged punches* (mock location, corrected date, future-dated,
+late sync). Admin-only, because `audit_log` entries carry full document snapshots
+including pay — it is not a grantable tab and never appears in the access matrix.
+
+Also readable raw in Firebase Console → Firestore Database → the top-level **`audit_log`**
 collection. One document per write, newest by `atMillis`. Each carries `path`,
 `changeType`, `changedKeys`, and full `before`/`after` snapshots. Nobody can write or edit
 it from any client, including admin; only the Cloud Function triggers write there.
@@ -329,6 +335,6 @@ contains every salary. Keep it until a payroll run is verified after the purge.
 - **Database-wide enforcement of `lastModifiedBy`** — the stamp is written everywhere but
   only *enforced* on the six widened rules. Turn it on globally once the audit log shows
   full coverage.
-- **Flags are recorded but nothing surfaces them** — no portal view lists flagged punches
-  (mock location, date mismatch, large clock skew), so today they are visible only in
-  Firestore or the function logs. Nobody will notice a flag unless they go looking.
+- **Nothing alerts on a flag.** The Audit Trail page surfaces flagged punches, but only
+  when someone opens it. There is no notification or digest, so a mock-location punch on a
+  Tuesday is found only if an admin looks.

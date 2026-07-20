@@ -267,3 +267,23 @@ export interface ConveyanceRecord {
   conveyance: number;
   computedAt?: Timestamp;
 }
+
+/**
+ * One entry in the tamper-proof audit log (top-level `audit_log`).
+ * Written ONLY by the Cloud Function triggers via the Admin SDK; no client can write it.
+ * See firebase/functions/auditLog.js.
+ */
+export interface AuditEntry {
+  id: string;
+  path: string;
+  collection: string;
+  docId: string;
+  userId: string | null;      // owning user, when the doc lives under users/{uid}
+  changeType: 'create' | 'update' | 'delete';
+  changedKeys: string[];
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  actor: string;              // lastModifiedBy uid, a business field, or 'unknown'
+  at: string;                 // ISO
+  atMillis: number;
+}

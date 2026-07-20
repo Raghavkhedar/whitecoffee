@@ -39,6 +39,10 @@ export const TABS: TabDef[] = [
   { path: '/submissions',        label: 'Submissions',    icon: 'doc',        group: 'Records' },
   { path: '/conveyance',         label: 'Conveyance',     icon: 'car',        group: 'Records' },
   { path: '/notifications',      label: 'Notifications',  icon: 'bell',       group: 'Records' },
+  // adminOnly is not a preference here: firestore.rules grants `audit_log` reads to admin
+  // ONLY, because entries carry full document snapshots including pay. Granting this tab
+  // to a manager would show them an empty page, not an audit trail.
+  { path: '/audit',              label: 'Audit Trail',    icon: 'search',     group: 'Records', adminOnly: true },
 ];
 
 // Set of tab paths a non-admin can be granted (everything not adminOnly).
