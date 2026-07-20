@@ -21,7 +21,12 @@
  */
 
 const fs = require("node:fs");
-const admin = require("firebase-admin");
+// firebase-admin lives in ../functions/node_modules — these scripts have no package.json
+// of their own. Resolve it from there so the script runs from any working directory.
+const admin = (() => {
+  try { return require("firebase-admin"); }
+  catch { return require(require("node:path").join(__dirname, "..", "functions", "node_modules", "firebase-admin")); }
+})();
 
 const file = process.argv[2];
 const COMMIT = process.argv.includes("--commit");
