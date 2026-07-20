@@ -75,11 +75,6 @@ service cloud.firestore {
       return userTabs().hasAny(['/ot-settlements']);
     }
 
-    // Holidays: any signed-in user may read; write for Attendance.
-    function canWriteHolidays() {
-      return userTabs().hasAny(['/attendance']);
-    }
-
     // Leave approvals: read + status update for Leaves.
     function canAccessLeaves() {
       return userTabs().hasAny(['/leaves']);
@@ -130,6 +125,19 @@ service cloud.firestore {
     // Update-only: on create, `resource` is null.
     function notSelfDoc() {
       return resource.data.userId != request.auth.uid;
+    }
+
+    // Shape check for a submitted leave request. Dates are "yyyy-mm-dd", so string
+    // ordering is chronological and `<=` is a real date comparison.
+    // totalDays must be a positive int no larger than the span it claims — the span of a
+    // range is at most (difference in days)+1, and since rules have no date arithmetic we
+    // bound it by a hard ceiling instead, which is what actually stops an absurd claim.
+    function isValidLeaveDates(d) {
+      return d.fromDate is string && d.toDate is string
+             && d.fromDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+             && d.toDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+             && d.fromDate <= d.toDate
+             && d.totalDays is int && d.totalDays > 0 && d.totalDays <= 366;
     }
 
     // Returns true if the write touches ONLY the given fields (and no others).
@@ -275,8 +283,14 @@ service cloud.firestore {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessLeaves());
         // Must be created pending — a self-approved leave would otherwise be
         // counted as PL by the nightly computeDailyAttendanceStatus function.
+        // The payload was previously unvalidated: fromDate/toDate had no bound and
+        // totalDays was client-supplied and never checked against the range, so a
+        // decade-long request or a 5-day range claiming 500 days was accepted and only a
+        // mis-click away from being approved. Dates are "yyyy-mm-dd" strings, so a
+        // lexicographic compare is chronological.
         allow create: if isLoggedIn() && isOwner(userId)
-                      && request.resource.data.status == 'pending';
+                      && request.resource.data.status == 'pending'
+                      && isValidLeaveDates(request.resource.data);
         // Admin / a Leaves manager updates status (approved/rejected); the owner
         // (employee app) cannot change status, and a Leaves manager cannot approve
         // their OWN leave (notSelf) — that would be self-granted paid time off.
@@ -287,10 +301,22 @@ service cloud.firestore {
       // ── /notifications/{docId} ────────────────────────────────────────
       match /notifications/{docId} {
         allow read:   if isLoggedIn() && isOwner(userId);
-        // User's FcmService + admin portal sender (admin or a Notifications manager) can create
-        allow create: if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessNotifications());
-        // User marks as read; admin can also update
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        // Owner-create REMOVED: it let a user inject arbitrary notifications into their
+        // own feed, forging messages that look like they came from the company. Verified
+        // the Android app only ever READS this collection (NotificationRepository) — the
+        // real senders are the admin portal and the Cloud Function, which uses the Admin
+        // SDK and bypasses rules entirely. Nothing legitimate needed the owner grant.
+        // canAccessLeaves is included because partial leave approval notifies the employee
+        // which dates were granted and which days they are still expected at work — the
+        // message that prevents an unexpected absence. Without it a Leaves manager's
+        // approval would silently fail to notify.
+        allow create: if isLoggedIn() && (isAdmin() || canAccessNotifications() || canAccessLeaves());
+        // The owner marks their own notification read — restricted to that one field so
+        // the grant cannot be used to rewrite the message body after delivery.
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(['isRead']))
+        );
         allow delete: if false;
       }
 
@@ -440,6 +466,11 @@ service cloud.firestore {
     }
 
     // ── /sites/{siteId} — Site management ────────────────────────────────
+    // Read stays open to every signed-in user BY NECESSITY: the Android app needs the site
+    // list and its geofence coordinates to check in at all (SiteRepository). This does hand
+    // an employee the exact coordinates to spoof to, but restricting it would break
+    // check-in, and location is client-supplied regardless — the real defence is
+    // server-side punch validation, not hiding the coordinates. See the attendance task.
     match /sites/{siteId} {
       allow read:             if isLoggedIn();
       allow create, update:   if isLoggedIn() && isAdmin();
@@ -450,9 +481,14 @@ service cloud.firestore {
     // Any signed-in user may read (employees see holidays in their app); an admin
     // or a manager holding Attendance may mark/unmark. A marked day is skipped like a
     // Sunday by the nightly computeDailyAttendanceStatus function.
+    // ADMIN-ONLY WRITE (tightened). Marking a holiday makes the nightly scorer skip that
+    // day for EVERY employee — the largest blast radius of any single write in the system,
+    // and it was reachable by anyone holding the /attendance tab. A company-wide payroll
+    // decision should not ride on a per-tab grant. Reads stay open to all signed-in users
+    // (employees see holidays in the app).
     match /holidays/{date} {
       allow read:  if isLoggedIn();
-      allow write: if isLoggedIn() && (isAdmin() || canWriteHolidays());
+      allow write: if isLoggedIn() && isAdmin();
     }
 
     // ── /config/{docId} — App configuration (conveyance rates, etc.) ────
@@ -463,9 +499,16 @@ service cloud.firestore {
     }
 
     // ── /conveyance/{docId} — Monthly conveyance records ────────────────
+    // Conveyance is money (totalKm × ratePerKm lands in payroll), so the same
+    // separation-of-duties guard applies: a Conveyance manager must not write their OWN
+    // record. Update/delete check the stored owner; create checks the incoming payload,
+    // since `resource` does not exist yet on a create.
     match /conveyance/{docId} {
-      allow read:  if isLoggedIn() && (isAdmin() || canAccessConveyance());
-      allow write: if isLoggedIn() && (isAdmin() || canAccessConveyance());
+      allow read:   if isLoggedIn() && (isAdmin() || canAccessConveyance());
+      allow create: if isLoggedIn() && (isAdmin() ||
+                      (canAccessConveyance() && request.resource.data.userId != request.auth.uid));
+      allow update, delete: if isLoggedIn() && (isAdmin() ||
+                      (canAccessConveyance() && notSelfDoc()));
     }
   }
 }
