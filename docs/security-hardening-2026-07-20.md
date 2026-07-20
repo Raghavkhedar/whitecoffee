@@ -290,6 +290,40 @@ The audit log records **every** write, so it roughly **doubles write volume**. T
 deliberate choice ("everything writable" scope) over auditing only money-and-approvals.
 Worth revisiting if the Firestore bill moves noticeably.
 
+## Where to see all of this
+
+**The audit trail** — Firebase Console → Firestore Database → the top-level **`audit_log`**
+collection. One document per write, newest by `atMillis`. Each carries `path`,
+`changeType`, `changedKeys`, and full `before`/`after` snapshots. Nobody can write or edit
+it from any client, including admin; only the Cloud Function triggers write there.
+
+Query it from the console, or:
+
+```bash
+cd firebase/functions && node -e "
+const a=require('firebase-admin');a.initializeApp({projectId:'white-coffee-92c27'});
+a.firestore().collection('audit_log').orderBy('atMillis','desc').limit(20).get()
+ .then(s=>{s.docs.forEach(d=>{const e=d.data();
+   console.log(e.at, e.changeType.padEnd(6), e.actor.padEnd(24), e.path, JSON.stringify(e.changedKeys));});
+   process.exit(0);});"
+```
+
+**The moved salary data** — Firebase Console → Firestore → `users` → pick a user → the
+**`compensation`** subcollection → document **`current`**. That is where `salaryRate`,
+`pfPercent`, `esiPercent` and `imprestPercent` now live. Until the purge runs they ALSO
+still sit on the parent `users/{uid}` document; after it, only here.
+
+In the portal nothing looks different: the Users page and OT Settlements read the new
+location transparently. The change is who *cannot* see it — a manager holding only
+Conveyance or Notifications can no longer read pay at all.
+
+**The code** — branch `fix/security-hardening`. `git log main..fix/security-hardening` for
+the full set; `firebase/firestore.rules` for the boundary itself; `firebase/rules-tests/`
+for the 63 tests that prove it.
+
+**The backup** — `firebase/scripts/backups/users-<timestamp>.json`, gitignored because it
+contains every salary. Keep it until a payroll run is verified after the purge.
+
 ## Still open
 
 - **Database-wide enforcement of `lastModifiedBy`** — the stamp is written everywhere but
