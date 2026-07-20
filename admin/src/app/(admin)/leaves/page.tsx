@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { getAllLeaveRequests, approveLeave, rejectLeave } from '@/lib/firestore';
+import { getAllLeaveRequests, approveLeave, rejectLeave, getHolidaysForDateRange, sendNotification } from '@/lib/firestore';
+import {
+  requestedDates, grantedDates, isPartialApproval, isSunday,
+  formatDayLabel, formatDatesShort, partialApprovalMessage,
+} from '@/lib/leaveDates';
 import type { LeaveRequest } from '@/types';
 import { Avatar } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -35,6 +39,12 @@ export default function LeavesPage() {
   const [rejectComment, setRejectComment] = useState('');
   const [actioning, setActioning] = useState('');
   const [employeeFilter, setEmployeeFilter] = useState('');
+  // Approve modal: the request being actioned, the ticked dates, the approver's note, and
+  // the holidays inside the requested range (shown flagged — they are never leave days).
+  const [approveModal, setApproveModal] = useState<LeaveRequest | null>(null);
+  const [approveComment, setApproveComment] = useState('');
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [modalHolidays, setModalHolidays] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -57,10 +67,39 @@ export default function LeavesPage() {
 
   useEffect(() => { load(); }, [filter]);
 
-  async function handleApprove(leave: LeaveRequest) {
+  // Open the picker with every requested date ticked — approving everything stays two clicks.
+  function openApprove(leave: LeaveRequest) {
+    const dates = requestedDates(leave);
+    setApproveModal(leave);
+    setSelectedDates(dates);
+    setApproveComment('');
+    setModalHolidays({});
+    if (dates.length > 0) {
+      getHolidaysForDateRange(dates[0], dates[dates.length - 1])
+        .then(hs => setModalHolidays(Object.fromEntries(hs.map(h => [h.date, h.title || 'Holiday']))))
+        .catch(() => { /* flagging is cosmetic — a failed lookup must not block approval */ });
+    }
+  }
+
+  async function handleApprove() {
+    if (!approveModal || selectedDates.length === 0) return;
+    const leave    = approveModal;
+    const granted  = [...selectedDates].sort();
+    const total    = requestedDates(leave).length;
+    const partial  = granted.length < total;
     setActioning(leave.id);
     try {
-      await approveLeave(leave.userId, leave.id, adminName);
+      await approveLeave(leave.userId, leave.id, adminName, granted, approveComment.trim());
+      // Only a partial approval notifies — a full approval keeps today's silent behaviour.
+      if (partial) {
+        const { title, body } = partialApprovalMessage({ ...leave, status: 'approved', approvedDates: granted });
+        try {
+          await sendNotification([leave.userId], title, body, 'leave', adminName, 'specific');
+        } catch { setError('Leave approved, but the employee notification failed to send.'); }
+      }
+      setApproveModal(null);
+      setSelectedDates([]);
+      setApproveComment('');
       await load();
     } catch { setError('Approval failed.'); }
     setActioning('');
@@ -142,18 +181,29 @@ export default function LeavesPage() {
                 <div><div className={metaLabel}>Type</div><div className={metaVal}><span className="w-[7px] h-[7px] rounded-full" style={{ background: typeDotColor(l.leaveType) }} />{l.leaveType}</div></div>
                 <div><div className={metaLabel}>Dates</div><div className={metaVal}>{l.fromDate}{l.toDate && l.toDate !== l.fromDate ? ` → ${l.toDate}` : ''}</div></div>
                 <div><div className={metaLabel}>Days</div><div className={`${metaVal} font-mono`}>{l.totalDays}</div></div>
-                <div className="min-w-[160px] flex-1"><div className={metaLabel}>Reason</div><div className="text-[13px] text-[#4A433D] mt-[3px]">{l.reason}{l.approverComment && <span className="block text-[12px] text-red-500 mt-0.5">“{l.approverComment}”</span>}</div></div>
+                <div className="min-w-[160px] flex-1"><div className={metaLabel}>Reason</div><div className="text-[13px] text-[#4A433D] mt-[3px]">{l.reason}{/* Red reads as a rejection reason — approve now takes a comment too, so only tint it when it actually is one. */}
+                {l.approverComment && <span className={`block text-[12px] mt-0.5 ${l.status === 'rejected' ? 'text-red-500' : 'text-[#8A817A]'}`}>“{l.approverComment}”</span>}</div></div>
               </div>
             </div>
             <div className="flex flex-col items-end gap-2.5 flex-shrink-0">
               {l.status === 'pending' ? (
                 <div className="flex gap-2">
                   <button className="btn-outline !py-1.5 !px-3 text-[13px] !text-[#C42B2B] !border-[#F0D3D3] hover:!bg-[#FBEAEA]" disabled={actioning === l.id} onClick={() => { setRejectModal(l); setRejectComment(''); }}>Decline</button>
-                  <button className="btn-success !py-1.5 !px-3 text-[13px]" disabled={actioning === l.id} onClick={() => handleApprove(l)}>Approve</button>
+                  <button className="btn-success !py-1.5 !px-3 text-[13px]" disabled={actioning === l.id} onClick={() => openApprove(l)}>Approve</button>
                 </div>
               ) : (
                 <>
-                  <LeaveStatusBadge status={l.status} />
+                  <div className="flex items-center gap-1.5">
+                    <LeaveStatusBadge status={l.status} />
+                    {isPartialApproval(l) && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#F7EFE3] text-[#9A5B1E]">Partial</span>
+                    )}
+                  </div>
+                  {isPartialApproval(l) && (
+                    <span className="text-[11.5px] text-[#9A5B1E] text-right max-w-[220px]">
+                      {grantedDates(l).length} of {requestedDates(l).length} days: {formatDatesShort(grantedDates(l))}
+                    </span>
+                  )}
                   {l.approvedBy && <span className="text-[11.5px] text-[#A8A29E]">by {l.approvedBy}</span>}
                 </>
               )}
@@ -161,6 +211,73 @@ export default function LeavesPage() {
           </div>
         ))}
       </div>
+
+      {/* Approve modal — pick exactly which requested dates are granted */}
+      {approveModal && (() => {
+        const dates = requestedDates(approveModal);
+        const sel   = new Set(selectedDates);
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+              <h2 className="text-lg font-bold text-text-primary mb-2">Approve Leave — {approveModal.userName}</h2>
+              <p className="text-text-secondary text-sm mb-4">
+                Requested: {approveModal.fromDate} → {approveModal.toDate} ({dates.length} {dates.length === 1 ? 'day' : 'days'})
+              </p>
+
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 max-h-[240px] overflow-y-auto mb-3">
+                {dates.map(d => {
+                  const holiday = modalHolidays[d];
+                  const rest    = isSunday(d) || !!holiday;
+                  return (
+                    <label key={d} className="flex items-center gap-2 py-1 text-[13px] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 accent-[#0A7A50]"
+                        checked={sel.has(d)}
+                        onChange={e => setSelectedDates(prev =>
+                          e.target.checked ? [...prev, d].sort() : prev.filter(x => x !== d)
+                        )}
+                      />
+                      <span className={rest ? 'text-[#A8A29E]' : 'text-[#2A241F]'}>{formatDayLabel(d)}</span>
+                      {rest && (
+                        <span className="text-[10.5px] uppercase tracking-[0.04em] font-semibold text-[#B26B07]"
+                          title={holiday ? `Holiday: ${holiday}` : 'Sunday'}>
+                          {holiday ? 'Holiday' : 'Sun'}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2 mb-4">
+                <button className="btn-outline !py-1 !px-2.5 text-[12px]" onClick={() => setSelectedDates(dates)}>All</button>
+                <button className="btn-outline !py-1 !px-2.5 text-[12px]" onClick={() => setSelectedDates([])}>None</button>
+                <span className="ml-auto text-[12.5px] font-medium text-text-secondary">
+                  Granting {selectedDates.length} of {dates.length} days
+                </span>
+              </div>
+              {dates.some(d => isSunday(d) || modalHolidays[d]) && (
+                <p className="text-[11.5px] text-[#A8A29E] mb-3 -mt-2">
+                  Sundays and holidays are rest days — they are never counted as leave.
+                </p>
+              )}
+
+              <label className="label">Comment (optional)</label>
+              <textarea className="input min-h-[64px]" value={approveComment}
+                onChange={e => setApproveComment(e.target.value)} placeholder="Note for the employee…" />
+
+              <div className="flex gap-3 mt-4">
+                <button className="btn-success flex-1" onClick={handleApprove}
+                  disabled={!!actioning || selectedDates.length === 0}>
+                  Approve {selectedDates.length} {selectedDates.length === 1 ? 'day' : 'days'}
+                </button>
+                <button className="btn-outline flex-1" onClick={() => setApproveModal(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Reject modal */}
       {rejectModal && (

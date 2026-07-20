@@ -175,11 +175,30 @@ export async function getAllLeaveRequests(status?: string): Promise<LeaveRequest
   });
 }
 
-export async function approveLeave(userId: string, requestId: string, approverName: string) {
-  await updateDoc(
-    doc(db, 'users', userId, 'leave_requests', requestId),
-    { status: 'approved', approvedBy: approverName, reviewedAt: Timestamp.now() }
-  );
+/**
+ * Approve a leave request, granting exactly `approvedDates` ("yyyy-MM-dd", a subset of
+ * fromDate…toDate). `fromDate`/`toDate`/`totalDays` are deliberately left alone — they stay
+ * the record of what was requested. Ungranted dates are normal working days, not leave.
+ * Passing every requested date is a full approval; the field is still written so the doc is
+ * explicit. Omitting it entirely falls back to the compatibility rule (whole range granted).
+ */
+export async function approveLeave(
+  userId: string, requestId: string, approverName: string,
+  approvedDates?: string[], comment?: string,
+) {
+  const payload: Record<string, unknown> = {
+    status: 'approved', approvedBy: approverName, reviewedAt: Timestamp.now(),
+  };
+  // An EMPTY array must never reach Firestore: the compatibility rule reads a missing
+  // *or empty* `approvedDates` as "whole range granted", so writing [] would silently
+  // grant every requested day — the opposite of what a zero-date selection means. The
+  // approve modal already disables submit at zero; this is the load-bearing backstop.
+  if (approvedDates && approvedDates.length === 0) {
+    throw new Error('approveLeave: approvedDates is empty — granting no dates is a decline, not an approval.');
+  }
+  if (approvedDates) payload.approvedDates = [...approvedDates].sort();
+  if (comment !== undefined) payload.approverComment = comment;
+  await updateDoc(doc(db, 'users', userId, 'leave_requests', requestId), payload);
 }
 
 export async function rejectLeave(

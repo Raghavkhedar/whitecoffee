@@ -36,6 +36,10 @@ const {
   inManpowerReports,
   rolesWith,
 } = require("./roleCapabilities");
+// Partial leave approval — which dates an approved leave actually grants (see
+// leaveCoverage.js). Missing/empty `approvedDates` = the whole range, so legacy
+// leaves and the Android approve action keep their current meaning.
+const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -229,7 +233,10 @@ exports.computeDailyAttendanceStatus = onSchedule(
     const leavesToday = new Map();
     leavesSnap.docs.forEach((doc) => {
       const d = doc.data();
-      if (d.status === "approved" && d.fromDate <= today && d.toDate >= today) leavesToday.set(d.userId, d);
+      // A partially-approved leave grants only its `approvedDates`. An ungranted
+      // date is simply absent from this map, so the day scores as a normal
+      // working day (→ Absent when unpunched) through the existing path.
+      if (leaveCoversDate(d, today)) leavesToday.set(d.userId, d);
     });
 
     // Skip users whose attendance_status was manually set by admin (regularization approvals)
@@ -965,11 +972,17 @@ exports.exportToSheets = onSchedule(
     // ── 7. Leave Requests ─────────────────────────────────────────────
     {
       const snap   = await db.collectionGroup("leave_requests").get();
-      const header = ["Submitted At", "Status", "Employee Name", "Employee ID", "Leave Type", "From Date", "To Date", "Total Days", "Reason", "Approved By", "Approver Comment", "Reviewed At"];
+      // "Days Granted" is the number of days actually APPROVED, not the number
+      // requested: a partial approval grants a subset of fromDate…toDate. When no
+      // subset was recorded the whole range is granted, so `totalDays` stands.
+      // "Granted Dates" is blank in that (full-range / not-yet-approved) case.
+      const header = ["Submitted At", "Status", "Employee Name", "Employee ID", "Leave Type", "From Date", "To Date", "Days Granted", "Granted Dates", "Reason", "Approved By", "Approver Comment", "Reviewed At"];
       const rows   = snap.docs.map((doc) => {
         const d   = doc.data();
         const uid = uidOf(doc);
-        return [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", d.totalDays || "", d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
+        const granted     = explicitGrantedDates(d);
+        const grantedDays = grantedDayCount(d) ?? (d.totalDays || "");
+        return [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", grantedDays, granted.join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
       await writeTab(sheets, SHEET_ID_1, TABS.LEAVE_REQUESTS, [header, ...rows]);
