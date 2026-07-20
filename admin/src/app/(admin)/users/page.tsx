@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getAllUsers, createUserProfile, updateUserProfile,
-  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail } from '@/lib/firestore';
+  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail,
+  getCompensationMap } from '@/lib/firestore';
+import { withPay } from '@/lib/compensation';
 import { firebaseConfig } from '@/lib/firebase';
 import { syntheticLoginEmail } from '@/lib/constants';
 import type { User } from '@/types';
@@ -78,7 +80,12 @@ export default function UsersPage() {
     setError('');
     try {
       const u = await getAllUsers(true); // include inactive so admins can reactivate
-      setUsers(u.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')));
+      // Pay lives in users/{uid}/compensation/current, not on the user doc — merge it back
+      // for display/editing. withPay falls back per field to any legacy inline value, so
+      // users not yet migrated still show their real salary.
+      const comp = await getCompensationMap();
+      const withComp = u.map(x => withPay(x, comp.get(x.id)));
+      setUsers(withComp.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')));
     } catch (e: unknown) {
       setError(`Failed to load users: ${e instanceof Error ? e.message : String(e)}`);
     }

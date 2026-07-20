@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.os.Build
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -31,7 +32,16 @@ import kotlin.coroutines.resume
  * no silent failures, no crashes on edge cases.
  */
 sealed interface LocationState {
-    data class Success(val latitude: Double, val longitude: Double) : LocationState
+    /**
+     * @param isMock the fix came from a mock location provider. Reported, never used to
+     *   block a check-in — the punch is recorded and flagged server-side for review, so a
+     *   false positive can never cost someone a day's pay.
+     */
+    data class Success(
+        val latitude: Double,
+        val longitude: Double,
+        val isMock: Boolean = false,
+    ) : LocationState
     data object GpsDisabled : LocationState
     data object PermissionDenied : LocationState
     data object LowAccuracy : LocationState
@@ -66,6 +76,30 @@ class LocationProvider @Inject constructor(
 
     // Latest fix from the continuous foreground tracker (null until the first update arrives).
     // Exposed as a flow so callers could observe it, but getCurrentLocation() also reads it directly.
+    /**
+     * Whether the most recent fix handed to a caller came from a mock location provider.
+     *
+     * Read by AttendanceRepository when writing a punch, so the server can flag it. It is
+     * recorded, NEVER used to block a check-in: refusing a punch on a false positive would
+     * cost a real employee a real day's pay, and the server-side verdict already surfaces
+     * it for review.
+     */
+    @Volatile
+    var lastFixWasMock: Boolean = false
+        private set
+
+    /** Record the fix's mock status, then wrap it as a Success. */
+    private fun succeed(location: Location): LocationState.Success {
+        val mock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            location.isMock
+        } else {
+            @Suppress("DEPRECATION")
+            location.isFromMockProvider
+        }
+        lastFixWasMock = mock
+        return LocationState.Success(location.latitude, location.longitude, mock)
+    }
+
     private val _liveLocation = MutableStateFlow<Location?>(null)
     val liveLocation: StateFlow<Location?> = _liveLocation.asStateFlow()
 
@@ -105,7 +139,7 @@ class LocationProvider @Inject constructor(
         // This is the zero-wait path that makes attendance taps feel snappy.
         val live = _liveLocation.value
         if (live != null && System.currentTimeMillis() - live.time <= LIVE_FIX_MAX_AGE_MS) {
-            return LocationState.Success(live.latitude, live.longitude)
+            return succeed(live)
         }
 
         // Gate 4 — Fast path: a recent, decent cached fix avoids any spinner at all.
@@ -114,7 +148,7 @@ class LocationProvider @Inject constructor(
             cached.accuracy <= FAST_PATH_ACCURACY_METERS &&
             System.currentTimeMillis() - cached.time <= FAST_PATH_MAX_AGE_MS
         ) {
-            return LocationState.Success(cached.latitude, cached.longitude)
+            return succeed(cached)
         }
 
         // Gate 5 — Try for a fresh fix.
@@ -126,7 +160,7 @@ class LocationProvider @Inject constructor(
         // Gate 6 — Fresh fix failed/timed out: fall back to any last-known fix rather than blocking.
         val fallback = cached ?: lastKnownLocation()
         if (fallback != null) {
-            return LocationState.Success(fallback.latitude, fallback.longitude)
+            return succeed(fallback)
         }
 
         return LocationState.Timeout
@@ -209,12 +243,7 @@ class LocationProvider @Inject constructor(
                     // Any fresh fix is accepted — accuracy is no longer a hard gate. Coarse GPS in
                     // the field should never block a check-in (the caller also has a cached fallback).
                     if (continuation.isActive) {
-                        continuation.resume(
-                            LocationState.Success(
-                                latitude = location.latitude,
-                                longitude = location.longitude
-                            )
-                        )
+                        continuation.resume(succeed(location))
                     }
                 }
             }

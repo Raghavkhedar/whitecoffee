@@ -1,0 +1,4 @@
+# Backup snapshots contain every employee's salary and full user documents.
+# They must never be committed — this is the same pay data the security work
+# just moved out of reach of nine portal tabs.
+*.json

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { collectionGroup, getDocs, doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { db, auth } from '@/lib/firebase';
+import { stamped } from '@/lib/firestore';
 import Icon from '@/components/Icon';
 import { Avatar, TH, TD } from '@/components/ui';
 import { downloadSheet } from '@/lib/excel';
@@ -200,9 +201,15 @@ function EditModal({
 
       if (Object.keys(changes).length === 0) { onClose(); return; }
 
-      await updateDoc(doc(db, row._path), updates);
+      // stamped() adds lastModifiedBy/lastModifiedAt so the audit trigger can attribute
+      // this edit. Safe here: the submission update rule restricts keys
+      // (changedKeysWithin(['photoUrls'])) only on the isOwner branch — the employee app
+      // patching its own upload. The portal always writes through the
+      // isAdmin() / canAccessSubmissions() branch, which has no key restriction.
+      // `updates` itself stays unstamped so `changes` and onSaved keep the real diff.
+      await updateDoc(doc(db, row._path), stamped(updates));
 
-      await addDoc(collection(db, 'submission_edits'), {
+      await addDoc(collection(db, 'submission_edits'), stamped({
         collectionName: collectionKey,
         docPath: row._path,
         docId: row.id,
@@ -210,7 +217,7 @@ function EditModal({
         editedBy: auth.currentUser?.displayName ?? auth.currentUser?.email ?? 'unknown',
         editedAt: serverTimestamp(),
         changes,
-      });
+      }));
 
       onSaved({ ...row, ...updates });
     } catch (err) {

@@ -1,5 +1,10 @@
 {
   "firestore": { "rules": "firebase/firestore.rules" },
+  "emulators": {
+    "firestore": { "port": 8080 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  },
   "storage":   { "rules": "firebase/storage.rules" },
   "hosting": {
     "public": "admin/out",

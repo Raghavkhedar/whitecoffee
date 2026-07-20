@@ -6,8 +6,9 @@ import { auth, db } from '@/lib/firebase';
 import {
   getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange,
   getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange,
-  getSettlementsForMonth, settleMonth, unlockMonthSettlement,
+  getSettlementsForMonth, settleMonth, unlockMonthSettlement, getCompensationMap,
 } from '@/lib/firestore';
+import { withPay } from '@/lib/compensation';
 import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus, Settlement } from '@/types';
 import { computeRangeLedger, settlementCash, type RangeLedger } from '@/lib/otAggregate';
 import { usesOtShortageLedger } from '@/lib/roleCapabilities';
@@ -73,7 +74,7 @@ export default function SettlementsPage() {
   const loadData = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [u, e, p, a, h, s, st] = await Promise.all([
+      const [u, e, p, a, h, s, st, comp] = await Promise.all([
         getAllUsers(),
         getAttendanceForDateRange(start, end),
         getPlannedHoursForDateRange(start, end),
@@ -81,8 +82,12 @@ export default function SettlementsPage() {
         getHolidaysForDateRange(start, end),
         getAttendanceStatusForDateRange(start, end),
         getSettlementsForMonth(month),
+        // salaryRate drives settlementCash, and pay now lives in the restricted
+        // users/{uid}/compensation/current doc rather than on the user doc.
+        getCompensationMap(),
       ]);
-      setUsers(u); setEvents(e); setPlanned(p); setApprovals(a); setHolidays(h); setStatuses(s);
+      setUsers(u.map(x => withPay(x, comp.get(x.id))));
+      setEvents(e); setPlanned(p); setApprovals(a); setHolidays(h); setStatuses(s);
       setSettlements(st);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

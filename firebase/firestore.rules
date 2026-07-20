@@ -75,11 +75,6 @@ service cloud.firestore {
       return userTabs().hasAny(['/ot-settlements']);
     }
 
-    // Holidays: any signed-in user may read; write for Attendance.
-    function canWriteHolidays() {
-      return userTabs().hasAny(['/attendance']);
-    }
-
     // Leave approvals: read + status update for Leaves.
     function canAccessLeaves() {
       return userTabs().hasAny(['/leaves']);
@@ -112,6 +107,93 @@ service cloud.firestore {
       return userTabs().hasAny(['/working-hours-shortage-excess', '/leaves', '/regularization', '/attendance', '/ot-shortage', '/ot-settlements', '/manpower-utilisation-input', '/submissions', '/conveyance', '/notifications']);
     }
 
+    // ── Separation of duties ─────────────────────────────────────────────
+    // A scoped manager must never action their OWN record. Without this, holding a tab
+    // is self-service: /leaves approves your own leave, /ot-shortage your own overtime,
+    // /ot-settlements your own settlement cash, /attendance marks you Present. Each one
+    // pays the holder real money with no second pair of eyes.
+    //
+    // ADMIN IS DELIBERATELY EXEMPT. An admin can already edit salaryRate directly, so
+    // blocking their self-approval buys nothing, and a single-admin company would
+    // otherwise be unable to approve the admin's own leave at all.
+    function notSelf(userId) {
+      return request.auth.uid != userId;
+    }
+
+    // Same rule for collectionGroup matches, where {userId} is not bound by the path.
+    // Every such document carries a `userId` field identifying whose record it is.
+    // Update-only: on create, `resource` is null.
+    function notSelfDoc() {
+      return resource.data.userId != request.auth.uid;
+    }
+
+    // ── Attendance punch validation ──────────────────────────────────────
+    // Punches were previously accepted with NO validation at all: any type, any
+    // timestamp, any GPS, any date, backdated arbitrarily. The nightly scorer trusts them
+    // completely, so that was a direct route to "Present every day, unlimited OT".
+    //
+    // These punches CANNOT go through a callable: AttendanceRepository writes via the
+    // Firestore SDK without awaiting, which is what makes check-in work offline at sites
+    // with no signal. A callable requires connectivity, so forcing one would LOSE punches.
+    // The write therefore stays client-side and is bounded here instead.
+    function validPunchType(t) {
+      return t in ['office_in', 'office_out', 'site_in', 'site_out',
+                   'market_in', 'market_out', 'home_in', 'home_out'];
+    }
+
+    // The timestamp is client-supplied by necessity (an offline punch records the time it
+    // actually happened, not the time it later syncs). It is bounded on both sides:
+    //   · not in the future beyond a little clock skew — no pre-dating a shift
+    //   · not older than the offline window — no backdating a month of attendance
+    // A genuine punch that misses the window is NOT lost: Regularization is the existing
+    // recovery path for a missed punch, and an admin can restore the day.
+    function timestampWithinWindow(ts) {
+      return ts is timestamp
+             && ts <= request.time + duration.value(5, 'm')
+             && ts >= request.time - duration.value(12, 'h');
+    }
+
+    function isValidPunch(d) {
+      return validPunchType(d.type)
+             && timestampWithinWindow(d.timestamp)
+             && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+             && d.latitude is number && d.longitude is number;
+    }
+
+    // Shape check for a submitted leave request. Dates are "yyyy-mm-dd", so string
+    // ordering is chronological and `<=` is a real date comparison.
+    // totalDays must be a positive int no larger than the span it claims — the span of a
+    // range is at most (difference in days)+1, and since rules have no date arithmetic we
+    // bound it by a hard ceiling instead, which is what actually stops an absurd claim.
+    function isValidLeaveDates(d) {
+      return d.fromDate is string && d.toDate is string
+             && d.fromDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+             && d.toDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+             && d.fromDate <= d.toDate
+             && d.totalDays is int && d.totalDays > 0 && d.totalDays <= 366;
+    }
+
+    // ── Write attribution ────────────────────────────────────────────────
+    // The audit log answers "who changed this?" from the document's own `lastModifiedBy`,
+    // because Firestore triggers carry no auth context. A self-reported field is only
+    // worth anything if it cannot be forged, so wherever the stamp is permitted it must
+    // match the caller. A client writing someone else's uid is denied.
+    //
+    // This is enforced ONLY on the narrow changedKeysWithin rules below, which had to be
+    // widened to admit the stamp at all. Enforcing it database-wide is deliberately NOT
+    // done yet: any write path that does not stamp would be denied outright, silently
+    // breaking a feature. Clients stamp first, the audit log confirms coverage, and
+    // enforcement follows. See docs/security-hardening-2026-07-20.md.
+    function stampIsTruthful() {
+      return !('lastModifiedBy' in request.resource.data.diff(resource.data).affectedKeys())
+             || request.resource.data.lastModifiedBy == request.auth.uid;
+    }
+
+    // The two attribution fields, allowed alongside any narrow key set.
+    function withStamp(allowed) {
+      return allowed.concat(['lastModifiedBy', 'lastModifiedAt']);
+    }
+
     // Returns true if the write touches ONLY the given fields (and no others).
     function changedKeysWithin(allowed) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
@@ -139,25 +221,52 @@ service cloud.firestore {
       // token fields — never role/salaryRate/etc. (prevents self-promotion to admin).
       allow update: if isLoggedIn() && (
         isAdmin() ||
-        (isOwner(userId) && changedKeysWithin(['activeSessionToken', 'fcmToken']))
+        (isOwner(userId) && changedKeysWithin(withStamp(['activeSessionToken', 'fcmToken']))
+                         && stampIsTruthful())
       );
       allow delete: if isLoggedIn() && isAdmin();
 
       // ── /attendance/{docId} ───────────────────────────────────────────
       match /attendance/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadAttendance());
-        allow create: if isLoggedIn() && isOwner(userId);
+        // The `date` field is deliberately NOT cross-checked against `timestamp` here —
+        // rules have no timezone arithmetic, and the scorer queries by `date`, so a
+        // mismatch would be a backdating bypass. The onPunchWritten trigger recomputes
+        // `date` from the trusted timestamp server-side and corrects it.
+        allow create: if isLoggedIn() && isOwner(userId) && isValidPunch(request.resource.data);
         // Events are immutable once recorded EXCEPT the admin-filled Site ID, Visit
         // Type, and Work Done categories: ops type a free-text site name at check-in
         // and an admin (or a manager holding Attendance / Manpower Utilisation Input)
         // later patches `siteId` + `visitType` + `workDoneCategories` from the Manpower
         // Utilisation Input page (updateAttendanceSiteId). Restricting to these keeps the
         // event otherwise tamper-proof (timestamp/location/type stay immutable).
-        allow update: if isLoggedIn() && (isAdmin() || canWriteAttendance()) && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
+        // changedKeysWithin is ANDed onto BOTH branches — admin does not escape it — so the
+        // stamp fields must be admitted explicitly or the siteId patch would be denied for
+        // every caller. stampIsTruthful stops the widened key set being used to forge an
+        // actor. The event stays otherwise tamper-proof: timestamp, location and type
+        // remain unwritable.
+        allow update: if isLoggedIn() && (isAdmin() || canWriteAttendance())
+                      && changedKeysWithin(withStamp(['siteId', 'visitType', 'workDoneCategories']))
+                      && stampIsTruthful();
         // Admin-only same-day punch correction (Daily Activity page): an admin rewinds a
         // timeline by deleting erroneous trailing punches. Every deletion is snapshotted
         // into attendance_corrections below, so nothing is lost. Non-admins never delete.
         allow delete: if isLoggedIn() && isAdmin();
+      }
+
+      // ── /compensation/{docId} — pay, split off the user document ──────
+      // Firestore rules are DOCUMENT-level: there is no field-level read control, so
+      // while salaryRate/pfPercent/esiPercent/imprestPercent sat on users/{uid}, every
+      // tab that reads a user doc merely to resolve a name (nine of the ten grantable
+      // tabs, via canReadUsers) could also enumerate the whole company's pay. Moving pay
+      // to its own document is the ONLY way to restrict it.
+      //
+      // The employee themselves is deliberately NOT granted read here — pay is shown to
+      // them through the payroll exports, not the app, and isOwner would hand every
+      // employee a live salary endpoint.
+      match /compensation/{docId} {
+        allow read:  if isLoggedIn() && (isAdmin() || canAccessSettlements());
+        allow write: if isLoggedIn() && isAdmin();
       }
 
       // ── /attendance_corrections/{docId} ───────────────────────────────
@@ -174,10 +283,11 @@ service cloud.firestore {
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
         // Owner may ONLY patch photoUrls (post-upload); admin / a Submissions manager can
         // update status etc. Without this restriction an owner could flip their own status.
+        // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
-          canAccessSubmissions() ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (canAccessSubmissions() && notSelf(userId)) ||
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -186,10 +296,11 @@ service cloud.firestore {
       match /material_purchases/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
-          canAccessSubmissions() ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (canAccessSubmissions() && notSelf(userId)) ||
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -198,10 +309,11 @@ service cloud.firestore {
       match /material_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
-          canAccessSubmissions() ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (canAccessSubmissions() && notSelf(userId)) ||
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -210,10 +322,11 @@ service cloud.firestore {
       match /tool_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
-          canAccessSubmissions() ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (canAccessSubmissions() && notSelf(userId)) ||
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -222,10 +335,11 @@ service cloud.firestore {
       match /work_progress/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
         allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
-          canAccessSubmissions() ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (canAccessSubmissions() && notSelf(userId)) ||
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -235,21 +349,40 @@ service cloud.firestore {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessLeaves());
         // Must be created pending — a self-approved leave would otherwise be
         // counted as PL by the nightly computeDailyAttendanceStatus function.
+        // The payload was previously unvalidated: fromDate/toDate had no bound and
+        // totalDays was client-supplied and never checked against the range, so a
+        // decade-long request or a 5-day range claiming 500 days was accepted and only a
+        // mis-click away from being approved. Dates are "yyyy-mm-dd" strings, so a
+        // lexicographic compare is chronological.
         allow create: if isLoggedIn() && isOwner(userId)
-                      && request.resource.data.status == 'pending';
+                      && request.resource.data.status == 'pending'
+                      && isValidLeaveDates(request.resource.data);
         // Admin / a Leaves manager updates status (approved/rejected); the owner
-        // (employee app) cannot change status.
-        allow update: if isLoggedIn() && (isAdmin() || canAccessLeaves());
+        // (employee app) cannot change status, and a Leaves manager cannot approve
+        // their OWN leave (notSelf) — that would be self-granted paid time off.
+        allow update: if isLoggedIn() && (isAdmin() || (canAccessLeaves() && notSelf(userId)));
         allow delete: if false;
       }
 
       // ── /notifications/{docId} ────────────────────────────────────────
       match /notifications/{docId} {
         allow read:   if isLoggedIn() && isOwner(userId);
-        // User's FcmService + admin portal sender (admin or a Notifications manager) can create
-        allow create: if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessNotifications());
-        // User marks as read; admin can also update
-        allow update: if isLoggedIn() && (isOwner(userId) || isAdmin());
+        // Owner-create REMOVED: it let a user inject arbitrary notifications into their
+        // own feed, forging messages that look like they came from the company. Verified
+        // the Android app only ever READS this collection (NotificationRepository) — the
+        // real senders are the admin portal and the Cloud Function, which uses the Admin
+        // SDK and bypasses rules entirely. Nothing legitimate needed the owner grant.
+        // canAccessLeaves is included because partial leave approval notifies the employee
+        // which dates were granted and which days they are still expected at work — the
+        // message that prevents an unexpected absence. Without it a Leaves manager's
+        // approval would silently fail to notify.
+        allow create: if isLoggedIn() && (isAdmin() || canAccessNotifications() || canAccessLeaves());
+        // The owner marks their own notification read — restricted to that one field so
+        // the grant cannot be used to rewrite the message body after delivery.
+        allow update: if isLoggedIn() && (
+          isAdmin() ||
+          (isOwner(userId) && changedKeysWithin(withStamp(['isRead'])) && stampIsTruthful())
+        );
         allow delete: if false;
       }
 
@@ -258,7 +391,8 @@ service cloud.firestore {
       // and by admin portal for operations users (manual).
       match /attendance_status/{date} {
         allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadAttendanceStatus());
-        allow write: if isLoggedIn() && (isAdmin() || canWriteAttendanceStatus());
+        // notSelf: a manager marking their OWN day Present/WO is direct payroll fraud.
+        allow write: if isLoggedIn() && (isAdmin() || (canWriteAttendanceStatus() && notSelf(userId)));
       }
 
       // ── /planned_hours/{date} ─────────────────────────────────────────
@@ -267,7 +401,9 @@ service cloud.firestore {
       // and written by managers holding Attendance.
       match /planned_hours/{date} {
         allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadPlannedHours());
-        allow write: if isLoggedIn() && (isAdmin() || canWritePlannedHours());
+        // notSelf: the shift window sets the OT/shortage baseline, and `otAuthorized`
+        // turns a rest day into all-hours OT — a manager must not set their own.
+        allow write: if isLoggedIn() && (isAdmin() || (canWritePlannedHours() && notSelf(userId)));
       }
 
       // ── /daily_hours/{date} ───────────────────────────────────────────
@@ -285,7 +421,8 @@ service cloud.firestore {
       // by managers holding Attendance or OT & Shortage.
       match /ot_approvals/{date} {
         allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadOtApprovals());
-        allow write: if isLoggedIn() && (isAdmin() || canWriteOtApprovals());
+        // notSelf: granting your own overtime is granting yourself cash.
+        allow write: if isLoggedIn() && (isAdmin() || (canWriteOtApprovals() && notSelf(userId)));
       }
 
       // ── /settlements/{month} ──────────────────────────────────────────
@@ -293,7 +430,9 @@ service cloud.firestore {
       // page). Read by the employee, admin, and managers holding OT Settlements, who also settle.
       match /settlements/{month} {
         allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSettlements());
-        allow write: if isLoggedIn() && (isAdmin() || canAccessSettlements());
+        // notSelf: settlementCash lands straight in TOTAL DUE — the highest-value
+        // self-deal in the system.
+        allow write: if isLoggedIn() && (isAdmin() || (canAccessSettlements() && notSelf(userId)));
       }
 
       // ── /regularization_requests/{docId} ──────────────────────────────
@@ -303,7 +442,8 @@ service cloud.firestore {
         // flip the linked attendance_status to Present (done via writeBatch in the portal).
         allow create: if isLoggedIn() && isOwner(userId)
                       && request.resource.data.status == 'pending';
-        allow update: if isLoggedIn() && (isAdmin() || canAccessRegularization());
+        // notSelf: approving your own regularization flips your own day to Present.
+        allow update: if isLoggedIn() && (isAdmin() || (canAccessRegularization() && notSelf(userId)));
         allow delete: if false;
       }
     }
@@ -312,7 +452,10 @@ service cloud.firestore {
     // Required for LeaveApprovalsViewModel which does collectionGroup("leave_requests")
     match /{path=**}/leave_requests/{docId} {
       allow read:   if isLoggedIn() && (isAdmin() || canAccessLeaves());
-      allow update: if isLoggedIn() && (isAdmin() || canAccessLeaves());
+      // notSelfDoc mirrors the per-doc notSelf guard: this collectionGroup path is a
+      // second door onto the same documents, so leaving it unguarded would defeat the
+      // per-doc rule entirely (the Android approvals screen writes through here).
+      allow update: if isLoggedIn() && (isAdmin() || (canAccessLeaves() && notSelfDoc()));
     }
 
     // ── collectionGroup — admin portal Attendance & Submissions screens ──
@@ -337,13 +480,23 @@ service cloud.firestore {
     match /{path=**}/work_progress/{docId} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
     }
+    // Required for getCompensationMap() which does collectionGroup("compensation").
+    // Read-only and identically scoped to the per-doc rule — a looser collectionGroup
+    // rule is a second door that defeats the per-doc one (see attendance_status above).
+    match /{path=**}/compensation/{docId} {
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSettlements());
+    }
     // Admin-only history read for the Daily Activity page (getAttendanceCorrectionsForDate).
     match /{path=**}/attendance_corrections/{docId} {
       allow read: if isLoggedIn() && isAdmin();
     }
+    // READ-ONLY on purpose. A collectionGroup match cannot bind {userId}, so it cannot
+    // enforce notSelf — granting write here reopened exactly the self-approval hole the
+    // per-doc rule closes (caught by the rules suite). Writes must go through
+    // /users/{userId}/attendance_status/{date}, which knows whose record it is.
+    // The portal only ever writes to a known user path, so nothing legitimate needs this.
     match /{path=**}/attendance_status/{date} {
-      allow read:  if isLoggedIn() && (isAdmin() || canReadAttendanceStatus());
-      allow write: if isLoggedIn() && (isAdmin() || canWriteAttendanceStatus());
+      allow read: if isLoggedIn() && (isAdmin() || canReadAttendanceStatus());
     }
     // Required for getPlannedHoursForMonth() which does collectionGroup("planned_hours").
     // The specific /users/{userId}/planned_hours/{date} match above authorizes the
@@ -364,7 +517,18 @@ service cloud.firestore {
       allow read: if isLoggedIn() && (isAdmin() || canReadDailyHours());
     }
     match /{path=**}/regularization_requests/{docId} {
-      allow read, update: if isLoggedIn() && (isAdmin() || canAccessRegularization());
+      allow read:   if isLoggedIn() && (isAdmin() || canAccessRegularization());
+      allow update: if isLoggedIn() && (isAdmin() || (canAccessRegularization() && notSelfDoc()));
+    }
+
+    // ── /audit_log/{docId} — before/after record of every write ─────────
+    // Written ONLY by the audit triggers, which use the Admin SDK and bypass rules
+    // entirely. No client may write here under any role: an audit log a suspect can edit
+    // is not evidence. Admin-only read, because entries contain full document snapshots
+    // including pay.
+    match /audit_log/{docId} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if false;
     }
 
     // ── /sent_notifications/{docId} — Notification send log ─────────────
@@ -378,6 +542,11 @@ service cloud.firestore {
     }
 
     // ── /sites/{siteId} — Site management ────────────────────────────────
+    // Read stays open to every signed-in user BY NECESSITY: the Android app needs the site
+    // list and its geofence coordinates to check in at all (SiteRepository). This does hand
+    // an employee the exact coordinates to spoof to, but restricting it would break
+    // check-in, and location is client-supplied regardless — the real defence is
+    // server-side punch validation, not hiding the coordinates. See the attendance task.
     match /sites/{siteId} {
       allow read:             if isLoggedIn();
       allow create, update:   if isLoggedIn() && isAdmin();
@@ -388,9 +557,14 @@ service cloud.firestore {
     // Any signed-in user may read (employees see holidays in their app); an admin
     // or a manager holding Attendance may mark/unmark. A marked day is skipped like a
     // Sunday by the nightly computeDailyAttendanceStatus function.
+    // ADMIN-ONLY WRITE (tightened). Marking a holiday makes the nightly scorer skip that
+    // day for EVERY employee — the largest blast radius of any single write in the system,
+    // and it was reachable by anyone holding the /attendance tab. A company-wide payroll
+    // decision should not ride on a per-tab grant. Reads stay open to all signed-in users
+    // (employees see holidays in the app).
     match /holidays/{date} {
       allow read:  if isLoggedIn();
-      allow write: if isLoggedIn() && (isAdmin() || canWriteHolidays());
+      allow write: if isLoggedIn() && isAdmin();
     }
 
     // ── /config/{docId} — App configuration (conveyance rates, etc.) ────
@@ -401,9 +575,16 @@ service cloud.firestore {
     }
 
     // ── /conveyance/{docId} — Monthly conveyance records ────────────────
+    // Conveyance is money (totalKm × ratePerKm lands in payroll), so the same
+    // separation-of-duties guard applies: a Conveyance manager must not write their OWN
+    // record. Update/delete check the stored owner; create checks the incoming payload,
+    // since `resource` does not exist yet on a create.
     match /conveyance/{docId} {
-      allow read:  if isLoggedIn() && (isAdmin() || canAccessConveyance());
-      allow write: if isLoggedIn() && (isAdmin() || canAccessConveyance());
+      allow read:   if isLoggedIn() && (isAdmin() || canAccessConveyance());
+      allow create: if isLoggedIn() && (isAdmin() ||
+                      (canAccessConveyance() && request.resource.data.userId != request.auth.uid));
+      allow update, delete: if isLoggedIn() && (isAdmin() ||
+                      (canAccessConveyance() && notSelfDoc()));
     }
   }
 }

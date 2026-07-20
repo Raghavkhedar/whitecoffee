@@ -2,7 +2,9 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.raghav.whitecoffee.data.firestore.AuditStamp
 import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.AppNotification
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.flow.Flow
@@ -35,6 +37,12 @@ class NotificationRepository @Inject constructor(
             .snapshotsAsFlow()
             .map { it.size() }
 
+    /**
+     * ⚠️ AUDIT-EXEMPT — no lastModifiedBy/lastModifiedAt.
+     * firestore.rules lets the owner update their own notification only when
+     * changedKeysWithin(['isRead']) holds (hasOnly), so a third key would be denied and the
+     * bell badge would never clear. The doc is owner-scoped, so the path already names the actor.
+     */
     suspend fun markAsRead(notifId: String): Result<Unit> {
         return try {
             collection().document(notifId).update("isRead", true).await()
@@ -44,6 +52,7 @@ class NotificationRepository @Inject constructor(
         }
     }
 
+    /** ⚠️ AUDIT-EXEMPT for the same reason as [markAsRead] — changedKeysWithin(['isRead']). */
     suspend fun markAllAsRead(): Result<Unit> {
         return try {
             val batch = firestore.batch()
@@ -59,13 +68,21 @@ class NotificationRepository @Inject constructor(
     suspend fun saveNotification(notification: AppNotification): Result<Unit> {
         return try {
             if (sessionManager.userId.isEmpty()) return Result.success(Unit)
-            collection().add(notification.toMap()).await()
+            // Stampable: the notification CREATE rule is a plain allow (no hasOnly).
+            collection().add(notification.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
+                .await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    /**
+     * ⚠️ AUDIT-EXEMPT — no lastModifiedBy/lastModifiedAt.
+     * Same user-doc rule as the login session-token write: a non-admin owner may update only
+     * changedKeysWithin(['activeSessionToken', 'fcmToken']) (hasOnly). A third key would be
+     * denied and the device would stop receiving push notifications.
+     */
     suspend fun saveToken(token: String): Result<Unit> {
         return try {
             if (sessionManager.userId.isEmpty()) return Result.success(Unit)

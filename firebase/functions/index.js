@@ -1,7 +1,7 @@
 // Deploy stamp: 2026-06-30 — step 6b payroll arrears + step 7 lifetime-counter retirement.
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
@@ -40,6 +40,15 @@ const {
 // leaveCoverage.js). Missing/empty `approvedDates` = the whole range, so legacy
 // leaves and the Android approve action keep their current meaning.
 const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
+// Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
+// the legacy inline fields — see compensation.js for why the split exists.
+const { withPay } = require("./compensation");
+// Server-side verdict on client-written punches — see punchIntegrity.js for why this is
+// detection rather than prevention (offline check-in must keep working).
+const { assessPunch } = require("./punchIntegrity");
+// Before/after audit entry for every write — see auditLog.js on why the actor is
+// best-effort and why there is no IP.
+const { buildEntry } = require("./auditLog");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -427,7 +436,19 @@ exports.exportToSheets = onSchedule(
 
     // ── All users (shared across sections) ────────────────────────────
     const allUsersSnap = await db.collection("users").get();
-    const allUsersData = allUsersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Pay fields live in users/{uid}/compensation/current, not on the user doc — Firestore
+    // rules are document-level, so leaving salaryRate inline let any tab that resolves
+    // employee names also read everyone's pay (see compensation.js). Attached here once so
+    // every downstream `user.salaryRate` / `user.pfPercent` reader works unchanged.
+    // withPay falls back PER FIELD to the legacy inline value, so this is correct before,
+    // during, and after the migration.
+    const compSnap = await db.collectionGroup("compensation").get();
+    const compByUid = new Map();
+    compSnap.docs.forEach((d) => {
+      const uid = d.ref.parent.parent && d.ref.parent.parent.id;
+      if (uid) compByUid.set(uid, d.data());
+    });
+    const allUsersData = allUsersSnap.docs.map((d) => withPay({ id: d.id, ...d.data() }, compByUid.get(d.id)));
     const userRoleMap  = new Map(allUsersData.map((u) => [u.id, u.role || ""]));
     const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
     const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));
@@ -1556,4 +1577,88 @@ exports.updateUserEmail = onCall(async (request) => {
   await admin.firestore().doc(`users/${uid}`).update({ email: next });
   console.log(`updateUserEmail: ${uid} → ${next}`);
   return { success: true };
+});
+
+// ── Punch integrity — server verdict on every attendance event ───────────────
+// Attendance punches are written CLIENT-SIDE and must stay that way: the Android app
+// writes through the Firestore SDK without awaiting, so a punch made at a site with no
+// signal is cached locally and synced later. Routing punches through a callable would
+// require connectivity and would lose those punches outright.
+//
+// Security rules bound what the client may write (type allowlist, timestamp window,
+// shape). This trigger scores what actually landed and — crucially — corrects the `date`
+// field, which rules cannot do (no timezone arithmetic) and which the nightly scorer
+// queries by, making a forged `date` a way to reassign a punch to another day.
+//
+// It NEVER deletes or rejects a punch. Everything is recorded and flagged; a punch outside
+// a geofence is still a punch, because GPS drifts indoors and a site's stored coordinates
+// may simply be wrong. Refusing it would cost a real employee a real day's pay.
+exports.onPunchWritten = onDocumentCreated(
+  "users/{userId}/attendance/{docId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const punch = snap.data();
+    // The server clock is the trusted one; the client timestamp is only ever evidence.
+    const receivedAt = Date.now();
+
+    const patch = assessPunch(punch, receivedAt);
+    try {
+      await snap.ref.update(patch);
+    } catch (e) {
+      // Never rethrow into a retry loop over an audit annotation — the punch itself is
+      // already safely recorded, which is the part that matters.
+      console.error(`onPunchWritten: could not annotate ${snap.ref.path}: ${e.message}`);
+      return;
+    }
+
+    if (patch.integrity.flags.length > 0) {
+      console.warn(
+        `onPunchWritten: ${event.params.userId} ${punch.type} flagged ` +
+        `[${patch.integrity.flags.join(", ")}] skew=${patch.integrity.clockSkewMinutes}m`
+      );
+    }
+  }
+);
+
+// ── Audit log — before/after record of every write ───────────────────────────
+// Firestore triggers do NOT carry auth context, so the actor is recovered from the
+// document's own `lastModifiedBy` (stamped by both clients on every write) and falls back
+// to business fields like approvedBy/markedBy. There is NO client IP and there cannot be:
+// rules have no `request.ip` and neither do triggers. IPs for client-SDK writes are only
+// available via GCP Cloud Audit Logs (Data Access), which is console configuration.
+//
+// Two triggers cover the database, because Firestore path patterns match a FIXED depth:
+// "{collection}/{docId}" catches every top-level document (including users/{uid}), and
+// "users/{userId}/{collection}/{docId}" catches every user subcollection document. A
+// separate users/{userId} trigger would double-audit every user write.
+//
+// ⚠️ audit_log is excluded in auditLog.js — auditing our own writes would recurse without
+// bound and bill for every cycle.
+async function writeAuditEntry(path, before, after) {
+  const entry = buildEntry(path, before, after, Date.now());
+  if (!entry) return; // excluded path (audit_log itself)
+  try {
+    await admin.firestore().collection("audit_log").add(entry);
+  } catch (e) {
+    // An audit failure must never roll back or retry the business write that caused it —
+    // the write already happened and is the thing that matters.
+    console.error(`audit: failed to record ${path}: ${e.message}`);
+  }
+}
+
+exports.auditTopLevel = onDocumentWritten("{collection}/{docId}", async (event) => {
+  await writeAuditEntry(
+    event.data.after.ref.path,
+    event.data.before.exists ? event.data.before.data() : null,
+    event.data.after.exists ? event.data.after.data() : null,
+  );
+});
+
+exports.auditUserSubcollection = onDocumentWritten("users/{userId}/{collection}/{docId}", async (event) => {
+  await writeAuditEntry(
+    event.data.after.ref.path,
+    event.data.before.exists ? event.data.before.data() : null,
+    event.data.after.exists ? event.data.after.data() : null,
+  );
 });
