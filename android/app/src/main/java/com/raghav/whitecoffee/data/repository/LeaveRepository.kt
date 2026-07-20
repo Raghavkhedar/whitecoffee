@@ -3,7 +3,9 @@ package com.raghav.whitecoffee.data.repository
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.raghav.whitecoffee.data.firestore.AuditStamp
 import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.LeaveRequest
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.flow.Flow
@@ -31,7 +33,10 @@ class LeaveRepository @Inject constructor(
                 employeeId  = sessionManager.employeeId,
                 submittedAt = Timestamp.now()
             )
-            val ref = leaveCol.add(data.toMap()).await()
+            // Stampable: the leave-create rule checks status=='pending' + isValidLeaveDates,
+            // neither of which uses hasOnly, so the extra audit keys are accepted.
+            val ref = leaveCol.add(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
+                .await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -60,11 +65,14 @@ class LeaveRepository @Inject constructor(
         return try {
             firestore.collection("users").document(targetUserId)
                 .collection("leave_requests").document(requestId)
+                // Stampable: the leave update rule is admin / Leaves-manager with no hasOnly.
+                // approvedBy stays untouched — it names the decision-maker; lastModifiedBy names
+                // the auth uid that actually performed the write.
                 .update(mapOf(
                     "status"     to "approved",
                     "approvedBy" to approverName,
                     "reviewedAt" to Timestamp.now()
-                ))
+                ).withAuditStamp(AuditStamp.uid(sessionManager)))
                 .await()
             Result.success(Unit)
         } catch (e: Exception) {
@@ -81,12 +89,13 @@ class LeaveRepository @Inject constructor(
         return try {
             firestore.collection("users").document(targetUserId)
                 .collection("leave_requests").document(requestId)
+                // Stampable: same rule as approveLeave — no hasOnly on leave_requests update.
                 .update(mapOf(
                     "status"          to "rejected",
                     "approvedBy"      to approverName,
                     "approverComment" to comment,
                     "reviewedAt"      to Timestamp.now()
-                ))
+                ).withAuditStamp(AuditStamp.uid(sessionManager)))
                 .await()
             Result.success(Unit)
         } catch (e: Exception) {

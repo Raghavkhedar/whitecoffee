@@ -49,6 +49,13 @@ class AuthRepository @Inject constructor(
             // NOTE: deliberately NOT awaited. With Firestore offline persistence a write Task
             // only completes on server ack, so awaiting here would hang/fail offline logins.
             // The local SDK queues it and syncs when connectivity returns (offline-first design).
+            //
+            // ⚠️ AUDIT-EXEMPT — deliberately NOT stamped with lastModifiedBy/lastModifiedAt.
+            // firestore.rules allows a non-admin to update their own user doc only when
+            // changedKeysWithin(['activeSessionToken', 'fcmToken']) holds — that is hasOnly,
+            // so ANY third key makes this write PERMISSION_DENIED and single-device session
+            // enforcement (and therefore login) breaks. The audit log still identifies this
+            // write by path (users/{uid}) and the value is redacted there anyway.
             val sessionToken = UUID.randomUUID().toString()
             firestore.collection("users").document(user.id)
                 .update("activeSessionToken", sessionToken)

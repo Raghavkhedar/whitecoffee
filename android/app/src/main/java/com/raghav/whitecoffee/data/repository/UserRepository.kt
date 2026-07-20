@@ -5,6 +5,8 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.raghav.whitecoffee.data.firestore.AuditStamp
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.User
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -68,6 +70,10 @@ class UserRepository @Inject constructor(
             val uid = authResult.user?.uid
                 ?: return Result.failure(Exception("Failed to obtain user ID."))
 
+            // Stampable: user CREATE is admin-only and unrestricted in field set. The
+            // changedKeysWithin(['activeSessionToken','fcmToken']) restriction applies only to
+            // the non-admin owner UPDATE branch, so it does not bite here. lastModifiedBy is the
+            // ADMIN's uid (the actor) — `userId` above still identifies the created account.
             firestore.collection("users").document(uid).set(
                 mapOf(
                     "userId"     to uid,
@@ -76,7 +82,7 @@ class UserRepository @Inject constructor(
                     "role"       to role,
                     "employeeId" to employeeId.trim(),
                     "createdAt"  to Timestamp.now()
-                )
+                ).withAuditStamp(AuditStamp.uid(sessionManager))
             ).await()
 
             secondaryAuth.signOut()
@@ -95,12 +101,16 @@ class UserRepository @Inject constructor(
         employeeId: String
     ): Result<Unit> {
         return try {
+            // Stampable: this profile patch (name/role/employeeId) is reachable ONLY on the
+            // isAdmin() branch of the user-doc update rule, which has no field-set restriction.
+            // The hasOnly(['activeSessionToken','fcmToken']) branch is the non-admin owner path
+            // and is not used here.
             firestore.collection("users").document(userId).update(
                 mapOf(
                     "name"       to name.trim(),
                     "role"       to role,
                     "employeeId" to employeeId.trim()
-                )
+                ).withAuditStamp(AuditStamp.uid(sessionManager))
             ).await()
             Result.success(Unit)
         } catch (e: Exception) {

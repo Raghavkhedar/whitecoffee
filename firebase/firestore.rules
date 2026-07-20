@@ -173,6 +173,27 @@ service cloud.firestore {
              && d.totalDays is int && d.totalDays > 0 && d.totalDays <= 366;
     }
 
+    // ── Write attribution ────────────────────────────────────────────────
+    // The audit log answers "who changed this?" from the document's own `lastModifiedBy`,
+    // because Firestore triggers carry no auth context. A self-reported field is only
+    // worth anything if it cannot be forged, so wherever the stamp is permitted it must
+    // match the caller. A client writing someone else's uid is denied.
+    //
+    // This is enforced ONLY on the narrow changedKeysWithin rules below, which had to be
+    // widened to admit the stamp at all. Enforcing it database-wide is deliberately NOT
+    // done yet: any write path that does not stamp would be denied outright, silently
+    // breaking a feature. Clients stamp first, the audit log confirms coverage, and
+    // enforcement follows. See docs/security-hardening-2026-07-20.md.
+    function stampIsTruthful() {
+      return !('lastModifiedBy' in request.resource.data.diff(resource.data).affectedKeys())
+             || request.resource.data.lastModifiedBy == request.auth.uid;
+    }
+
+    // The two attribution fields, allowed alongside any narrow key set.
+    function withStamp(allowed) {
+      return allowed.concat(['lastModifiedBy', 'lastModifiedAt']);
+    }
+
     // Returns true if the write touches ONLY the given fields (and no others).
     function changedKeysWithin(allowed) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
@@ -200,7 +221,8 @@ service cloud.firestore {
       // token fields — never role/salaryRate/etc. (prevents self-promotion to admin).
       allow update: if isLoggedIn() && (
         isAdmin() ||
-        (isOwner(userId) && changedKeysWithin(['activeSessionToken', 'fcmToken']))
+        (isOwner(userId) && changedKeysWithin(withStamp(['activeSessionToken', 'fcmToken']))
+                         && stampIsTruthful())
       );
       allow delete: if isLoggedIn() && isAdmin();
 
@@ -218,7 +240,14 @@ service cloud.firestore {
         // later patches `siteId` + `visitType` + `workDoneCategories` from the Manpower
         // Utilisation Input page (updateAttendanceSiteId). Restricting to these keeps the
         // event otherwise tamper-proof (timestamp/location/type stay immutable).
-        allow update: if isLoggedIn() && (isAdmin() || canWriteAttendance()) && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
+        // changedKeysWithin is ANDed onto BOTH branches — admin does not escape it — so the
+        // stamp fields must be admitted explicitly or the siteId patch would be denied for
+        // every caller. stampIsTruthful stops the widened key set being used to forge an
+        // actor. The event stays otherwise tamper-proof: timestamp, location and type
+        // remain unwritable.
+        allow update: if isLoggedIn() && (isAdmin() || canWriteAttendance())
+                      && changedKeysWithin(withStamp(['siteId', 'visitType', 'workDoneCategories']))
+                      && stampIsTruthful();
         // Admin-only same-day punch correction (Daily Activity page): an admin rewinds a
         // timeline by deleting erroneous trailing punches. Every deletion is snapshotted
         // into attendance_corrections below, so nothing is lost. Non-admins never delete.
@@ -258,7 +287,7 @@ service cloud.firestore {
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -271,7 +300,7 @@ service cloud.firestore {
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -284,7 +313,7 @@ service cloud.firestore {
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -297,7 +326,7 @@ service cloud.firestore {
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -310,7 +339,7 @@ service cloud.firestore {
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
-          (isOwner(userId) && changedKeysWithin(['photoUrls']))
+          (isOwner(userId) && changedKeysWithin(withStamp(['photoUrls'])) && stampIsTruthful())
         );
         allow delete: if false;
       }
@@ -352,7 +381,7 @@ service cloud.firestore {
         // the grant cannot be used to rewrite the message body after delivery.
         allow update: if isLoggedIn() && (
           isAdmin() ||
-          (isOwner(userId) && changedKeysWithin(['isRead']))
+          (isOwner(userId) && changedKeysWithin(withStamp(['isRead'])) && stampIsTruthful())
         );
         allow delete: if false;
       }

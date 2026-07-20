@@ -2,7 +2,9 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.raghav.whitecoffee.data.firestore.AuditStamp
 import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.RegularizationRequest
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.flow.Flow
@@ -55,7 +57,10 @@ class RegularizationRepository @Inject constructor(
                 reason         = reason,
                 submittedAt    = Timestamp.now()
             )
-            val ref = regCol.add(request.toMap()).await()
+            // Stampable: the regularization create rule only asserts status=='pending'
+            // (no hasOnly), so the audit keys are accepted.
+            val ref = regCol.add(request.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
+                .await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)

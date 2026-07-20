@@ -2,6 +2,8 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.raghav.whitecoffee.data.firestore.AuditStamp
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.Site
 // import com.google.firebase.firestore.FieldPath  // used by commented-out getTodayAssignedSites()
 // import com.raghav.whitecoffee.data.model.SiteTask  // used by commented-out getTodayAssignedSites()
@@ -111,7 +113,8 @@ class SiteRepository @Inject constructor(
                 "geofenceRadius" to geofenceRadius,
                 "createdAt"      to Timestamp.now()
             )
-            val ref = collection.add(data).await()
+            // Stampable: /sites create is admin-only with no field-set restriction.
+            val ref = collection.add(data.withAuditStamp(AuditStamp.uid(sessionManager))).await()
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -126,13 +129,14 @@ class SiteRepository @Inject constructor(
         geofenceRadius: Double
     ): Result<Unit> {
         return try {
+            // Stampable: /sites update is admin-only with no field-set restriction.
             collection.document(siteId).update(
                 mapOf(
                     "name"           to name.trim(),
                     "latitude"       to latitude,
                     "longitude"      to longitude,
                     "geofenceRadius" to geofenceRadius
-                )
+                ).withAuditStamp(AuditStamp.uid(sessionManager))
             ).await()
             Result.success(Unit)
         } catch (e: Exception) {

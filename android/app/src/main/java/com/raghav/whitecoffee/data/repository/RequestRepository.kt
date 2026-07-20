@@ -3,6 +3,8 @@ package com.raghav.whitecoffee.data.repository
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.raghav.whitecoffee.data.firestore.AuditStamp
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.MaterialToolPurchase
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.Transfer
@@ -53,7 +55,9 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) mtRequestCol.document(docId) else mtRequestCol.document()
-            ref.set(data.toMap())
+            // Stampable: the submission CREATE rule is isOwner + createdUnreviewed() (which
+            // only inspects `status`), no hasOnly — extra fields are accepted.
+            ref.set(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -91,7 +95,9 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) mtPurchaseCol.document(docId) else mtPurchaseCol.document()
-            ref.set(data.toMap())
+            // Stampable: the submission CREATE rule is isOwner + createdUnreviewed() (which
+            // only inspects `status`), no hasOnly — extra fields are accepted.
+            ref.set(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -129,7 +135,9 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) matTransferCol.document(docId) else matTransferCol.document()
-            ref.set(data.toMap())
+            // Stampable: the submission CREATE rule is isOwner + createdUnreviewed() (which
+            // only inspects `status`), no hasOnly — extra fields are accepted.
+            ref.set(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -167,7 +175,9 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) toolTransferCol.document(docId) else toolTransferCol.document()
-            ref.set(data.toMap())
+            // Stampable: the submission CREATE rule is isOwner + createdUnreviewed() (which
+            // only inspects `status`), no hasOnly — extra fields are accepted.
+            ref.set(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -205,13 +215,23 @@ class RequestRepository @Inject constructor(
                 submittedAt = Timestamp.now()
             )
             val ref = if (docId != null) workProgressCol.document(docId) else workProgressCol.document()
-            ref.set(data.toMap())
+            // Stampable: the submission CREATE rule is isOwner + createdUnreviewed() (which
+            // only inspects `status`), no hasOnly — extra fields are accepted.
+            ref.set(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    /**
+     * ⚠️ AUDIT-EXEMPT — no lastModifiedBy/lastModifiedAt.
+     * On every submission collection (material_requests, material_purchases,
+     * material_transfers, tool_transfers, work_progress) firestore.rules lets the OWNER update
+     * only when changedKeysWithin(['photoUrls']) holds — hasOnly, so a second or third key makes
+     * this PERMISSION_DENIED and the uploaded photos would never be linked to the document.
+     * The create above (same doc, same actor, moments earlier) already carries the stamp.
+     */
     suspend fun updatePhotoUrls(
         collectionName: String,
         docId: String,

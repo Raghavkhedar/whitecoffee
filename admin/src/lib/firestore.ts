@@ -6,12 +6,32 @@ import {
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from './firebase';
+import { auth, db, functions } from './firebase';
 import { istTodayStr } from './date';
 import { PAY_FIELDS, type Pay } from './compensation';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
 import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection } from '@/types';
+
+// ── Write attribution ─────────────────────────────────────────────────────
+//
+// Firestore triggers do NOT carry auth context: the onWrite trigger behind
+// `firebase/functions/auditLog.js` receives the document, not the identity that wrote it.
+// So "who changed this?" is answerable ONLY if the document records it. Every write that
+// originates in this portal therefore stamps the acting auth uid; `lastModifiedBy` is the
+// FIRST entry in the audit log's ACTOR_FIELDS list and is treated as authoritative there.
+//
+// `'unknown'` is written rather than omitting the field when there is no signed-in user —
+// an explicit "we could not identify the writer" is more honest in an audit trail than a
+// missing key, which reads identically to a legacy pre-stamping document.
+//
+// ⚠️ NOT every write may be stamped. Firestore rules use `changedKeysWithin(...)` to pin
+// some updates to an exact key set; adding a key to one of those payloads makes the write
+// DENIED. Those call sites are individually commented as EXEMPT below — do not "fix" them
+// by wrapping them in stamped(). See `firebase/firestore.rules`.
+export function stamped<T extends object>(data: T): T & { lastModifiedBy: string; lastModifiedAt: Timestamp } {
+  return { ...data, lastModifiedBy: auth.currentUser?.uid ?? 'unknown', lastModifiedAt: Timestamp.now() };
+}
 
 // ── Users ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +60,7 @@ export async function setCompensation(uid: string, pay: Partial<Pay>) {
     const v = pay[field];
     if (typeof v === 'number' && isFinite(v)) payload[field] = v;
   }
-  await setDoc(doc(db, 'users', uid, 'compensation', 'current'), payload, { merge: true });
+  await setDoc(doc(db, 'users', uid, 'compensation', 'current'), stamped(payload), { merge: true });
 }
 
 /**
@@ -60,7 +80,7 @@ export async function getCompensationMap(): Promise<Map<string, Partial<Pay>>> {
 
 export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
   const { salaryRate, pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType, ...rest } = data;
-  await setDoc(doc(db, 'users', uid), {
+  await setDoc(doc(db, 'users', uid), stamped({
     ...rest,
     homeLat: homeLat || null,
     homeLng: homeLng || null,
@@ -68,7 +88,7 @@ export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
     plBalance: 0,
     active: true,
     createdAt: Timestamp.now(),
-  });
+  }));
   // Pay goes to the restricted subcollection, never inline on the user doc.
   await setCompensation(uid, { salaryRate, pfPercent, esiPercent, imprestPercent });
 }
@@ -104,8 +124,13 @@ export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'i
     }
     payload[k] = v === undefined ? null : v;
   }
+  // The emptiness guard tests the CALLER's payload, not the stamped one — stamping first
+  // would make every no-op call write two attribution fields and nothing else.
+  // Safe to stamp: user-doc writes from the portal are admin-only, and the rule's
+  // `changedKeysWithin(['activeSessionToken','fcmToken'])` clause guards only the
+  // isOwner branch, which this portal never uses (it writes no token fields at all).
   if (Object.keys(payload).length > 0) {
-    await updateDoc(doc(db, 'users', uid), payload);
+    await updateDoc(doc(db, 'users', uid), stamped(payload));
   }
   if (hasPay) await setCompensation(uid, pay);
 }
@@ -248,7 +273,7 @@ export async function approveLeave(
   }
   if (approvedDates) payload.approvedDates = [...approvedDates].sort();
   if (comment !== undefined) payload.approverComment = comment;
-  await updateDoc(doc(db, 'users', userId, 'leave_requests', requestId), payload);
+  await updateDoc(doc(db, 'users', userId, 'leave_requests', requestId), stamped(payload));
 }
 
 export async function rejectLeave(
@@ -256,7 +281,7 @@ export async function rejectLeave(
 ) {
   await updateDoc(
     doc(db, 'users', userId, 'leave_requests', requestId),
-    { status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }
+    stamped({ status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() })
   );
 }
 
@@ -284,19 +309,19 @@ export async function approveRegularization(
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
-    { status: 'approved', approvedBy: approverName, approverComment: comment, approvedStatus, reviewedAt: Timestamp.now() }
+    stamped({ status: 'approved', approvedBy: approverName, approverComment: comment, approvedStatus, reviewedAt: Timestamp.now() })
   );
   // Set in/out only for a Present outcome with both times given; otherwise clear any stale pair
   // so a re-approval to a non-worked status doesn't leave orphan times on the doc.
   const carryHours = approvedStatus === 'Present' && !!inTime && !!outTime;
   batch.set(
     doc(db, 'users', userId, 'attendance_status', date),
-    {
+    stamped({
       date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin',
       inTime: carryHours ? inTime : deleteField(),
       outTime: carryHours ? outTime : deleteField(),
       updatedAt: Timestamp.now(),
-    },
+    }),
     { merge: true }
   );
   await batch.commit();
@@ -307,7 +332,7 @@ export async function rejectRegularization(
 ) {
   await updateDoc(
     doc(db, 'users', userId, 'regularization_requests', requestId),
-    { status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }
+    stamped({ status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() })
   );
 }
 
@@ -363,7 +388,7 @@ export async function restoreAttendanceToEvent(
   removed.forEach(e => batch.delete(doc(db, 'users', uid, 'attendance', e.id)));
 
   const logRef = doc(collection(db, 'users', uid, 'attendance_corrections'));
-  batch.set(logRef, {
+  batch.set(logRef, stamped({
     date,
     removedEvents: removed,
     reason,
@@ -371,7 +396,7 @@ export async function restoreAttendanceToEvent(
     correctedByUid: adminUid,
     correctedAt: Timestamp.now(),
     keptEventId: keepEventId,
-  } satisfies Omit<AttendanceCorrection, 'id'>);
+  } satisfies Omit<AttendanceCorrection, 'id'>));
 
   await batch.commit();
   return removed.length;
@@ -412,7 +437,10 @@ export async function sendNotification(
 
   for (const userId of userIds) {
     const notifRef = doc(collection(db, 'users', userId, 'notifications'));
-    batch.set(notifRef, { title, body, type, isRead: false, createdAt: sentAt });
+    // Safe to stamp: the notification CREATE rule has no changedKeysWithin clause. The
+    // `changedKeysWithin(['isRead'])` restriction applies only to an owner UPDATE from the
+    // employee app, which this portal never performs.
+    batch.set(notifRef, stamped({ title, body, type, isRead: false, createdAt: sentAt }));
   }
 
   const logRef = doc(collection(db, 'sent_notifications'));
@@ -428,7 +456,7 @@ export async function sendNotification(
   if (recipientType === 'specific' && userIds.length === 1) {
     logData.recipientId = userIds[0];
   }
-  batch.set(logRef, logData);
+  batch.set(logRef, stamped(logData));
 
   await batch.commit();
 }
@@ -462,7 +490,7 @@ export async function setAttendanceStatus(
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', userId, 'attendance_status', date),
-    { ...data, updatedAt: Timestamp.now() },
+    stamped({ ...data, updatedAt: Timestamp.now() }),
     { merge: true }
   );
 }
@@ -529,7 +557,7 @@ export async function setPlannedHours(
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', userId, 'planned_hours', date),
-    { userId, date, startTime, endTime, declaredOtMins, updatedAt: Timestamp.now() },
+    stamped({ userId, date, startTime, endTime, declaredOtMins, updatedAt: Timestamp.now() }),
     { merge: true }
   );
 }
@@ -540,7 +568,7 @@ export async function setPlannedHours(
 export async function setOtAuthorization(userId: string, date: string, authorized: boolean): Promise<void> {
   await setDoc(
     doc(db, 'users', userId, 'planned_hours', date),
-    { userId, date, otAuthorized: authorized, updatedAt: Timestamp.now() },
+    stamped({ userId, date, otAuthorized: authorized, updatedAt: Timestamp.now() }),
     { merge: true }
   );
 }
@@ -607,11 +635,11 @@ async function writeOtDecision(
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', user.id, 'ot_approvals', date),
-    {
+    stamped({
       date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
       role: user.role || '', requestedMins, approvedMins, status, manual, reason,
       approvedBy: approverName, approvedAt: Timestamp.now(),
-    },
+    }),
     { merge: true },
   );
 }
@@ -631,14 +659,14 @@ export async function settleMonth(rows: Omit<Settlement, 'id' | 'settledAt'>[]):
   const batch = writeBatch(db);
   const now = Timestamp.now();
   rows.forEach(s => {
-    batch.set(doc(db, 'users', s.userId, 'settlements', s.month), { ...s, id: s.month, settledAt: now }, { merge: true });
+    batch.set(doc(db, 'users', s.userId, 'settlements', s.month), stamped({ ...s, id: s.month, settledAt: now }), { merge: true });
   });
   await batch.commit();
 }
 
 // Unlock a settled month so it can be revised (excluded from payroll until re-settled).
 export async function unlockMonthSettlement(userId: string, month: string): Promise<void> {
-  await updateDoc(doc(db, 'users', userId, 'settlements', month), { locked: false });
+  await updateDoc(doc(db, 'users', userId, 'settlements', month), stamped({ locked: false }));
 }
 
 // ── Holidays (company-wide) ───────────────────────────────────────────────
@@ -670,7 +698,7 @@ export async function getHolidaysForDateRange(start: string, end: string): Promi
 export async function setHoliday(date: string, title: string, description: string, createdBy: string): Promise<void> {
   await setDoc(
     doc(db, 'holidays', date),
-    { date, title: title.trim(), description: description.trim(), createdBy, createdAt: Timestamp.now() },
+    stamped({ date, title: title.trim(), description: description.trim(), createdBy, createdAt: Timestamp.now() }),
     { merge: true },
   );
 }
@@ -691,7 +719,7 @@ export async function getConveyanceConfig(): Promise<{ rate1: number; rate2: num
 }
 
 export async function setConveyanceConfig(rate1: number, rate2: number): Promise<void> {
-  await setDoc(doc(db, 'config', 'conveyance'), { rate1, rate2 });
+  await setDoc(doc(db, 'config', 'conveyance'), stamped({ rate1, rate2 }));
 }
 
 // ── Site ID entry ────────────────────────────────────────────────────────
@@ -703,6 +731,17 @@ export async function setConveyanceConfig(rate1: number, rate2: number): Promise
 export async function updateAttendanceSiteId(
   userId: string, eventId: string, siteId: string, visitType: string, workDoneCategories: string[],
 ): Promise<void> {
+  // ⚠️ EXEMPT FROM stamped() — DO NOT ADD lastModifiedBy/lastModifiedAt HERE.
+  // The attendance update rule is:
+  //   allow update: if (isAdmin() || canWriteAttendance())
+  //                 && changedKeysWithin(['siteId', 'visitType', 'workDoneCategories']);
+  // `changedKeysWithin` is `hasOnly(...)`, and it is ANDed onto BOTH branches — the admin
+  // branch does not escape it. A fourth key in this payload therefore makes the write
+  // PERMISSION_DENIED for everyone, silently breaking Site ID entry on the Manpower
+  // Utilisation Input page. The tight key set is deliberate: it is what keeps a punch's
+  // timestamp/location/type tamper-proof, so widening the rule is not the fix either.
+  // The audit trigger still records this change (path, before/after, changedKeys); only
+  // the actor falls back to "unknown" for these three fields.
   await updateDoc(doc(db, 'users', userId, 'attendance', eventId), {
     siteId: siteId.trim(),
     visitType: visitType.trim(),

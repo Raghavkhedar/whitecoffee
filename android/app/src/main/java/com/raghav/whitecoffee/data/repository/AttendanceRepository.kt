@@ -2,7 +2,9 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.raghav.whitecoffee.data.firestore.AuditStamp
 import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
+import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
@@ -129,7 +131,11 @@ class AttendanceRepository @Inject constructor(
             // when connectivity returns, which is what makes check-in work offline at a
             // site with no signal. Awaiting here would hang the punch until the network
             // came back. The server-side onPunchWritten trigger scores it on arrival.
-            ref.set(record.toMap())
+            //
+            // Audit stamp is safe here: the punch create rule (isValidPunch) validates the
+            // type / timestamp window / date / coords but does NOT use hasOnly, so extra
+            // fields are accepted. No existing field is touched.
+            ref.set(record.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(record)
         } catch (e: Exception) {
             Result.failure(e)
