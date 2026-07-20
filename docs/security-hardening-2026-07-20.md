@@ -126,6 +126,27 @@ anything. Its guards:
   data loss.
 - Users with no inline pay are skipped, not zeroed.
 
+## Disaster recovery — the largest data-loss risk found, and it was not in the code
+
+The database was configured with:
+
+| Setting | Was | Now |
+|---|---|---|
+| Point-in-time recovery | **DISABLED**, 3600s version retention | **ENABLED**, 604800s (7 days) |
+| Delete protection | **DISABLED** | **ENABLED** |
+| Backup schedule | none | **DAILY**, 14-day retention |
+
+**A payroll database with a one-hour recovery window and no backups was a bigger
+data-loss exposure than anything in the security audit**, and it had nothing to do with
+application code. A bad write noticed the next morning was unrecoverable.
+
+Delete protection is free. PITR and scheduled backups bill by data volume (version storage
+and backup storage respectively) — small at this dataset's size, and the project is already
+on Blaze because Cloud Functions require it.
+
+This also makes `firestore:databases:clone --snapshot-time` usable as a true point-in-time
+copy, which the 1-hour window previously prevented.
+
 ## Deployment runbook
 
 **Order is not optional. The failure mode of getting it wrong is employees paid ₹0.**
