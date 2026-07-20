@@ -127,6 +127,39 @@ service cloud.firestore {
       return resource.data.userId != request.auth.uid;
     }
 
+    // ── Attendance punch validation ──────────────────────────────────────
+    // Punches were previously accepted with NO validation at all: any type, any
+    // timestamp, any GPS, any date, backdated arbitrarily. The nightly scorer trusts them
+    // completely, so that was a direct route to "Present every day, unlimited OT".
+    //
+    // These punches CANNOT go through a callable: AttendanceRepository writes via the
+    // Firestore SDK without awaiting, which is what makes check-in work offline at sites
+    // with no signal. A callable requires connectivity, so forcing one would LOSE punches.
+    // The write therefore stays client-side and is bounded here instead.
+    function validPunchType(t) {
+      return t in ['office_in', 'office_out', 'site_in', 'site_out',
+                   'market_in', 'market_out', 'home_in', 'home_out'];
+    }
+
+    // The timestamp is client-supplied by necessity (an offline punch records the time it
+    // actually happened, not the time it later syncs). It is bounded on both sides:
+    //   · not in the future beyond a little clock skew — no pre-dating a shift
+    //   · not older than the offline window — no backdating a month of attendance
+    // A genuine punch that misses the window is NOT lost: Regularization is the existing
+    // recovery path for a missed punch, and an admin can restore the day.
+    function timestampWithinWindow(ts) {
+      return ts is timestamp
+             && ts <= request.time + duration.value(5, 'm')
+             && ts >= request.time - duration.value(12, 'h');
+    }
+
+    function isValidPunch(d) {
+      return validPunchType(d.type)
+             && timestampWithinWindow(d.timestamp)
+             && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+             && d.latitude is number && d.longitude is number;
+    }
+
     // Shape check for a submitted leave request. Dates are "yyyy-mm-dd", so string
     // ordering is chronological and `<=` is a real date comparison.
     // totalDays must be a positive int no larger than the span it claims — the span of a
@@ -174,7 +207,11 @@ service cloud.firestore {
       // ── /attendance/{docId} ───────────────────────────────────────────
       match /attendance/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadAttendance());
-        allow create: if isLoggedIn() && isOwner(userId);
+        // The `date` field is deliberately NOT cross-checked against `timestamp` here —
+        // rules have no timezone arithmetic, and the scorer queries by `date`, so a
+        // mismatch would be a backdating bypass. The onPunchWritten trigger recomputes
+        // `date` from the trusted timestamp server-side and corrects it.
+        allow create: if isLoggedIn() && isOwner(userId) && isValidPunch(request.resource.data);
         // Events are immutable once recorded EXCEPT the admin-filled Site ID, Visit
         // Type, and Work Done categories: ops type a free-text site name at check-in
         // and an admin (or a manager holding Attendance / Manpower Utilisation Input)

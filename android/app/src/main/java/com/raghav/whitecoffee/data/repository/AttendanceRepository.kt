@@ -3,6 +3,7 @@ package com.raghav.whitecoffee.data.repository
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
+import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
@@ -20,7 +21,11 @@ import javax.inject.Singleton
 @Singleton
 class AttendanceRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    // Only for reading the mock-location status of the fix behind this punch, so the
+    // server can flag it. Injecting the provider avoids threading the flag through all
+    // ten recordEvent call sites.
+    private val locationProvider: LocationProvider
 ) {
 
     private val userDoc    get() = firestore.collection("users").document(sessionManager.userId)
@@ -117,8 +122,13 @@ class AttendanceRepository @Inject constructor(
                 siteId       = siteId,
                 siteName     = siteName,
                 marketName   = marketName,
-                locationName = locationName
+                locationName = locationName,
+                isMockLocation = locationProvider.lastFixWasMock
             )
+            // Deliberately NOT awaited: the Firestore SDK persists this locally and syncs
+            // when connectivity returns, which is what makes check-in work offline at a
+            // site with no signal. Awaiting here would hang the punch until the network
+            // came back. The server-side onPunchWritten trigger scores it on arrival.
             ref.set(record.toMap())
             Result.success(record)
         } catch (e: Exception) {

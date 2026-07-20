@@ -43,6 +43,9 @@ const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./le
 // Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
 // the legacy inline fields — see compensation.js for why the split exists.
 const { withPay } = require("./compensation");
+// Server-side verdict on client-written punches — see punchIntegrity.js for why this is
+// detection rather than prevention (offline check-in must keep working).
+const { assessPunch } = require("./punchIntegrity");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -1572,3 +1575,57 @@ exports.updateUserEmail = onCall(async (request) => {
   console.log(`updateUserEmail: ${uid} → ${next}`);
   return { success: true };
 });
+
+// ── Punch integrity — server verdict on every attendance event ───────────────
+// Attendance punches are written CLIENT-SIDE and must stay that way: the Android app
+// writes through the Firestore SDK without awaiting, so a punch made at a site with no
+// signal is cached locally and synced later. Routing punches through a callable would
+// require connectivity and would lose those punches outright.
+//
+// Security rules bound what the client may write (type allowlist, timestamp window,
+// shape). This trigger scores what actually landed and — crucially — corrects the `date`
+// field, which rules cannot do (no timezone arithmetic) and which the nightly scorer
+// queries by, making a forged `date` a way to reassign a punch to another day.
+//
+// It NEVER deletes or rejects a punch. Everything is recorded and flagged; a punch outside
+// a geofence is still a punch, because GPS drifts indoors and a site's stored coordinates
+// may simply be wrong. Refusing it would cost a real employee a real day's pay.
+exports.onPunchWritten = onDocumentCreated(
+  "users/{userId}/attendance/{docId}",
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const punch = snap.data();
+    // The server clock is the trusted one; the client timestamp is only ever evidence.
+    const receivedAt = Date.now();
+
+    let site = null;
+    if (punch.siteId) {
+      try {
+        const siteSnap = await admin.firestore().doc(`sites/${punch.siteId}`).get();
+        if (siteSnap.exists) site = siteSnap.data();
+      } catch (e) {
+        // A site lookup failure must not cost us the verdict on the rest of the punch.
+        console.warn(`onPunchWritten: site ${punch.siteId} lookup failed: ${e.message}`);
+      }
+    }
+
+    const patch = assessPunch(punch, receivedAt, site);
+    try {
+      await snap.ref.update(patch);
+    } catch (e) {
+      // Never rethrow into a retry loop over an audit annotation — the punch itself is
+      // already safely recorded, which is the part that matters.
+      console.error(`onPunchWritten: could not annotate ${snap.ref.path}: ${e.message}`);
+      return;
+    }
+
+    if (patch.integrity.flags.length > 0) {
+      console.warn(
+        `onPunchWritten: ${event.params.userId} ${punch.type} flagged ` +
+        `[${patch.integrity.flags.join(", ")}] skew=${patch.integrity.clockSkewMinutes}m ` +
+        `dist=${patch.integrity.distanceM}m`
+      );
+    }
+  }
+);

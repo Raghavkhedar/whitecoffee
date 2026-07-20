@@ -52,7 +52,10 @@ data class AttendanceRecord(
     val siteId: String = "",
     val siteName: String = "",
     val marketName: String = "",
-    val locationName: String = ""  // office check-in/out: free-text location entered by user
+    val locationName: String = "",  // office check-in/out: free-text location entered by user
+    // Whether the location fix came from a mock provider. Recorded for the server-side
+    // integrity verdict; NEVER used to block a check-in locally.
+    val isMockLocation: Boolean = false
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "userId"       to userId,
@@ -66,7 +69,8 @@ data class AttendanceRecord(
         "siteId"       to siteId,
         "siteName"     to siteName,
         "marketName"   to marketName,
-        "locationName" to locationName
+        "locationName" to locationName,
+        "isMockLocation" to isMockLocation
     )
 
     /** Display time — hh:mm a format from Firestore Timestamp */
@@ -92,7 +96,8 @@ data class AttendanceRecord(
                     siteId       = doc.getString("siteId") ?: "",
                     siteName     = doc.getString("siteName") ?: "",
                     marketName   = doc.getString("marketName") ?: "",
-                    locationName = doc.getString("locationName") ?: ""
+                    locationName = doc.getString("locationName") ?: "",
+                    isMockLocation = doc.getBoolean("isMockLocation") ?: false
                 )
             } catch (e: Exception) {
                 null
