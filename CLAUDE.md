@@ -6,6 +6,20 @@ Two products for Senken Engineering, one Firebase project (`white-coffee-92c27`)
 - **`admin/`** — Next.js admin portal. Authoritative context: `admin/CLAUDE.md`. Build: `cd admin && npm run build`.
 - **`firebase/`** — SINGLE source of truth for backend: `firestore.rules`, `storage.rules`, `functions/`. Deploy from repo root: `firebase deploy` (may need `firebase login --reauth` if the CLI token expired). Functions have a `npm test` (`node --test`, no deps) boundary suite in `firebase/functions/`; the eslint config is stale (parse-errors on modern JS like `?.`), so validate with `node --check` + `npm test`, not `lint`. Cloud functions run on a **UTC** clock — compute IST dates by shifting `+05:30` and reading `getUTC*` / `getUTCDay()` on a `"yyyy-mm-ddT00:00:00Z"` string; never use bare `new Date()`/`getDay()` for an IST date.
 
+## Security boundary — read before touching `firestore.rules`
+Both clients use the **client Firebase SDK**, so `firebase/firestore.rules` is not one
+layer of defence among several — **it is the defence**. Anything the rules permit, an
+employee can do directly against the API with their own login, bypassing both apps.
+It has an emulator test suite: `cd firebase/rules-tests && npm test` (63 tests). Run it
+before and after ANY rule change — it has already caught a real regression.
+Two traps it exists to catch:
+- **Rules are DOCUMENT-level.** No field-level read control: if a rule lets you read a
+  doc you read every field. That is why pay lives in `users/{uid}/compensation/current`.
+- **A `{path=**}` collection-group rule is a second door.** Tightening a per-doc rule
+  does nothing if a collection-group rule still grants the write — `attendance_status`
+  did exactly this and silently reopened a self-approval hole.
+Full audit, rationale, and deployment runbook: `docs/security-hardening-2026-07-20.md`.
+
 ## Rules of the monorepo
 - Firestore/Storage rules live ONLY in `firebase/`. Never re-add a `firestore.rules` inside `android/` or `admin/` — that duplication is exactly what this monorepo removed.
 - Each side builds independently; there is no shared JS build graph (no Nx/Turborepo).
