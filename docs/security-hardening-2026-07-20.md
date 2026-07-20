@@ -22,7 +22,7 @@ Rated by what an attacker actually gains, not by how exotic the bug is.
 
 | # | Severity | Finding | Status |
 |---|---|---|---|
-| 1 | 🔴 Critical | **Attendance forgery.** `allow create` on attendance events had zero field validation; timestamps are client-supplied (`AttendanceRepository.kt:114`); no mock-location detection anywhere. Any employee can write punches with any time, any GPS, any date, backdated. | **OPEN** — task #8 |
+| 1 | 🔴 Critical | **Attendance forgery.** `allow create` on attendance events had zero field validation; timestamps are client-supplied; no mock-location detection anywhere. Any employee could write punches with any time, any GPS, any date, backdated. | Fixed (bounded + scored) |
 | 2 | 🔴 High | **No self-approval guard anywhere.** A scoped manager approved their own leave, own OT, own settlement cash, own attendance status. | Fixed |
 | 3 | 🟠 High | **`attendance_status` collection-group write.** A second door that could not enforce the self-approval guard, silently reopening #2. | Fixed |
 | 4 | 🟠 Medium | **Salary readable company-wide.** Nine of ten grantable tabs read user docs to resolve names; pay sat on the same document. | Fixed |
@@ -30,7 +30,7 @@ Rated by what an attacker actually gains, not by how exotic the bug is.
 | 6 | 🟠 Medium | **Conveyance self-dealing.** Money-bearing, no owner check. | Fixed |
 | 7 | 🟡 Low | **Leave payload unvalidated.** Inverted ranges, 500-day claims, malformed dates all accepted. | Fixed |
 | 8 | 🟡 Low | **Notification self-injection.** A user could forge company-looking messages into their own feed and rewrite delivered ones. | Fixed |
-| 9 | 🟡 Low | **No audit on manual status overwrites.** Punch deletion snapshots to `attendance_corrections`; status overwrites have no equivalent. | **OPEN** — task #9 |
+| 9 | 🟡 Low | **No audit on manual status overwrites.** Punch deletion snapshots to `attendance_corrections`; status overwrites had no equivalent. | Fixed (global audit log) |
 
 ### Verified clean — do not "fix" these
 
@@ -173,21 +173,99 @@ The boundary had **zero** automated coverage before this work. The existing `*Ru
 files are attendance *business* logic, not security rules.
 
 ```bash
-cd firebase/rules-tests && npm test    # 49 tests, boots the Firestore emulator
-cd firebase/functions   && npm test    # 102
+cd firebase/rules-tests && npm test    # 63 tests, boots the Firestore emulator
+cd firebase/functions   && npm test    # 128
+cd android && ./gradlew :app:testDebugUnitTest --rerun-tasks   # 60
 cd admin && npx tsx src/lib/compensation.test.ts   # 14
 ```
 
 `firebase/rules-tests/` contains: `baseline.test.js` (guarantees that already held, so
 hardening cannot lock out a legitimate user), `self-approval.test.js`,
-`compensation.test.js`, `hardening.test.js`.
+`compensation.test.js`, `hardening.test.js`, `punch.test.js`.
+
+## Attendance punches (finding #1)
+
+**Punches stay a CLIENT write, deliberately.** `AttendanceRepository.recordEvent` calls
+`ref.set(...)` *without awaiting it* — the Firestore SDK persists locally and syncs on
+reconnect, which is what makes check-in work offline at a site with no signal. Routing
+punches through a callable would require connectivity and would **lose** those punches.
+So the write is bounded in rules and scored on arrival instead.
+
+**Rules bound what can be written:** the eight real punch types only; the timestamp must
+be no more than 5 minutes in the future (clock skew) and no more than **12 hours** in the
+past (the offline window); `date` must be well-formed and coordinates numeric. Backdating
+a month of attendance is now impossible.
+
+A genuine punch that misses the 12-hour window is **not lost** — Regularization is the
+existing recovery path for a missed punch.
+
+**The `onPunchWritten` trigger records a verdict, never a rejection.** It corrects `date`
+from the trusted timestamp (rules have no timezone arithmetic, and the scorer queries by
+`date`, so a forged `date` would reassign a punch to another day), measures distance from
+the site geofence, reports client/server clock skew, and flags mock locations. A punch
+outside a geofence is still recorded: GPS drifts indoors and a site's stored coordinates
+may be wrong, so refusing it would cost a real employee a real day's pay.
+
+**This is detection, not prevention — by necessity.** Offline support and hard prevention
+are mutually exclusive here. The bounds remove the high-value forgery (backdating); the
+verdict makes the rest visible and attributable.
+
+## Audit log
+
+Two triggers cover the database, because Firestore path patterns match a **fixed depth**:
+`{collection}/{docId}` catches every top-level document (`users/{uid}` included) and
+`users/{userId}/{collection}/{docId}` catches every subcollection document. A third
+`users/{userId}` trigger would double-audit every user write.
+
+Each `audit_log` entry carries path, collection, owning user, change type, changed keys,
+and full **before/after** snapshots.
+
+- **`audit_log` excludes itself** (`auditLog.js`). Without that guard the trigger audits
+  its own writes and recurses without bound, billing every cycle.
+- **Nobody can write it, including admin** (`allow write: if false`). An audit log a
+  suspect can edit is not evidence. Only the Admin SDK triggers write there. Read is
+  admin-only, because entries contain full snapshots including pay.
+- **Credentials are redacted** (`fcmToken`, `activeSessionToken`); **pay is not** — "who
+  changed a salary from what to what" is the question this log exists to answer.
+
+### Who made the change
+
+Firestore triggers carry **no auth context** — a trigger sees the document, not the
+identity that wrote it. So both clients now stamp `lastModifiedBy` (the auth uid) and
+`lastModifiedAt` on every write: 21 call sites in the portal, 14 in the Android app.
+
+Six call sites sit under rules that pin the write to an exact key set via
+`changedKeysWithin`, which is ANDed onto **both** branches — even admin does not escape
+it. A third key would have made those writes `PERMISSION_DENIED`, silently breaking login,
+push delivery, the notification badge, photo uploads, and Site ID entry. Those rules were
+therefore widened to admit the two stamp fields, guarded by `stampIsTruthful()`: a client
+writing **someone else's** uid is denied, so the self-reported actor cannot be forged.
+
+**Enforcement is staged.** Requiring the stamp database-wide today would deny any write
+path that misses it. Clients stamp first → the audit log confirms coverage → enforcement
+follows. Same discipline as the pay migration, for the same reason.
+
+### There is no IP address, and no code can add one
+
+Firestore security rules have **no `request.ip`**, and neither do triggers. Both clients
+write through the client SDK, so no server sees the connection. `lastModifiedBy` tells you
+*which user account* made every change; it cannot tell you from which network.
+
+The only mechanism that captures caller IP for client-SDK writes is **GCP Cloud Audit Logs
+(Data Access) for Firestore** — console configuration, not code, billed by volume with a
+default 30-day retention. Not enabled; deliberately deferred.
+
+### Cost note
+
+The audit log records **every** write, so it roughly **doubles write volume**. That was a
+deliberate choice ("everything writable" scope) over auditing only money-and-approvals.
+Worth revisiting if the Firestore bill moves noticeably.
 
 ## Still open
 
-- **#8 — attendance forgery (critical).** Needs a callable that stamps `request.time` and
-  validates the geofence server-side, then `allow create: if false` on the client path.
-  Requires an Android change and its own design pass. **This is the finding that most
-  directly matches "an employee should not be able to hack the system"; everything else
-  shipped here is real, but this one is still open.**
-- **#9 — audit trail for manual `attendance_status` overwrites.** A manager can still
-  overwrite another employee's computed payroll status with no record of who or why.
+- **Database-wide enforcement of `lastModifiedBy`** — the stamp is written everywhere but
+  only *enforced* on the six widened rules. Turn it on globally once the audit log shows
+  full coverage.
+- **GCP Cloud Audit Logs** for real IP capture, if you want network-level forensics.
+- **Mock-location flags are recorded but nothing surfaces them** — no portal view lists
+  flagged punches yet, so today they are only visible in Firestore or the function logs.
