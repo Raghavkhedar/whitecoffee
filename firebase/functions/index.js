@@ -1,7 +1,7 @@
 // Deploy stamp: 2026-06-30 — step 6b payroll arrears + step 7 lifetime-counter retirement.
 const { setGlobalOptions } = require("firebase-functions");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
@@ -46,6 +46,9 @@ const { withPay } = require("./compensation");
 // Server-side verdict on client-written punches — see punchIntegrity.js for why this is
 // detection rather than prevention (offline check-in must keep working).
 const { assessPunch } = require("./punchIntegrity");
+// Before/after audit entry for every write — see auditLog.js on why the actor is
+// best-effort and why there is no IP.
+const { buildEntry } = require("./auditLog");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -1629,3 +1632,45 @@ exports.onPunchWritten = onDocumentCreated(
     }
   }
 );
+
+// ── Audit log — before/after record of every write ───────────────────────────
+// Firestore triggers do NOT carry auth context, so the actor is recovered from the
+// document's own `lastModifiedBy` (stamped by both clients on every write) and falls back
+// to business fields like approvedBy/markedBy. There is NO client IP and there cannot be:
+// rules have no `request.ip` and neither do triggers. IPs for client-SDK writes are only
+// available via GCP Cloud Audit Logs (Data Access), which is console configuration.
+//
+// Two triggers cover the database, because Firestore path patterns match a FIXED depth:
+// "{collection}/{docId}" catches every top-level document (including users/{uid}), and
+// "users/{userId}/{collection}/{docId}" catches every user subcollection document. A
+// separate users/{userId} trigger would double-audit every user write.
+//
+// ⚠️ audit_log is excluded in auditLog.js — auditing our own writes would recurse without
+// bound and bill for every cycle.
+async function writeAuditEntry(path, before, after) {
+  const entry = buildEntry(path, before, after, Date.now());
+  if (!entry) return; // excluded path (audit_log itself)
+  try {
+    await admin.firestore().collection("audit_log").add(entry);
+  } catch (e) {
+    // An audit failure must never roll back or retry the business write that caused it —
+    // the write already happened and is the thing that matters.
+    console.error(`audit: failed to record ${path}: ${e.message}`);
+  }
+}
+
+exports.auditTopLevel = onDocumentWritten("{collection}/{docId}", async (event) => {
+  await writeAuditEntry(
+    event.data.after.ref.path,
+    event.data.before.exists ? event.data.before.data() : null,
+    event.data.after.exists ? event.data.after.data() : null,
+  );
+});
+
+exports.auditUserSubcollection = onDocumentWritten("users/{userId}/{collection}/{docId}", async (event) => {
+  await writeAuditEntry(
+    event.data.after.ref.path,
+    event.data.before.exists ? event.data.before.data() : null,
+    event.data.after.exists ? event.data.after.data() : null,
+  );
+});

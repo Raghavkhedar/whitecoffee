@@ -135,3 +135,24 @@ test("a Leaves manager can notify an employee (partial-approval message)", async
     title: "Leave partially approved", body: "3 of your 5 days were approved.", isRead: false,
   }));
 });
+
+// ── Audit log must be tamper-proof ─────────────────────────────────────────
+
+test("NOBODY can write the audit log — not even an admin", async () => {
+  // An audit log a suspect can edit is not evidence. Only the audit triggers write here,
+  // via the Admin SDK, which bypasses rules entirely.
+  await seedDocs(env, { "audit_log/a1": { path: "users/emp", changeType: "update", actor: "emp" } });
+  for (const uid of ["emp", "attMgr", "convMgr", "admin"]) {
+    await assertFails(asUser(env, uid).doc("audit_log/a2").set({ path: "forged" }));
+    await assertFails(asUser(env, uid).doc("audit_log/a1").update({ actor: "someone else" }));
+    await assertFails(asUser(env, uid).doc("audit_log/a1").delete());
+  }
+});
+
+test("only an admin can read the audit log", async () => {
+  // Entries carry full document snapshots, including pay.
+  await seedDocs(env, { "audit_log/a3": { path: "users/emp/compensation/current" } });
+  await assertSucceeds(asUser(env, "admin").doc("audit_log/a3").get());
+  await assertFails(asUser(env, "emp").doc("audit_log/a3").get());
+  await assertFails(asUser(env, "attMgr").doc("audit_log/a3").get());
+});
