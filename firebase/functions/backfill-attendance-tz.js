@@ -40,6 +40,9 @@ const {
   usesFixedWindow,
   usesOtShortageLedger,
 } = require("./roleCapabilities");
+// Same leave-coverage predicate the nightly scorer uses (see leaveCoverage.js) —
+// shared so a partially-approved leave cannot be scored differently here.
+const { leaveCoversDate } = require("./leaveCoverage");
 
 // ── Config (env-overridable) ─────────────────────────────────────────────────
 const DRY_RUN   = process.env.DRY_RUN !== "false";      // default: dry run
@@ -145,7 +148,7 @@ function* dateRange(start, end) {
     const leavesOnDate = new Map();
     leavesSnap.docs.forEach((doc) => {
       const l = doc.data();
-      if (l.status === "approved" && l.fromDate <= date && l.toDate >= date) leavesOnDate.set(l.userId, l);
+      if (leaveCoversDate(l, date)) leavesOnDate.set(l.userId, l);
     });
 
     const dayBatch = db.batch();

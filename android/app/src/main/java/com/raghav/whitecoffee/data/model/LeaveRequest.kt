@@ -21,6 +21,13 @@ data class LeaveRequest(
     val status: String = "pending",   // pending / approved / rejected
     val approvedBy: String = "",
     val approverComment: String = "",
+    /**
+     * Sorted "yyyy-MM-dd" dates the approver actually granted. **Empty means "the whole
+     * fromDate…toDate range"** — every legacy document lacks the field, and the Android
+     * approve action never writes it, so both correctly mean a full grant. Derived state
+     * only: see [approvalCoverage]. Never a status value — `status` stays approved/rejected.
+     */
+    val approvedDates: List<String> = emptyList(),
     val submittedAt: Timestamp? = null,
     val reviewedAt: Timestamp? = null
 ) {
@@ -39,6 +46,7 @@ data class LeaveRequest(
         "status"           to status,
         "approvedBy"       to approvedBy,
         "approverComment"  to approverComment,
+        "approvedDates"    to approvedDates,
         "submittedAt"      to submittedAt,
         "reviewedAt"       to reviewedAt
     )
@@ -62,6 +70,11 @@ data class LeaveRequest(
                     status           = doc.getString("status") ?: "pending",
                     approvedBy       = doc.getString("approvedBy") ?: "",
                     approverComment  = doc.getString("approverComment") ?: "",
+                    // Absent on every legacy doc, and may be any type if hand-edited —
+                    // never throw, just drop what isn't a usable date string.
+                    approvedDates    = (doc.get("approvedDates") as? List<*>)
+                        ?.mapNotNull { (it as? String)?.trim()?.takeIf(String::isNotEmpty) }
+                        ?: emptyList(),
                     submittedAt      = doc.getTimestamp("submittedAt"),
                     reviewedAt       = doc.getTimestamp("reviewedAt")
                 )
@@ -70,6 +83,91 @@ data class LeaveRequest(
             }
         }
     }
+}
+
+/**
+ * What a leave request actually grants, derived — never stored. Mirrors the backend's
+ * `leaveCoversDate` (firebase/functions/leaveCoverage.js) so the app and payroll agree on
+ * which days are leave.
+ */
+data class LeaveCoverage(
+    /** Inclusive days spanned by fromDate…toDate — what the employee asked for. */
+    val requestedDays: Int,
+    /** Days actually granted. Zero unless the request is approved. */
+    val grantedDays: Int,
+    /** The granted dates, sorted "yyyy-MM-dd". Full range when nothing narrower was set. */
+    val grantedDates: List<String>,
+    /** Approved, but for fewer days than were requested. */
+    val isPartial: Boolean,
+)
+
+/**
+ * Derives [LeaveCoverage] for this request.
+ *
+ * The compatibility rule: on an **approved** leave a missing or empty [approvedDates] grants
+ * the entire fromDate…toDate range. That is what every pre-existing document means, and what
+ * the Android approve action (which writes no `approvedDates`) means.
+ *
+ * Dates outside fromDate…toDate are ignored — the requested range still bounds the grant,
+ * exactly as the backend predicate does.
+ */
+fun LeaveRequest.approvalCoverage(): LeaveCoverage {
+    val range = datesInRange(fromDate, toDate)
+    val requestedDays = if (range.isNotEmpty()) range.size else totalDays.coerceAtLeast(0)
+
+    if (!status.equals("approved", ignoreCase = true)) {
+        return LeaveCoverage(requestedDays, grantedDays = 0, grantedDates = emptyList(), isPartial = false)
+    }
+
+    val picked = approvedDates.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+    if (picked.isEmpty()) {
+        // Compatibility rule — the whole range was granted.
+        return LeaveCoverage(requestedDays, requestedDays, range, isPartial = false)
+    }
+
+    val granted = if (range.isEmpty()) picked else picked.filter { it in range }
+    return LeaveCoverage(
+        requestedDays = requestedDays,
+        grantedDays   = granted.size,
+        grantedDates  = granted,
+        isPartial     = requestedDays > 0 && granted.size < requestedDays,
+    )
+}
+
+/** Inclusive "yyyy-MM-dd" days from [from] to [to]. Empty when either date is unusable. */
+private fun datesInRange(from: String, to: String): List<String> {
+    val start = parseIsoDate(from) ?: return emptyList()
+    val end   = parseIsoDate(to) ?: return emptyList()
+    if (end.isBefore(start)) return emptyList()
+    val out = ArrayList<String>()
+    var d = start
+    while (!d.isAfter(end)) {
+        out += d.toString()
+        d = d.plusDays(1)
+    }
+    return out
+}
+
+private fun parseIsoDate(value: String): java.time.LocalDate? = try {
+    java.time.LocalDate.parse(value.trim())
+} catch (e: Exception) {
+    null
+}
+
+/**
+ * "21, 22, 24 Jul" — granted dates for display, month named once per run.
+ * Returns "" for an empty list.
+ */
+fun formatGrantedDates(dates: List<String>): String {
+    val parsed = dates.mapNotNull { raw -> parseIsoDate(raw)?.let { it } }
+    if (parsed.isEmpty()) return ""
+    val months = java.time.format.DateTimeFormatter.ofPattern("MMM", java.util.Locale.ENGLISH)
+    return parsed.sorted()
+        .groupBy { it.year to it.monthValue }
+        .entries
+        .joinToString(" · ") { (_, days) ->
+            days.joinToString(", ") { it.dayOfMonth.toString() } + " " + days.first().format(months)
+        }
 }
 
 object LeaveType {

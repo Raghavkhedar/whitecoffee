@@ -37,7 +37,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.raghav.whitecoffee.core.UiState
+import com.raghav.whitecoffee.data.model.LeaveCoverage
 import com.raghav.whitecoffee.data.model.LeaveRequest
+import com.raghav.whitecoffee.data.model.approvalCoverage
+import com.raghav.whitecoffee.data.model.formatGrantedDates
 import com.raghav.whitecoffee.ui.theme.EmptyState
 import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
@@ -55,6 +58,35 @@ internal fun leaveStatusColors(status: String): Triple<Color, Color, String> = w
     "approved" -> Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Approved")
     "rejected" -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Rejected")
     else -> Triple(WcColors.WarnBg, WcColors.WarnFg, "Pending")
+}
+
+/**
+ * Status badge for a leave request, with the partial case split out. Still an approval, so
+ * it keeps the approved colours — only the label and the granted-dates line differ.
+ */
+internal fun leaveStatusBadge(l: LeaveRequest): Triple<Color, Color, String> =
+    if (l.approvalCoverage().isPartial) {
+        Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Partially Approved")
+    } else {
+        leaveStatusColors(l.status)
+    }
+
+/** "3 of 5 days granted · 21, 22, 24 Jul" — only rendered for a partial approval. */
+@Composable
+private fun GrantedDatesRow(coverage: LeaveCoverage) {
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.Top) {
+        MsIcon(Ms.task_alt, 15.sp, WcColors.SuccessFg)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "${coverage.grantedDays} of ${coverage.requestedDays} days granted" +
+                formatGrantedDates(coverage.grantedDates).let { if (it.isBlank()) "" else " · $it" },
+            color = WcColors.SuccessFg,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 17.sp,
+        )
+    }
 }
 
 @Composable
@@ -222,7 +254,8 @@ private fun LeaveHistoryList(state: UiState<List<LeaveRequest>>) {
 
 @Composable
 private fun LeaveHistoryCard(l: LeaveRequest) {
-    val (bg, fg, label) = leaveStatusColors(l.status)
+    val (bg, fg, label) = leaveStatusBadge(l)
+    val coverage = l.approvalCoverage()
     WcCard(Modifier.fillMaxWidth(), radius = 18) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -245,6 +278,7 @@ private fun LeaveHistoryCard(l: LeaveRequest) {
                     fontSize = 13.sp,
                 )
             }
+            if (coverage.isPartial) GrantedDatesRow(coverage)
             if (l.placeOfVisit.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -304,6 +338,8 @@ fun LeaveApprovalsScreen(
 @Composable
 private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onReject: (LeaveRequest) -> Unit) {
     val initials = a.userName.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").uppercase()
+    val coverage = a.approvalCoverage()
+    val isPending = a.status.equals("pending", ignoreCase = true)
     WcCard(Modifier.fillMaxWidth(), radius = 18) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -315,7 +351,11 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
                     Text(a.userName, color = WcColors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                     Text(a.employeeId, color = WcColors.TextMuted, fontSize = 12.sp)
                 }
-                if (a.leaveType.isNotBlank()) {
+                if (!isPending) {
+                    // Already actioned — the outcome replaces the (absent) action buttons.
+                    val (bg, fg, label) = leaveStatusBadge(a)
+                    StatusBadge(label, bg, fg)
+                } else if (a.leaveType.isNotBlank()) {
                     Box(
                         Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFFFD7E0)).padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
@@ -333,6 +373,7 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
                     fontSize = 13.sp,
                 )
             }
+            if (coverage.isPartial) GrantedDatesRow(coverage)
             if (a.placeOfVisit.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -358,10 +399,12 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
                     )
                 }
             }
-            Spacer(Modifier.height(13.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlineActionButton("Reject", Ms.close, WcColors.DangerFg, Color(0xFFE2C4C4), Modifier.weight(1f)) { onReject(a) }
-                FilledActionButton("Approve", Ms.check, Color(0xFF2E7D55), Modifier.weight(1f)) { onApprove(a) }
+            if (isPending) {
+                Spacer(Modifier.height(13.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlineActionButton("Reject", Ms.close, WcColors.DangerFg, Color(0xFFE2C4C4), Modifier.weight(1f)) { onReject(a) }
+                    FilledActionButton("Approve", Ms.check, Color(0xFF2E7D55), Modifier.weight(1f)) { onApprove(a) }
+                }
             }
         }
     }

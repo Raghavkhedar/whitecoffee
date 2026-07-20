@@ -132,6 +132,11 @@ export interface LeaveRequest {
   totalDays: number;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
+  // Sorted "yyyy-MM-dd" dates the approver actually granted, a subset of fromDate…toDate.
+  // Optional: legacy documents and the Android approve action never write it, and on an
+  // approved leave a missing/empty value means the ENTIRE range was granted. "Partial" is
+  // derived from this (see src/lib/leaveDates.ts), never stored as a status.
+  approvedDates?: string[];
   approvedBy: string;
   approverComment: string;
   submittedAt?: Timestamp;
