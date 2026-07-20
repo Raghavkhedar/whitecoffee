@@ -30,13 +30,17 @@ export async function getAllUsers(includeInactive = false): Promise<User[]> {
  * salaryRate too. Readable by admin and /ot-settlements only; written by admin only.
  */
 export async function setCompensation(uid: string, pay: Partial<Pay>) {
-  await setDoc(doc(db, 'users', uid, 'compensation', 'current'), {
-    salaryRate: pay.salaryRate || 0,
-    pfPercent: pay.pfPercent || 0,
-    esiPercent: pay.esiPercent || 0,
-    imprestPercent: pay.imprestPercent || 0,
-    updatedAt: Timestamp.now(),
-  }, { merge: true });
+  // Writes ONLY the fields actually supplied. Writing all four with `|| 0` would zero a
+  // salary whenever a caller updated just one percentage — `merge: true` does not protect
+  // against that, because the field IS present in the payload, explicitly set to 0.
+  // Non-finite values are dropped rather than coerced, so an undefined or a stray string
+  // can never overwrite real pay with 0.
+  const payload: Record<string, unknown> = { updatedAt: Timestamp.now() };
+  for (const field of PAY_FIELDS) {
+    const v = pay[field];
+    if (typeof v === 'number' && isFinite(v)) payload[field] = v;
+  }
+  await setDoc(doc(db, 'users', uid, 'compensation', 'current'), payload, { merge: true });
 }
 
 /**
@@ -90,8 +94,12 @@ export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'i
   let hasPay = false;
   for (const [k, v] of Object.entries(data)) {
     if ((PAY_FIELDS as string[]).includes(k)) {
-      pay[k as keyof Pay] = (typeof v === 'number' ? v : 0);
-      hasPay = true;
+      // Only forward real numbers. Coercing anything else to 0 here would wipe the stored
+      // salary whenever a caller passed a pay key as undefined.
+      if (typeof v === 'number' && isFinite(v)) {
+        pay[k as keyof Pay] = v;
+        hasPay = true;
+      }
       continue;
     }
     payload[k] = v === undefined ? null : v;
