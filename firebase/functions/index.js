@@ -40,6 +40,9 @@ const {
 // leaveCoverage.js). Missing/empty `approvedDates` = the whole range, so legacy
 // leaves and the Android approve action keep their current meaning.
 const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
+// Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
+// the legacy inline fields — see compensation.js for why the split exists.
+const { withPay } = require("./compensation");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -427,7 +430,19 @@ exports.exportToSheets = onSchedule(
 
     // ── All users (shared across sections) ────────────────────────────
     const allUsersSnap = await db.collection("users").get();
-    const allUsersData = allUsersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Pay fields live in users/{uid}/compensation/current, not on the user doc — Firestore
+    // rules are document-level, so leaving salaryRate inline let any tab that resolves
+    // employee names also read everyone's pay (see compensation.js). Attached here once so
+    // every downstream `user.salaryRate` / `user.pfPercent` reader works unchanged.
+    // withPay falls back PER FIELD to the legacy inline value, so this is correct before,
+    // during, and after the migration.
+    const compSnap = await db.collectionGroup("compensation").get();
+    const compByUid = new Map();
+    compSnap.docs.forEach((d) => {
+      const uid = d.ref.parent.parent && d.ref.parent.parent.id;
+      if (uid) compByUid.set(uid, d.data());
+    });
+    const allUsersData = allUsersSnap.docs.map((d) => withPay({ id: d.id, ...d.data() }, compByUid.get(d.id)));
     const userRoleMap  = new Map(allUsersData.map((u) => [u.id, u.role || ""]));
     const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
     const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));

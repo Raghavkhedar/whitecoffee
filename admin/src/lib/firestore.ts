@@ -8,6 +8,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
 import { istTodayStr } from './date';
+import { PAY_FIELDS, type Pay } from './compensation';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
 import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection } from '@/types';
@@ -23,14 +24,40 @@ export async function getAllUsers(includeInactive = false): Promise<User[]> {
   return includeInactive ? all : all.filter(u => u.active !== false);
 }
 
+/**
+ * Pay lives in users/{uid}/compensation/current, NOT on the user doc — Firestore rules are
+ * document-level, so any tab that reads a user doc to resolve a name would otherwise read
+ * salaryRate too. Readable by admin and /ot-settlements only; written by admin only.
+ */
+export async function setCompensation(uid: string, pay: Partial<Pay>) {
+  await setDoc(doc(db, 'users', uid, 'compensation', 'current'), {
+    salaryRate: pay.salaryRate || 0,
+    pfPercent: pay.pfPercent || 0,
+    esiPercent: pay.esiPercent || 0,
+    imprestPercent: pay.imprestPercent || 0,
+    updatedAt: Timestamp.now(),
+  }, { merge: true });
+}
+
+/**
+ * uid → compensation doc, for the two surfaces allowed to see pay (Users, OT Settlements).
+ * Callers merge it with `withPay`, which falls back per field to any legacy inline value.
+ * Do NOT call this from a tab that lacks pay access — the read will be denied by rules.
+ */
+export async function getCompensationMap(): Promise<Map<string, Partial<Pay>>> {
+  const snap = await getDocs(collectionGroup(db, 'compensation'));
+  const out = new Map<string, Partial<Pay>>();
+  for (const d of snap.docs) {
+    const uid = d.ref.parent.parent?.id;
+    if (uid) out.set(uid, d.data() as Partial<Pay>);
+  }
+  return out;
+}
+
 export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
   const { salaryRate, pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType, ...rest } = data;
   await setDoc(doc(db, 'users', uid), {
     ...rest,
-    salaryRate: salaryRate || 0,
-    pfPercent: pfPercent || 0,
-    esiPercent: esiPercent || 0,
-    imprestPercent: imprestPercent || 0,
     homeLat: homeLat || null,
     homeLng: homeLng || null,
     conveyanceRateType: conveyanceRateType || null,
@@ -38,6 +65,8 @@ export async function createUserProfile(uid: string, data: Omit<User, 'id'>) {
     active: true,
     createdAt: Timestamp.now(),
   });
+  // Pay goes to the restricted subcollection, never inline on the user doc.
+  await setCompensation(uid, { salaryRate, pfPercent, esiPercent, imprestPercent });
 }
 
 // True if an ACTIVE user already holds this employee ID (blocks reuse of a live ID).
@@ -53,11 +82,24 @@ export async function employeeIdInUse(employeeId: string): Promise<boolean> {
 }
 
 export async function updateUserProfile(uid: string, data: Partial<Omit<User, 'id'>>) {
+  // Pay fields are split out to users/{uid}/compensation/current and must never be
+  // written back onto the user doc — doing so would re-expose salary to every tab that
+  // reads a user doc to resolve a name.
   const payload: Record<string, unknown> = {};
+  const pay: Partial<Pay> = {};
+  let hasPay = false;
   for (const [k, v] of Object.entries(data)) {
+    if ((PAY_FIELDS as string[]).includes(k)) {
+      pay[k as keyof Pay] = (typeof v === 'number' ? v : 0);
+      hasPay = true;
+      continue;
+    }
     payload[k] = v === undefined ? null : v;
   }
-  await updateDoc(doc(db, 'users', uid), payload);
+  if (Object.keys(payload).length > 0) {
+    await updateDoc(doc(db, 'users', uid), payload);
+  }
+  if (hasPay) await setCompensation(uid, pay);
 }
 
 export async function deleteUserProfile(uid: string) {

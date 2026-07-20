@@ -180,6 +180,21 @@ service cloud.firestore {
         allow delete: if isLoggedIn() && isAdmin();
       }
 
+      // ── /compensation/{docId} — pay, split off the user document ──────
+      // Firestore rules are DOCUMENT-level: there is no field-level read control, so
+      // while salaryRate/pfPercent/esiPercent/imprestPercent sat on users/{uid}, every
+      // tab that reads a user doc merely to resolve a name (nine of the ten grantable
+      // tabs, via canReadUsers) could also enumerate the whole company's pay. Moving pay
+      // to its own document is the ONLY way to restrict it.
+      //
+      // The employee themselves is deliberately NOT granted read here — pay is shown to
+      // them through the payroll exports, not the app, and isOwner would hand every
+      // employee a live salary endpoint.
+      match /compensation/{docId} {
+        allow read:  if isLoggedIn() && (isAdmin() || canAccessSettlements());
+        allow write: if isLoggedIn() && isAdmin();
+      }
+
       // ── /attendance_corrections/{docId} ───────────────────────────────
       // Immutable audit log of admin punch corrections (see restoreAttendanceToEvent):
       // full snapshots of deleted punches + who/why. Admin-only; create + read only.
@@ -372,6 +387,12 @@ service cloud.firestore {
     }
     match /{path=**}/work_progress/{docId} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
+    }
+    // Required for getCompensationMap() which does collectionGroup("compensation").
+    // Read-only and identically scoped to the per-doc rule — a looser collectionGroup
+    // rule is a second door that defeats the per-doc one (see attendance_status above).
+    match /{path=**}/compensation/{docId} {
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSettlements());
     }
     // Admin-only history read for the Daily Activity page (getAttendanceCorrectionsForDate).
     match /{path=**}/attendance_corrections/{docId} {
