@@ -20,6 +20,9 @@ import { getsCategories } from '@/lib/roleCapabilities';
 const ROLES = ['operations', 'office', 'sales', 'admin'] as const;
 type Role = typeof ROLES[number];
 
+// Employee level bands (recorded only) — "Level 1".."Level 20".
+const LEVELS = Array.from({ length: 20 }, (_, i) => `Level ${i + 1}`);
+
 // The tabs a non-admin can be granted (matrix columns / modal checkboxes).
 const GRANTABLE_TABS = TABS.filter(t => !t.adminOnly);
 const GRANTABLE_PATH_SET = new Set(GRANTABLE_TABS.map(t => t.path));
@@ -32,7 +35,7 @@ interface FormState {
   password: string;
   employeeId: string;
   role: Role;
-  level: '' | 'Level 1' | 'Level 2' | 'Level 3';
+  level: string; // '' (None) or 'Level 1'..'Level 20'
   tabAccess: string[];
   categories: string[];
   salaryRate: string;
@@ -419,11 +422,9 @@ export default function UsersPage() {
 
               <div>
                 <label className="label">Level</label>
-                <select className="input" value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value as FormState['level'] }))}>
+                <select className="input" value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value }))}>
                   <option value="">None</option>
-                  <option value="Level 1">Level 1</option>
-                  <option value="Level 2">Level 2</option>
-                  <option value="Level 3">Level 3</option>
+                  {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
 

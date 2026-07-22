@@ -31,9 +31,9 @@ export interface User {
    *  on the Users page. Meaningful only for role==='operations'. See src/lib/categories.ts. */
   categories?: string[];
   employeeId: string;
-  /** Employee level band, admin-set on /users. Optional/unset for existing employees.
-   *  Recorded only — no Cloud Function, export, or rule reads it. */
-  level?: 'Level 1' | 'Level 2' | 'Level 3' | null;
+  /** Employee level band ("Level 1".."Level 20"), admin-set on /users. Optional/unset for
+   *  existing employees. Recorded only — no Cloud Function, export, or rule reads it. */
+  level?: string | null;
   salaryRate?: number;
   /** Payroll percentages, admin-set on /users. Stored as the percent VALUE (12 = 12%), not a
    *  fraction. Currently recorded only — no Cloud Function or export reads them yet, so setting
