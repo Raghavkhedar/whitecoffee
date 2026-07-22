@@ -1182,7 +1182,7 @@ exports.exportToSheets = onSchedule(
       // Frozen past blocks keep their own manual imprest verbatim.
 
       const header = [
-        "Date", "EMP Name", "EMP ID", "Days Passed in Month",
+        "Date", "EMP Name", "EMP ID", "Level", "Days Passed in Month",
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
@@ -1234,6 +1234,7 @@ exports.exportToSheets = onSchedule(
           monthLabel,
           user.name || "",
           empId,
+          user.level || "",
           daysPassed,
           ua.present, ua.sl, ua.halfDay, ua.slnf, ua.pl, ua.lwp, ua.absent,
           leaves,
