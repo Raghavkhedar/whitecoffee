@@ -32,6 +32,7 @@ interface FormState {
   password: string;
   employeeId: string;
   role: Role;
+  level: '' | 'Level 1' | 'Level 2' | 'Level 3';
   tabAccess: string[];
   categories: string[];
   salaryRate: string;
@@ -45,7 +46,7 @@ interface FormState {
 
 const EMPTY_FORM: FormState = {
   name: '', loginEmail: '', contactEmail: '', password: '', employeeId: '', role: 'operations',
-  tabAccess: [], categories: [], salaryRate: '', pfPercent: '', esiPercent: '', imprestPercent: '',
+  level: '', tabAccess: [], categories: [], salaryRate: '', pfPercent: '', esiPercent: '', imprestPercent: '',
   homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
@@ -117,6 +118,7 @@ export default function UsersPage() {
       password: '',
       employeeId: u.employeeId ?? '',
       role: (u.role as Role) ?? 'operations',
+      level: u.level ?? '',
       tabAccess: (u.tabAccess ?? []).filter(p => GRANTABLE_PATH_SET.has(p)),
       categories: (u.categories ?? []).filter(c => EMPLOYEE_CATEGORY_SET.has(c)),
       salaryRate: u.salaryRate ? String(u.salaryRate) : '',
@@ -149,6 +151,8 @@ export default function UsersPage() {
       const contactEmail = form.contactEmail.trim().toLowerCase();
       // Categories only apply to roles that get them (operations); switching to another role clears them.
       const categories = getsCategories(form.role) ? form.categories : [];
+      // Level applies to all roles; "None" stores null.
+      const level = form.level || null;
 
       if (editing) {
         // Login email goes through a Cloud Function (Auth + doc); validate before touching anything.
@@ -160,7 +164,7 @@ export default function UsersPage() {
           return;
         }
         await updateUserProfile(editing.id, {
-          name: form.name.trim(), role: form.role, employeeId: form.employeeId.trim(),
+          name: form.name.trim(), role: form.role, level, employeeId: form.employeeId.trim(),
           tabAccess: form.tabAccess, categories, contactEmail, salaryRate,
           pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType,
         });
@@ -186,7 +190,7 @@ export default function UsersPage() {
         }
         await createUserProfile(uid, {
           name: form.name.trim(), email: loginEmail, contactEmail,
-          role: form.role, tabAccess: form.tabAccess, categories, employeeId: form.employeeId.trim(), salaryRate,
+          role: form.role, level, tabAccess: form.tabAccess, categories, employeeId: form.employeeId.trim(), salaryRate,
           pfPercent, esiPercent, imprestPercent, homeLat, homeLng, conveyanceRateType,
         });
       }
@@ -380,7 +384,7 @@ export default function UsersPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-text-primary mb-5">{editing ? 'Edit Employee' : 'Add Employee'}</h2>
             <div className="space-y-4">
               <div><label className="label">Full Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ravi Kumar" /></div>
@@ -410,6 +414,16 @@ export default function UsersPage() {
                 <label className="label">Role</label>
                 <select className="input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as Role }))}>
                   {ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Level</label>
+                <select className="input" value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value as FormState['level'] }))}>
+                  <option value="">None</option>
+                  <option value="Level 1">Level 1</option>
+                  <option value="Level 2">Level 2</option>
+                  <option value="Level 3">Level 3</option>
                 </select>
               </div>
 

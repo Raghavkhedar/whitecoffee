@@ -453,6 +453,7 @@ exports.exportToSheets = onSchedule(
     const userEmpIdMap = new Map(allUsersData.map((u) => [u.id, u.employeeId || ""]));
     const userNameMap  = new Map(allUsersData.map((u) => [u.id, u.name || ""]));
     const userPlBalMap = new Map(allUsersData.map((u) => [u.id, u.plBalance || 0]));
+    const userWoBalMap = new Map(allUsersData.map((u) => [u.id, u.woBalance || 0]));
     const userCategoriesMap = new Map(allUsersData.map((u) => [u.id, Array.isArray(u.categories) ? u.categories : []]));
 
     // ── userId__date → DailyStatus (for Attendance tab) ───────────────
@@ -535,7 +536,7 @@ exports.exportToSheets = onSchedule(
       const header = [
         "Date", "Employee Name", "Employee ID", "Role",
         "In Time", "In Location", "In Site ID", "Out Time", "Out Location", "Out Site ID",
-        "All Activity", "OT (mins)", "Daily Status", "PL Balance",
+        "All Activity", "OT (mins)", "Daily Status", "PL Balance", "WO Balance",
       ];
 
       // Group all events by employee + date.
@@ -651,6 +652,7 @@ exports.exportToSheets = onSchedule(
           otMins > 0 ? otMins : "",
           statusMap.get(`${uid}__${date}`) || "",
           userPlBalMap.get(uid) ?? 0,
+          userWoBalMap.get(uid) ?? 0,
         ];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
