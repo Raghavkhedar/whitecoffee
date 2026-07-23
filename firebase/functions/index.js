@@ -24,7 +24,11 @@ const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
 } = require("./otLedger");
 // Range/month OT/shortage/WO aggregation for the Employee Dashboard's live column (otAggregate.js).
-const { computeRangeLedger, settlementCash } = require("./otAggregate");
+const { computeRangeLedger, settlementCash, dailyOtWoCash } = require("./otAggregate");
+// Pure per-day spend decomposition for the Daily Spend Snapshot (see dailySpend.js).
+const {
+  dailySalary, dailyDeductions, dailyTotal, round2, openWindowMonths, addMonths,
+} = require("./dailySpend");
 // Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
 // office/operations/sales/admin decisions through predicates instead of `isOps`.
 const {
@@ -1398,6 +1402,154 @@ exports.regularizationReminder = onSchedule(
 
     console.log(`regularizationReminder: notified ${adminsSnap.size} admin(s) about ${pending.length} pending requests`);
   }
+);
+
+// ── Daily Spend Snapshot ────────────────────────────────────────────────
+// One dailySpend/{uid}__{date} doc per employee per working day. Runs after
+// computeDailyAttendanceStatus (23:59 IST) so statuses are final. Two passes:
+//   1. Freeze-finalization: a recently-locked month keeps the frozen:false its last
+//      unlocked run left behind — relabel those rows frozen:true ONCE, without recomputing.
+//   2. Recompute: rewrite the current month + any still-unlocked priors (frozen:false).
+// A locked month is never recomputed (openWindowMonths stops at the first locked month).
+// See docs/superpowers/specs/2026-07-24-daily-spend-snapshot-design.md.
+exports.snapshotDailySpend = onSchedule(
+  { schedule: "30 22 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300, memory: "512MiB" },
+  async () => {
+    const db = admin.firestore();
+
+    // IST date components. The runtime clock is UTC, so shift by +05:30 and read via
+    // getUTC* — using new Date()/getDate()/getDay() would read the UTC calendar day and
+    // weekday, which drifts from IST near midnight (same bug class as computeDailyAttendanceStatus).
+    const nowIST   = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const istYear  = nowIST.getUTCFullYear();
+    const istMonth = nowIST.getUTCMonth(); // 0-based
+    const istDay   = nowIST.getUTCDate();
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const currentKey = `${istYear}-${pad2(istMonth + 1)}`;
+    const today = `${istYear}-${pad2(istMonth + 1)}-${pad2(istDay)}`;
+
+    // Users + pay (same pattern as exportToSheets — pay lives in the compensation
+    // subcollection; withPay falls back PER FIELD to the legacy inline value).
+    const allUsersSnap = await db.collection("users").get();
+    const compSnap = await db.collectionGroup("compensation").get();
+    const compByUid = new Map();
+    compSnap.docs.forEach((d) => {
+      const uid = d.ref.parent.parent && d.ref.parent.parent.id;
+      if (uid) compByUid.set(uid, d.data());
+    });
+    const users = allUsersSnap.docs.map((d) => withPay({ id: d.id, ...d.data() }, compByUid.get(d.id)));
+
+    // Locked months (company-wide freeze signal): any settlement doc with locked == true.
+    // Fetched + client-filtered (like getSettlementsForMonth) to avoid a collection-group
+    // index; the set stays small (one doc per ops employee per settled month). Settlement
+    // doc id === "YYYY-MM".
+    const settleSnap = await db.collectionGroup("settlements").get();
+    const lockedSet = new Set(
+      settleSnap.docs.filter((d) => d.data().locked === true).map((d) => d.id),
+    );
+
+    // ── Pass 1: freeze-finalization ───────────────────────────────────
+    // The recompute pass below only writes unlocked months, so a month that locked since
+    // the last run still carries frozen:false on its rows. Relabel them frozen:true ONCE,
+    // WITHOUT recomputing values. Only the two recently-closed months can be in this state
+    // (older months were already finalized on a prior run). Needs a (month, frozen)
+    // composite index — created in Task 6.
+    for (const M of [addMonths(currentKey, -1), addMonths(currentKey, -2)]) {
+      if (!lockedSet.has(M)) continue;
+      const probe = await db.collection("dailySpend")
+        .where("month", "==", M).where("frozen", "==", false).limit(1).get();
+      if (probe.empty) continue; // already finalized on a previous run
+      const monthSnap = await db.collection("dailySpend").where("month", "==", M).get();
+      let fBatch = db.batch();
+      let fOps = 0;
+      for (const doc of monthSnap.docs) {
+        fBatch.update(doc.ref, { frozen: true }); // relabel only — values untouched
+        fOps++;
+        if (fOps >= 400) { await fBatch.commit(); fBatch = db.batch(); fOps = 0; }
+      }
+      if (fOps > 0) await fBatch.commit();
+      console.log(`dailySpend: finalized (frozen:true) ${monthSnap.size} rows for ${M}`);
+    }
+
+    // ── Pass 2: recompute the open window ─────────────────────────────
+    // Months to recompute this run, and the earliest for range-scoped source loads.
+    const windowMonths = openWindowMonths(currentKey, lockedSet);
+    const earliest = windowMonths[0];
+    const rangeStart = `${earliest}-01`;
+
+    // Per-day sources scoped to [rangeStart, today]. Module-scope uidOf resolves the owner
+    // (userId field if present, else the subcollection parent).
+    const inRange = (d) => d.date >= rangeStart && d.date <= today;
+
+    const statusDocs = (await db.collectionGroup("attendance_status").get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+    const eventDocs = (await db.collectionGroup("attendance").get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+    const plannedDocs = (await db.collectionGroup("planned_hours").get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+    const approvalDocs = (await db.collectionGroup("ot_approvals").get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+
+    const holidaySnap = await db.collection("holidays")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get();
+    const holidaySet = new Set(holidaySnap.docs.map((h) => h.id));
+
+    const convSnap = await db.collection("conveyance")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get();
+    const convByKey = new Map(); // `${uid}__${date}` → ₹
+    convSnap.docs.forEach((d) => {
+      const c = d.data();
+      convByKey.set(`${c.userId}__${c.date}`, Number(c.conveyance) || 0);
+    });
+
+    // Statuses grouped by user for salary; the ledger helper filters internally.
+    const statusesByUser = new Map();
+    statusDocs.forEach((s) => {
+      if (!statusesByUser.has(s.userId)) statusesByUser.set(s.userId, []);
+      statusesByUser.get(s.userId).push(s);
+    });
+
+    const monthOf = (dateStr) => dateStr.slice(0, 7);
+    // UTC-safe weekday: read getUTCDay() on a Z-anchored string (functions run on UTC).
+    const isSunday = (dateStr) => new Date(dateStr + "T00:00:00Z").getUTCDay() === 0;
+
+    let batch = db.batch();
+    let ops = 0;
+    const commitIfFull = async () => { if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; } };
+
+    for (const user of users) {
+      const rate = user.salaryRate || 0;
+      // Role gating via capabilities, never inline role branching.
+      const otMap = usesOtShortageLedger(user.role)
+        ? dailyOtWoCash(user.id, rate, eventDocs, plannedDocs, approvalDocs, statusesByUser.get(user.id) || [], holidaySet)
+        : new Map();
+
+      for (const s of (statusesByUser.get(user.id) || [])) {
+        if (isSunday(s.date)) continue;                        // no row for Sundays
+        if (!windowMonths.includes(monthOf(s.date))) continue; // locked month → never rewritten
+
+        const salary = dailySalary(rate, s.status);
+        const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${s.date}`) || 0) : 0;
+        const otWo = round2(otMap.get(s.date) || 0);
+        const { pf, esi, imprest } = dailyDeductions({
+          salary, pfPercent: user.pfPercent, esiPercent: user.esiPercent, imprestPercent: user.imprestPercent,
+        });
+        const totalSpend = dailyTotal({ salary, conveyance, imprest, otWo, pf, esi });
+
+        batch.set(db.collection("dailySpend").doc(`${user.id}__${s.date}`), {
+          userId: user.id, employeeId: user.employeeId || "", name: user.name || "", role: user.role || "",
+          date: s.date, month: monthOf(s.date),
+          salary, conveyance, pf, esi, otWo, imprest, totalSpend,
+          frozen: false,
+          computedAt: admin.firestore.Timestamp.now(),
+        }, { merge: false });
+        ops++;
+        await commitIfFull();
+      }
+    }
+    if (ops > 0) await batch.commit();
+    console.log(`dailySpend: recomputed months [${windowMonths.join(", ")}] up to ${today}`);
+  },
 );
 
 // ── Employee Logout — auto check-out from everywhere + home_out ──────────────
