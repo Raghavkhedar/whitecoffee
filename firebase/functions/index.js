@@ -1497,9 +1497,12 @@ exports.snapshotDailySpend = onSchedule(
     const convSnap = await db.collection("conveyance")
       .where("date", ">=", rangeStart).where("date", "<=", today).get();
     const convByKey = new Map(); // `${uid}__${date}` → ₹
+    const convDatesByUser = new Map(); // uid → Set<date> (conveyance can fall on Sundays)
     convSnap.docs.forEach((d) => {
       const c = d.data();
       convByKey.set(`${c.userId}__${c.date}`, Number(c.conveyance) || 0);
+      if (!convDatesByUser.has(c.userId)) convDatesByUser.set(c.userId, new Set());
+      convDatesByUser.get(c.userId).add(c.date);
     });
 
     // Statuses grouped by user for salary; the ledger helper filters internally.
@@ -1524,21 +1527,39 @@ exports.snapshotDailySpend = onSchedule(
         ? dailyOtWoCash(user.id, rate, eventDocs, plannedDocs, approvalDocs, statusesByUser.get(user.id) || [], holidaySet)
         : new Map();
 
-      for (const s of (statusesByUser.get(user.id) || [])) {
-        if (isSunday(s.date)) continue;                        // no row for Sundays
-        if (!windowMonths.includes(monthOf(s.date))) continue; // locked month → never rewritten
+      // Union of every date that can carry economic value for this employee: status-doc
+      // days, OT/WO-cash days (rest-day OT & worked-WO fall on Sundays/holidays with no
+      // status doc), and conveyance days (can be Sundays). Iterating only statuses skipped
+      // those, breaking the Σ dailySpend == settlementCash / conveyance reconciliation.
+      const userStatuses = statusesByUser.get(user.id) || [];
+      const statusByDate = new Map(userStatuses.map((s) => [s.date, s]));
+      const candidateDates = new Set(userStatuses.map((s) => s.date));
+      for (const d of otMap.keys()) candidateDates.add(d);
+      for (const d of (convDatesByUser.get(user.id) || [])) candidateDates.add(d);
 
-        const salary = dailySalary(rate, s.status);
-        const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${s.date}`) || 0) : 0;
-        const otWo = round2(otMap.get(s.date) || 0);
+      for (const date of candidateDates) {
+        if (!windowMonths.includes(monthOf(date))) continue; // locked/out-of-window → never written
+
+        const status = statusByDate.get(date); // may be undefined (OT/conveyance-only day)
+        const sunday = isSunday(date);
+        // Sundays are not paid working days — matches the MTD summary, which skips only
+        // Sundays for salary (NOT holidays); an OT/conveyance-only day has no status → 0.
+        const salary = (status && !sunday) ? dailySalary(rate, status.status) : 0;
+        const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${date}`) || 0) : 0;
+        const otWo = round2(otMap.get(date) || 0);
         const { pf, esi, imprest } = dailyDeductions({
           salary, pfPercent: user.pfPercent, esiPercent: user.esiPercent, imprestPercent: user.imprestPercent,
         });
         const totalSpend = dailyTotal({ salary, conveyance, imprest, otWo, pf, esi });
 
-        batch.set(db.collection("dailySpend").doc(`${user.id}__${s.date}`), {
+        // Emit if the day carries any economic value OR is a tracked non-Sunday attendance
+        // day; drops empty unworked-WO-Sundays and no-activity days.
+        const hasValue = salary !== 0 || conveyance !== 0 || otWo !== 0;
+        if (!hasValue && !(status && !sunday)) continue;
+
+        batch.set(db.collection("dailySpend").doc(`${user.id}__${date}`), {
           userId: user.id, employeeId: user.employeeId || "", name: user.name || "", role: user.role || "",
-          date: s.date, month: monthOf(s.date),
+          date, month: monthOf(date),
           salary, conveyance, pf, esi, otWo, imprest, totalSpend,
           frozen: false,
           computedAt: admin.firestore.Timestamp.now(),
