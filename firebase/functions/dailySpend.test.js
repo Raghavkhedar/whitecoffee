@@ -47,3 +47,26 @@ test("dailyDeductions: missing percents → 0; missing efficiency → 1; explici
 test("dailyTotal: mirrors TOTAL DUE (salary + covy + imprest + otWo − pf − esi)", () => {
   assert.equal(dailyTotal({ salary: 1000, conveyance: 120, imprest: 50, otWo: 300, pf: 120, esi: 7.5 }), 1342.5);
 });
+
+const { addMonths, openWindowMonths } = require("./dailySpend");
+
+test("addMonths: rolls year boundaries both directions", () => {
+  assert.equal(addMonths("2026-07", -1), "2026-06");
+  assert.equal(addMonths("2026-01", -1), "2025-12");
+  assert.equal(addMonths("2026-12", 1), "2027-01");
+});
+
+test("openWindowMonths: steady state = current month only", () => {
+  const locked = new Set(["2026-06", "2026-05"]);
+  assert.deepEqual(openWindowMonths("2026-07", locked), ["2026-07"]);
+});
+
+test("openWindowMonths: a lagging unlocked prior month is included", () => {
+  const locked = new Set(["2026-05"]); // June not yet settled
+  assert.deepEqual(openWindowMonths("2026-07", locked), ["2026-06", "2026-07"]);
+});
+
+test("openWindowMonths: stops at cap even if priors stay unlocked", () => {
+  const locked = new Set(); // nothing locked
+  assert.deepEqual(openWindowMonths("2026-07", locked, 2), ["2026-05", "2026-06", "2026-07"]);
+});

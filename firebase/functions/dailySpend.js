@@ -49,4 +49,24 @@ function dailyTotal({ salary, conveyance, imprest, otWo, pf, esi } = {}) {
   return round2(toNum(salary) + toNum(conveyance) + toNum(imprest) + toNum(otWo) - toNum(pf) - toNum(esi));
 }
 
-module.exports = { round2, dayWeight, dailySalary, dailyDeductions, dailyTotal };
+function addMonths(monthKey, delta) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const idx = (y * 12 + (m - 1)) + delta;      // month index since year 0
+  const ny = Math.floor(idx / 12);
+  const nm = (idx % 12) + 1;
+  return `${ny}-${String(nm).padStart(2, "0")}`;
+}
+
+// Months to recompute each run: current month + consecutive unlocked priors (walking back),
+// stopping at the first locked month or after `cap` priors. Ascending order.
+function openWindowMonths(currentKey, lockedSet, cap = 3) {
+  const months = [currentKey];
+  for (let i = 1; i <= cap; i++) {
+    const prev = addMonths(currentKey, -i);
+    if (lockedSet.has(prev)) break;
+    months.push(prev);
+  }
+  return months.sort();
+}
+
+module.exports = { round2, dayWeight, dailySalary, dailyDeductions, dailyTotal, addMonths, openWindowMonths };
