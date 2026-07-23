@@ -586,5 +586,15 @@ service cloud.firestore {
       allow update, delete: if isLoggedIn() && (isAdmin() ||
                       (canAccessConveyance() && notSelfDoc()));
     }
+
+    // ── /dailySpend/{uid}__{date} — Daily spend snapshot ─────────────────
+    // Written ONLY by the snapshotDailySpend Cloud Function (Admin SDK bypasses rules).
+    // No client writes; reads are admin-only — each doc carries the same per-day pay
+    // figures (salary, conveyance, pf, esi, otWo, totalSpend) that compensation/current
+    // is isolated for.
+    match /dailySpend/{docId} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if false;
+    }
   }
 }
