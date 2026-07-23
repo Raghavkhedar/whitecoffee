@@ -106,4 +106,84 @@ function settlementCash(salaryRate, woDays, netMins) {
   return Math.round(cash * 100) / 100;
 }
 
-module.exports = { computeRangeLedger, settlementCash };
+// Per-date OT/WO cash for one ops employee. Mirrors computeRangeLedger's accrual but emits each
+// date's rupees instead of summing, so a daily snapshot can freeze per day. Returns UNROUNDED
+// values (caller rounds); their sum equals settlementCash(rate, woDates.length, netMins) exactly.
+function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses, holidays) {
+  const rate = Number(salaryRate) || 0;
+
+  const plannedByDate = new Map();
+  const otAuthByDate = new Set();
+  planned.filter((p) => p.userId === userId).forEach((p) => {
+    const startMin = hhmmToMin(p.startTime), endMin = hhmmToMin(p.endTime);
+    if (endMin > startMin) plannedByDate.set(p.date, { startMin, endMin, declared: Math.max(0, p.declaredOtMins || 0) });
+    if (p.otAuthorized) otAuthByDate.add(p.date);
+  });
+
+  const eventsByDate = new Map();
+  events.filter((e) => e.userId === userId).forEach((e) => {
+    if (!eventsByDate.has(e.date)) eventsByDate.set(e.date, []);
+    eventsByDate.get(e.date).push(e);
+  });
+
+  const apprByDate = new Map();
+  approvals.filter((a) => a.userId === userId).forEach((a) => apprByDate.set(a.date, a));
+
+  const overrideByDate = new Map();
+  statuses.filter((s) => s.userId === userId && s.status === "Present" && s.inTime && s.outTime).forEach((s) => {
+    const inMin = hhmmToMin(s.inTime), outMin = hhmmToMin(s.outTime);
+    if (outMin > inMin) overrideByDate.set(s.date, { inMin, outMin });
+  });
+
+  const woByDate = new Set(
+    statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date),
+  );
+
+  const perDate = new Map(); // date → { autoOtMins, restDayOtMins, shortageMins }
+  const ensure = (d) => {
+    if (!perDate.has(d)) perDate.set(d, { autoOtMins: 0, restDayOtMins: 0, shortageMins: 0 });
+    return perDate.get(d);
+  };
+  const accrueDay = (date, inMin, outMin) => {
+    const info = plannedByDate.get(date);
+    const led = computeDayLedger({
+      shiftStartMin: info ? info.startMin : DEFAULT_SHIFT_START_MIN,
+      shiftEndMin:   info ? info.endMin   : DEFAULT_SHIFT_END_MIN,
+      inMin, outMin,
+      declaredOtMins: info ? info.declared : 0,
+      isRestDay: isSunday(date) || holidays.has(date),
+      otAuthorized: otAuthByDate.has(date),
+    });
+    const acc = ensure(date);
+    acc.shortageMins  += led.shortageMins;
+    acc.autoOtMins    += led.autoOtMins;
+    acc.restDayOtMins += led.restDayOtMins;
+  };
+
+  eventsByDate.forEach((dayEvents, date) => {
+    if (overrideByDate.has(date)) return; // regularization in/out is authoritative
+    const ins  = dayEvents.filter((e) => OPS_IN_TYPES.has(e.type));
+    const outs = dayEvents.filter((e) => OPS_OUT_TYPES.has(e.type));
+    if (ins.length === 0) return;
+    const firstIn = Math.min(...ins.map(tsSeconds));
+    const lastOut = outs.length ? Math.max(...outs.map(tsSeconds)) : null;
+    if (lastOut === null || lastOut <= firstIn) return;
+    accrueDay(date, istMinuteOfDay(firstIn), istMinuteOfDay(lastOut));
+  });
+  overrideByDate.forEach(({ inMin, outMin }, date) => accrueDay(date, inMin, outMin));
+
+  // Union of every date carrying a contribution: worked/override, approval, or WO.
+  const dates = new Set([...perDate.keys(), ...apprByDate.keys(), ...woByDate]);
+  const cash = new Map();
+  dates.forEach((date) => {
+    const p = perDate.get(date) || { autoOtMins: 0, restDayOtMins: 0, shortageMins: 0 };
+    const granted = Number((apprByDate.get(date) || {}).approvedMins) || 0;
+    const isWO = woByDate.has(date);
+    const woDebit = isWO ? WO_DEBIT_MINS : 0;
+    const netMins = p.autoOtMins + p.restDayOtMins + granted - p.shortageMins - woDebit;
+    cash.set(date, (isWO ? rate : 0) + (netMins / WO_DEBIT_MINS) * rate);
+  });
+  return cash;
+}
+
+module.exports = { computeRangeLedger, settlementCash, dailyOtWoCash };

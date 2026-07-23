@@ -105,3 +105,39 @@ test("settlementCash (rate 800)", () => {
   assert.equal(settlementCash(800, 0, 480), 800);  // pure OT
   assert.equal(settlementCash(800, 0, -240), -400); // pure shortage
 });
+
+const { dailyOtWoCash } = require("./otAggregate");
+
+test("dailyOtWoCash: per-date values sum to the monthly settlementCash exactly", () => {
+  const rate = 1000; // ₹/day → ₹/min = 1000/480
+  // Day 1 (Mon): shift 10–18, worked 10–19 with declared 60 → 60 auto OT.
+  // Day 2 (Tue): worked 10–17 → 60 shortage (left early).
+  // Day 3 (Sun): rest day, otAuthorized, worked 10–14 → 240 rest-day OT.
+  // Day 4 (Wed): WO status, unworked → nets to 0.
+  const planned = [
+    { userId: U, date: "2026-06-01", startTime: "10:00", endTime: "18:00", declaredOtMins: 60 },
+    { userId: U, date: "2026-06-02", startTime: "10:00", endTime: "18:00", declaredOtMins: 0 },
+    { userId: U, date: "2026-06-07", startTime: "10:00", endTime: "18:00", declaredOtMins: 0, otAuthorized: true },
+  ];
+  const events = [
+    ev(U, "2026-06-01", "site_in", "10:00"), ev(U, "2026-06-01", "site_out", "19:00"),
+    ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "17:00"),
+    ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "14:00"),
+  ];
+  const statuses = [{ userId: U, date: "2026-06-04", status: "WO" }];
+
+  const cash = dailyOtWoCash(U, rate, events, planned, [], statuses, noHol);
+  const sum = [...cash.values()].reduce((s, v) => s + v, 0);
+
+  const led = computeRangeLedger(U, events, planned, [], statuses, noHol);
+  const monthly = settlementCash(rate, led.woDates.length, led.netMins);
+
+  assert.equal(Math.round(sum * 100) / 100, monthly);
+});
+
+test("dailyOtWoCash: a shortage-only day is negative", () => {
+  const planned = [{ userId: U, date: "2026-06-02", startTime: "10:00", endTime: "18:00", declaredOtMins: 0 }];
+  const events = [ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "17:00")];
+  const cash = dailyOtWoCash(U, 480, events, planned, [], [], noHol); // rate 480 → ₹1/min
+  assert.equal(cash.get("2026-06-02"), -60); // 60 min shortage × ₹1/min
+});
