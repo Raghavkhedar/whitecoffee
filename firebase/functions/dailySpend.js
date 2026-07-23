@@ -21,4 +21,32 @@ function dailySalary(salaryRate, status) {
   return round2((Number(salaryRate) || 0) * dayWeight(status));
 }
 
-module.exports = { round2, dayWeight, dailySalary };
+function toNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Missing efficiency → 1 (matrix not built yet, see payrollDeductions.js); explicit 0 honoured.
+function resolveEfficiency(v) {
+  if (v === null || v === undefined || v === "") return 1;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 1;
+}
+
+// PF/ESI/Imprest as flat percentages of the DAY's salary. Deliberately NOT floored at 0
+// (unlike the monthly computeDeductions): a negative Absent-day salary yields negative
+// components so the daily rows sum exactly to the monthly figure when monthly salary ≥ 0.
+function dailyDeductions({ salary, pfPercent, esiPercent, imprestPercent, efficiency } = {}) {
+  const base = toNum(salary);
+  return {
+    pf:      round2(base * toNum(pfPercent) / 100),
+    esi:     round2(base * toNum(esiPercent) / 100),
+    imprest: round2(base * toNum(imprestPercent) / 100 * resolveEfficiency(efficiency)),
+  };
+}
+
+function dailyTotal({ salary, conveyance, imprest, otWo, pf, esi } = {}) {
+  return round2(toNum(salary) + toNum(conveyance) + toNum(imprest) + toNum(otWo) - toNum(pf) - toNum(esi));
+}
+
+module.exports = { round2, dayWeight, dailySalary, dailyDeductions, dailyTotal };

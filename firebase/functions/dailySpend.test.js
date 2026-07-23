@@ -21,3 +21,29 @@ test("dailySalary: rate × weight, negative on an Absent day", () => {
   assert.equal(dailySalary(1000, "Absent"), -2000);
   assert.equal(dailySalary(0, "Present"), 0);
 });
+
+const { dailyDeductions, dailyTotal } = require("./dailySpend");
+
+test("dailyDeductions: flat % of the day's salary, no floor", () => {
+  const d = dailyDeductions({ salary: 1000, pfPercent: 12, esiPercent: 0.75, imprestPercent: 5 });
+  assert.equal(d.pf, 120);
+  assert.equal(d.esi, 7.5);
+  assert.equal(d.imprest, 50);
+});
+
+test("dailyDeductions: negative salary yields negative components (exact reconciliation)", () => {
+  const d = dailyDeductions({ salary: -2000, pfPercent: 12, esiPercent: 0.75, imprestPercent: 5 });
+  assert.equal(d.pf, -240);
+  assert.equal(d.esi, -15);
+  assert.equal(d.imprest, -100);
+});
+
+test("dailyDeductions: missing percents → 0; missing efficiency → 1; explicit 0 honoured", () => {
+  assert.deepEqual(dailyDeductions({ salary: 1000 }), { pf: 0, esi: 0, imprest: 0 });
+  assert.equal(dailyDeductions({ salary: 1000, imprestPercent: 5 }).imprest, 50); // eff defaults 1
+  assert.equal(dailyDeductions({ salary: 1000, imprestPercent: 5, efficiency: 0 }).imprest, 0);
+});
+
+test("dailyTotal: mirrors TOTAL DUE (salary + covy + imprest + otWo − pf − esi)", () => {
+  assert.equal(dailyTotal({ salary: 1000, conveyance: 120, imprest: 50, otWo: 300, pf: 120, esi: 7.5 }), 1342.5);
+});
