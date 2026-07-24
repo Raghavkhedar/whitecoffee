@@ -110,15 +110,25 @@ Exact tag strings are load-bearing. The function will:
 - **Category 22:** auto-detect the Communication tab (name contains "communication"), its Date column
   (header matches /date/i) and Amount column (header matches /amount|amt|₹/i); log what it picked.
 
-## Daily Snapshot view
+## Daily Snapshot table (function-computed)
 
-A `Daily Snapshot` tab with:
-- Two input cells: **Start Date**, **End Date**.
-- A QUERY/pivot producing **categories down × dates across**, values = daily spend in range.
-- Side columns: **month-to-date running total** and **overall running total** per category.
-- A Manpower drill-down block: QUERY filtered to `Category = "Manpower Expense"`, pivoted per employee.
+A `Daily Snapshot` tab written as a **materialized table** (static values computed in the
+function, not sheet formulas — cumulative running totals over a dense daily grid are painful
+and slow as formulas). Columns:
 
-Exact formulas finalized in the implementation plan.
+`Snapshot Date | Category | Employee ID | Employee Name | Component | Month | Day Spend | Month Total | Running Total`
+
+- **Day Spend** = that series' spend on that date. **Month Total** = month-to-date cumulative
+  (resets each month). **Running Total** = all-time cumulative.
+- **Standalone categories (21): dense** — one row per (date × category) for every date in the
+  data span, zeros included. Employee/Component blank.
+- **Manpower: expanded per (employee × component)** — Salary/Conveyance/Imprest/OT/PF/ESI/Special
+  Allowance per employee, plus the office-level Employee Welfare & Retention lump (blank employee).
+  **Sparse** — a row only on dates that series actually had spend.
+- Sorted by date, then category order (Manpower first), then employee, then component.
+- Written `USER_ENTERED` so `Snapshot Date` lands as a real date (native filtering/sorting).
+
+The raw normalized `SpendData` tab is still written (audit/feed layer).
 
 ## Testing
 
