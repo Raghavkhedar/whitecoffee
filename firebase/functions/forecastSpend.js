@@ -266,9 +266,28 @@ function buildDailySnapshot(flatRows, opts = {}) {
   return out;
 }
 
+// Diagnostic: distinct normalized values of a tag-ish column (header exactly tag/tags),
+// independent of date/amount columns. Used to inventory what tags a tab actually contains.
+function distinctTags(values) {
+  if (!Array.isArray(values) || values.length === 0) return [];
+  let h = -1, tagCol = -1;
+  for (let i = 0; i < Math.min(values.length, 6); i++) {
+    const row = values[i] || [];
+    const idx = row.findIndex((c) => /^\s*tags?\s*$/i.test(String(c == null ? "" : c).trim()));
+    if (idx >= 0) { h = i; tagCol = idx; break; }
+  }
+  if (tagCol < 0) return [];
+  const set = new Set();
+  for (let i = h + 1; i < values.length; i++) {
+    const t = normTag((values[i] || [])[tagCol]);
+    if (t) set.add(t);
+  }
+  return [...set];
+}
+
 module.exports = {
   normTag, findCol, parseAmount, parseDate,
   VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
   bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
-  monthLabelOf, datesInRange, buildDailySnapshot,
+  monthLabelOf, datesInRange, buildDailySnapshot, distinctTags,
 };

@@ -7,7 +7,7 @@ const {
   normTag, findCol, parseAmount, parseDate,
   VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
   bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
-  monthLabelOf, datesInRange, buildDailySnapshot,
+  monthLabelOf, datesInRange, buildDailySnapshot, distinctTags,
 } = require("./forecastSpend");
 
 test("normTag trims, lowercases, collapses whitespace", () => {
@@ -167,6 +167,13 @@ test("buildDailySnapshot: month total resets across a month boundary; running do
   // 06-30: month 10, run 10 ; 07-01: month resets → 5, run 15
   assert.deepEqual(out[0], ["2026-06-30", "Electricity", "", "", "", "June 2026", 10, 10, 10]);
   assert.deepEqual(out[1], ["2026-07-01", "Electricity", "", "", "", "July 2026", 5, 5, 15]);
+});
+
+test("distinctTags collects normalized tag-column values", () => {
+  const values = [["Voucher", "Date", "tags", "Amount"],
+    ["v", "1/1/2026", "Tool", "5"], ["v", "2/1/2026", "tool ", "6"], ["v", "3/1/2026", "", "7"]];
+  assert.deepEqual(distinctTags(values), ["tool"]);
+  assert.deepEqual(distinctTags([["a", "b"], ["1", "2"]]), []); // no tag column
 });
 
 test("buildDailySnapshot: Manpower sparse per employee×component, no zero-day rows", () => {
