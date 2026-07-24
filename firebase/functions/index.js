@@ -1594,16 +1594,17 @@ exports.snapshotDailySpend = onSchedule(
     // this run has lost its economic driver — delete it so the day drops to zero. Only unlocked
     // window months are in existingIds (locked/finalized months are never in windowMonths), so
     // frozen/settled data is never touched.
+    let dBatch = db.batch();
     let dOps = 0;
     let deleted = 0;
     for (const id of existingIds) {
       if (writtenIds.has(id)) continue;
-      batch.delete(db.collection("dailySpend").doc(id));
+      dBatch.delete(db.collection("dailySpend").doc(id));
       dOps++;
       deleted++;
-      if (dOps >= 400) { await batch.commit(); batch = db.batch(); dOps = 0; }
+      if (dOps >= 400) { await dBatch.commit(); dBatch = db.batch(); dOps = 0; }
     }
-    if (dOps > 0) await batch.commit();
+    if (dOps > 0) await dBatch.commit();
     if (deleted > 0) {
       console.log(`dailySpend: deleted ${deleted} orphaned row(s) in [${windowMonths.join(", ")}]`);
     }
