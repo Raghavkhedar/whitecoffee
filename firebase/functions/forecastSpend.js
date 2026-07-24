@@ -22,19 +22,21 @@ const VENDOR_CATEGORIES = {
 // NOTE: "Employee Welfare & Retention" is intentionally absent — it routes into Manpower
 // (a lump line), handled by the integration's officeResolve, not here.
 const OFFICE_CATEGORIES = {
+  // Confirmed present in the Office Expense tab — exact tag strings from the live data.
+  [normTag("asset repair")]: "Asset Repair",
+  [normTag("overhead")]: "OH (Overhead)",
+  [normTag("cleaning eq")]: "Office Cleaning Eqp. & Exp.",
+  [normTag("subscription – hr related")]: "Subscription – Job Portal", // NOTE: en-dash (–), not hyphen
+  [normTag("customer entertainment expenses")]: "Client/Vendor Ent Expense",
+  [normTag("stationery")]: "Stationery",
+  [normTag("celebration")]: "Welfare (Celebrations)",
+  // Not yet present in the data — best-guess spellings; will match once such rows appear.
   [normTag("Electricity")]: "Electricity",
-  [normTag("Asset Repair")]: "Asset Repair",
   [normTag("Tool Repair")]: "Tool Repair",
-  [normTag("Celebration")]: "Welfare (Celebrations)",
-  [normTag("Client/Vendor Entertainment Expenses")]: "Client/Vendor Ent Expense",
-  [normTag("Stationary")]: "Stationery",
-  [normTag("Office Cleaning Eqp. and Exp.")]: "Office Cleaning Eqp. & Exp.",
   [normTag("Training Exp.")]: "Training Expense",
   [normTag("Subscription - CLOUD")]: "Subscription – Cloud",
-  [normTag("Subscription - HR Related")]: "Subscription – Job Portal",
   [normTag("Building/General Maintenance (Electrical / Plumbing / Painting / Deep Cleaning)")]: "Maint. of Building",
   [normTag("Chai / Biscuit / Tissue / Disposable")]: "Pantry / House Keeping",
-  [normTag("Mis. Overhead")]: "OH (Overhead)",
   [normTag("Expense Related to Sales and Advertisement")]: "Sales & Adv Expenses",
 };
 

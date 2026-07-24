@@ -20,7 +20,11 @@ test("catalog maps known tags to category names", () => {
   assert.equal(VENDOR_CATEGORIES[normTag("Tool")], "Tool Purchase");
   assert.equal(VENDOR_CATEGORIES[normTag("Transporter Purchase")], "Transporter Purchases");
   assert.equal(OFFICE_CATEGORIES[normTag("Celebration")], "Welfare (Celebrations)");
-  assert.equal(OFFICE_CATEGORIES[normTag("Stationary")], "Stationery");
+  assert.equal(OFFICE_CATEGORIES[normTag("stationery")], "Stationery");
+  assert.equal(OFFICE_CATEGORIES[normTag("overhead")], "OH (Overhead)");
+  assert.equal(OFFICE_CATEGORIES[normTag("cleaning eq")], "Office Cleaning Eqp. & Exp.");
+  assert.equal(OFFICE_CATEGORIES[normTag("customer entertainment expenses")], "Client/Vendor Ent Expense");
+  assert.equal(OFFICE_CATEGORIES[normTag("subscription – hr related")], "Subscription – Job Portal");
   assert.equal(OFFICE_CATEGORIES[normTag("Employee Welfare & Retention")], undefined);
 });
 
