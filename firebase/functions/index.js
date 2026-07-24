@@ -473,6 +473,14 @@ exports.exportForecastSpend = onSchedule(
     if (!empPay.seenTags.has(forecast.normTag("Special Allowance"))) console.warn("forecast: 'Special Allowance' NOT FOUND in Employee Payment tab");
     console.log(`forecast: tabs vendor='${vendorTab}' office='${officeTab}' empPay='${empPayTab}' comm='${commTab}'`);
     console.log(`forecast: Communication dateCol=${comm.dateCol} amtCol=${comm.amtCol} rows=${comm.rows.length}`);
+    // Diagnostics — real tab list + the actual tag values present in each tab + date span.
+    console.log(`forecast[diag]: ALL TABS = ${titles.join(" | ")}`);
+    console.log(`forecast[diag]: vendor tags seen = ${[...vendor.seenTags].join(" | ") || "(none)"}`);
+    console.log(`forecast[diag]: office tags seen = ${[...office.seenTags].join(" | ") || "(none)"}`);
+    console.log(`forecast[diag]: empPay tags seen = ${[...empPay.seenTags].join(" | ") || "(none)"}`);
+    const diagDates = flat.map((r) => r[0]).filter(Boolean).sort();
+    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - empPay.rows.length - comm.rows.length}`);
+    console.log(`forecast[diag]: date span ${diagDates[0]} .. ${diagDates[diagDates.length - 1]}`);
 
     // 5) Write SpendData (USER_ENTERED so the Date column lands as real dates for QUERY/MIN/MAX).
     flat.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1].localeCompare(b[1])));
