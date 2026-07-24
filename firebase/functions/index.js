@@ -481,15 +481,6 @@ exports.exportForecastSpend = onSchedule(
     const diagDates = flat.map((r) => r[0]).filter(Boolean).sort();
     console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - empPay.rows.length - comm.rows.length}`);
     console.log(`forecast[diag]: date span ${diagDates[0]} .. ${diagDates[diagDates.length - 1]}`);
-    // One-off inventory: full distinct tag list for every likely expense tab, so the catalog
-    // can be reconciled against reality in a single pass.
-    for (const cand of ["Vendor Bill", "Vendor Payment", "Office Expense", "Employee Payment", "Employee Expense Claim", "Spare Utilization", "Miscellaneous"]) {
-      const tn = forecast.pickTabName(titles, cand.toLowerCase());
-      if (!tn) { console.log(`forecast[scan]: '${cand}' -> (no such tab)`); continue; }
-      const tags = forecast.distinctTags(await readTab(tn));
-      console.log(`forecast[scan]: '${tn}' tags = ${tags.join(" | ") || "(none / no tag column)"}`);
-    }
-
     // Drop future-dated rows (data-entry typos, e.g. a stray 2027 date) before building the grid.
     const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const before = flat.length;
