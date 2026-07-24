@@ -5,8 +5,9 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
   normTag, findCol, parseAmount, parseDate,
-  VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS,
+  VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
   bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
+  monthLabelOf, datesInRange, buildDailySnapshot,
 } = require("./forecastSpend");
 
 test("normTag trims, lowercases, collapses whitespace", () => {
@@ -129,5 +130,55 @@ test("bucketCommunication sums all dated rows, no tag filter", () => {
   assert.deepEqual(rows, [
     ["2026-07-09", "Comm Expenses", "", "", "", 220.8],
     ["2026-07-10", "Comm Expenses", "", "", "", 100],
+  ]);
+});
+
+test("STANDALONE_CATEGORIES has the 21 non-Manpower categories", () => {
+  assert.equal(STANDALONE_CATEGORIES.length, 21);
+  assert.ok(!STANDALONE_CATEGORIES.includes("Manpower Expense"));
+  assert.equal(STANDALONE_CATEGORIES[0], "Tool Purchase");
+});
+
+test("monthLabelOf + datesInRange", () => {
+  assert.equal(monthLabelOf("2026-07-21"), "July 2026");
+  assert.deepEqual(datesInRange("2026-07-01", "2026-07-03"), ["2026-07-01", "2026-07-02", "2026-07-03"]);
+  assert.deepEqual(datesInRange("", "2026-07-03"), []);
+});
+
+test("buildDailySnapshot: standalone dense with month/running totals incl. zero days", () => {
+  const flat = [
+    ["2026-07-01", "Electricity", "", "", "", 100],
+    ["2026-07-03", "Electricity", "", "", "", 50],
+  ];
+  const out = buildDailySnapshot(flat, { standaloneCategories: ["Electricity"] });
+  assert.deepEqual(out, [
+    ["2026-07-01", "Electricity", "", "", "", "July 2026", 100, 100, 100],
+    ["2026-07-02", "Electricity", "", "", "", "July 2026", 0, 100, 100],
+    ["2026-07-03", "Electricity", "", "", "", "July 2026", 50, 150, 150],
+  ]);
+});
+
+test("buildDailySnapshot: month total resets across a month boundary; running does not", () => {
+  const flat = [
+    ["2026-06-30", "Electricity", "", "", "", 10],
+    ["2026-07-01", "Electricity", "", "", "", 5],
+  ];
+  const out = buildDailySnapshot(flat, { standaloneCategories: ["Electricity"] });
+  // 06-30: month 10, run 10 ; 07-01: month resets → 5, run 15
+  assert.deepEqual(out[0], ["2026-06-30", "Electricity", "", "", "", "June 2026", 10, 10, 10]);
+  assert.deepEqual(out[1], ["2026-07-01", "Electricity", "", "", "", "July 2026", 5, 5, 15]);
+});
+
+test("buildDailySnapshot: Manpower sparse per employee×component, no zero-day rows", () => {
+  const flat = [
+    ["2026-07-01", "Manpower Expense", "Salary", "S1", "alice", 800],
+    ["2026-07-03", "Manpower Expense", "Salary", "S1", "alice", 800],
+    ["2026-07-01", "Manpower Expense", "PF", "S1", "alice", 96],
+  ];
+  const out = buildDailySnapshot(flat, { standaloneCategories: [] });
+  assert.deepEqual(out, [
+    ["2026-07-01", "Manpower Expense", "S1", "alice", "PF", "July 2026", 96, 96, 96],
+    ["2026-07-01", "Manpower Expense", "S1", "alice", "Salary", "July 2026", 800, 800, 800],
+    ["2026-07-03", "Manpower Expense", "S1", "alice", "Salary", "July 2026", 800, 1600, 1600],
   ]);
 });

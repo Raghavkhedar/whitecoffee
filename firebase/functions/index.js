@@ -484,28 +484,18 @@ exports.exportForecastSpend = onSchedule(
       valueInputOption: "USER_ENTERED", requestBody: { values: [header, ...flat] },
     });
 
-    // 6) Daily Snapshot view — date-range cells B1:B2 drive reactive QUERY blocks (non-overlapping).
+    // 6) Daily Snapshot — computed materialized table (dense standalone categories +
+    // sparse per-employee×component Manpower, with month-to-date + all-time running totals).
+    const snapshot = forecast.buildDailySnapshot(flat);
+    const snapHeader = ["Snapshot Date", "Category", "Employee ID", "Employee Name", "Component",
+      "Month", "Day Spend", "Month Total", "Running Total"];
     await ensureTab(sheets, FORECAST_SHEET_ID, "Daily Snapshot");
     await sheets.spreadsheets.values.clear({ spreadsheetId: FORECAST_SHEET_ID, range: "Daily Snapshot" });
-    const between = `where A >= date '"&TEXT($B$1,"yyyy-mm-dd")&"' and A <= date '"&TEXT($B$2,"yyyy-mm-dd")&"'`;
-    const pivotQ = `=IFERROR(QUERY(SpendData!A2:F,"select B, sum(F) ${between} group by B pivot A",0),"no data in range")`;
-    const inRangeQ = `=IFERROR(QUERY(SpendData!A2:F,"select B, sum(F) ${between} group by B order by B label sum(F) 'In Range'",0),"no data")`;
-    const overallQ = `=IFERROR(QUERY(SpendData!A2:F,"select B, sum(F) group by B order by B label sum(F) 'Overall'",0),"no data")`;
-    const empQ = `=IFERROR(QUERY(SpendData!A2:F,"select E, sum(F) where B = 'Manpower Expense' group by E order by E label sum(F) 'Manpower Total'",0),"no data")`;
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: FORECAST_SHEET_ID,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: [
-          { range: "Daily Snapshot!A1", values: [["Start Date", "=MIN(SpendData!A2:A)"], ["End Date", "=MAX(SpendData!A2:A)"]] },
-          { range: "Daily Snapshot!A4", values: [["Category totals (overall)"], [overallQ]] },
-          { range: "Daily Snapshot!D4", values: [["Category totals (in selected range)"], [inRangeQ]] },
-          { range: "Daily Snapshot!G4", values: [["Manpower by employee (overall)"], [empQ]] },
-          { range: "Daily Snapshot!A30", values: [["Daily spend by category — dates across (in selected range)"], [pivotQ]] },
-        ],
-      },
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: FORECAST_SHEET_ID, range: "Daily Snapshot!A1",
+      valueInputOption: "USER_ENTERED", requestBody: { values: [snapHeader, ...snapshot] },
     });
-    console.log(`forecast: wrote ${flat.length} SpendData rows + Daily Snapshot view`);
+    console.log(`forecast: wrote ${flat.length} SpendData rows + ${snapshot.length} Daily Snapshot rows`);
   },
 );
 
