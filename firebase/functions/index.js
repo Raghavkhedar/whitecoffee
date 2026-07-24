@@ -27,7 +27,7 @@ const {
 const { computeRangeLedger, settlementCash, dailyOtWoCash } = require("./otAggregate");
 // Pure per-day spend decomposition for the Daily Spend Snapshot (see dailySpend.js).
 const {
-  dailySalary, dailyDeductions, dailyTotal, round2, openWindowMonths, addMonths,
+  dailySalary, dailyDeductions, dailyTotal, round2, openWindowMonths,
 } = require("./dailySpend");
 // Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
 // office/operations/sales/admin decisions through predicates instead of `isOps`.
@@ -1405,11 +1405,18 @@ exports.regularizationReminder = onSchedule(
 );
 
 // ── Daily Spend Snapshot ────────────────────────────────────────────────
-// One dailySpend/{uid}__{date} doc per employee per working day. Runs after
-// computeDailyAttendanceStatus (23:59 IST) so statuses are final. Two passes:
-//   1. Freeze-finalization: a recently-locked month keeps the frozen:false its last
-//      unlocked run left behind — relabel those rows frozen:true ONCE, without recomputing.
-//   2. Recompute: rewrite the current month + any still-unlocked priors (frozen:false).
+// One dailySpend/{uid}__{date} doc per employee per working day. Runs on the
+// 22:30 IST cycle (same slot as exportToSheets), so at run time TODAY'S statuses
+// are NOT yet final — computeDailyAttendanceStatus lands later at 23:59 IST. The
+// window therefore processes through the prior day authoritatively; the current
+// day self-heals on the next cycle once its statuses exist. Two passes:
+//   1. Freeze-finalization: a locked month keeps the frozen:false its last unlocked
+//      run left behind — relabel those rows frozen:true ONCE, without recomputing.
+//      State-driven over lockedSet: finalizes any locked month with surviving
+//      unfrozen rows regardless of how far behind the admin locked it.
+//   2. Recompute: rewrite the current month + any still-unlocked priors (frozen:false),
+//      and DELETE orphaned rows in those unlocked window months (a day whose only
+//      driver — e.g. rest-day OT — was removed drops to zero instead of over-counting).
 // A locked month is never recomputed (openWindowMonths stops at the first locked month).
 // See docs/superpowers/specs/2026-07-24-daily-spend-snapshot-design.md.
 exports.snapshotDailySpend = onSchedule(
@@ -1451,14 +1458,15 @@ exports.snapshotDailySpend = onSchedule(
     // ── Pass 1: freeze-finalization ───────────────────────────────────
     // The recompute pass below only writes unlocked months, so a month that locked since
     // the last run still carries frozen:false on its rows. Relabel them frozen:true ONCE,
-    // WITHOUT recomputing values. Only the two recently-closed months can be in this state
-    // (older months were already finalized on a prior run). Needs a (month, frozen)
-    // composite index — created in Task 6.
-    for (const M of [addMonths(currentKey, -1), addMonths(currentKey, -2)]) {
-      if (!lockedSet.has(M)) continue;
+    // WITHOUT recomputing values. STATE-DRIVEN: iterate the actual lockedSet, not a fixed
+    // -1/-2 offset — a month can be locked while the admin is ≥3 months behind (past the
+    // recompute cap), and such a month would otherwise never be probed and stay frozen:false
+    // forever. Already-finalized months return empty from the indexed limit-1 probe (cheap),
+    // so re-probing them nightly is fine. Needs a (month, frozen) composite index.
+    for (const M of lockedSet) {
       const probe = await db.collection("dailySpend")
         .where("month", "==", M).where("frozen", "==", false).limit(1).get();
-      if (probe.empty) continue; // already finalized on a previous run
+      if (probe.empty) continue; // already finalized on a previous run (or no rows at all)
       const monthSnap = await db.collection("dailySpend").where("month", "==", M).get();
       let fBatch = db.batch();
       let fOps = 0;
@@ -1516,6 +1524,15 @@ exports.snapshotDailySpend = onSchedule(
     // UTC-safe weekday: read getUTCDay() on a Z-anchored string (functions run on UTC).
     const isSunday = (dateStr) => new Date(dateStr + "T00:00:00Z").getUTCDay() === 0;
 
+    // Existing dailySpend row ids in the UNLOCKED window months, so we can drop-to-zero any
+    // row we no longer write this run (an orphan: e.g. an authorized rest-day OT day whose OT
+    // was later de-authorized before lock — its date leaves candidateDates, so a pure upsert
+    // would leave the stale row behind and the month would over-count with no self-heal).
+    // windowMonths has ≤4 entries (all unlocked — locked months are excluded), safe for `in`.
+    const existingSnap = await db.collection("dailySpend").where("month", "in", windowMonths).get();
+    const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+    const writtenIds = new Set(); // ids we (re)write this run
+
     let batch = db.batch();
     let ops = 0;
     const commitIfFull = async () => { if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; } };
@@ -1557,19 +1574,39 @@ exports.snapshotDailySpend = onSchedule(
         const hasValue = salary !== 0 || conveyance !== 0 || otWo !== 0;
         if (!hasValue && !(status && !sunday)) continue;
 
-        batch.set(db.collection("dailySpend").doc(`${user.id}__${date}`), {
+        const id = `${user.id}__${date}`;
+        batch.set(db.collection("dailySpend").doc(id), {
           userId: user.id, employeeId: user.employeeId || "", name: user.name || "", role: user.role || "",
           date, month: monthOf(date),
           salary, conveyance, pf, esi, otWo, imprest, totalSpend,
           frozen: false,
           computedAt: admin.firestore.Timestamp.now(),
         }, { merge: false });
+        writtenIds.add(id);
         ops++;
         await commitIfFull();
       }
     }
     if (ops > 0) await batch.commit();
     console.log(`dailySpend: recomputed months [${windowMonths.join(", ")}] up to ${today}`);
+
+    // Orphan cleanup: any pre-existing row in an unlocked window month that we did NOT rewrite
+    // this run has lost its economic driver — delete it so the day drops to zero. Only unlocked
+    // window months are in existingIds (locked/finalized months are never in windowMonths), so
+    // frozen/settled data is never touched.
+    let dOps = 0;
+    let deleted = 0;
+    for (const id of existingIds) {
+      if (writtenIds.has(id)) continue;
+      batch.delete(db.collection("dailySpend").doc(id));
+      dOps++;
+      deleted++;
+      if (dOps >= 400) { await batch.commit(); batch = db.batch(); dOps = 0; }
+    }
+    if (dOps > 0) await batch.commit();
+    if (deleted > 0) {
+      console.log(`dailySpend: deleted ${deleted} orphaned row(s) in [${windowMonths.join(", ")}]`);
+    }
   },
 );
 
