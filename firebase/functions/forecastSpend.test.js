@@ -7,7 +7,7 @@ const {
   normTag, findCol, parseAmount, parseDate,
   VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
   bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
-  monthLabelOf, datesInRange, buildDailySnapshot, distinctTags,
+  monthLabelOf, datesInRange, buildDailySnapshot, distinctTags, fiscalYearMonths,
 } = require("./forecastSpend");
 
 test("normTag trims, lowercases, collapses whitespace", () => {
@@ -141,6 +141,17 @@ test("STANDALONE_CATEGORIES has the 21 non-Manpower categories", () => {
   assert.equal(STANDALONE_CATEGORIES.length, 21);
   assert.ok(!STANDALONE_CATEGORIES.includes("Manpower Expense"));
   assert.equal(STANDALONE_CATEGORIES[0], "Tool Purchase");
+});
+
+test("fiscalYearMonths: 12 labels April→March for the FY containing the anchor", () => {
+  const fm = fiscalYearMonths("2026-07-01");
+  assert.equal(fm.length, 12);
+  assert.equal(fm[0], "April 2026");
+  assert.equal(fm[8], "December 2026");
+  assert.equal(fm[9], "January 2027");
+  assert.equal(fm[11], "March 2027");
+  // a date before April belongs to the previous fiscal year
+  assert.equal(fiscalYearMonths("2026-02-15")[0], "April 2025");
 });
 
 test("monthLabelOf + datesInRange", () => {

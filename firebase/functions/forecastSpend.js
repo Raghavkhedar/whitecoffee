@@ -198,6 +198,18 @@ function datesInRange(minISO, maxISO) {
 
 const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+// 12 fiscal-year month labels ("Month YYYY") starting in April, for the FY containing anchorISO.
+function fiscalYearMonths(anchorISO) {
+  const [y, m] = String(anchorISO).split("-").map(Number);
+  const startYear = m >= 4 ? y : y - 1;
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const idx = (3 + i) % 12;                  // 3 = April
+    out.push(`${MONTHS[idx]} ${startYear + Math.floor((3 + i) / 12)}`);
+  }
+  return out;
+}
+
 // Build the materialized Daily Snapshot table from flat rows.
 // Output row: [snapshotDate, category, employeeId, employeeName, component, monthLabel,
 //              daySpend, monthTotal (month-to-date cumulative), runningTotal (all-time cumulative)].
@@ -291,5 +303,5 @@ module.exports = {
   normTag, findCol, parseAmount, parseDate,
   VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
   bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
-  monthLabelOf, datesInRange, buildDailySnapshot, distinctTags,
+  monthLabelOf, datesInRange, buildDailySnapshot, distinctTags, fiscalYearMonths,
 };

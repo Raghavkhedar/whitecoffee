@@ -509,6 +509,24 @@ exports.exportForecastSpend = onSchedule(
       valueInputOption: "USER_ENTERED", requestBody: { values: [snapHeader, ...snapshot] },
     });
     console.log(`forecast: wrote ${flat.length} SpendData rows + ${snapshot.length} Daily Snapshot rows`);
+
+    // 7) Forecast entry template — the manager types his forecast ₹ per category per month here,
+    // then builds his own charts / comparison against Daily Snapshot. Created ONCE and never
+    // overwritten: if the tab already has content (his entries), we leave it completely alone.
+    await ensureTab(sheets, FORECAST_SHEET_ID, "Forecast");
+    const existingForecast = await sheets.spreadsheets.values.get({ spreadsheetId: FORECAST_SHEET_ID, range: "Forecast!A1" });
+    if (!existingForecast.data.values || existingForecast.data.values.length === 0) {
+      const cats = ["Manpower Expense", ...forecast.STANDALONE_CATEGORIES];
+      const months = forecast.fiscalYearMonths(todayIST);
+      const template = [["Category", ...months], ...cats.map((c) => [c])];
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: FORECAST_SHEET_ID, range: "Forecast!A1",
+        valueInputOption: "USER_ENTERED", requestBody: { values: template },
+      });
+      console.log("forecast: created blank Forecast entry template (22 categories × 12 fiscal months)");
+    } else {
+      console.log("forecast: Forecast tab already has content — left untouched");
+    }
   },
 );
 
