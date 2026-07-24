@@ -29,6 +29,8 @@ const { computeRangeLedger, settlementCash, dailyOtWoCash } = require("./otAggre
 const {
   dailySalary, dailyDeductions, dailyTotal, round2, openWindowMonths,
 } = require("./dailySpend");
+// Pure spend categorisation for the Forecasting export (see forecastSpend.js).
+const forecast = require("./forecastSpend");
 // Per-role behavior axes — single source of truth (see roleCapabilities.js). Routes
 // office/operations/sales/admin decisions through predicates instead of `isOps`.
 const {
@@ -95,6 +97,9 @@ const SHEET_ID_7 = "1c2JtarmbteClXaADF666WYEGNmx4CozM7EKo7bcteKE";
 const SHEET_ID_OT = "1DNJKQfvm238ZmULF7ScJAXRtxzzjYjk87jV4QMR2VjA";
 // Sheet9: Site Manpower Time Utilisation (ops per-site visits, current month)
 const SHEET_ID_MANPOWER = "1U66-ldSNMm01f3rnJabJe0BxTUFvDglSX5rAFqXDJZ4";
+// Forecasting export target + the MDD ledger source (read-only). See forecastSpend.js.
+const FORECAST_SHEET_ID = "1ON35PHx0B5vZAUwhvPQ5IYL-3JK_Rqy4dCfMrs11NKo";
+const MDD_SHEET_ID = "1rsmpHOeOeVBG8XzIFZlnEAa2pzyxr4S0UYOYGyulFyQ";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -401,6 +406,107 @@ exports.computeDailyAttendanceStatus = onSchedule(
     }
     console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
   }
+);
+
+// ── Forecasting export — flat SpendData + Daily Snapshot view ─────────────────
+// Reads Firestore dailySpend (Manpower, per employee/day) + the MDD ledger (Vendor
+// Payment / Office Expense / Employee Payment / Communication), buckets into 22 spend
+// categories, and writes a flat SpendData tab + a reactive Daily Snapshot view into the
+// Forecasting sheet. Runs after snapshotDailySpend (22:30 IST) so Manpower is fresh.
+// MDD is READ-ONLY; only the Forecasting sheet is written.
+exports.exportForecastSpend = onSchedule(
+  { schedule: "15 23 * * *", timeZone: "Asia/Kolkata", secrets: ["ATTENDANCE_SHEETS_KEY"], timeoutSeconds: 300, memory: "512MiB" },
+  async () => {
+    const keyJson = JSON.parse(SHEETS_KEY.value());
+    const auth = new google.auth.GoogleAuth({ credentials: keyJson, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
+    const sheets = google.sheets({ version: "v4", auth });
+    const db = admin.firestore();
+
+    // 1) Firestore Manpower — all snapshotted months (feeds the overall running total).
+    const dsSnap = await db.collection("dailySpend").get();
+    const flat = forecast.dailySpendToFlat(dsSnap.docs.map((d) => d.data()));
+
+    // 2) Resolve real MDD tab names, then read each once.
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: MDD_SHEET_ID });
+    const titles = meta.data.sheets.map((s) => s.properties.title);
+    const vendorTab = forecast.pickTabName(titles, "vendor payment") || "Vendor Payment";
+    const officeTab = forecast.pickTabName(titles, "office expense") || "Office Expense";
+    const empPayTab = forecast.pickTabName(titles, "employee payment") || "Employee Payment";
+    const commTab = forecast.pickTabName(titles, "communication");
+
+    const readTab = async (name) => {
+      if (!name) return [];
+      const res = await sheets.spreadsheets.values.get({ spreadsheetId: MDD_SHEET_ID, range: name });
+      return res.data.values || [];
+    };
+    const [vendorVals, officeVals, empPayVals, commVals] = await Promise.all(
+      [vendorTab, officeTab, empPayTab, commTab].map(readTab));
+
+    // 3) Per-tab tag resolvers.
+    const vendorResolve = (t) => {
+      const c = forecast.VENDOR_CATEGORIES[t];
+      return c ? { category: c, component: "", perEmployee: false } : null;
+    };
+    const officeResolve = (t) => {
+      const c = forecast.OFFICE_CATEGORIES[t];
+      if (c) return { category: c, component: "", perEmployee: false };
+      if (t === forecast.normTag("Employee Welfare & Retention")) {
+        return { category: "Manpower Expense", component: "Employee Welfare & Retention", perEmployee: false };
+      }
+      return null;
+    };
+    const empPayResolve = (t) => t === forecast.normTag("Special Allowance")
+      ? { category: "Manpower Expense", component: "Special Allowance", perEmployee: true } : null;
+
+    const vendor = forecast.bucketMddTab({ values: vendorVals, resolve: vendorResolve });
+    const office = forecast.bucketMddTab({ values: officeVals, resolve: officeResolve });
+    const empPay = forecast.bucketMddTab({ values: empPayVals, resolve: empPayResolve });
+    const comm = forecast.bucketCommunication(commVals);
+    flat.push(...vendor.rows, ...office.rows, ...empPay.rows, ...comm.rows);
+
+    // 4) Typo protection — warn on any catalog tag that never appeared in its tab.
+    const missVendor = Object.keys(forecast.VENDOR_CATEGORIES).filter((t) => !vendor.seenTags.has(t));
+    const expectOffice = Object.keys(forecast.OFFICE_CATEGORIES).concat([forecast.normTag("Employee Welfare & Retention")]);
+    const missOffice = expectOffice.filter((t) => !office.seenTags.has(t));
+    if (missVendor.length) console.warn(`forecast: Vendor Payment tags NOT FOUND: ${missVendor.join(" | ")}`);
+    if (missOffice.length) console.warn(`forecast: Office Expense tags NOT FOUND: ${missOffice.join(" | ")}`);
+    if (!empPay.seenTags.has(forecast.normTag("Special Allowance"))) console.warn("forecast: 'Special Allowance' NOT FOUND in Employee Payment tab");
+    console.log(`forecast: tabs vendor='${vendorTab}' office='${officeTab}' empPay='${empPayTab}' comm='${commTab}'`);
+    console.log(`forecast: Communication dateCol=${comm.dateCol} amtCol=${comm.amtCol} rows=${comm.rows.length}`);
+
+    // 5) Write SpendData (USER_ENTERED so the Date column lands as real dates for QUERY/MIN/MAX).
+    flat.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1].localeCompare(b[1])));
+    const header = ["Date", "Category", "Component", "Employee ID", "Employee Name", "Amount"];
+    await ensureTab(sheets, FORECAST_SHEET_ID, "SpendData");
+    await sheets.spreadsheets.values.clear({ spreadsheetId: FORECAST_SHEET_ID, range: "SpendData" });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: FORECAST_SHEET_ID, range: "SpendData!A1",
+      valueInputOption: "USER_ENTERED", requestBody: { values: [header, ...flat] },
+    });
+
+    // 6) Daily Snapshot view — date-range cells B1:B2 drive reactive QUERY blocks (non-overlapping).
+    await ensureTab(sheets, FORECAST_SHEET_ID, "Daily Snapshot");
+    await sheets.spreadsheets.values.clear({ spreadsheetId: FORECAST_SHEET_ID, range: "Daily Snapshot" });
+    const between = `where A >= date '"&TEXT($B$1,"yyyy-mm-dd")&"' and A <= date '"&TEXT($B$2,"yyyy-mm-dd")&"'`;
+    const pivotQ = `=IFERROR(QUERY(SpendData!A2:F,"select B, sum(F) ${between} group by B pivot A",0),"no data in range")`;
+    const inRangeQ = `=IFERROR(QUERY(SpendData!A2:F,"select B, sum(F) ${between} group by B order by B label sum(F) 'In Range'",0),"no data")`;
+    const overallQ = `=IFERROR(QUERY(SpendData!A2:F,"select B, sum(F) group by B order by B label sum(F) 'Overall'",0),"no data")`;
+    const empQ = `=IFERROR(QUERY(SpendData!A2:F,"select E, sum(F) where B = 'Manpower Expense' group by E order by E label sum(F) 'Manpower Total'",0),"no data")`;
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: FORECAST_SHEET_ID,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: [
+          { range: "Daily Snapshot!A1", values: [["Start Date", "=MIN(SpendData!A2:A)"], ["End Date", "=MAX(SpendData!A2:A)"]] },
+          { range: "Daily Snapshot!A4", values: [["Category totals (overall)"], [overallQ]] },
+          { range: "Daily Snapshot!D4", values: [["Category totals (in selected range)"], [inRangeQ]] },
+          { range: "Daily Snapshot!G4", values: [["Manpower by employee (overall)"], [empQ]] },
+          { range: "Daily Snapshot!A30", values: [["Daily spend by category — dates across (in selected range)"], [pivotQ]] },
+        ],
+      },
+    });
+    console.log(`forecast: wrote ${flat.length} SpendData rows + Daily Snapshot view`);
+  },
 );
 
 // ── Daily Sheets Export ───────────────────────────────────────────────────────
