@@ -11,7 +11,7 @@ import { istTodayStr } from './date';
 import { PAY_FIELDS, type Pay } from './compensation';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection, AuditEntry } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry } from '@/types';
 
 // ── Write attribution ─────────────────────────────────────────────────────
 //
@@ -667,6 +667,80 @@ export async function settleMonth(rows: Omit<Settlement, 'id' | 'settledAt'>[]):
 // Unlock a settled month so it can be revised (excluded from payroll until re-settled).
 export async function unlockMonthSettlement(userId: string, month: string): Promise<void> {
   await updateDoc(doc(db, 'users', userId, 'settlements', month), stamped({ locked: false }));
+}
+
+// ── Monthly Special Allowance ─────────────────────────────────────────────
+// Stored at users/{uid}/specialAllowance/{YYYY-MM} — a sibling of settlements/{YYYY-MM},
+// shaped like it, but covering ALL FOUR roles (SA is not a ledger/ops concept). Entered
+// fresh each month in the Users page pay block; frozen alongside the OT settlement when
+// admin Settle & Locks the month on OT Settlements.
+//
+// ⚠️ The ABSENCE of a doc means "not yet decided", NOT ₹0 — so a blank amount must write
+// nothing at all rather than a zero doc.
+//
+// NOT stored on users/{uid}/compensation/current: that document is one standing record of
+// rates, so writing August's SA there would destroy July's. See `SpecialAllowance` in
+// @/types and docs/superpowers/specs/2026-07-25-special-allowance-design.md.
+
+export async function getSpecialAllowance(uid: string, month: string): Promise<SpecialAllowance | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'specialAllowance', month));
+  return snap.exists() ? ({ id: snap.id, userId: uid, ...snap.data() } as SpecialAllowance) : null;
+}
+
+export async function getSpecialAllowancesForMonth(month: string): Promise<SpecialAllowance[]> {
+  // Fetch + client-filter (set stays small; avoids a collection-group index) — exactly as
+  // getSettlementsForMonth does. `userId` is seeded from the parent path so the doc's own
+  // field wins when present but a doc written without it is still attributable.
+  const snap = await getDocs(collectionGroup(db, 'specialAllowance'));
+  return snap.docs
+    .map(d => ({ id: d.id, userId: d.ref.parent.parent?.id ?? '', ...d.data() } as SpecialAllowance))
+    .filter(s => s.month === month);
+}
+
+/**
+ * Set one employee's SA for one month. Callers must only reach here with a real amount —
+ * a blank input means "not yet decided" and must not call this at all.
+ *
+ * ⚠️ Never writes `locked` on an existing doc: saving an amount must not be able to
+ * silently unlock a month that Settle & Lock froze. The lock defaults are written only on
+ * FIRST creation, where there is by definition no lock to destroy; unlocking is an
+ * explicit action on the OT Settlements page.
+ */
+export async function setSpecialAllowance(
+  uid: string, month: string, data: { amount: number; date: string },
+): Promise<void> {
+  const ref = doc(db, 'users', uid, 'specialAllowance', month);
+  const existing = await getDoc(ref);
+  const lockDefaults = existing.exists() ? {} : { locked: false, lockedBy: null, lockedAt: null };
+  await setDoc(
+    ref,
+    stamped({ id: month, month, userId: uid, amount: data.amount, date: data.date, ...lockDefaults }),
+    { merge: true },
+  );
+}
+
+// Freeze every ENTERED SA for a month (one batch, called by Settle & Lock beside settleMonth).
+// Only pass employees that actually have an SA doc — this must not conjure ₹0 rows for the
+// people the manager deliberately left blank.
+export async function lockSpecialAllowances(
+  rows: { userId: string; month: string; lockedBy: string }[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const batch = writeBatch(db);
+  const now = Timestamp.now();
+  rows.forEach(r => {
+    batch.set(
+      doc(db, 'users', r.userId, 'specialAllowance', r.month),
+      stamped({ locked: true, lockedBy: r.lockedBy, lockedAt: now }),
+      { merge: true },
+    );
+  });
+  await batch.commit();
+}
+
+// Release one employee's frozen SA so it can be revised (mirrors unlockMonthSettlement).
+export async function unlockSpecialAllowance(userId: string, month: string): Promise<void> {
+  await updateDoc(doc(db, 'users', userId, 'specialAllowance', month), stamped({ locked: false }));
 }
 
 // ── Holidays (company-wide) ───────────────────────────────────────────────

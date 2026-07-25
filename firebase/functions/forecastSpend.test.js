@@ -28,9 +28,10 @@ test("catalog maps known tags to category names", () => {
   assert.equal(OFFICE_CATEGORIES[normTag("Employee Welfare & Retention")], undefined);
 });
 
-test("MANPOWER_COMPONENTS covers the six firestore fields", () => {
+test("MANPOWER_COMPONENTS covers the seven firestore fields, sa last", () => {
   const fields = MANPOWER_COMPONENTS.map((c) => c[0]);
-  assert.deepEqual(fields, ["salary", "conveyance", "imprest", "otWo", "pf", "esi"]);
+  assert.deepEqual(fields, ["salary", "conveyance", "imprest", "otWo", "pf", "esi", "sa"]);
+  assert.deepEqual(MANPOWER_COMPONENTS[MANPOWER_COMPONENTS.length - 1], ["sa", "Special Allowance"]);
 });
 
 test("findCol locates a column by regex, case-insensitive, trimmed", () => {
@@ -114,6 +115,18 @@ test("dailySpendToFlat: one row per non-zero component, PF/ESI positive", () => 
 
 test("dailySpendToFlat: skips docs with no date", () => {
   assert.deepEqual(dailySpendToFlat([{ salary: 100 }]), []);
+});
+
+test("dailySpendToFlat: emits a Special Allowance row when a doc has sa", () => {
+  const docs = [{ date: "2026-07-28", employeeId: "S271", name: "devendra", sa: 12000 }];
+  assert.deepEqual(dailySpendToFlat(docs), [
+    ["2026-07-28", "Manpower Expense", "Special Allowance", "S271", "devendra", 12000],
+  ]);
+});
+
+test("dailySpendToFlat: emits NO Special Allowance row when sa is 0 or absent", () => {
+  assert.deepEqual(dailySpendToFlat([{ date: "2026-07-28", employeeId: "S271", name: "devendra", sa: 0 }]), []);
+  assert.deepEqual(dailySpendToFlat([{ date: "2026-07-28", employeeId: "S271", name: "devendra" }]), []);
 });
 
 test("pickTabName matches case-insensitive substring", () => {
@@ -203,4 +216,26 @@ test("buildDailySnapshot: Manpower sparse per employee×component, no zero-day r
     ["2026-07-01", "Manpower Expense", "S1", "alice", "Salary", "July 2026", 800, 800, 800],
     ["2026-07-03", "Manpower Expense", "S1", "alice", "Salary", "July 2026", 800, 1600, 1600],
   ]);
+});
+
+test("buildDailySnapshot: a single sparse Special Allowance row lands on its date only, no zero-fill on other days", () => {
+  const flat = [
+    ["2026-07-01", "Manpower Expense", "Salary", "S1", "alice", 800],
+    ["2026-07-03", "Manpower Expense", "Salary", "S1", "alice", 800],
+    ["2026-07-03", "Manpower Expense", "Special Allowance", "S1", "alice", 12000],
+  ];
+  const out = buildDailySnapshot(flat, { standaloneCategories: [] });
+  const saRows = out.filter((r) => r[4] === "Special Allowance");
+  assert.deepEqual(saRows, [
+    ["2026-07-03", "Manpower Expense", "S1", "alice", "Special Allowance", "July 2026", 12000, 12000, 12000],
+  ]);
+  // no SA row on 07-01 or 07-02, and Salary rows are untouched by SA's presence
+  assert.ok(!out.some((r) => r[4] === "Special Allowance" && r[0] !== "2026-07-03"));
+  assert.deepEqual(
+    out.filter((r) => r[4] === "Salary"),
+    [
+      ["2026-07-01", "Manpower Expense", "S1", "alice", "Salary", "July 2026", 800, 800, 800],
+      ["2026-07-03", "Manpower Expense", "S1", "alice", "Salary", "July 2026", 800, 1600, 1600],
+    ],
+  );
 });

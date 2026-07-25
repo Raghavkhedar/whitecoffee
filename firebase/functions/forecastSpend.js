@@ -44,7 +44,7 @@ const OFFICE_CATEGORIES = {
 // (PF/ESI included as positive company costs — a spend sheet, not the net-paid view).
 const MANPOWER_COMPONENTS = [
   ["salary", "Salary"], ["conveyance", "Conveyance"], ["imprest", "Imprest"],
-  ["otWo", "OT amount"], ["pf", "PF"], ["esi", "ESI"],
+  ["otWo", "OT amount"], ["pf", "PF"], ["esi", "ESI"], ["sa", "Special Allowance"],
 ];
 
 // First header column index whose trimmed text matches any of the patterns; -1 if none.

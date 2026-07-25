@@ -36,6 +36,9 @@ function resolveEfficiency(v) {
 // PF/ESI/Imprest as flat percentages of the DAY's salary. Deliberately NOT floored at 0
 // (unlike the monthly computeDeductions): a negative Absent-day salary yields negative
 // components so the daily rows sum exactly to the monthly figure when monthly salary ≥ 0.
+// SA (Special Allowance) is NOT a parameter here and never has been — this base is
+// intentionally just `salary`. SA is a flat monthly amount, not something PF/ESI/Imprest
+// are ever computed against; see dailyTotal below for where SA actually enters.
 function dailyDeductions({ salary, pfPercent, esiPercent, imprestPercent, efficiency } = {}) {
   const base = toNum(salary);
   return {
@@ -45,8 +48,8 @@ function dailyDeductions({ salary, pfPercent, esiPercent, imprestPercent, effici
   };
 }
 
-function dailyTotal({ salary, conveyance, imprest, otWo, pf, esi } = {}) {
-  return round2(toNum(salary) + toNum(conveyance) + toNum(imprest) + toNum(otWo) - toNum(pf) - toNum(esi));
+function dailyTotal({ salary, conveyance, imprest, otWo, pf, esi, sa } = {}) {
+  return round2(toNum(salary) + toNum(conveyance) + toNum(imprest) + toNum(otWo) + toNum(sa) - toNum(pf) - toNum(esi));
 }
 
 function addMonths(monthKey, delta) {

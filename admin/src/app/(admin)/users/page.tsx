@@ -4,11 +4,12 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getAllUsers, createUserProfile, updateUserProfile,
   employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail,
-  getCompensationMap } from '@/lib/firestore';
+  getCompensationMap, getSpecialAllowance, setSpecialAllowance } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
 import { firebaseConfig } from '@/lib/firebase';
 import { syntheticLoginEmail } from '@/lib/constants';
-import type { User } from '@/types';
+import { istTodayStr } from '@/lib/date';
+import type { User, SpecialAllowance } from '@/types';
 import Icon from '@/components/Icon';
 import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -53,6 +54,29 @@ const EMPTY_FORM: FormState = {
   homeLat: '', homeLng: '', conveyanceRateType: '',
 };
 
+// ── Special Allowance month helpers ───────────────────────────────────────
+// SA is month-keyed (users/{uid}/specialAllowance/{YYYY-MM}) but the Users page has no
+// month concept, so the SA control carries its own local month state.
+function currentYearMonth() {
+  const t = istTodayStr();          // IST, not the browser's UTC date
+  return t.slice(0, 7);
+}
+// Last calendar day of "YYYY-MM" — day 0 of the next month.
+function lastDayOfMonth(ym: string) {
+  const [y, m] = ym.split('-').map(Number);
+  return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+}
+function formatMonthLabel(ym: string) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+}
+// Default payment date: today when the selected month IS this month, else its 1st —
+// the date must always fall inside the month it is filed under.
+function defaultSaDate(ym: string) {
+  const today = istTodayStr();
+  return today.startsWith(`${ym}-`) ? today : `${ym}-01`;
+}
+
 // A short random temp password for new hires / admin resets (synthetic logins get no email link).
 function makeTempPassword() {
   return 'Wc' + Math.random().toString(36).slice(2, 8) + Math.floor(10 + Math.random() * 90);
@@ -78,6 +102,16 @@ export default function UsersPage() {
   const [suspendOpen, setSuspendOpen]     = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
   const [suspendReturn, setSuspendReturn] = useState('');
+  // Special Allowance (users/{uid}/specialAllowance/{YYYY-MM}) — its own document with its
+  // own lifecycle, saved by its own button, NOT folded into the user/compensation save.
+  const [saMonth, setSaMonth]     = useState(currentYearMonth());
+  const [saDoc, setSaDoc]         = useState<SpecialAllowance | null>(null);
+  const [saAmount, setSaAmount]   = useState('');
+  const [saDate, setSaDate]       = useState(defaultSaDate(currentYearMonth()));
+  const [saLoading, setSaLoading] = useState(false);
+  const [saSaving, setSaSaving]   = useState(false);
+  const [saError, setSaError]     = useState('');
+  const [saNote, setSaNote]       = useState('');
 
   async function load() {
     setLoading(true);
@@ -98,6 +132,34 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Load the selected month's SA whenever the modal opens on an existing employee or the
+  // SA month changes. A missing doc is a legitimate state ("not yet decided"), not an error.
+  const editingId = editing?.id;
+  useEffect(() => {
+    if (!showModal || !editingId) return;
+    let cancelled = false;
+    setSaLoading(true); setSaError(''); setSaNote('');
+    getSpecialAllowance(editingId, saMonth)
+      .then(sa => {
+        if (cancelled) return;
+        setSaDoc(sa);
+        setSaAmount(sa && Number.isFinite(sa.amount) ? String(sa.amount) : '');
+        setSaDate(sa?.date || defaultSaDate(saMonth));
+      })
+      .catch(e => { if (!cancelled) setSaError(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (!cancelled) setSaLoading(false); });
+    return () => { cancelled = true; };
+  }, [showModal, editingId, saMonth]);
+
+  function resetSaForm() {
+    setSaMonth(currentYearMonth());
+    setSaDoc(null);
+    setSaAmount('');
+    setSaDate(defaultSaDate(currentYearMonth()));
+    setSaError('');
+    setSaNote('');
+  }
+
   function resetSuspendForm() {
     setSuspendOpen(false);
     setSuspendReason('');
@@ -109,6 +171,7 @@ export default function UsersPage() {
     setForm({ ...EMPTY_FORM });
     setFormError('');
     resetSuspendForm();
+    resetSaForm();
     setShowModal(true);
   }
 
@@ -134,6 +197,7 @@ export default function UsersPage() {
     });
     setFormError('');
     resetSuspendForm();
+    resetSaForm();
     setShowModal(true);
   }
 
@@ -214,6 +278,32 @@ export default function UsersPage() {
       }
     }
     setSaving(false);
+  }
+
+  /**
+   * Save the Special Allowance for the selected month. Deliberately its OWN action, not
+   * part of handleSave(): SA is a different document (users/{uid}/specialAllowance/{month})
+   * with a different lifecycle — month-keyed, and lockable from the OT Settlements page.
+   *
+   * ⚠️ A blank amount is NOT zero. It means "not yet decided", so it writes nothing at all.
+   */
+  async function handleSaveSpecialAllowance() {
+    if (!editing) return;
+    setSaError(''); setSaNote('');
+    const raw = saAmount.trim();
+    if (!raw) { setSaError('Enter an amount. Leaving it blank means “not yet decided” and saves nothing — it is not ₹0.'); return; }
+    const amount = parseFloat(raw);
+    if (!Number.isFinite(amount) || amount < 0) { setSaError('Amount must be a number of ₹0 or more.'); return; }
+    if (!saDate || !saDate.startsWith(`${saMonth}-`)) { setSaError(`Payment date must fall inside ${formatMonthLabel(saMonth)}.`); return; }
+    setSaSaving(true);
+    try {
+      await setSpecialAllowance(editing.id, saMonth, { amount, date: saDate });
+      setSaDoc(await getSpecialAllowance(editing.id, saMonth));
+      setSaNote(`Saved ₹${amount.toLocaleString('en-IN')} for ${formatMonthLabel(saMonth)}.`);
+    } catch (e: unknown) {
+      setSaError(e instanceof Error ? e.message : 'Saving the allowance failed. Try again.');
+    }
+    setSaSaving(false);
   }
 
   async function handleResetPassword() {
@@ -488,6 +578,59 @@ export default function UsersPage() {
               <div><label className="label">PF (%)</label><input className="input" type="number" step="any" min="0" max="100" value={form.pfPercent} onChange={e => setForm(f => ({ ...f, pfPercent: e.target.value }))} placeholder="e.g. 12" /></div>
               <div><label className="label">ESI (%)</label><input className="input" type="number" step="any" min="0" max="100" value={form.esiPercent} onChange={e => setForm(f => ({ ...f, esiPercent: e.target.value }))} placeholder="e.g. 0.75" /></div>
               <div><label className="label">Imprest (%)</label><input className="input" type="number" step="any" min="0" max="100" value={form.imprestPercent} onChange={e => setForm(f => ({ ...f, imprestPercent: e.target.value }))} placeholder="e.g. 5" /></div>
+
+              {/* Special Allowance — month-keyed, saved on its own (see handleSaveSpecialAllowance). */}
+              <div className="rounded-[10px] border border-border bg-[#FBFAF8] p-3 space-y-3">
+                <div>
+                  <label className="label">Special Allowance <span className="text-text-secondary font-normal">(decided fresh each month — nothing carries forward)</span></label>
+                  {!editing ? (
+                    <p className="text-[12px] text-text-secondary">Save the employee first, then reopen this form to set their allowance.</p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="label">Month</label>
+                          <input className="input" type="month" value={saMonth}
+                            onChange={e => setSaMonth(e.target.value || currentYearMonth())} />
+                        </div>
+                        <div>
+                          <label className="label">Amount (₹)</label>
+                          <input className="input" type="number" step="any" min="0" value={saAmount}
+                            disabled={saDoc?.locked || saLoading}
+                            onChange={e => { setSaAmount(e.target.value); setSaNote(''); }}
+                            placeholder={saLoading ? 'Loading…' : 'e.g. 12000'} />
+                        </div>
+                        <div>
+                          <label className="label">Payment date</label>
+                          {/* min/max pin the date inside the selected month. */}
+                          <input className="input" type="date" value={saDate}
+                            min={`${saMonth}-01`} max={lastDayOfMonth(saMonth)}
+                            disabled={saDoc?.locked || saLoading}
+                            onChange={e => { setSaDate(e.target.value); setSaNote(''); }} />
+                        </div>
+                      </div>
+
+                      {saDoc?.locked ? (
+                        <p className="text-[12px] text-[#B26B07] mt-2">🔒 Locked — unlock on OT Settlements to revise</p>
+                      ) : (
+                        <>
+                          <p className="text-[12px] text-text-secondary mt-1">
+                            Leave the amount blank if it isn’t decided yet — blank saves nothing and is not ₹0.
+                          </p>
+                          <div className="flex items-center gap-3 mt-2">
+                            <button className="btn-outline !py-1.5 !px-4 !text-sm" onClick={handleSaveSpecialAllowance}
+                              disabled={saSaving || saLoading || !saAmount.trim()}>
+                              {saSaving ? 'Saving…' : 'Save allowance'}
+                            </button>
+                            {saNote && <span className="text-[12px] text-[#2E7D46]">{saNote}</span>}
+                          </div>
+                        </>
+                      )}
+                      {saError && <p className="text-red-500 text-[12.5px] mt-2">{saError}</p>}
+                    </>
+                  )}
+                </div>
+              </div>
 
               <div>
                 <label className="label">Conveyance Rate</label>

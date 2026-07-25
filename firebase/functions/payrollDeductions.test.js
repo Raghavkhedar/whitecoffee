@@ -98,6 +98,36 @@ test("money is rounded to 2 decimals", () => {
   assert.equal(r.pf, 832.92); // 9999 × 0.0833 = 832.9167
 });
 
+// ── SA (Special Allowance) ──────────────────────────────────────────────────
+
+test("sa adds straight into TOTAL DUE", () => {
+  const r = computeDeductions({
+    salaryDue: 10000, covy: 500, settlement: 1000, sa: 12000,
+    pfPercent: 8, esiPercent: 0.75, imprestPercent: 5,
+  });
+  assert.equal(r.pf, 800);
+  assert.equal(r.esi, 75);
+  assert.equal(r.imprest, 500);
+  // 10000 + 500 + 500 + 1000 + 12000 − 800 − 75
+  assert.equal(r.totalDue, 23125);
+});
+
+test("missing sa defaults to 0 in TOTAL DUE", () => {
+  const r = computeDeductions({ ...base, salaryDue: 10000 });
+  assert.equal(r.totalDue, 10000);
+});
+
+test("sa is absent from the PF/ESI/Imprest base — a large sa with salaryDue 0 yields pf/esi/imprest all 0", () => {
+  const r = computeDeductions({
+    salaryDue: 0, covy: 0, settlement: 0, sa: 50000,
+    pfPercent: 8, esiPercent: 0.75, imprestPercent: 5,
+  });
+  assert.equal(r.pf, 0);
+  assert.equal(r.esi, 0);
+  assert.equal(r.imprest, 0);
+  assert.equal(r.totalDue, 50000); // sa still carries through to TOTAL DUE
+});
+
 test("garbage percentages are treated as 0, not NaN", () => {
   const r = computeDeductions({
     salaryDue: 10000, covy: 0, settlement: 0,

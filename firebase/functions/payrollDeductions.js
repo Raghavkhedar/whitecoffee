@@ -12,7 +12,10 @@
  *   PF      = base × pfPercent%
  *   ESI     = base × esiPercent%
  *   Imprest = base × imprestPercent% × efficiency
- *   TOTAL DUE = salaryDue + covy + imprest + settlement − PF − ESI
+ *   TOTAL DUE = salaryDue + covy + imprest + settlement + sa − PF − ESI
+ *
+ * SA (Special Allowance, monthly, per employee) is added straight into TOTAL DUE and is
+ * deliberately excluded from `base` — PF/ESI/Imprest are computed on Salary Due MTD only.
  *
  * Percentages live on the user doc (`pfPercent` / `esiPercent` / `imprestPercent`, set from the
  * /users modal). As of 2026-07-17 **no user has any of them set**, which is deliberate and
@@ -52,27 +55,30 @@ function resolveEfficiency(v) {
  *                       −2 days NP, and ops are now scored every working day.
  * @param covy           conveyance due
  * @param settlement     this month's locked OT/shortage/WO settlement cash
+ * @param sa             this month's Special Allowance (missing → 0). Added straight into
+ *                       TOTAL DUE; deliberately excluded from the PF/ESI/Imprest base.
  * @param pfPercent      user.pfPercent      (missing → 0)
  * @param esiPercent     user.esiPercent     (missing → 0)
  * @param imprestPercent user.imprestPercent (missing → 0)
  * @param efficiency     multiplier for imprest (missing → 1; see resolveEfficiency)
  */
 function computeDeductions({
-  salaryDue, covy, settlement, pfPercent, esiPercent, imprestPercent, efficiency,
+  salaryDue, covy, settlement, sa, pfPercent, esiPercent, imprestPercent, efficiency,
 } = {}) {
   const salary = toNum(salaryDue);
 
   // Floor the deduction base at 0. A negative Salary Due (a heavily-Absent month) would
   // otherwise make each percentage negative, and subtracting a negative PF would ADD money
   // back to TOTAL DUE. You do not deduct PF from earnings that don't exist. The negative
-  // salary itself still carries through to TOTAL DUE untouched.
+  // salary itself still carries through to TOTAL DUE untouched. SA is never part of this
+  // base — see the module JSDoc.
   const base = Math.max(0, salary);
 
   const pf      = round2(base * toNum(pfPercent) / 100);
   const esi     = round2(base * toNum(esiPercent) / 100);
   const imprest = round2(base * toNum(imprestPercent) / 100 * resolveEfficiency(efficiency));
 
-  const totalDue = round2(salary + toNum(covy) + imprest + toNum(settlement) - pf - esi);
+  const totalDue = round2(salary + toNum(covy) + imprest + toNum(settlement) + toNum(sa) - pf - esi);
 
   return { pf, esi, imprest, totalDue };
 }

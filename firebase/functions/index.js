@@ -410,7 +410,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
 // ── Forecasting export — flat SpendData + Daily Snapshot view ─────────────────
 // Reads Firestore dailySpend (Manpower, per employee/day) + the MDD ledger (Vendor
-// Payment / Office Expense / Employee Payment / Communication), buckets into 22 spend
+// Payment / Office Expense / Communication), buckets into 22 spend
 // categories, and writes a flat SpendData tab + a reactive Daily Snapshot view into the
 // Forecasting sheet. Runs after snapshotDailySpend (22:30 IST) so Manpower is fresh.
 // MDD is READ-ONLY; only the Forecasting sheet is written.
@@ -431,7 +431,6 @@ exports.exportForecastSpend = onSchedule(
     const titles = meta.data.sheets.map((s) => s.properties.title);
     const vendorTab = forecast.pickTabName(titles, "vendor payment") || "Vendor Payment";
     const officeTab = forecast.pickTabName(titles, "office expense") || "Office Expense";
-    const empPayTab = forecast.pickTabName(titles, "employee payment") || "Employee Payment";
     const commTab = forecast.pickTabName(titles, "communication");
 
     const readTab = async (name) => {
@@ -439,8 +438,8 @@ exports.exportForecastSpend = onSchedule(
       const res = await sheets.spreadsheets.values.get({ spreadsheetId: MDD_SHEET_ID, range: name });
       return res.data.values || [];
     };
-    const [vendorVals, officeVals, empPayVals, commVals] = await Promise.all(
-      [vendorTab, officeTab, empPayTab, commTab].map(readTab));
+    const [vendorVals, officeVals, commVals] = await Promise.all(
+      [vendorTab, officeTab, commTab].map(readTab));
 
     // 3) Per-tab tag resolvers.
     const vendorResolve = (t) => {
@@ -455,14 +454,14 @@ exports.exportForecastSpend = onSchedule(
       }
       return null;
     };
-    const empPayResolve = (t) => t === forecast.normTag("Special Allowance")
-      ? { category: "Manpower Expense", component: "Special Allowance", perEmployee: true } : null;
-
+    // NOTE: the MDD "Employee Payment" tab is deliberately NOT read. Special Allowance used to
+    // be scraped from it by tag, but that tag never appeared in a single live row. SA is now a
+    // first-class dailySpend component (users/{uid}/specialAllowance/{YYYY-MM}) and arrives
+    // through dailySpendToFlat above. Do not re-add an MDD scrape for it.
     const vendor = forecast.bucketMddTab({ values: vendorVals, resolve: vendorResolve });
     const office = forecast.bucketMddTab({ values: officeVals, resolve: officeResolve });
-    const empPay = forecast.bucketMddTab({ values: empPayVals, resolve: empPayResolve });
     const comm = forecast.bucketCommunication(commVals);
-    flat.push(...vendor.rows, ...office.rows, ...empPay.rows, ...comm.rows);
+    flat.push(...vendor.rows, ...office.rows, ...comm.rows);
 
     // 4) Typo protection — warn on any catalog tag that never appeared in its tab.
     const missVendor = Object.keys(forecast.VENDOR_CATEGORIES).filter((t) => !vendor.seenTags.has(t));
@@ -470,16 +469,14 @@ exports.exportForecastSpend = onSchedule(
     const missOffice = expectOffice.filter((t) => !office.seenTags.has(t));
     if (missVendor.length) console.warn(`forecast: Vendor Payment tags NOT FOUND: ${missVendor.join(" | ")}`);
     if (missOffice.length) console.warn(`forecast: Office Expense tags NOT FOUND: ${missOffice.join(" | ")}`);
-    if (!empPay.seenTags.has(forecast.normTag("Special Allowance"))) console.warn("forecast: 'Special Allowance' NOT FOUND in Employee Payment tab");
-    console.log(`forecast: tabs vendor='${vendorTab}' office='${officeTab}' empPay='${empPayTab}' comm='${commTab}'`);
+    console.log(`forecast: tabs vendor='${vendorTab}' office='${officeTab}' comm='${commTab}'`);
     console.log(`forecast: Communication dateCol=${comm.dateCol} amtCol=${comm.amtCol} rows=${comm.rows.length}`);
     // Diagnostics — real tab list + the actual tag values present in each tab + date span.
     console.log(`forecast[diag]: ALL TABS = ${titles.join(" | ")}`);
     console.log(`forecast[diag]: vendor tags seen = ${[...vendor.seenTags].join(" | ") || "(none)"}`);
     console.log(`forecast[diag]: office tags seen = ${[...office.seenTags].join(" | ") || "(none)"}`);
-    console.log(`forecast[diag]: empPay tags seen = ${[...empPay.seenTags].join(" | ") || "(none)"}`);
     const diagDates = flat.map((r) => r[0]).filter(Boolean).sort();
-    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - empPay.rows.length - comm.rows.length}`);
+    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - comm.rows.length}`);
     console.log(`forecast[diag]: date span ${diagDates[0]} .. ${diagDates[diagDates.length - 1]}`);
     // Drop future-dated rows (data-entry typos, e.g. a stray 2027 date) before building the grid.
     const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -1279,6 +1276,23 @@ exports.exportToSheets = onSchedule(
       otWoAmountByUserId.set(u.id, settlementCash(u.salaryRate || 0, led.woDates.length, led.netMins));
     });
 
+    // ── 8c. Special Allowance for the current month (for the Employee Dashboard) ──
+    // users/{uid}/specialAllowance/{YYYY-MM}, one doc per employee per month. Read LIVE for
+    // the current month, exactly like the OT/WO settlement column above — past-month blocks
+    // are frozen verbatim by dashboardHistory.js and keep whatever they were exported with.
+    // Fetched + client-filtered on the doc id (=== "YYYY-MM") to avoid a collection-group
+    // index; the set stays small (one doc per employee per month). All four roles get SA.
+    const saMonthKey = `${istYear}-${pad2(istMonth + 1)}`;
+    const saSnap = await db.collectionGroup("specialAllowance").get();
+    const saByUserId = new Map();
+    saSnap.docs.forEach((d) => {
+      if (d.id !== saMonthKey) return;
+      const uid = d.ref.parent.parent && d.ref.parent.parent.id;
+      if (!uid) return;
+      const amt = Number(d.data().amount);
+      saByUserId.set(uid, Number.isFinite(amt) ? amt : 0);
+    });
+
     // ── 9. Employee Dashboard — MTD summary, one row per employee ─────
     {
       const TAB = TABS.EMPLOYEE_DASHBOARD;
@@ -1317,7 +1331,7 @@ exports.exportToSheets = onSchedule(
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
-        "Covy Due (approx avg)", "Imprest Due MTD", "OT/WO amount (₹)",
+        "Covy Due (approx avg)", "Imprest Due MTD", "OT/WO amount (₹)", "SA",
         "PF (−)", "ESI (−)", "TOTAL DUE",
       ];
 
@@ -1348,11 +1362,15 @@ exports.exportToSheets = onSchedule(
 
         const settlement = parseFloat((otWoAmountByUserId.get(user.id) || 0).toFixed(2));
 
+        // Special Allowance — this month's manager-set amount; no doc → ₹0 ("not yet decided").
+        // Not prorated by attendance, and NOT part of the PF/ESI/Imprest base (see the spec).
+        const sa = parseFloat((saByUserId.get(user.id) || 0).toFixed(2));
+
         // PF / ESI / Imprest are percentages of Salary Due MTD (payrollDeductions.js).
-        // PF and ESI are DEDUCTED from TOTAL DUE; Imprest is added. `efficiency` is not
-        // passed — the matrix doesn't exist yet, so it defaults to 1. Do NOT pass 0.
+        // PF and ESI are DEDUCTED from TOTAL DUE; Imprest and SA are added. `efficiency` is
+        // not passed — the matrix doesn't exist yet, so it defaults to 1. Do NOT pass 0.
         const { pf, esi, imprest, totalDue } = computeDeductions({
-          salaryDue, covy, settlement,
+          salaryDue, covy, settlement, sa,
           pfPercent: user.pfPercent,
           esiPercent: user.esiPercent,
           imprestPercent: user.imprestPercent,
@@ -1375,6 +1393,7 @@ exports.exportToSheets = onSchedule(
           covy,
           imprest,
           settlement,
+          sa,
           pf,
           esi,
           totalDue,
@@ -1582,6 +1601,22 @@ exports.snapshotDailySpend = onSchedule(
       settleSnap.docs.filter((d) => d.data().locked === true).map((d) => d.id),
     );
 
+    // Special Allowance — users/{uid}/specialAllowance/{YYYY-MM}, one doc per employee per
+    // month, doc id === "YYYY-MM". Fetched + client-filtered exactly like lockedSet above to
+    // avoid a collection-group index; the set stays small. uid comes from the subcollection
+    // parent, as in the compByUid loop.
+    const saSnap = await db.collectionGroup("specialAllowance").get();
+    const saByUid = new Map(); // uid → Map(month → { date, amount })
+    saSnap.docs.forEach((d) => {
+      const uid = d.ref.parent.parent && d.ref.parent.parent.id;
+      if (!uid) return;
+      const s = d.data();
+      const amount = Number(s.amount);
+      const entry = { date: typeof s.date === "string" ? s.date : "", amount: Number.isFinite(amount) ? amount : 0 };
+      if (!saByUid.has(uid)) saByUid.set(uid, new Map());
+      saByUid.get(uid).set(d.id, entry); // d.id === "YYYY-MM"
+    });
+
     // ── Pass 1: freeze-finalization ───────────────────────────────────
     // The recompute pass below only writes unlocked months, so a month that locked since
     // the last run still carries frozen:false on its rows. Relabel them frozen:true ONCE,
@@ -1673,13 +1708,24 @@ exports.snapshotDailySpend = onSchedule(
 
       // Union of every date that can carry economic value for this employee: status-doc
       // days, OT/WO-cash days (rest-day OT & worked-WO fall on Sundays/holidays with no
-      // status doc), and conveyance days (can be Sundays). Iterating only statuses skipped
-      // those, breaking the Σ dailySpend == settlementCash / conveyance reconciliation.
+      // status doc), conveyance days (can be Sundays), and Special Allowance dates. Iterating
+      // only statuses skipped those, breaking the Σ dailySpend == settlementCash / conveyance
+      // reconciliation. The SA date is load-bearing for the SAME reason: a manager can date SA
+      // on a Sunday or on a day with no attendance status, and that day would otherwise never
+      // be a candidate, so the SA would silently never be emitted at all.
       const userStatuses = statusesByUser.get(user.id) || [];
       const statusByDate = new Map(userStatuses.map((s) => [s.date, s]));
       const candidateDates = new Set(userStatuses.map((s) => s.date));
       for (const d of otMap.keys()) candidateDates.add(d);
       for (const d of (convDatesByUser.get(user.id) || [])) candidateDates.add(d);
+      // uid → Map(month → {date, amount}); one SA date per month, keyed by date for the lookup.
+      const userSa = saByUid.get(user.id) || new Map();
+      const saByDate = new Map();
+      for (const entry of userSa.values()) {
+        if (!entry.date) continue;
+        saByDate.set(entry.date, (saByDate.get(entry.date) || 0) + entry.amount);
+        candidateDates.add(entry.date);
+      }
 
       for (const date of candidateDates) {
         if (!windowMonths.includes(monthOf(date))) continue; // locked/out-of-window → never written
@@ -1691,21 +1737,25 @@ exports.snapshotDailySpend = onSchedule(
         const salary = (status && !sunday) ? dailySalary(rate, status.status) : 0;
         const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${date}`) || 0) : 0;
         const otWo = round2(otMap.get(date) || 0);
+        // SA lands entirely on its one manager-picked date; every other day of the month is 0.
+        // Not prorated, and not part of the PF/ESI/Imprest base (dailyDeductions ignores it).
+        const sa = round2(saByDate.get(date) || 0);
         const { pf, esi, imprest } = dailyDeductions({
           salary, pfPercent: user.pfPercent, esiPercent: user.esiPercent, imprestPercent: user.imprestPercent,
         });
-        const totalSpend = dailyTotal({ salary, conveyance, imprest, otWo, pf, esi });
+        const totalSpend = dailyTotal({ salary, conveyance, imprest, otWo, pf, esi, sa });
 
         // Emit if the day carries any economic value OR is a tracked non-Sunday attendance
-        // day; drops empty unworked-WO-Sundays and no-activity days.
-        const hasValue = salary !== 0 || conveyance !== 0 || otWo !== 0;
+        // day; drops empty unworked-WO-Sundays and no-activity days. SA counts as economic
+        // value — an SA-only Sunday must still be emitted.
+        const hasValue = salary !== 0 || conveyance !== 0 || otWo !== 0 || sa !== 0;
         if (!hasValue && !(status && !sunday)) continue;
 
         const id = `${user.id}__${date}`;
         batch.set(db.collection("dailySpend").doc(id), {
           userId: user.id, employeeId: user.employeeId || "", name: user.name || "", role: user.role || "",
           date, month: monthOf(date),
-          salary, conveyance, pf, esi, otWo, imprest, totalSpend,
+          salary, conveyance, pf, esi, otWo, imprest, sa, totalSpend,
           frozen: false,
           computedAt: admin.firestore.Timestamp.now(),
         }, { merge: false });
@@ -1716,6 +1766,30 @@ exports.snapshotDailySpend = onSchedule(
     }
     if (ops > 0) await batch.commit();
     console.log(`dailySpend: recomputed months [${windowMonths.join(", ")}] up to ${today}`);
+
+    // Backstop: a locked month is NEVER recomputed, so an SA doc for a month outside the
+    // recompute window can never reach dailySpend. The admin UI prevents this by rendering a
+    // locked month read-only, so this should never fire — if it does, the named employee's SA
+    // is missing from the Daily Snapshot and needs a manual fix.
+    // Keyed on the SA *date's* month, since that is what actually gates emission above — this
+    // also catches a doc whose date was mis-typed outside its own month (rules don't enforce
+    // that; the UI does) and a doc with no date at all, both of which are silently dropped.
+    const usersById = new Map(users.map((u) => [u.id, u]));
+    for (const [uid, months] of saByUid) {
+      for (const [m, entry] of months) {
+        if (!entry.amount) continue; // ₹0 SA contributes nothing either way
+        const dateMonth = entry.date ? monthOf(entry.date) : "";
+        if (dateMonth && windowMonths.includes(dateMonth)) continue; // will be / was emitted
+        const u = usersById.get(uid);
+        const who = u ? `${u.name || "(no name)"} (${u.employeeId || uid})` : uid;
+        const why = !entry.date ? "it has no date"
+          : dateMonth !== m ? `its date ${entry.date} falls outside its own month`
+            : `month ${m} is outside the recompute window [${windowMonths.join(", ")}]`;
+        console.warn(
+          `dailySpend: SA for ${who} in ${m} (₹${entry.amount}) may NOT be reflected in dailySpend — ${why}`,
+        );
+      }
+    }
 
     // Orphan cleanup: any pre-existing row in an unlocked window month that we did NOT rewrite
     // this run has lost its economic driver — delete it so the day drops to zero. Only unlocked

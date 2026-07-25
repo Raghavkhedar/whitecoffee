@@ -48,6 +48,26 @@ test("dailyTotal: mirrors TOTAL DUE (salary + covy + imprest + otWo − pf − e
   assert.equal(dailyTotal({ salary: 1000, conveyance: 120, imprest: 50, otWo: 300, pf: 120, esi: 7.5 }), 1342.5);
 });
 
+test("dailyTotal: includes sa", () => {
+  assert.equal(
+    dailyTotal({ salary: 1000, conveyance: 120, imprest: 50, otWo: 300, pf: 120, esi: 7.5, sa: 2000 }),
+    3342.5,
+  );
+});
+
+test("dailyTotal: missing sa is treated as 0", () => {
+  assert.equal(
+    dailyTotal({ salary: 1000, conveyance: 120, imprest: 50, otWo: 300, pf: 120, esi: 7.5 }),
+    dailyTotal({ salary: 1000, conveyance: 120, imprest: 50, otWo: 300, pf: 120, esi: 7.5, sa: 0 }),
+  );
+});
+
+test("dailyDeductions: output is unaffected by sa — sa is not a parameter and not in the base", () => {
+  const withoutSa = dailyDeductions({ salary: 1000, pfPercent: 12, esiPercent: 0.75, imprestPercent: 5 });
+  const withSa = dailyDeductions({ salary: 1000, pfPercent: 12, esiPercent: 0.75, imprestPercent: 5, sa: 50000 });
+  assert.deepEqual(withSa, withoutSa);
+});
+
 const { addMonths, openWindowMonths } = require("./dailySpend");
 
 test("addMonths: rolls year boundaries both directions", () => {
