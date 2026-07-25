@@ -11,7 +11,7 @@ import { istTodayStr } from './date';
 import { PAY_FIELDS, type Pay } from './compensation';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, AttendanceCorrection } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry } from '@/types';
 
 // ── Write attribution ─────────────────────────────────────────────────────
 //
@@ -669,6 +669,111 @@ export async function unlockMonthSettlement(userId: string, month: string): Prom
   await updateDoc(doc(db, 'users', userId, 'settlements', month), stamped({ locked: false }));
 }
 
+// ── Monthly Special Allowance ─────────────────────────────────────────────
+// Stored at users/{uid}/specialAllowance/{YYYY-MM} — a sibling of settlements/{YYYY-MM},
+// shaped like it, but covering ALL FOUR roles (SA is not a ledger/ops concept). Entered
+// fresh each month in the Users page pay block; frozen alongside the OT settlement when
+// admin Settle & Locks the month on OT Settlements.
+//
+// ⚠️ The ABSENCE of a doc means "not yet decided", NOT ₹0 — so a blank amount must write
+// nothing at all rather than a zero doc.
+//
+// NOT stored on users/{uid}/compensation/current: that document is one standing record of
+// rates, so writing August's SA there would destroy July's. See `SpecialAllowance` in
+// @/types and docs/superpowers/specs/2026-07-25-special-allowance-design.md.
+
+export async function getSpecialAllowance(uid: string, month: string): Promise<SpecialAllowance | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'specialAllowance', month));
+  return snap.exists() ? ({ id: snap.id, userId: uid, ...snap.data() } as SpecialAllowance) : null;
+}
+
+export async function getSpecialAllowancesForMonth(month: string): Promise<SpecialAllowance[]> {
+  // Fetch + client-filter (set stays small; avoids a collection-group index) — as
+  // getSettlementsForMonth does. `userId` is seeded from the parent path so the doc's own
+  // field wins when present but a doc written without it is still attributable.
+  //
+  // ⚠️ Filtered on the DOC ID, not the `month` field — the doc id IS the month, and it is
+  // what `snapshotDailySpend` keys off (functions/index.js). Filtering on the field instead
+  // made this view diverge from the backend's for any doc missing it, so a doc the functions
+  // happily read could be invisible here (locked, with no unlock path on this page).
+  const snap = await getDocs(collectionGroup(db, 'specialAllowance'));
+  return snap.docs
+    .filter(d => d.id === month)
+    .map(d => ({ id: d.id, userId: d.ref.parent.parent?.id ?? '', ...d.data() } as SpecialAllowance));
+}
+
+/**
+ * Is this month frozen for editing? True when EITHER half of Settle & Lock has fired: any
+ * locked `settlements/{month}` doc or any locked `specialAllowance/{month}` doc — the same
+ * union `snapshotDailySpend` builds its `lockedSet` from, and both keyed on the doc id
+ * (=== the month) for exactly that reason.
+ *
+ * ⚠️ The lock is a property of the MONTH, not of one employee's document. An employee with no
+ * SA doc at lock time is still inside a locked month: a value typed for them afterwards
+ * reaches nothing — snapshotDailySpend never recomputes a locked month (it reconciles SA once,
+ * on the run that freezes it), exportToSheets only rebuilds the CURRENT month's block, and OT
+ * Settlements offers only "Unlock to revise". So gate on this, never on `saDoc?.locked`.
+ */
+export async function isMonthLocked(month: string): Promise<boolean> {
+  const [settle, sa] = await Promise.all([
+    getDocs(collectionGroup(db, 'settlements')),
+    getDocs(collectionGroup(db, 'specialAllowance')),
+  ]);
+  const hasLocked = (docs: { id: string; data: () => Record<string, unknown> }[]) =>
+    docs.some(d => d.id === month && d.data().locked === true);
+  return hasLocked(settle.docs) || hasLocked(sa.docs);
+}
+
+/**
+ * Set one employee's SA for one month. Callers must only reach here with a real amount —
+ * a blank input means "not yet decided" and must not call this at all.
+ *
+ * ⚠️ Never writes `locked` on an existing doc: saving an amount must not be able to
+ * silently unlock a month that Settle & Lock froze. The lock defaults are written only on
+ * FIRST creation, where there is by definition no lock to destroy; unlocking is an
+ * explicit action on the OT Settlements page.
+ */
+export async function setSpecialAllowance(
+  uid: string, month: string, data: { amount: number; date: string },
+): Promise<void> {
+  const ref = doc(db, 'users', uid, 'specialAllowance', month);
+  const existing = await getDoc(ref);
+  const lockDefaults = existing.exists() ? {} : { locked: false, lockedBy: null, lockedAt: null };
+  await setDoc(
+    ref,
+    stamped({ id: month, month, userId: uid, amount: data.amount, date: data.date, ...lockDefaults }),
+    { merge: true },
+  );
+}
+
+// Freeze every ENTERED SA for a month (one batch, called by Settle & Lock beside settleMonth).
+// Only pass employees that actually have an SA doc — this must not conjure ₹0 rows for the
+// people the manager deliberately left blank.
+export async function lockSpecialAllowances(
+  rows: { userId: string; month: string; lockedBy: string }[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const batch = writeBatch(db);
+  const now = Timestamp.now();
+  rows.forEach(r => {
+    batch.set(
+      doc(db, 'users', r.userId, 'specialAllowance', r.month),
+      // `id`/`month`/`userId` are re-asserted, not decoration: a merge-set CREATES the doc if
+      // it vanished between load and commit, and a doc carrying only lock fields would be a
+      // zombie — locked with no amount, no unlock path on the Users page, and read as ₹0 by
+      // the functions. Identity fields keep even that degenerate doc self-describing.
+      stamped({ id: r.month, month: r.month, userId: r.userId, locked: true, lockedBy: r.lockedBy, lockedAt: now }),
+      { merge: true },
+    );
+  });
+  await batch.commit();
+}
+
+// Release one employee's frozen SA so it can be revised (mirrors unlockMonthSettlement).
+export async function unlockSpecialAllowance(userId: string, month: string): Promise<void> {
+  await updateDoc(doc(db, 'users', userId, 'specialAllowance', month), stamped({ locked: false }));
+}
+
 // ── Holidays (company-wide) ───────────────────────────────────────────────
 // Stored at holidays/{date}; a marked day is skipped like a Sunday everywhere
 // attendance is evaluated (no status, no penalty, excluded from working days).
@@ -786,4 +891,27 @@ export async function getDashboardStats() {
     earliestPendingSeconds,
     todayCheckIns: attendanceSnap.docs.filter(d => d.data().date === today && d.data().type?.endsWith('_in')).length,
   };
+}
+
+// ── Audit log ─────────────────────────────────────────────────────────────
+
+/**
+ * Recent audit entries, newest first.
+ *
+ * Deliberately filters ONLY on `atMillis` — the same field it orders by — so Firestore
+ * needs no composite index. Collection/user/actor narrowing is done in the page, on an
+ * already-bounded result set. Adding a `where` on another field here would require a new
+ * index and the page would silently fail until someone created it.
+ *
+ * Admin-only: firestore.rules restricts audit_log reads to admins.
+ */
+export async function getAuditLog(fromMillis: number, toMillis: number, max = 500): Promise<AuditEntry[]> {
+  const snap = await getDocs(query(
+    collection(db, 'audit_log'),
+    where('atMillis', '>=', fromMillis),
+    where('atMillis', '<=', toMillis),
+    orderBy('atMillis', 'desc'),
+    limit(max),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditEntry));
 }

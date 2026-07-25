@@ -435,6 +435,18 @@ service cloud.firestore {
         allow write: if isLoggedIn() && (isAdmin() || (canAccessSettlements() && notSelf(userId)));
       }
 
+      // ── /specialAllowance/{month} ─────────────────────────────────────
+      // Monthly per-employee rupee amount (Special Allowance), set on the Users page and
+      // frozen alongside OT/WO on the OT Settlements page. Read by the employee, admin, and
+      // managers holding OT Settlements — the same audience as settlements, which this
+      // mirrors in both shape and risk.
+      match /specialAllowance/{month} {
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSettlements());
+        // notSelf: SA lands straight in TOTAL DUE, same as settlementCash — a Settlements
+        // manager granting themselves a Special Allowance is the identical self-deal.
+        allow write: if isLoggedIn() && (isAdmin() || (canAccessSettlements() && notSelf(userId)));
+      }
+
       // ── /regularization_requests/{docId} ──────────────────────────────
       match /regularization_requests/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessRegularization());
@@ -512,6 +524,15 @@ service cloud.firestore {
     match /{path=**}/settlements/{month} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSettlements());
     }
+    // Required for getSpecialAllowancesForMonth() which does collectionGroup("specialAllowance").
+    // READ-ONLY on purpose. A collectionGroup match cannot bind {userId}, so it cannot
+    // enforce notSelf — granting write here would reopen the exact self-approval hole the
+    // per-doc rule closes (attendance_status did this once; see that rule's comment).
+    // Writes must go through /users/{userId}/specialAllowance/{month}, which knows whose
+    // record it is.
+    match /{path=**}/specialAllowance/{month} {
+      allow read: if isLoggedIn() && (isAdmin() || canAccessSettlements());
+    }
     // Collection-group read for daily_hours (admin reporting / future dashboards).
     match /{path=**}/daily_hours/{date} {
       allow read: if isLoggedIn() && (isAdmin() || canReadDailyHours());
@@ -585,6 +606,16 @@ service cloud.firestore {
                       (canAccessConveyance() && request.resource.data.userId != request.auth.uid));
       allow update, delete: if isLoggedIn() && (isAdmin() ||
                       (canAccessConveyance() && notSelfDoc()));
+    }
+
+    // ── /dailySpend/{uid}__{date} — Daily spend snapshot ─────────────────
+    // Written ONLY by the snapshotDailySpend Cloud Function (Admin SDK bypasses rules).
+    // No client writes; reads are admin-only — each doc carries the same per-day pay
+    // figures (salary, conveyance, imprest, otWo, pf, esi, sa, totalSpend) that
+    // compensation/current is isolated for.
+    match /dailySpend/{docId} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if false;
     }
   }
 }

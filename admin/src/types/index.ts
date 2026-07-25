@@ -31,6 +31,9 @@ export interface User {
    *  on the Users page. Meaningful only for role==='operations'. See src/lib/categories.ts. */
   categories?: string[];
   employeeId: string;
+  /** Employee level band ("Level 1".."Level 20"), admin-set on /users. Optional/unset for
+   *  existing employees. Recorded only — no Cloud Function, export, or rule reads it. */
+  level?: string | null;
   salaryRate?: number;
   /** Payroll percentages, admin-set on /users. Stored as the percent VALUE (12 = 12%), not a
    *  fraction. Currently recorded only — no Cloud Function or export reads them yet, so setting
@@ -194,6 +197,29 @@ export interface Settlement {
   settledAt?: Timestamp;
 }
 
+// Monthly Special Allowance for ONE employee — all four roles, not just operations.
+// Doc id = month "YYYY-MM", stored at users/{uid}/specialAllowance/{month}: a sibling of
+// settlements/{month}, shaped like it. Entered fresh every month in the Users page pay
+// block (no standing default, no carry-forward), frozen by Settle & Lock on OT Settlements.
+//
+// ⚠️ The ABSENCE of a doc means "not yet decided" — it is NOT an amount of 0. A blank
+// amount must therefore write nothing at all, and a missing doc must never be read as ₹0
+// that someone has actually approved.
+//
+// Deliberately NOT on users/{uid}/compensation/current: that doc is a single standing
+// record of rates, so August's SA would destroy July's. Only a month-keyed subcollection
+// keeps past months. It also leaves PAY_FIELDS / resolvePay / withPay untouched.
+export interface SpecialAllowance {
+  id: string;              // = month "YYYY-MM"
+  month: string;           // "YYYY-MM"  (=== the doc id)
+  userId: string;
+  amount: number;          // rupees, finite
+  date: string;            // "yyyy-MM-dd" — manager-picked payment date, inside `month`
+  locked: boolean;
+  lockedBy?: string | null;
+  lockedAt?: Timestamp | null;
+}
+
 // Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). A marked holiday is
 // skipped like a Sunday: no attendance status is written, no Absent penalty, and
 // it is excluded from expected working days (unpaid, no payroll effect).
@@ -266,4 +292,24 @@ export interface ConveyanceRecord {
   ratePerKm: number;
   conveyance: number;
   computedAt?: Timestamp;
+}
+
+/**
+ * One entry in the tamper-proof audit log (top-level `audit_log`).
+ * Written ONLY by the Cloud Function triggers via the Admin SDK; no client can write it.
+ * See firebase/functions/auditLog.js.
+ */
+export interface AuditEntry {
+  id: string;
+  path: string;
+  collection: string;
+  docId: string;
+  userId: string | null;      // owning user, when the doc lives under users/{uid}
+  changeType: 'create' | 'update' | 'delete';
+  changedKeys: string[];
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  actor: string;              // lastModifiedBy uid, a business field, or 'unknown'
+  at: string;                 // ISO
+  atMillis: number;
 }

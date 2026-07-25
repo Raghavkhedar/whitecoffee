@@ -59,9 +59,13 @@ eq('still cannot access /users', canAccess(strayAcc, '/users'), false);
 eq('still cannot access /access', canAccess(strayAcc, '/access'), false);
 
 console.log('Config integrity:');
-eq('exactly 4 admin-only tabs', TABS.filter(t => t.adminOnly).map(t => t.path),
-  ['/dashboard', '/users', '/access', '/daily-activity']);
+// /audit is admin-only because firestore.rules grants audit_log reads to admin ONLY —
+// entries carry full document snapshots including pay. If this list and the rules ever
+// disagree, a manager gets a tab that renders nothing.
+eq('exactly 5 admin-only tabs', TABS.filter(t => t.adminOnly).map(t => t.path),
+  ['/dashboard', '/users', '/access', '/daily-activity', '/audit']);
 eq('10 grantable tabs', GRANTABLE.length, 10);
+eq('/audit is never grantable', GRANTABLE.includes('/audit'), false);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
