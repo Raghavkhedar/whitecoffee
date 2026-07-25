@@ -688,13 +688,40 @@ export async function getSpecialAllowance(uid: string, month: string): Promise<S
 }
 
 export async function getSpecialAllowancesForMonth(month: string): Promise<SpecialAllowance[]> {
-  // Fetch + client-filter (set stays small; avoids a collection-group index) — exactly as
+  // Fetch + client-filter (set stays small; avoids a collection-group index) — as
   // getSettlementsForMonth does. `userId` is seeded from the parent path so the doc's own
   // field wins when present but a doc written without it is still attributable.
+  //
+  // ⚠️ Filtered on the DOC ID, not the `month` field — the doc id IS the month, and it is
+  // what `snapshotDailySpend` keys off (functions/index.js). Filtering on the field instead
+  // made this view diverge from the backend's for any doc missing it, so a doc the functions
+  // happily read could be invisible here (locked, with no unlock path on this page).
   const snap = await getDocs(collectionGroup(db, 'specialAllowance'));
   return snap.docs
-    .map(d => ({ id: d.id, userId: d.ref.parent.parent?.id ?? '', ...d.data() } as SpecialAllowance))
-    .filter(s => s.month === month);
+    .filter(d => d.id === month)
+    .map(d => ({ id: d.id, userId: d.ref.parent.parent?.id ?? '', ...d.data() } as SpecialAllowance));
+}
+
+/**
+ * Is this month frozen for editing? True when EITHER half of Settle & Lock has fired: any
+ * locked `settlements/{month}` doc or any locked `specialAllowance/{month}` doc — the same
+ * union `snapshotDailySpend` builds its `lockedSet` from, and both keyed on the doc id
+ * (=== the month) for exactly that reason.
+ *
+ * ⚠️ The lock is a property of the MONTH, not of one employee's document. An employee with no
+ * SA doc at lock time is still inside a locked month: a value typed for them afterwards
+ * reaches nothing — snapshotDailySpend never recomputes a locked month (it reconciles SA once,
+ * on the run that freezes it), exportToSheets only rebuilds the CURRENT month's block, and OT
+ * Settlements offers only "Unlock to revise". So gate on this, never on `saDoc?.locked`.
+ */
+export async function isMonthLocked(month: string): Promise<boolean> {
+  const [settle, sa] = await Promise.all([
+    getDocs(collectionGroup(db, 'settlements')),
+    getDocs(collectionGroup(db, 'specialAllowance')),
+  ]);
+  const hasLocked = (docs: { id: string; data: () => Record<string, unknown> }[]) =>
+    docs.some(d => d.id === month && d.data().locked === true);
+  return hasLocked(settle.docs) || hasLocked(sa.docs);
 }
 
 /**
@@ -731,7 +758,11 @@ export async function lockSpecialAllowances(
   rows.forEach(r => {
     batch.set(
       doc(db, 'users', r.userId, 'specialAllowance', r.month),
-      stamped({ locked: true, lockedBy: r.lockedBy, lockedAt: now }),
+      // `id`/`month`/`userId` are re-asserted, not decoration: a merge-set CREATES the doc if
+      // it vanished between load and commit, and a doc carrying only lock fields would be a
+      // zombie — locked with no amount, no unlock path on the Users page, and read as ₹0 by
+      // the functions. Identity fields keep even that degenerate doc self-describing.
+      stamped({ id: r.month, month: r.month, userId: r.userId, locked: true, lockedBy: r.lockedBy, lockedAt: now }),
       { merge: true },
     );
   });

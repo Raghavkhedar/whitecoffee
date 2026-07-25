@@ -4,7 +4,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getAllUsers, createUserProfile, updateUserProfile,
   employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail,
-  getCompensationMap, getSpecialAllowance, setSpecialAllowance } from '@/lib/firestore';
+  getCompensationMap, getSpecialAllowance, setSpecialAllowance, isMonthLocked } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
 import { firebaseConfig } from '@/lib/firebase';
 import { syntheticLoginEmail } from '@/lib/constants';
@@ -106,12 +106,22 @@ export default function UsersPage() {
   // own lifecycle, saved by its own button, NOT folded into the user/compensation save.
   const [saMonth, setSaMonth]     = useState(currentYearMonth());
   const [saDoc, setSaDoc]         = useState<SpecialAllowance | null>(null);
+  // ⚠️ The lock is a property of the MONTH, not of this employee's doc. Someone with no SA
+  // doc at lock time has `saDoc === null`, and gating on `saDoc?.locked` would leave their
+  // inputs enabled inside a settled month — the write would succeed and then reach NOTHING
+  // (snapshotDailySpend never recomputes a locked month, exportToSheets rebuilds only the
+  // current month's block, and OT Settlements offers only "Unlock to revise"). Loaded from
+  // the server per selected month; see isMonthLocked in lib/firestore.
+  const [saMonthLocked, setSaMonthLocked] = useState(false);
   const [saAmount, setSaAmount]   = useState('');
   const [saDate, setSaDate]       = useState(defaultSaDate(currentYearMonth()));
   const [saLoading, setSaLoading] = useState(false);
   const [saSaving, setSaSaving]   = useState(false);
   const [saError, setSaError]     = useState('');
   const [saNote, setSaNote]       = useState('');
+  // The single gate for the whole SA control: this employee's own doc being frozen, OR the
+  // month being frozen for everyone (the case that matters — see saMonthLocked above).
+  const saLocked = saDoc?.locked === true || saMonthLocked;
 
   async function load() {
     setLoading(true);
@@ -132,21 +142,24 @@ export default function UsersPage() {
 
   useEffect(() => { load(); }, []);
 
-  // Load the selected month's SA whenever the modal opens on an existing employee or the
-  // SA month changes. A missing doc is a legitimate state ("not yet decided"), not an error.
+  // Load the selected month's SA — and the MONTH's lock state — whenever the modal opens on
+  // an existing employee or the SA month changes. A missing doc is a legitimate state ("not
+  // yet decided"), not an error; a missing doc in a LOCKED month is still read-only.
   const editingId = editing?.id;
   useEffect(() => {
     if (!showModal || !editingId) return;
     let cancelled = false;
     setSaLoading(true); setSaError(''); setSaNote('');
-    getSpecialAllowance(editingId, saMonth)
-      .then(sa => {
+    Promise.all([getSpecialAllowance(editingId, saMonth), isMonthLocked(saMonth)])
+      .then(([sa, locked]) => {
         if (cancelled) return;
         setSaDoc(sa);
+        setSaMonthLocked(locked);
         setSaAmount(sa && Number.isFinite(sa.amount) ? String(sa.amount) : '');
         setSaDate(sa?.date || defaultSaDate(saMonth));
       })
-      .catch(e => { if (!cancelled) setSaError(e instanceof Error ? e.message : String(e)); })
+      // A failed lock probe must not silently unlock the control — fail closed.
+      .catch(e => { if (!cancelled) { setSaMonthLocked(true); setSaError(e instanceof Error ? e.message : String(e)); } })
       .finally(() => { if (!cancelled) setSaLoading(false); });
     return () => { cancelled = true; };
   }, [showModal, editingId, saMonth]);
@@ -154,6 +167,7 @@ export default function UsersPage() {
   function resetSaForm() {
     setSaMonth(currentYearMonth());
     setSaDoc(null);
+    setSaMonthLocked(false);
     setSaAmount('');
     setSaDate(defaultSaDate(currentYearMonth()));
     setSaError('');
@@ -286,10 +300,16 @@ export default function UsersPage() {
    * with a different lifecycle — month-keyed, and lockable from the OT Settlements page.
    *
    * ⚠️ A blank amount is NOT zero. It means "not yet decided", so it writes nothing at all.
+   *
+   * ⚠️ A locked MONTH is refused here as well as in the UI, and re-checked against the server
+   * immediately before the write: the modal can sit open across a Settle & Lock in another
+   * tab, and a write that lands after the lock is worse than a rejected one — it succeeds,
+   * says "Saved", and reaches none of the three surfaces SA is supposed to reach.
    */
   async function handleSaveSpecialAllowance() {
     if (!editing) return;
     setSaError(''); setSaNote('');
+    if (saLocked) { setSaError(`${formatMonthLabel(saMonth)} is locked. Unlock it on OT Settlements to revise.`); return; }
     const raw = saAmount.trim();
     if (!raw) { setSaError('Enter an amount. Leaving it blank means “not yet decided” and saves nothing — it is not ₹0.'); return; }
     const amount = parseFloat(raw);
@@ -297,6 +317,12 @@ export default function UsersPage() {
     if (!saDate || !saDate.startsWith(`${saMonth}-`)) { setSaError(`Payment date must fall inside ${formatMonthLabel(saMonth)}.`); return; }
     setSaSaving(true);
     try {
+      if (await isMonthLocked(saMonth)) {
+        setSaMonthLocked(true);
+        setSaError(`${formatMonthLabel(saMonth)} was locked while this form was open. Unlock it on OT Settlements to revise.`);
+        setSaSaving(false);
+        return;
+      }
       await setSpecialAllowance(editing.id, saMonth, { amount, date: saDate });
       setSaDoc(await getSpecialAllowance(editing.id, saMonth));
       setSaNote(`Saved ₹${amount.toLocaleString('en-IN')} for ${formatMonthLabel(saMonth)}.`);
@@ -590,13 +616,17 @@ export default function UsersPage() {
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <label className="label">Month</label>
+                          {/* max = this month: a future month has no lock, no snapshot run and
+                              no payroll block to land in, so an allowance filed there just
+                              sits unreachable until that month arrives. */}
                           <input className="input" type="month" value={saMonth}
+                            max={currentYearMonth()}
                             onChange={e => setSaMonth(e.target.value || currentYearMonth())} />
                         </div>
                         <div>
                           <label className="label">Amount (₹)</label>
                           <input className="input" type="number" step="any" min="0" value={saAmount}
-                            disabled={saDoc?.locked || saLoading}
+                            disabled={saLocked || saLoading}
                             onChange={e => { setSaAmount(e.target.value); setSaNote(''); }}
                             placeholder={saLoading ? 'Loading…' : 'e.g. 12000'} />
                         </div>
@@ -605,13 +635,18 @@ export default function UsersPage() {
                           {/* min/max pin the date inside the selected month. */}
                           <input className="input" type="date" value={saDate}
                             min={`${saMonth}-01`} max={lastDayOfMonth(saMonth)}
-                            disabled={saDoc?.locked || saLoading}
+                            disabled={saLocked || saLoading}
                             onChange={e => { setSaDate(e.target.value); setSaNote(''); }} />
                         </div>
                       </div>
 
-                      {saDoc?.locked ? (
-                        <p className="text-[12px] text-[#B26B07] mt-2">🔒 Locked — unlock on OT Settlements to revise</p>
+                      {/* Gated on the MONTH's lock, not this doc's: a month locked while this
+                          employee had no allowance entered is still read-only for them. */}
+                      {saLocked ? (
+                        <p className="text-[12px] text-[#B26B07] mt-2">
+                          🔒 {formatMonthLabel(saMonth)} is locked — unlock on OT Settlements to revise
+                          {!saDoc && <span className="text-text-secondary"> (nothing was entered for this employee before the lock)</span>}
+                        </p>
                       ) : (
                         <>
                           <p className="text-[12px] text-text-secondary mt-1">
@@ -619,7 +654,7 @@ export default function UsersPage() {
                           </p>
                           <div className="flex items-center gap-3 mt-2">
                             <button className="btn-outline !py-1.5 !px-4 !text-sm" onClick={handleSaveSpecialAllowance}
-                              disabled={saSaving || saLoading || !saAmount.trim()}>
+                              disabled={saSaving || saLoading || saLocked || !saAmount.trim()}>
                               {saSaving ? 'Saving…' : 'Save allowance'}
                             </button>
                             {saNote && <span className="text-[12px] text-[#2E7D46]">{saNote}</span>}

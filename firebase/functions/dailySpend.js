@@ -72,4 +72,46 @@ function openWindowMonths(currentKey, lockedSet, cap = 3) {
   return months.sort();
 }
 
-module.exports = { round2, dayWeight, dailySalary, dailyDeductions, dailyTotal, addMonths, openWindowMonths };
+// ── Special Allowance reconciliation (snapshotDailySpend Pass 1 / backstop) ──────────
+// SA is the one dailySpend component a human types, so it is the one component that can be
+// entered after the last nightly run and before Settle & Lock — see the long comment in
+// snapshotDailySpend Pass 1 for why that makes it the single exception to "a locked month is
+// never recomputed".
+
+// Does an existing dailySpend row already carry this SA amount? A missing row never does.
+function saIsReflected(row, amount) {
+  if (!row) return false;
+  return round2(row.sa) === round2(amount);
+}
+
+/**
+ * The MINIMAL patch that puts `sa` on a dailySpend row, or null when there is nothing to do.
+ * `totalSpend` is re-derived from the row's OWN stored components — nothing is recomputed
+ * from source data, which is what makes this safe to apply to a month being frozen.
+ * `row` may be null (no row exists yet) — then every other component is 0.
+ *
+ * ⚠️ ₹0 is a REAL amount, not "nothing entered" (the Users page accepts it: the validation
+ * rejects only amount < 0). So a correction to ₹0 against a row carrying ₹5000 MUST produce a
+ * patch — callers must lean on this null/non-null answer rather than testing the amount for
+ * truthiness, or a zero-correction is silently dropped and the stale figure freezes forever.
+ * The one case ₹0 means "do nothing" is when there is no row at all: an SA of ₹0 must not
+ * conjure an all-zero dailySpend row, so that returns null too.
+ */
+function saRowPatch(row, amount) {
+  const sa = round2(amount);
+  if (saIsReflected(row, sa)) return null;
+  if (!row && sa === 0) return null; // nothing to carry, nothing to create
+  const r = row || {};
+  return {
+    sa,
+    totalSpend: dailyTotal({
+      salary: r.salary, conveyance: r.conveyance, imprest: r.imprest,
+      otWo: r.otWo, pf: r.pf, esi: r.esi, sa,
+    }),
+  };
+}
+
+module.exports = {
+  round2, dayWeight, dailySalary, dailyDeductions, dailyTotal, addMonths, openWindowMonths,
+  saIsReflected, saRowPatch,
+};

@@ -27,7 +27,7 @@ const {
 const { computeRangeLedger, settlementCash, dailyOtWoCash } = require("./otAggregate");
 // Pure per-day spend decomposition for the Daily Spend Snapshot (see dailySpend.js).
 const {
-  dailySalary, dailyDeductions, dailyTotal, round2, openWindowMonths,
+  dailySalary, dailyDeductions, dailyTotal, round2, openWindowMonths, saRowPatch,
 } = require("./dailySpend");
 // Pure spend categorisation for the Forecasting export (see forecastSpend.js).
 const forecast = require("./forecastSpend");
@@ -1591,22 +1591,17 @@ exports.snapshotDailySpend = onSchedule(
       if (uid) compByUid.set(uid, d.data());
     });
     const users = allUsersSnap.docs.map((d) => withPay({ id: d.id, ...d.data() }, compByUid.get(d.id)));
+    const usersById = new Map(users.map((u) => [u.id, u]));
 
-    // Locked months (company-wide freeze signal): any settlement doc with locked == true.
-    // Fetched + client-filtered (like getSettlementsForMonth) to avoid a collection-group
-    // index; the set stays small (one doc per ops employee per settled month). Settlement
-    // doc id === "YYYY-MM".
-    const settleSnap = await db.collectionGroup("settlements").get();
-    const lockedSet = new Set(
-      settleSnap.docs.filter((d) => d.data().locked === true).map((d) => d.id),
-    );
+    const monthOf = (dateStr) => dateStr.slice(0, 7);
 
     // Special Allowance — users/{uid}/specialAllowance/{YYYY-MM}, one doc per employee per
-    // month, doc id === "YYYY-MM". Fetched + client-filtered exactly like lockedSet above to
+    // month, doc id === "YYYY-MM". Fetched + client-filtered exactly like lockedSet below to
     // avoid a collection-group index; the set stays small. uid comes from the subcollection
     // parent, as in the compByUid loop.
     const saSnap = await db.collectionGroup("specialAllowance").get();
     const saByUid = new Map(); // uid → Map(month → { date, amount })
+    const saLockedMonths = new Set(); // months frozen by the SA half of Settle & Lock
     saSnap.docs.forEach((d) => {
       const uid = d.ref.parent.parent && d.ref.parent.parent.id;
       if (!uid) return;
@@ -1615,7 +1610,24 @@ exports.snapshotDailySpend = onSchedule(
       const entry = { date: typeof s.date === "string" ? s.date : "", amount: Number.isFinite(amount) ? amount : 0 };
       if (!saByUid.has(uid)) saByUid.set(uid, new Map());
       saByUid.get(uid).set(d.id, entry); // d.id === "YYYY-MM"
+      if (s.locked === true) saLockedMonths.add(d.id); // d.id === "YYYY-MM"
     });
+
+    // Locked months (company-wide freeze signal) — the UNION of BOTH halves of Settle & Lock:
+    // any locked settlement doc OR any locked specialAllowance doc. The SA half counts on its
+    // own because the OT Settlements page renders "🔒 settled & locked" when EITHER half is
+    // locked, and it will happily lock a month with no operations employees at all (no
+    // settlement docs, but real SA). Building lockedSet from settlements alone would leave
+    // such a month outside lockedSet forever: recomputed nightly, never freeze-finalized, its
+    // rows stuck at frozen:false — i.e. the UI's lock claim would be a lie to the backend.
+    // Both collections are fetched + client-filtered (like getSettlementsForMonth) to avoid
+    // collection-group indexes; both stay small (one doc per employee per settled month) and
+    // both use doc id === "YYYY-MM".
+    const settleSnap = await db.collectionGroup("settlements").get();
+    const lockedSet = new Set([
+      ...settleSnap.docs.filter((d) => d.data().locked === true).map((d) => d.id),
+      ...saLockedMonths,
+    ]);
 
     // ── Pass 1: freeze-finalization ───────────────────────────────────
     // The recompute pass below only writes unlocked months, so a month that locked since
@@ -1628,17 +1640,90 @@ exports.snapshotDailySpend = onSchedule(
     for (const M of lockedSet) {
       const probe = await db.collection("dailySpend")
         .where("month", "==", M).where("frozen", "==", false).limit(1).get();
-      if (probe.empty) continue; // already finalized on a previous run (or no rows at all)
+      // Already finalized on a previous run (or the month has no rows at all). Deliberately
+      // also skips the SA reconciliation below: repairing an ALREADY-frozen month is exactly
+      // the "recompute a locked month" this pass exists to avoid. An SA that arrives after
+      // the freeze (only reachable by a direct API write — the admin UI renders a locked
+      // month read-only) is left alone and reported nightly by the backstop at the end.
+      if (probe.empty) continue;
       const monthSnap = await db.collection("dailySpend").where("month", "==", M).get();
+      const rowById = new Map(monthSnap.docs.map((d) => [d.id, d]));
+
+      // ── SA reconciliation: the ONE exception to "a locked month is never recomputed" ──
+      // WHY SA AND NOTHING ELSE. Every other component (salary / OT-WO / conveyance /
+      // PF / ESI / imprest) is derived from attendance that is complete and settled before
+      // the admin locks, so recomputing it after the lock could only ever move a settled
+      // figure — which is exactly what freezing exists to prevent. SA is different: it is a
+      // number a human types, and the NORMAL workflow lets it be typed after the last
+      // snapshot run and before the lock (manager enters 31 Jul's allowance at 23:10 on
+      // 31 Jul, after that night's 22:30 run; admin Settle & Locks July at 14:00 on 1 Aug).
+      // Pass 2 below only ever writes UNLOCKED months, so by the 1 Aug run July is already
+      // locked and that SA would never reach dailySpend at all — silently absent from
+      // payroll and from the Forecasting Daily Snapshot, with no self-heal.
+      // Pass 1 fires exactly ONCE per newly-locked month (the frozen:false probe above gates
+      // it), which is precisely the "this month is being frozen — take its final picture"
+      // hook. So: fold `sa` in here, and NOTHING else. The patch below sets only `sa` and
+      // re-derives `totalSpend` from the row's OWN already-stored components (saRowPatch in
+      // dailySpend.js) — no component is ever recomputed from source data.
+      const saUpdates = new Map(); // existing row id → extra fields folded into its freeze update
+      const saCreates = [];        // rows that don't exist yet, created already-frozen
+      for (const [uid, months] of saByUid) {
+        const entry = months.get(M);
+        if (!entry || !entry.date) continue; // a dateless doc has no row to land on
+        // A doc whose date lands in a DIFFERENT month is not ours to place: if that month is
+        // open Pass 2 emits it there, and if it is not the backstop below warns.
+        if (monthOf(entry.date) !== M) continue;
+        const id = `${uid}__${entry.date}`;
+        const existing = rowById.get(id);
+        // ⚠️ Deliberately NOT gated on `entry.amount` being truthy. ₹0 is a real amount the
+        // Users page accepts, so "corrected to ₹0" and "nothing entered" are different facts,
+        // and a truthiness guard here would drop the correction: a row already carrying
+        // sa: 5000 from an earlier open-month run would freeze with the stale ₹5000 forever,
+        // overstating payroll and the Forecasting snapshot with no self-heal. Pass 2 gets this
+        // right for an unlocked month (it recomputes `sa` unconditionally per candidate date);
+        // this is the locked-month equivalent. saRowPatch answers both questions on its own —
+        // null means "already correct" OR "₹0 with no row to correct" (which must not conjure
+        // an all-zero row); non-null means a write is genuinely needed.
+        const patch = saRowPatch(existing ? existing.data() : null, entry.amount);
+        if (!patch) continue;
+        if (existing) {
+          saUpdates.set(id, patch);
+        } else {
+          // No row for the SA's date — an allowance dated on a Sunday, a leave day, or any
+          // day with no economic activity. Create it carrying ONLY the SA (every other
+          // component 0, totalSpend consistent), already frozen.
+          const u = usersById.get(uid);
+          saCreates.push({
+            id,
+            data: {
+              userId: uid, employeeId: (u && u.employeeId) || "", name: (u && u.name) || "", role: (u && u.role) || "",
+              date: entry.date, month: M,
+              salary: 0, conveyance: 0, pf: 0, esi: 0, otWo: 0, imprest: 0,
+              sa: patch.sa, totalSpend: patch.totalSpend,
+              frozen: true,
+              computedAt: admin.firestore.Timestamp.now(),
+            },
+          });
+        }
+      }
+
       let fBatch = db.batch();
       let fOps = 0;
       for (const doc of monthSnap.docs) {
-        fBatch.update(doc.ref, { frozen: true }); // relabel only — values untouched
+        const extra = saUpdates.get(doc.id); // SA only — see the block above
+        fBatch.update(doc.ref, extra ? { frozen: true, ...extra } : { frozen: true });
+        fOps++;
+        if (fOps >= 400) { await fBatch.commit(); fBatch = db.batch(); fOps = 0; }
+      }
+      for (const c of saCreates) {
+        fBatch.set(db.collection("dailySpend").doc(c.id), c.data, { merge: false });
         fOps++;
         if (fOps >= 400) { await fBatch.commit(); fBatch = db.batch(); fOps = 0; }
       }
       if (fOps > 0) await fBatch.commit();
-      console.log(`dailySpend: finalized (frozen:true) ${monthSnap.size} rows for ${M}`);
+      const saNote = (saUpdates.size || saCreates.length)
+        ? ` (SA reconciled: ${saUpdates.size} updated, ${saCreates.length} created)` : "";
+      console.log(`dailySpend: finalized (frozen:true) ${monthSnap.size} rows for ${M}${saNote}`);
     }
 
     // ── Pass 2: recompute the open window ─────────────────────────────
@@ -1682,7 +1767,6 @@ exports.snapshotDailySpend = onSchedule(
       statusesByUser.get(s.userId).push(s);
     });
 
-    const monthOf = (dateStr) => dateStr.slice(0, 7);
     // UTC-safe weekday: read getUTCDay() on a Z-anchored string (functions run on UTC).
     const isSunday = (dateStr) => new Date(dateStr + "T00:00:00Z").getUTCDay() === 0;
 
@@ -1767,28 +1851,68 @@ exports.snapshotDailySpend = onSchedule(
     if (ops > 0) await batch.commit();
     console.log(`dailySpend: recomputed months [${windowMonths.join(", ")}] up to ${today}`);
 
-    // Backstop: a locked month is NEVER recomputed, so an SA doc for a month outside the
-    // recompute window can never reach dailySpend. The admin UI prevents this by rendering a
-    // locked month read-only, so this should never fire — if it does, the named employee's SA
-    // is missing from the Daily Snapshot and needs a manual fix.
-    // Keyed on the SA *date's* month, since that is what actually gates emission above — this
-    // also catches a doc whose date was mis-typed outside its own month (rules don't enforce
-    // that; the UI does) and a doc with no date at all, both of which are silently dropped.
-    const usersById = new Map(users.map((u) => [u.id, u]));
+    // Backstop: an SA that genuinely never reached dailySpend. Pass 2 above writes only the
+    // open window and Pass 1 reconciles a locked month's SA exactly ONCE (the run that
+    // freezes it), so an SA written into an ALREADY-frozen month has no path in at all. The
+    // admin UI prevents that (a locked month renders read-only), so this should stay silent.
+    //
+    // ⚠️ It must warn only when the SA is ACTUALLY MISSING, never merely because its month is
+    // outside the recompute window: openWindowMonths returns the current month plus at most 3
+    // unlocked priors, so "outside the window" describes every correctly-processed SA in every
+    // settled month, forever — a warning that grows by one line per employee per month and
+    // buries the one real alarm. So we PROBE the row instead: one getAll over the handful of
+    // SA docs whose date month sits outside the window, warning only if the row is absent or
+    // its `sa` disagrees with the doc's amount.
+    //
+    // NOTE: this deliberately does NOT catch an SA whose `date` was mis-typed into a
+    // different, still-OPEN month (a July doc dated 2026-08-15 while August is open): such a
+    // doc IS emitted, just onto the August row, so the probe finds it and stays quiet. That
+    // is reachable only by a direct API write — the UI pins the date input's min/max to the
+    // doc's own month — and the place to close it is the UI/rules, not a nightly log line.
+    const describeUser = (uid) => {
+      const u = usersById.get(uid);
+      return u ? `${u.name || "(no name)"} (${u.employeeId || uid})` : uid;
+    };
+    const saSuspects = []; // SA docs Pass 2 did not just write — worth probing
     for (const [uid, months] of saByUid) {
       for (const [m, entry] of months) {
-        if (!entry.amount) continue; // ₹0 SA contributes nothing either way
-        const dateMonth = entry.date ? monthOf(entry.date) : "";
-        if (dateMonth && windowMonths.includes(dateMonth)) continue; // will be / was emitted
-        const u = usersById.get(uid);
-        const who = u ? `${u.name || "(no name)"} (${u.employeeId || uid})` : uid;
-        const why = !entry.date ? "it has no date"
-          : dateMonth !== m ? `its date ${entry.date} falls outside its own month`
-            : `month ${m} is outside the recompute window [${windowMonths.join(", ")}]`;
-        console.warn(
-          `dailySpend: SA for ${who} in ${m} (₹${entry.amount}) may NOT be reflected in dailySpend — ${why}`,
-        );
+        if (!entry.date) {
+          // A dateless doc can never be placed on a row. ₹0 has nothing to place, so it is
+          // only worth naming when there is actual money stranded.
+          if (entry.amount) {
+            console.warn(
+              `dailySpend: SA for ${describeUser(uid)} in ${m} (₹${entry.amount}) is NOT reflected in dailySpend — it has no date`,
+            );
+          }
+          continue;
+        }
+        // A dated SA inside the window was (re)written by Pass 2 moments ago — nothing to check.
+        if (windowMonths.includes(monthOf(entry.date))) continue;
+        // ⚠️ ₹0 docs are probed too, and for the reason the whole backstop exists: a
+        // correction to ₹0 that never reached its row leaves a stale NONZERO `sa` frozen in
+        // place. Skipping ₹0 here would make exactly that failure invisible. saRowPatch keeps
+        // the harmless case quiet — ₹0 with no row is null, i.e. nothing to report.
+        saSuspects.push({ uid, month: m, entry });
       }
+    }
+    for (let i = 0; i < saSuspects.length; i += 300) { // chunked: getAll takes one RPC per call
+      const chunk = saSuspects.slice(i, i + 300);
+      const snaps = await db.getAll(
+        ...chunk.map((p) => db.collection("dailySpend").doc(`${p.uid}__${p.entry.date}`)),
+      );
+      chunk.forEach((p, k) => {
+        const snap = snaps[k];
+        const row = snap && snap.exists ? snap.data() : null;
+        // Same question Pass 1 asks: would a write be needed? null = correctly carried, or
+        // ₹0 with no row (nothing to carry). Either way there is nothing to report.
+        if (!saRowPatch(row, p.entry.amount)) return;
+        const why = row
+          ? `the dailySpend row for ${p.entry.date} carries ₹${round2(row.sa)} instead`
+          : `there is no dailySpend row for ${p.entry.date}`;
+        console.warn(
+          `dailySpend: SA for ${describeUser(p.uid)} in ${p.month} (₹${p.entry.amount}) is NOT reflected in dailySpend — ${why}`,
+        );
+      });
     }
 
     // Orphan cleanup: any pre-existing row in an unlocked window month that we did NOT rewrite

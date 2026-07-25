@@ -10,15 +10,18 @@ import {
   getSpecialAllowancesForMonth, lockSpecialAllowances, unlockSpecialAllowance,
 } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
+import { istTodayStr } from '@/lib/date';
 import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus, Settlement, SpecialAllowance } from '@/types';
 import { computeRangeLedger, settlementCash, type RangeLedger } from '@/lib/otAggregate';
 import { usesOtShortageLedger } from '@/lib/roleCapabilities';
 import ExportButton from '@/components/ExportButton';
 import { downloadExcel } from '@/lib/excel';
 
+// IST, never the browser's local calendar: this page and the Users page (where SA amounts are
+// entered) must agree on "current month", or a non-IST browser between 00:00–05:30 IST on the
+// 1st would let an admin lock a different month than the one they just typed an allowance into.
 function currentYearMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return istTodayStr().slice(0, 7);
 }
 function formatMonthLabel(ym: string) {
   const [y, m] = ym.split('-').map(Number);
