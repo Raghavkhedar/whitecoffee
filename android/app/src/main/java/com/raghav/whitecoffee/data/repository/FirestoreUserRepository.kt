@@ -15,13 +15,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class UserRepository @Inject constructor(
+class FirestoreUserRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager
-) {
+) : UserRepository {
 
-    suspend fun getUserById(userId: String): Result<User> {
+    override suspend fun getUserById(userId: String): Result<User> {
         return try {
             val doc = firestore.collection("users").document(userId).get().await()
             val user = User.fromDocument(doc) ?: return Result.failure(Exception("User not found."))
@@ -31,7 +31,7 @@ class UserRepository @Inject constructor(
         }
     }
 
-    fun getCurrentUser(): User = User(
+    override fun getCurrentUser(): User = User(
         id         = sessionManager.userId,
         name       = sessionManager.name,
         email      = sessionManager.email,
@@ -41,7 +41,7 @@ class UserRepository @Inject constructor(
 
     // ── Admin operations ──────────────────────────────────────────────────
 
-    suspend fun getAllUsers(): Result<List<User>> {
+    override suspend fun getAllUsers(): Result<List<User>> {
         return try {
             val snapshot = firestore.collection("users").get().await()
             Result.success(snapshot.documents.mapNotNull { User.fromDocument(it) })
@@ -50,7 +50,7 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun createUser(
+    override suspend fun createUser(
         email: String,
         password: String,
         name: String,
@@ -94,7 +94,7 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun updateUserProfile(
+    override suspend fun updateUserProfile(
         userId: String,
         name: String,
         role: String,
@@ -118,7 +118,7 @@ class UserRepository @Inject constructor(
         }
     }
 
-    suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+    override suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
         return try {
             FirebaseAuth.getInstance().sendPasswordResetEmail(email).await()
             Result.success(Unit)

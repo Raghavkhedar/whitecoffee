@@ -53,6 +53,29 @@ Pattern: **MVVM + Repository + Hilt**
 - ViewModels = state via `StateFlow<UiState<T>>`
 - Repositories = only layer that touches Firebase
 - Hilt = constructor injection everywhere, zero manual instantiation
+
+### Data sources are INTERFACES — never inject a concrete one into a ViewModel
+Every repository, plus `LocationProvider`, `NetworkMonitor` and `SessionManager`, is an
+**interface** in `data/`, implemented by a platform-bound class alongside it and wired in
+`di/RepositoryModule.kt` / `di/DataSourceModule.kt` via `@Binds`:
+
+| Contract | Implementation |
+|---|---|
+| `AttendanceRepository` · `AuthRepository` · `LeaveRepository` · `NotificationRepository` · `RegularizationRepository` · `RequestRepository` · `SiteRepository` · `UserRepository` | `Firestore…` / `FirebaseAuthRepository` |
+| `LocationProvider` | `FusedLocationProvider` |
+| `NetworkMonitor` | `ConnectivityNetworkMonitor` |
+| `SessionManager` | `PrefsSessionManager` |
+
+**Why:** the implementations need an `@ApplicationContext Context` (SharedPreferences,
+ConnectivityManager, GPS gates). While they were concrete classes, **no ViewModel could be
+constructed on a JVM test runner** — which is the whole reason the attendance state machines
+went untested for so long. Kotlin classes are `final`, and there is deliberately **no mocking
+library**: tests use hand-written fakes in `app/src/test/java/.../fake/` per Google's
+"prefer fakes to mocks".
+
+Adding a repository = interface + impl + one `@Binds` line + a `Fake…` in test sources.
+Never add a `Context` (or `WorkManager`, or a raw `FirebaseFirestore`) to a ViewModel
+constructor — put it behind a contract in `data/` instead.
 - ViewBinding = always cleared in `onDestroyView()` via BaseFragment
 - Coroutines = `viewModelScope` for all async, `repeatOnLifecycle(STARTED)` for collection
 
@@ -499,7 +522,7 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 
 ### 🧹 TECH-DEBT BACKLOG (graph audit — deferred, need a working Gradle build to verify)
 - **#4 Duplicated submit/reset boilerplate** — the 6 request/leave ViewModels (`MaterialToolRequest`, `MaterialToolBuy`, `Transfer`, `WorkProgress`, `ApplyLeave`, `Regularization`) repeat near-identical `submit()` / `resetSubmitState()` + `UiState` plumbing. Candidate for a shared base `SubmitViewModel<T>`.
-- **#5 No test coverage** — only the default `ExampleUnitTest` / `ExampleInstrumentedTest` stubs exist. Repos + `deriveAttendanceState()` / `deriveOfficeState()` are untested.
+- ~~**#5 No test coverage**~~ — **partly resolved.** `./gradlew :app:testDebugUnitTest` runs **77** tests, 0 failures: `AttendanceRecordTest` (21), `AttendanceStatusRulesTest` (19), `LeaveCoverageTest` (14), `AttendanceViewModelTest` (9), `OfficeAttendanceViewModelTest` (8), `AccountStatusTest` (3), `FirestoreFlowTest` (2). The two ViewModel suites cover `deriveOfficeState()`, the `isEventAllowed` write-time guard, market-from-site auto-checkout, and the stress-test-#2.1 double-tap guard. **Still untested:** the 4 request ViewModels (blocked — they inject `WorkManager` + `PhotoUploadManager`, both still concrete), `MainViewModel` (blocked — injects raw `FirebaseFirestore`), `HomeViewModel`, `LeaveViewModel`, `LeaveApprovalsViewModel`, `NotificationsViewModel`, `RegularizationViewModel`, `LoginViewModel` (all now unblocked — fakes exist, tests not yet written), and the repository implementations themselves.
 - **#6 `UiState.Offline` couples UI-state to connectivity** — `NetworkMonitor` leaks into the `UiState` contract that all 18 ViewModels depend on. Low severity; revisit if `UiState` is reused outside this app.
 
 ---

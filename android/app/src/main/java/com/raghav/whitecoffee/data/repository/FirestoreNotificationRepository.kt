@@ -14,24 +14,24 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class NotificationRepository @Inject constructor(
+class FirestoreNotificationRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager
-) {
+) : NotificationRepository {
 
     private fun collection() = firestore
         .collection("users")
         .document(sessionManager.userId)
         .collection("notifications")
 
-    fun observeNotifications(): Flow<List<AppNotification>> =
+    override fun observeNotifications(): Flow<List<AppNotification>> =
         collection()
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(50)
             .snapshotsAsFlow()
             .map { snap -> snap.documents.mapNotNull { AppNotification.fromDocument(it) } }
 
-    fun observeUnreadCount(): Flow<Int> =
+    override fun observeUnreadCount(): Flow<Int> =
         collection()
             .whereEqualTo("isRead", false)
             .snapshotsAsFlow()
@@ -43,7 +43,7 @@ class NotificationRepository @Inject constructor(
      * changedKeysWithin(['isRead']) holds (hasOnly), so a third key would be denied and the
      * bell badge would never clear. The doc is owner-scoped, so the path already names the actor.
      */
-    suspend fun markAsRead(notifId: String): Result<Unit> {
+    override suspend fun markAsRead(notifId: String): Result<Unit> {
         return try {
             collection().document(notifId).update("isRead", true).await()
             Result.success(Unit)
@@ -53,7 +53,7 @@ class NotificationRepository @Inject constructor(
     }
 
     /** ⚠️ AUDIT-EXEMPT for the same reason as [markAsRead] — changedKeysWithin(['isRead']). */
-    suspend fun markAllAsRead(): Result<Unit> {
+    override suspend fun markAllAsRead(): Result<Unit> {
         return try {
             val batch = firestore.batch()
             val unread = collection().whereEqualTo("isRead", false).get().await()
@@ -65,7 +65,7 @@ class NotificationRepository @Inject constructor(
         }
     }
 
-    suspend fun saveNotification(notification: AppNotification): Result<Unit> {
+    override suspend fun saveNotification(notification: AppNotification): Result<Unit> {
         return try {
             if (sessionManager.userId.isEmpty()) return Result.success(Unit)
             // Stampable: the notification CREATE rule is a plain allow (no hasOnly).
@@ -83,7 +83,7 @@ class NotificationRepository @Inject constructor(
      * changedKeysWithin(['activeSessionToken', 'fcmToken']) (hasOnly). A third key would be
      * denied and the device would stop receiving push notifications.
      */
-    suspend fun saveToken(token: String): Result<Unit> {
+    override suspend fun saveToken(token: String): Result<Unit> {
         return try {
             if (sessionManager.userId.isEmpty()) return Result.success(Unit)
             firestore.collection("users")

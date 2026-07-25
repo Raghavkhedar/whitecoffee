@@ -15,15 +15,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SiteRepository @Inject constructor(
+class FirestoreSiteRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager
-) {
+) : SiteRepository {
 
     private val collection get() = firestore.collection("sites")
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
-    suspend fun getSiteById(siteId: String): Result<Site> {
+    override suspend fun getSiteById(siteId: String): Result<Site> {
         return try {
             val doc = collection.document(siteId).get().await()
             val site = Site.fromDocument(doc) ?: return Result.failure(Exception("Site not found."))
@@ -88,7 +88,7 @@ class SiteRepository @Inject constructor(
      * }
      */
 
-    suspend fun getAllSites(): Result<List<Site>> {
+    override suspend fun getAllSites(): Result<List<Site>> {
         return try {
             val snapshot = collection.get().await()
             Result.success(snapshot.documents.mapNotNull { Site.fromDocument(it) })
@@ -99,7 +99,7 @@ class SiteRepository @Inject constructor(
 
     // ── Admin operations ──────────────────────────────────────────────────
 
-    suspend fun createSite(
+    override suspend fun createSite(
         name: String,
         latitude: Double,
         longitude: Double,
@@ -121,7 +121,7 @@ class SiteRepository @Inject constructor(
         }
     }
 
-    suspend fun updateSite(
+    override suspend fun updateSite(
         siteId: String,
         name: String,
         latitude: Double,

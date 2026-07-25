@@ -14,21 +14,21 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class RegularizationRepository @Inject constructor(
+class FirestoreRegularizationRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager
-) {
+) : RegularizationRepository {
     private val userDoc get() = firestore.collection("users").document(sessionManager.userId)
     private val regCol  get() = userDoc.collection("regularization_requests")
 
-    fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
+    override fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         regCol.whereEqualTo("date", date)
             .snapshotsAsFlow()
             .map { snap ->
                 snap.documents.mapNotNull { RegularizationRequest.fromDocument(it) }.firstOrNull()
             }
 
-    suspend fun submitRequest(
+    override suspend fun submitRequest(
         date: String,
         originalStatus: String,
         reason: String

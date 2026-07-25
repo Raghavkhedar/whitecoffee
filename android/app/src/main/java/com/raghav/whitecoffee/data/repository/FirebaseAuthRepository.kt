@@ -10,18 +10,18 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class AuthRepository @Inject constructor(
+class FirebaseAuthRepository @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager
-) {
+) : AuthRepository {
 
     /**
      * Signs in with email/password, then immediately fetches the user's
      * Firestore profile and populates SessionManager.
      * Returns Result.success(User) or Result.failure(exception).
      */
-    suspend fun login(email: String, password: String): Result<User> {
+    override suspend fun login(email: String, password: String): Result<User> {
         return try {
             // Step 1 — Resolve the login identifier, then Firebase Auth sign in.
             // New hires log in with just their employee ID (turned into a synthetic
@@ -80,7 +80,7 @@ class AuthRepository @Inject constructor(
     /**
      * Signs out and clears all session data.
      */
-    fun logout() {
+    override fun logout() {
         sessionManager.clearSession()
     }
 
@@ -88,7 +88,7 @@ class AuthRepository @Inject constructor(
      * Returns true if a Firebase user is currently signed in
      * AND session data is populated.
      */
-    fun isLoggedIn(): Boolean {
+    override fun isLoggedIn(): Boolean {
         if (auth.currentUser == null) return false
         if (sessionManager.isLoggedIn) return true
         // Firebase user exists but in-memory cache is empty (process was killed)

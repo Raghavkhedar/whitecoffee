@@ -1,61 +1,51 @@
 package com.raghav.whitecoffee.data.session
 
-import android.content.Context
-import com.google.firebase.auth.FirebaseAuth
-import dagger.hilt.android.qualifiers.ApplicationContext
-import javax.inject.Inject
-import javax.inject.Singleton
+/**
+ * The signed-in user's cached identity.
+ *
+ * WHY THIS IS AN INTERFACE: the implementation is backed by SharedPreferences, which the
+ * Android architecture guidance names as a data source the UI layer must not depend on
+ * concretely, and which needs a Context to open. Five ViewModels read this type, so faking it
+ * is what lets them be constructed on a JVM test runner.
+ *
+ * Every property is read-only. Identity changes go through [saveSession], [tryRestoreFromCache]
+ * and [clearSession] — a single source of truth that callers may read but never mutate field by
+ * field.
+ */
+interface SessionManager {
 
-@Singleton
-class SessionManager @Inject constructor(
-    private val firebaseAuth: FirebaseAuth,
-    @ApplicationContext private val context: Context
-) {
-
-    private val prefs = context.getSharedPreferences("wc_session", Context.MODE_PRIVATE)
-
-    // In-memory cache of the current user's Firestore profile fields
-    private var _userId: String = ""
-    private var _name: String = ""
-    private var _email: String = ""
-    private var _role: String = ""
-    private var _employeeId: String = ""
-    private var _sessionToken: String = ""
-
-    val userId: String get() = _userId
-    val name: String get() = _name
-    val email: String get() = _email
-    val role: String get() = _role
-    val employeeId: String get() = _employeeId
-    val sessionToken: String get() = _sessionToken
+    val userId: String
+    val name: String
+    val email: String
+    val role: String
+    val employeeId: String
+    val sessionToken: String
 
     /** True if a user is currently signed in AND session data is populated. */
     val isLoggedIn: Boolean
-        get() = firebaseAuth.currentUser != null && _userId.isNotEmpty()
 
     /** True if the current user has the operations role. */
     val isOperations: Boolean
-        get() = _role == ROLE_OPERATIONS
 
     /** True if the current user has the office role (admin also has all office capabilities). */
     val isOffice: Boolean
-        get() = _role == ROLE_OFFICE || _role == ROLE_ADMIN
 
     /**
      * True if the current user has the sales role. Sales is a hybrid: it may do either an
      * office day (office_in/office_out) or a site-visit day (site_in/site_out), chosen per day.
-     * It is scored on the fixed 10:00–18:00 window like office (see [RoleCapabilities]).
+     * It is scored on the fixed 10:00–18:00 window like office (see RoleCapabilities).
+     *
+     * Never fold sales into [isOffice] or infer it from `!isOperations` — that binary is what
+     * left a sales site day unregularizable and a `site_in` unclosed at logout.
      */
     val isSales: Boolean
-        get() = _role == ROLE_SALES
 
     /** True if the current user has the admin role. */
     val isAdmin: Boolean
-        get() = _role == ROLE_ADMIN
 
     /**
-     * Called by LoginViewModel after successful Firebase Auth + Firestore
-     * user document fetch. Caches all identity fields in memory.
+     * Called after successful Firebase Auth + Firestore user document fetch.
+     * Caches all identity fields.
      */
     fun saveSession(
         userId: String,
@@ -64,50 +54,16 @@ class SessionManager @Inject constructor(
         role: String,
         employeeId: String,
         sessionToken: String = ""
-    ) {
-        _userId = userId
-        _name = name
-        _email = email.lowercase().trim()
-        _role = role
-        _employeeId = employeeId
-        _sessionToken = sessionToken
-        prefs.edit()
-            .putString("userId", _userId)
-            .putString("name", _name)
-            .putString("email", _email)
-            .putString("role", _role)
-            .putString("employeeId", _employeeId)
-            .putString("sessionToken", _sessionToken)
-            .apply()
-    }
+    )
 
     /**
-     * Restores in-memory cache from SharedPreferences if Firebase Auth still
-     * has a valid user. Called on app launch to skip the Firestore round-trip.
-     * Returns true if session was restored successfully.
+     * Restores the cache from persistent storage. Called on app launch to skip the Firestore
+     * round-trip. Returns true if a session was restored.
      */
-    fun tryRestoreFromCache(): Boolean {
-        val userId = prefs.getString("userId", "") ?: ""
-        if (userId.isEmpty()) return false
-        _userId       = userId
-        _name         = prefs.getString("name", "") ?: ""
-        _email        = prefs.getString("email", "") ?: ""
-        _role         = prefs.getString("role", "") ?: ""
-        _employeeId   = prefs.getString("employeeId", "") ?: ""
-        _sessionToken = prefs.getString("sessionToken", "") ?: ""
-        return true
-    }
+    fun tryRestoreFromCache(): Boolean
 
-    fun clearSession() {
-        _userId = ""
-        _name = ""
-        _email = ""
-        _role = ""
-        _employeeId = ""
-        _sessionToken = ""
-        prefs.edit().clear().apply()
-        firebaseAuth.signOut()
-    }
+    /** Clears the cached identity and signs the user out. */
+    fun clearSession()
 
     companion object {
         const val ROLE_OPERATIONS = "operations"

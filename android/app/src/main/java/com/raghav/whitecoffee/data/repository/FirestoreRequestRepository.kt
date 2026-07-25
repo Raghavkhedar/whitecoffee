@@ -15,10 +15,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class RequestRepository @Inject constructor(
+class FirestoreRequestRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val sessionManager: SessionManager
-) {
+) : RequestRepository {
 
     // ── Collection references (sub-collections under the current user's doc) ──
     private val userDoc         get() = firestore.collection("users").document(sessionManager.userId)
@@ -33,15 +33,15 @@ class RequestRepository @Inject constructor(
      * to the doc's storage path BEFORE the doc is written, so the photo URLs can be
      * included in a single write instead of write-then-update.
      */
-    fun newDocId(collectionName: String): String =
+    override fun newDocId(collectionName: String): String =
         userDoc.collection(collectionName).document().id
 
     // ── M&T Request ────────────────────────────────────────────────────────
 
-    suspend fun submitMaterialToolRequest(
+    override suspend fun submitMaterialToolRequest(
         request: MaterialToolRequest,
-        docId: String? = null,
-        photoUrls: List<String> = emptyList()
+        docId: String?,
+        photoUrls: List<String>
     ): Result<String> {
         return try {
             if (request.items.isEmpty()) {
@@ -64,7 +64,7 @@ class RequestRepository @Inject constructor(
         }
     }
 
-    suspend fun getMaterialToolRequests(): Result<List<MaterialToolRequest>> {
+    override suspend fun getMaterialToolRequests(): Result<List<MaterialToolRequest>> {
         return try {
             val snapshot = mtRequestCol
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
@@ -78,10 +78,10 @@ class RequestRepository @Inject constructor(
 
     // ── M&T Purchase ───────────────────────────────────────────────────────
 
-    suspend fun submitMaterialToolPurchase(
+    override suspend fun submitMaterialToolPurchase(
         purchase: MaterialToolPurchase,
-        docId: String? = null,
-        photoUrls: List<String> = emptyList()
+        docId: String?,
+        photoUrls: List<String>
     ): Result<String> {
         return try {
             if (purchase.items.isEmpty()) {
@@ -104,7 +104,7 @@ class RequestRepository @Inject constructor(
         }
     }
 
-    suspend fun getMaterialToolPurchases(): Result<List<MaterialToolPurchase>> {
+    override suspend fun getMaterialToolPurchases(): Result<List<MaterialToolPurchase>> {
         return try {
             val snapshot = mtPurchaseCol
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
@@ -118,10 +118,10 @@ class RequestRepository @Inject constructor(
 
     // ── Material Transfer ──────────────────────────────────────────────────
 
-    suspend fun submitMaterialTransfer(
+    override suspend fun submitMaterialTransfer(
         transfer: Transfer,
-        docId: String? = null,
-        photoUrls: List<String> = emptyList()
+        docId: String?,
+        photoUrls: List<String>
     ): Result<String> {
         return try {
             if (transfer.items.isEmpty()) {
@@ -144,7 +144,7 @@ class RequestRepository @Inject constructor(
         }
     }
 
-    suspend fun getMaterialTransfers(): Result<List<Transfer>> {
+    override suspend fun getMaterialTransfers(): Result<List<Transfer>> {
         return try {
             val snapshot = matTransferCol
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
@@ -158,10 +158,10 @@ class RequestRepository @Inject constructor(
 
     // ── Tool Transfer ──────────────────────────────────────────────────────
 
-    suspend fun submitToolTransfer(
+    override suspend fun submitToolTransfer(
         transfer: Transfer,
-        docId: String? = null,
-        photoUrls: List<String> = emptyList()
+        docId: String?,
+        photoUrls: List<String>
     ): Result<String> {
         return try {
             if (transfer.items.isEmpty()) {
@@ -184,7 +184,7 @@ class RequestRepository @Inject constructor(
         }
     }
 
-    suspend fun getToolTransfers(): Result<List<Transfer>> {
+    override suspend fun getToolTransfers(): Result<List<Transfer>> {
         return try {
             val snapshot = toolTransferCol
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
@@ -198,10 +198,10 @@ class RequestRepository @Inject constructor(
 
     // ── Work Progress ──────────────────────────────────────────────────────
 
-    suspend fun submitWorkProgress(
+    override suspend fun submitWorkProgress(
         progress: WorkProgress,
-        docId: String? = null,
-        photoUrls: List<String> = emptyList()
+        docId: String?,
+        photoUrls: List<String>
     ): Result<String> {
         return try {
             if (progress.workDescription.isBlank()) {
@@ -232,7 +232,7 @@ class RequestRepository @Inject constructor(
      * this PERMISSION_DENIED and the uploaded photos would never be linked to the document.
      * The create above (same doc, same actor, moments earlier) already carries the stamp.
      */
-    suspend fun updatePhotoUrls(
+    override suspend fun updatePhotoUrls(
         collectionName: String,
         docId: String,
         urls: List<String>
@@ -247,7 +247,7 @@ class RequestRepository @Inject constructor(
         }
     }
 
-    suspend fun getWorkProgress(): Result<List<WorkProgress>> {
+    override suspend fun getWorkProgress(): Result<List<WorkProgress>> {
         return try {
             val snapshot = workProgressCol
                 .orderBy("submittedAt", Query.Direction.DESCENDING)
