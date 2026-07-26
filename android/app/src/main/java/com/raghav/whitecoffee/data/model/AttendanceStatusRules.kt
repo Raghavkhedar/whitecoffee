@@ -86,4 +86,57 @@ object AttendanceStatusRules {
             else -> DayStatus.HALF_DAY
         }
     }
+
+    /**
+     * The two punches [classify] scores for a day, reduced to minutes-of-day.
+     *
+     * The three null/false cases mean different things and callers act on them differently:
+     *  - `!hasCheckIn`          — no scoreable arrival at all. Whether that is "not checked in
+     *                             yet" or "pending, they may still turn up" is the caller's
+     *                             policy, not this function's.
+     *  - `inMinutes == null`    — an arrival exists but carries no readable timestamp.
+     *  - `outMinutes == null`   — the day is still in progress; only late-in can be scored.
+     */
+    data class ScoredPunches(
+        val inMinutes: Int?,
+        val outMinutes: Int?,
+        val hasCheckIn: Boolean,
+    )
+
+    /**
+     * Extracts the punches payroll scores for [role] from a day's events.
+     *
+     * Event types come from [RoleCapabilities], so a role's scoring source is defined in exactly
+     * one place — this used to be open-coded four times (three role branches on the home screen
+     * plus regularization), each hardwiring its own in/out constants. The sales column is the
+     * reason that mattered: a hand-written `OFFICE_IN` branch makes a sales SITE day invisible.
+     *
+     * A check-out only counts when it is *after* the last check-in. Someone who checked out of
+     * one site and into another is still working, and scoring that intermediate departure as the
+     * end of their day would dock them for an early-out they never took.
+     */
+    fun scorablePunches(events: List<AttendanceRecord>, role: String): ScoredPunches {
+        val inTypes  = RoleCapabilities.attendanceInTypes(role).toSet()
+        val outTypes = RoleCapabilities.attendanceOutTypes(role).toSet()
+
+        val firstIn = events.firstOrNull { it.type in inTypes }
+            ?: return ScoredPunches(inMinutes = null, outMinutes = null, hasCheckIn = false)
+
+        val lastInIdx  = events.indexOfLast { it.type in inTypes }
+        val lastOutIdx = events.indexOfLast { it.type in outTypes }
+        val lastOut    = if (lastOutIdx > lastInIdx) events[lastOutIdx] else null
+
+        return ScoredPunches(
+            inMinutes  = minutesOfDay(firstIn),
+            outMinutes = lastOut?.let { minutesOfDay(it) },
+            hasCheckIn = true,
+        )
+    }
+
+    /** Minutes from midnight in the device's local timezone, or null if the event has no time. */
+    fun minutesOfDay(record: AttendanceRecord): Int? {
+        val date = record.timestamp?.toDate() ?: return null
+        val cal = java.util.Calendar.getInstance().apply { time = date }
+        return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+    }
 }

@@ -8,6 +8,7 @@ import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
+import com.raghav.whitecoffee.domain.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -102,7 +103,7 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, "Check-in failed. Try again.")
             }
-            else -> _state.value = OfficeState.Error(location.toMessage())
+            else -> _state.value = OfficeState.Error(location.toUserMessage())
         }
     }
 
@@ -119,7 +120,7 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, "Check-out failed. Try again.")
             }
-            else -> _state.value = OfficeState.Error(location.toMessage())
+            else -> _state.value = OfficeState.Error(location.toUserMessage())
         }
     }
 
@@ -135,7 +136,7 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, failMessage)
             }
-            else -> _state.value = OfficeState.Error(location.toMessage())
+            else -> _state.value = OfficeState.Error(location.toUserMessage())
         }
     }
 
@@ -148,14 +149,6 @@ class OfficeAttendanceViewModel @Inject constructor(
         } else {
             _state.value = OfficeState.Error(result.exceptionOrNull()?.message ?: failMessage)
         }
-    }
-
-    private fun LocationState.toMessage(): String = when (this) {
-        is LocationState.GpsDisabled     -> "GPS is disabled. Please enable location services."
-        is LocationState.PermissionDenied -> "Location permission denied."
-        is LocationState.LowAccuracy     -> "Location accuracy too low. Move to open area and try again."
-        is LocationState.Timeout         -> "Location timed out. Try again."
-        is LocationState.Success         -> ""
     }
 
     // Derives the day phase from today's events. Home In/Out are once-per-day gates;

@@ -5,6 +5,7 @@ import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
 import com.raghav.whitecoffee.fake.FakeLocationProvider
 import com.raghav.whitecoffee.fake.FakeNetworkMonitor
+import com.raghav.whitecoffee.domain.RecordAttendanceEventUseCase
 import com.raghav.whitecoffee.fake.FakeSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -45,7 +46,9 @@ class AttendanceViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     private fun subject() = AttendanceViewModel(
-        repo, location, FakeSessionManager(), FakeNetworkMonitor()
+        repo, location, FakeSessionManager(),
+        RecordAttendanceEventUseCase(repo, location),
+        FakeNetworkMonitor()
     )
 
     private fun types() = repo.recorded.map { it.type }

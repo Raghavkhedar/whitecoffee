@@ -24,7 +24,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
 
@@ -127,28 +126,15 @@ class RegularizationViewModel @Inject constructor(
             endMin = window.second
         }
 
-        val inTypes = RoleCapabilities.attendanceInTypes(role)
-        val outTypes = RoleCapabilities.attendanceOutTypes(role)
-        val inRec = events.firstOrNull { it.type in inTypes } ?: return null
-        val lastInIdx = events.indexOfLast { it.type in inTypes }
-        val lastOutIdx = events.indexOfLast { it.type in outTypes }
-        // Only count the checkout if it's the final event (they haven't re-entered since).
-        val outRec = events.lastOrNull { it.type in outTypes }
-            ?.takeIf { lastOutIdx > lastInIdx }
+        val punches = AttendanceStatusRules.scorablePunches(events, role)
+        if (!punches.hasCheckIn) return null
 
-        val inMin = minutesOf(inRec) ?: return "HalfDay"
-        val outMin = outRec?.let { minutesOf(it) }
-        return when (AttendanceStatusRules.classify(inMin, outMin, startMin, endMin)) {
+        val inMin = punches.inMinutes ?: return "HalfDay"
+        return when (AttendanceStatusRules.classify(inMin, punches.outMinutes, startMin, endMin)) {
             AttendanceStatusRules.DayStatus.PRESENT -> null
             AttendanceStatusRules.DayStatus.SHORT_LEAVE -> "SL"
             AttendanceStatusRules.DayStatus.HALF_DAY -> "HalfDay"
         }
-    }
-
-    private fun minutesOf(record: AttendanceRecord): Int? {
-        val date = record.timestamp?.toDate() ?: return null
-        val cal = Calendar.getInstance().apply { time = date }
-        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     }
 
     fun submitRequest(date: String, originalStatus: String, reason: String) {
