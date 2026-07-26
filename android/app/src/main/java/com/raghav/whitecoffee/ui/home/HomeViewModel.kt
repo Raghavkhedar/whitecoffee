@@ -19,9 +19,31 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
+
+/**
+ * Everything the home screen renders, as one value.
+ *
+ * [todayStatus] and [logoutWouldEndDay] are derived from the same attendance emission and are
+ * therefore updated together — as separate flows they could disagree for a frame, and the pair
+ * that disagreed drove a destructive confirmation dialog.
+ */
+data class HomeUiState(
+    val todayStatus: TodayAttendanceStatus = TodayAttendanceStatus.Loading,
+    /**
+     * True when logging out right now would close the user's day — i.e. auto-checkout would write
+     * a terminal HOME_OUT. Drives the logout confirmation: an accidental logout ends the day just
+     * as irreversibly as an accidental "End Day" tap, so it gets the same gate.
+     *
+     * Answered by the same willLogoutCloseDay the auto-checkout itself guards on, so the warning
+     * cannot drift from the write.
+     */
+    val logoutWouldEndDay: Boolean = false,
+    val unreadCount: Int = 0,
+)
 
 sealed interface TodayAttendanceStatus {
     data object Loading : TodayAttendanceStatus
@@ -63,23 +85,8 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private val _todayStatus = MutableStateFlow<TodayAttendanceStatus>(TodayAttendanceStatus.Loading)
-    val todayStatus: StateFlow<TodayAttendanceStatus> = _todayStatus.asStateFlow()
-
-    /**
-     * True when logging out right now would close the user's day — i.e. auto-checkout would write
-     * a terminal HOME_OUT. Drives the logout confirmation: an accidental logout ends the day just
-     * as irreversibly as an accidental "End Day" tap, so it gets the same gate. False (the day is
-     * not open) means logging out costs nothing and needs no confirmation.
-     *
-     * Answered by the same willLogoutCloseDay the auto-checkout itself guards on, so the warning
-     * cannot drift from the write.
-     */
-    private val _logoutWouldEndDay = MutableStateFlow(false)
-    val logoutWouldEndDay: StateFlow<Boolean> = _logoutWouldEndDay.asStateFlow()
-
-    private val _unreadCount = MutableStateFlow(0)
-    val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
+    private val _uiState = MutableStateFlow(HomeUiState())
+    val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
         observeUnreadCount()
@@ -90,7 +97,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             notificationRepository.observeUnreadCount()
                 .catch { /* keep last known count on transient error */ }
-                .collect { _unreadCount.value = it }
+                .collect { count -> _uiState.update { it.copy(unreadCount = count) } }
         }
     }
 
@@ -99,16 +106,24 @@ class HomeViewModel @Inject constructor(
     fun loadTodayAttendance() {
         todayJob?.cancel()
         todayJob = viewModelScope.launch {
-            _todayStatus.value = TodayAttendanceStatus.Loading
+            _uiState.update { it.copy(todayStatus = TodayAttendanceStatus.Loading) }
             val plannedWindow = if (isOperations) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
             } else null
             attendanceRepository.observeTodayData()
-                .catch { _todayStatus.value = TodayAttendanceStatus.Error }
+                .catch { _uiState.update { s -> s.copy(todayStatus = TodayAttendanceStatus.Error) } }
                 .collect { (state, events) ->
-                    _todayStatus.value = deriveTodayStatus(events, plannedWindow)
-                    _logoutWouldEndDay.value =
-                        willLogoutCloseDay(state, events, isOperations, isSales)
+                    // One update, not two. These are derived from the SAME emission, and while
+                    // they were separate flows a collector could see the new status alongside the
+                    // previous logoutWouldEndDay — long enough to warn "this ends your day" about
+                    // a day that had just ended.
+                    _uiState.update {
+                        it.copy(
+                            todayStatus = deriveTodayStatus(events, plannedWindow),
+                            logoutWouldEndDay =
+                                willLogoutCloseDay(state, events, isOperations, isSales),
+                        )
+                    }
                 }
         }
     }

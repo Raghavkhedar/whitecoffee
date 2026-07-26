@@ -92,7 +92,7 @@ class AttendanceViewModelTest {
         vm.initiateMarketCheckIn(); advanceUntilIdle()
 
         assertEquals("no punch may follow home_out", afterClose, repo.recorded.size)
-        val state = vm.actionState.value
+        val state = vm.uiState.value.action
         assertTrue(state is AttendanceViewModel.ActionState.Error)
         assertEquals(
             "Your day is already complete.",
@@ -109,7 +109,7 @@ class AttendanceViewModelTest {
         advanceUntilIdle()
 
         assertTrue(repo.recorded.isEmpty())
-        assertTrue(vm.actionState.value is AttendanceViewModel.ActionState.Error)
+        assertTrue(vm.uiState.value.action is AttendanceViewModel.ActionState.Error)
     }
 
     /**
@@ -158,7 +158,7 @@ class AttendanceViewModelTest {
                 listOf(AttendanceType.HOME_IN, AttendanceType.SITE_IN),
                 types()
             )
-            assertTrue(vm.actionState.value is AttendanceViewModel.ActionState.Error)
+            assertTrue(vm.uiState.value.action is AttendanceViewModel.ActionState.Error)
         }
 
     @Test
@@ -170,7 +170,7 @@ class AttendanceViewModelTest {
         vm.confirmSiteCheckIn("S-001", "   "); advanceUntilIdle()
 
         assertEquals(listOf(AttendanceType.HOME_IN), types())
-        assertTrue(vm.actionState.value is AttendanceViewModel.ActionState.Error)
+        assertTrue(vm.uiState.value.action is AttendanceViewModel.ActionState.Error)
     }
 
     @Test
@@ -195,7 +195,7 @@ class AttendanceViewModelTest {
         vm.homeCheckIn(); advanceUntilIdle()
 
         assertTrue(repo.recorded.isEmpty())
-        val state = vm.actionState.value
+        val state = vm.uiState.value.action
         assertTrue(state is AttendanceViewModel.ActionState.Error)
         assertTrue(
             (state as AttendanceViewModel.ActionState.Error).message.contains("GPS is disabled")

@@ -65,10 +65,9 @@ class AttendanceFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
-            val state by viewModel.attendanceState.collectAsStateWithLifecycle()
-            val events by viewModel.todayEvents.collectAsStateWithLifecycle()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
-            val action by viewModel.actionState.collectAsStateWithLifecycle()
+            val action = uiState.action
             var showHomeOutConfirm by remember { mutableStateOf(false) }
 
             LaunchedEffect(action) {
@@ -76,8 +75,8 @@ class AttendanceFragment : Fragment() {
             }
 
             OperationsAttendanceScreen(
-                state = state,
-                events = events,
+                state = uiState.day,
+                events = uiState.events,
                 isOnline = isOnline,
                 error = (action as? ActionState.Error)?.message,
                 gpsEnabled = gpsEnabled.value,
@@ -87,11 +86,11 @@ class AttendanceFragment : Fragment() {
                 onSiteIn = viewModel::initiateSiteCheckIn,
                 onMarketIn = viewModel::initiateMarketCheckIn,
                 onSiteOut = {
-                    val s = (viewModel.attendanceState.value as? UiState.Success)?.data
+                    val s = (viewModel.uiState.value.day as? UiState.Success)?.data
                     (s as? AttendanceState.SiteCheckedIn)?.record?.let { viewModel.siteCheckOut(it.siteId, it.siteName) }
                 },
                 onMarketOut = {
-                    val s = (viewModel.attendanceState.value as? UiState.Success)?.data
+                    val s = (viewModel.uiState.value.day as? UiState.Success)?.data
                     (s as? AttendanceState.MarketCheckedIn)?.record?.let { viewModel.marketCheckOut(it.marketName) }
                 },
                 onHomeOut = { showHomeOutConfirm = true },

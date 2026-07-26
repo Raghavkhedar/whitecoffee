@@ -54,7 +54,7 @@ class OfficeAttendanceViewModelTest {
         val vm = subject()
         advanceUntilIdle()
 
-        assertEquals(OfficeAttendanceViewModel.OfficeState.NotStarted, vm.state.value)
+        assertEquals(OfficeAttendanceViewModel.OfficeState.NotStarted, vm.uiState.value.day)
     }
 
     @Test
@@ -65,7 +65,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn()
         advanceUntilIdle()
 
-        assertTrue(vm.state.value is OfficeAttendanceViewModel.OfficeState.DayStarted)
+        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.DayStarted)
         assertEquals(listOf(AttendanceType.HOME_IN), repo.recorded.map { it.type })
     }
 
@@ -77,7 +77,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn(); advanceUntilIdle()
         vm.checkIn("Head Office"); advanceUntilIdle()
 
-        val inOffice = vm.state.value
+        val inOffice = vm.uiState.value.day
         assertTrue(inOffice is OfficeAttendanceViewModel.OfficeState.InOffice)
         assertEquals(
             "Head Office",
@@ -87,11 +87,11 @@ class OfficeAttendanceViewModelTest {
         vm.checkOut("Head Office"); advanceUntilIdle()
 
         // Back to DayStarted, NOT DayEnded — the office session cycles between the home gates.
-        assertTrue(vm.state.value is OfficeAttendanceViewModel.OfficeState.DayStarted)
+        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.DayStarted)
 
         // A second office session is allowed on the same day.
         vm.checkIn("Client Site"); advanceUntilIdle()
-        assertTrue(vm.state.value is OfficeAttendanceViewModel.OfficeState.InOffice)
+        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.InOffice)
 
         assertEquals(
             listOf(
@@ -112,7 +112,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn(); advanceUntilIdle()
         vm.homeOut(); advanceUntilIdle()
 
-        assertTrue(vm.state.value is OfficeAttendanceViewModel.OfficeState.DayEnded)
+        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.DayEnded)
     }
 
     @Test
@@ -135,7 +135,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn()
         advanceUntilIdle()
 
-        assertTrue(vm.state.value is OfficeAttendanceViewModel.OfficeState.Error)
+        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.Error)
         assertTrue("no punch may be written without a fix", repo.recorded.isEmpty())
     }
 
@@ -148,7 +148,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn()
         advanceUntilIdle()
 
-        assertTrue(vm.state.value is OfficeAttendanceViewModel.OfficeState.Error)
+        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.Error)
     }
 
     /**

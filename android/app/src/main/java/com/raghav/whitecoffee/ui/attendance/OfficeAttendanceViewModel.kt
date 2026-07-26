@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -44,11 +45,10 @@ class OfficeAttendanceViewModel @Inject constructor(
         data class Error(val message: String) : OfficeState
     }
 
-    private val _state = MutableStateFlow<OfficeState>(OfficeState.Loading)
-    val state: StateFlow<OfficeState> = _state.asStateFlow()
+    private val _uiState = MutableStateFlow(OfficeAttendanceUiState())
+    val uiState: StateFlow<OfficeAttendanceUiState> = _uiState.asStateFlow()
 
-    private val _todayEvents = MutableStateFlow<List<AttendanceRecord>>(emptyList())
-    val todayEvents: StateFlow<List<AttendanceRecord>> = _todayEvents.asStateFlow()
+    private fun setState(state: OfficeState) = _uiState.update { it.copy(day = state) }
 
     // Double-tap / re-entrancy guard — drops a second tap that arrives before the first write
     // finishes, preventing duplicate office check-in/out docs (stress test #2.1).
@@ -72,15 +72,15 @@ class OfficeAttendanceViewModel @Inject constructor(
 
     fun loadTodayState() {
         viewModelScope.launch {
-            _state.value = OfficeState.Loading
+            setState(OfficeState.Loading)
             val result = attendanceRepository.getTodayData()
             if (result.isFailure) {
-                _state.value = OfficeState.NotStarted
+                setState(OfficeState.NotStarted)
                 return@launch
             }
             val (_, events) = result.getOrThrow()
-            _todayEvents.value = events
-            _state.value = deriveOfficeState(events)
+            // One update: the phase and the timeline it was derived from land together.
+            _uiState.value = OfficeAttendanceUiState(deriveOfficeState(events), events)
         }
     }
 
@@ -92,7 +92,7 @@ class OfficeAttendanceViewModel @Inject constructor(
 
     // locationName: free-text location the user types before checking in (e.g. "Office", "Client Site ABC")
     fun checkIn(locationName: String) = submitEvent {
-        _state.value = OfficeState.Loading
+        setState(OfficeState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
                 val result = attendanceRepository.recordEvent(
@@ -103,13 +103,13 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, "Check-in failed. Try again.")
             }
-            else -> _state.value = OfficeState.Error(location.toUserMessage())
+            else -> setState(OfficeState.Error(location.toUserMessage()))
         }
     }
 
     // Records check-out using the same location name as the last check-in
     fun checkOut(locationName: String) = submitEvent {
-        _state.value = OfficeState.Loading
+        setState(OfficeState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
                 val result = attendanceRepository.recordEvent(
@@ -120,13 +120,13 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, "Check-out failed. Try again.")
             }
-            else -> _state.value = OfficeState.Error(location.toUserMessage())
+            else -> setState(OfficeState.Error(location.toUserMessage()))
         }
     }
 
     // Shared path for GPS-only home events.
     private fun recordSimpleEvent(type: String, failMessage: String) = submitEvent {
-        _state.value = OfficeState.Loading
+        setState(OfficeState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
                 val result = attendanceRepository.recordEvent(
@@ -136,18 +136,17 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, failMessage)
             }
-            else -> _state.value = OfficeState.Error(location.toUserMessage())
+            else -> setState(OfficeState.Error(location.toUserMessage()))
         }
     }
 
     // Optimistic update: append the new record and re-derive the day state.
     private fun handleResult(result: Result<AttendanceRecord>, failMessage: String) {
         if (result.isSuccess) {
-            val updated = _todayEvents.value + result.getOrThrow()
-            _todayEvents.value = updated
-            _state.value = deriveOfficeState(updated)
+            val updated = _uiState.value.events + result.getOrThrow()
+            _uiState.value = OfficeAttendanceUiState(deriveOfficeState(updated), updated)
         } else {
-            _state.value = OfficeState.Error(result.exceptionOrNull()?.message ?: failMessage)
+            setState(OfficeState.Error(result.exceptionOrNull()?.message ?: failMessage))
         }
     }
 
@@ -170,3 +169,14 @@ class OfficeAttendanceViewModel @Inject constructor(
         }
     }
 }
+
+/**
+ * Everything the office attendance screen renders, as one value.
+ *
+ * [day] is *derived from* [events], so they must never be published separately — a screen that
+ * read the new phase against the old timeline would show a check-in with no matching row.
+ */
+data class OfficeAttendanceUiState(
+    val day: OfficeAttendanceViewModel.OfficeState = OfficeAttendanceViewModel.OfficeState.Loading,
+    val events: List<AttendanceRecord> = emptyList(),
+)

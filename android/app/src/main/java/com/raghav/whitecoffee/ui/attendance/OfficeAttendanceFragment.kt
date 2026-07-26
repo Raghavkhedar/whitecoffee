@@ -50,8 +50,9 @@ class OfficeAttendanceFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
-            val state by viewModel.state.collectAsStateWithLifecycle()
-            val events by viewModel.todayEvents.collectAsStateWithLifecycle()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val state = uiState.day
+            val events = uiState.events
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             var showHomeOutConfirm by remember { mutableStateOf(false) }
 
@@ -65,7 +66,7 @@ class OfficeAttendanceFragment : Fragment() {
                 onHomeIn = viewModel::homeIn,
                 onCheckIn = viewModel::checkIn,
                 onCheckOut = {
-                    (viewModel.state.value as? OfficeAttendanceViewModel.OfficeState.InOffice)?.let {
+                    (viewModel.uiState.value.day as? OfficeAttendanceViewModel.OfficeState.InOffice)?.let {
                         viewModel.checkOut(it.locationName)
                     }
                 },
