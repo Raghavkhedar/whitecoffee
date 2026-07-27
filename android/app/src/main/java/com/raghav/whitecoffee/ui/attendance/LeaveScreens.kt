@@ -49,25 +49,27 @@ import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.ReadOnlyFieldBox
 import com.raghav.whitecoffee.ui.theme.StatusBadge
 import com.raghav.whitecoffee.ui.theme.WcCard
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WcTopBar
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
+@Composable
 internal fun leaveStatusColors(status: String): Triple<Color, Color, String> = when (status.lowercase()) {
-    "approved" -> Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Approved")
-    "rejected" -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Rejected")
-    else -> Triple(WcColors.WarnBg, WcColors.WarnFg, "Pending")
+    "approved" -> Triple(WcTheme.colors.SuccessBg, WcTheme.colors.SuccessFg, "Approved")
+    "rejected" -> Triple(WcTheme.colors.DangerBg, WcTheme.colors.DangerFg, "Rejected")
+    else -> Triple(WcTheme.colors.WarnBg, WcTheme.colors.WarnFg, "Pending")
 }
 
 /**
  * Status badge for a leave request, with the partial case split out. Still an approval, so
  * it keeps the approved colours — only the label and the granted-dates line differ.
  */
+@Composable
 internal fun leaveStatusBadge(l: LeaveRequest): Triple<Color, Color, String> =
     if (l.approvalCoverage().isPartial) {
-        Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Partially Approved")
+        Triple(WcTheme.colors.SuccessBg, WcTheme.colors.SuccessFg, "Partially Approved")
     } else {
         leaveStatusColors(l.status)
     }
@@ -77,12 +79,12 @@ internal fun leaveStatusBadge(l: LeaveRequest): Triple<Color, Color, String> =
 private fun GrantedDatesRow(coverage: LeaveCoverage) {
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.Top) {
-        MsIcon(Ms.task_alt, 15.sp, WcColors.SuccessFg)
+        MsIcon(Ms.task_alt, 15.sp, WcTheme.colors.SuccessFg)
         Spacer(Modifier.width(6.dp))
         Text(
             "${coverage.grantedDays} of ${coverage.requestedDays} days granted" +
                 formatGrantedDates(coverage.grantedDates).let { if (it.isBlank()) "" else " · $it" },
-            color = WcColors.SuccessFg,
+            color = WcTheme.colors.SuccessFg,
             fontSize = 12.5.sp,
             fontWeight = FontWeight.SemiBold,
             lineHeight = 17.sp,
@@ -115,7 +117,7 @@ fun LeaveScreen(
 
     LaunchedEffect(applyState) { if (applyState is UiState.Success) { tab = 1; reason = "" } }
 
-    Column(Modifier.fillMaxSize().background(WcColors.ScreenBg)) {
+    Column(Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg)) {
         WcTopBar("Leave", onBack)
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
@@ -214,7 +216,7 @@ fun LeaveScreen(
                 }
 
                 if (error != null) {
-                    Text(error, color = WcColors.DangerFg, fontSize = 13.sp)
+                    Text(error, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
                 }
 
                 WcPrimaryButton(
@@ -245,10 +247,10 @@ private fun LeaveHistoryList(state: UiState<List<LeaveRequest>>) {
             EmptyState(Ms.event_busy, "No leave yet", "Your leave requests will appear here.")
         }
         is UiState.Error -> Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
-            Text(state.message, color = WcColors.DangerFg, fontSize = 13.sp)
+            Text(state.message, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
         }
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Loading…", color = WcColors.TextMuted, fontSize = 13.sp)
+            Text("Loading…", color = WcTheme.colors.TextMuted, fontSize = 13.sp)
         }
     }
 }
@@ -262,7 +264,7 @@ private fun LeaveHistoryCard(l: LeaveRequest) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     l.leaveType.ifBlank { "Leave Application" },
-                    color = WcColors.TextPrimary,
+                    color = WcTheme.colors.TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.ExtraBold,
                     modifier = Modifier.weight(1f),
@@ -271,11 +273,11 @@ private fun LeaveHistoryCard(l: LeaveRequest) {
             }
             Spacer(Modifier.height(9.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MsIcon(Ms.date_range, 17.sp, WcColors.TextMuted)
+                MsIcon(Ms.date_range, 17.sp, WcTheme.colors.TextMuted)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "${l.fromDate} → ${l.toDate} · ${l.totalDays} day${if (l.totalDays != 1) "s" else ""}",
-                    color = WcColors.TextSecondary,
+                    color = WcTheme.colors.TextSecondary,
                     fontSize = 13.sp,
                 )
             }
@@ -283,9 +285,9 @@ private fun LeaveHistoryCard(l: LeaveRequest) {
             if (l.placeOfVisit.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    MsIcon(Ms.location_on, 15.sp, WcColors.TextMuted)
+                    MsIcon(Ms.location_on, 15.sp, WcTheme.colors.TextMuted)
                     Spacer(Modifier.width(6.dp))
-                    Text(l.placeOfVisit, color = WcColors.TextSecondary, fontSize = 12.5.sp)
+                    Text(l.placeOfVisit, color = WcTheme.colors.TextSecondary, fontSize = 12.5.sp)
                 }
             }
         }
@@ -301,7 +303,7 @@ fun LeaveApprovalsScreen(
     onReject: (LeaveRequest) -> Unit,
     onRetry: () -> Unit,
 ) = WhiteCoffeeTheme {
-    Column(Modifier.fillMaxSize().background(WcColors.ScreenBg)) {
+    Column(Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg)) {
         OfflineBanner(isOnline)
         WcTopBar("Leave Approvals", onBack)
         val list = (state as? UiState.Success)?.data.orEmpty()
@@ -315,20 +317,20 @@ fun LeaveApprovalsScreen(
                 val suffix = if (count != 1) "s" else ""
                 Text(
                     "$count pending request$suffix",
-                    color = WcColors.TextSecondary,
+                    color = WcTheme.colors.TextSecondary,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 2.dp),
                 )
             }
             items(list) { ApprovalCard(it, onApprove, onReject) }
             if (state is UiState.Empty) item {
-                EmptyState(Ms.task_alt, "All caught up", "No pending leave requests.", iconTint = WcColors.SuccessFg)
+                EmptyState(Ms.task_alt, "All caught up", "No pending leave requests.", iconTint = WcTheme.colors.SuccessFg)
             }
             if (state is UiState.Error) item {
                 Column(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(state.message, color = WcColors.DangerFg, fontSize = 13.sp)
+                    Text(state.message, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
                     Spacer(Modifier.height(10.dp))
-                    Text("Retry", color = WcColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onRetry() })
+                    Text("Retry", color = WcTheme.colors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onRetry() })
                 }
             }
         }
@@ -343,13 +345,13 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
     WcCard(Modifier.fillMaxWidth(), radius = 18) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(42.dp).clip(CircleShape).background(WcColors.Accent), contentAlignment = Alignment.Center) {
-                    Text(initials, color = WcColors.OnAccent, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                Box(Modifier.size(42.dp).clip(CircleShape).background(WcTheme.colors.Accent), contentAlignment = Alignment.Center) {
+                    Text(initials, color = WcTheme.colors.OnAccent, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(a.userName, color = WcColors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                    Text(a.employeeId, color = WcColors.TextMuted, fontSize = 12.sp)
+                    Text(a.userName, color = WcTheme.colors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(a.employeeId, color = WcTheme.colors.TextMuted, fontSize = 12.sp)
                 }
                 if (!isPending) {
                     // Already actioned — the outcome replaces the (absent) action buttons.
@@ -365,11 +367,11 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MsIcon(Ms.date_range, 17.sp, WcColors.TextMuted)
+                MsIcon(Ms.date_range, 17.sp, WcTheme.colors.TextMuted)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "${a.fromDate} → ${a.toDate} · ${a.totalDays} day${if (a.totalDays != 1) "s" else ""}",
-                    color = WcColors.TextSecondary,
+                    color = WcTheme.colors.TextSecondary,
                     fontSize = 13.sp,
                 )
             }
@@ -377,23 +379,23 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
             if (a.placeOfVisit.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    MsIcon(Ms.location_on, 15.sp, WcColors.TextMuted)
+                    MsIcon(Ms.location_on, 15.sp, WcTheme.colors.TextMuted)
                     Spacer(Modifier.width(6.dp))
-                    Text(a.placeOfVisit, color = WcColors.TextSecondary, fontSize = 12.5.sp)
+                    Text(a.placeOfVisit, color = WcTheme.colors.TextSecondary, fontSize = 12.5.sp)
                 }
             }
             if (a.emergencyContact.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
-                Text("Emergency: ${a.emergencyContact}", color = WcColors.TextMuted, fontSize = 12.sp)
+                Text("Emergency: ${a.emergencyContact}", color = WcTheme.colors.TextMuted, fontSize = 12.sp)
             }
             if (a.reason.isNotBlank()) {
                 Spacer(Modifier.height(10.dp))
                 Box(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(WcColors.FieldFill).padding(horizontal = 13.dp, vertical = 11.dp)
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(WcTheme.colors.FieldFill).padding(horizontal = 13.dp, vertical = 11.dp)
                 ) {
                     Text(
                         "“${a.reason}”",
-                        color = WcColors.TextOnReason,
+                        color = WcTheme.colors.TextOnReason,
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
                     )
@@ -402,7 +404,7 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
             if (isPending) {
                 Spacer(Modifier.height(13.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlineActionButton("Reject", Ms.close, WcColors.DangerFg, Color(0xFFE2C4C4), Modifier.weight(1f)) { onReject(a) }
+                    OutlineActionButton("Reject", Ms.close, WcTheme.colors.DangerFg, Color(0xFFE2C4C4), Modifier.weight(1f)) { onReject(a) }
                     FilledActionButton("Approve", Ms.check, Color(0xFF2E7D55), Modifier.weight(1f)) { onApprove(a) }
                 }
             }
@@ -418,20 +420,20 @@ private fun TabPill(label: String, selected: Boolean, modifier: Modifier, onClic
             .padding(vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = if (selected) WcColors.Primary else WcColors.TextSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = if (selected) WcTheme.colors.Primary else WcTheme.colors.TextSecondary, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun DateBox(text: String, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(WcColors.Surface)
-            .border(1.5.dp, WcColors.Border, RoundedCornerShape(14.dp)).clickable { onClick() }.padding(13.dp),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(WcTheme.colors.Surface)
+            .border(1.5.dp, WcTheme.colors.Border, RoundedCornerShape(14.dp)).clickable { onClick() }.padding(13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MsIcon(Ms.event, 18.sp, Color(0xFF8A1B43))
         Spacer(Modifier.width(8.dp))
-        Text(text, color = WcColors.TextPrimary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = WcTheme.colors.TextPrimary, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

@@ -28,7 +28,7 @@ import com.raghav.whitecoffee.ui.theme.IconTile
 import com.raghav.whitecoffee.ui.theme.InfoBanner
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcTile
 import com.raghav.whitecoffee.ui.theme.WcTiles
 import com.raghav.whitecoffee.ui.theme.WcTopBar
@@ -53,7 +53,7 @@ fun SalesAttendanceScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(WcColors.ScreenBg)
+            .background(WcTheme.colors.ScreenBg)
             .verticalScroll(rememberScrollState()),
     ) {
         WcTopBar(title = "Attendance", onBack = onBack)
@@ -62,8 +62,8 @@ fun SalesAttendanceScreen(
             InfoBanner(
                 text = "Choose how you're working today. Pick Office for an office day, or Site Visit " +
                     "when you're out meeting a customer or at a site.",
-                bg = WcColors.Accent,
-                fg = WcColors.OnAccent,
+                bg = WcTheme.colors.Accent,
+                fg = WcTheme.colors.OnAccent,
             )
             Spacer(Modifier.height(18.dp))
 
@@ -98,8 +98,8 @@ private fun OptionCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(WcColors.Surface)
-            .border(1.dp, WcColors.BorderSoft, RoundedCornerShape(20.dp))
+            .background(WcTheme.colors.Surface)
+            .border(1.dp, WcTheme.colors.BorderSoft, RoundedCornerShape(20.dp))
             .clickable { onClick() }
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -107,17 +107,17 @@ private fun OptionCard(
         IconTile(icon, tile, size = 50, radius = 16, iconSize = 26)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = WcColors.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = WcTheme.colors.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             Text(
                 subtitle,
-                color = WcColors.TextHint,
+                color = WcTheme.colors.TextHint,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 3.dp),
                 lineHeight = 16.sp,
             )
         }
         Spacer(Modifier.width(10.dp))
-        MsIcon(Ms.arrow_forward, 22.sp, WcColors.TextMuted)
+        MsIcon(Ms.arrow_forward, 22.sp, WcTheme.colors.TextMuted)
     }
 }
 

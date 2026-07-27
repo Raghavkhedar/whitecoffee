@@ -42,7 +42,7 @@ import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
 import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.SectionLabel
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcDialog
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
@@ -191,7 +191,7 @@ private fun AttendanceScaffold(
     card: @Composable () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().background(WcColors.ScreenBg).verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg).verticalScroll(rememberScrollState()),
     ) {
         OfflineBanner(isOnline)
         if (!gpsEnabled) {
@@ -212,7 +212,7 @@ private fun AttendanceScaffold(
                 MsIcon(Ms.arrow_back, 24.sp, Color(0xFF16201F))
             }
             Spacer(Modifier.width(6.dp))
-            Text("Attendance", color = WcColors.TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Attendance", color = WcTheme.colors.TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
         }
 
         Box(Modifier.padding(horizontal = 16.dp)) { card() }
@@ -238,7 +238,7 @@ private fun StatusCard(title: String, sub: String, error: String?, done: Boolean
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(22.dp))
             .background(Brush.linearGradient(listOf(Color(0xFF00585E), Color(0xFF00868E)))).padding(20.dp),
     ) {
-        Text("CURRENT STATUS", color = WcColors.HeaderSub, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
+        Text("CURRENT STATUS", color = WcTheme.colors.HeaderSub, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.8.sp)
         Spacer(Modifier.height(7.dp))
         Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
         if (sub.isNotBlank()) {
@@ -318,11 +318,11 @@ private fun TimelineRow(e: AttendanceRecord, isLast: Boolean) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f).padding(bottom = 18.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                Text(title, color = WcColors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                Text(e.displayTime(), color = WcColors.TextHint, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(title, color = WcTheme.colors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                Text(e.displayTime(), color = WcTheme.colors.TextHint, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             val detail = timelineSub(e)
-            if (detail.isNotBlank()) Text(detail, color = WcColors.TextHint, fontSize = 12.5.sp, modifier = Modifier.padding(top = 2.dp))
+            if (detail.isNotBlank()) Text(detail, color = WcTheme.colors.TextHint, fontSize = 12.5.sp, modifier = Modifier.padding(top = 2.dp))
         }
     }
 }

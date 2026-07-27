@@ -5,59 +5,113 @@ import androidx.compose.ui.graphics.Color
 /**
  * White Coffee — Material 3 redesign palette (teal).
  *
- * Single source of truth for every colour used by the Compose UI. Mirrors the
- * "White Coffee - M3 Redesign" design system. Screens reference [WcColors] directly
- * for bespoke values; [WhiteCoffeeTheme] feeds the core ones into MaterialTheme.
+ * A [WcPalette] is a full set of every colour the Compose UI needs. This is the seam that makes
+ * theming possible: screens never read colour constants directly — they read [WcTheme.colors],
+ * which resolves to whichever [WcPalette] is currently provided (see `Theme.kt`).
+ *
+ * [LightWcPalette] is the app's one and only palette today. Adding dark mode later is exactly
+ * one new `DarkWcPalette` object plus a branch in `WhiteCoffeeTheme` — see the KDoc there.
  */
-object WcColors {
+data class WcPalette(
     // ── Brand teal ──
-    val Primary       = Color(0xFF006A71)   // buttons, active states
-    val PrimaryDark   = Color(0xFF00474C)   // deep accent / grand-total bar
-    val OnPrimary     = Color(0xFFFFFFFF)
+    val Primary: Color,       // buttons, active states
+    val PrimaryDark: Color,   // deep accent / grand-total bar
+    val OnPrimary: Color,
 
     // Hero header gradients
-    val HeaderTop     = Color(0xFF00363B)
-    val HeaderBottom  = Color(0xFF00585E)
-    val LoginMid      = Color(0xFF00565C)
-    val LoginBottom   = Color(0xFF00767E)
+    val HeaderTop: Color,
+    val HeaderBottom: Color,
+    val LoginMid: Color,
+    val LoginBottom: Color,
 
     // Light-teal accents used on dark headers / chips
-    val HeaderSub     = Color(0xFFA7E9EC)
-    val HeaderSubSoft = Color(0xFFCDEFF1)
-    val Accent        = Color(0xFFCDE7EC)   // secondary button bg
-    val OnAccent      = Color(0xFF00474C)
+    val HeaderSub: Color,
+    val HeaderSubSoft: Color,
+    val Accent: Color,        // secondary button bg
+    val OnAccent: Color,
 
     // ── Surfaces & neutrals ──
-    val ScreenBg      = Color(0xFFF4F9F9)
-    val Surface       = Color(0xFFFFFFFF)
-    val Border        = Color(0xFFE2E9E9)   // input / card outline
-    val BorderSoft    = Color(0xFFEAF1F0)   // soft card outline
-    val DashBorder    = Color(0xFFB6C7C7)   // dashed "add" borders
-    val Divider       = Color(0xFFE6EDED)
-    val FieldFill     = Color(0xFFF2F7F7)
+    val ScreenBg: Color,
+    val Surface: Color,
+    val Border: Color,        // input / card outline
+    val BorderSoft: Color,    // soft card outline
+    val DashBorder: Color,    // dashed "add" borders
+    val Divider: Color,
+    val FieldFill: Color,
 
     // ── Text ──
-    val TextPrimary   = Color(0xFF101414)
-    val TextSecondary = Color(0xFF5A6566)
-    val TextMuted     = Color(0xFF8591A0)
-    val TextHint      = Color(0xFF8FA0A0)
-    val TextOnReason  = Color(0xFF3A4445)
+    val TextPrimary: Color,
+    val TextSecondary: Color,
+    val TextMuted: Color,
+    val TextHint: Color,
+    val TextOnReason: Color,
 
     // ── Status (chips / badges) ──
-    val SuccessBg     = Color(0xFFC7F0D2)
-    val SuccessFg     = Color(0xFF0A5132)
-    val WarnBg        = Color(0xFFFCEFC7)
-    val WarnFg        = Color(0xFF8A6700)
-    val SlBg          = Color(0xFFFFE1C2)   // Short Leave — softer amber, distinct from Half Day
-    val SlFg          = Color(0xFF8A4B00)
-    val DangerBg      = Color(0xFFFFDAD6)
-    val DangerFg      = Color(0xFFBA1A1A)
+    val SuccessBg: Color,
+    val SuccessFg: Color,
+    val WarnBg: Color,
+    val WarnFg: Color,
+    val SlBg: Color,          // Short Leave — softer amber, distinct from Half Day
+    val SlFg: Color,
+    val DangerBg: Color,
+    val DangerFg: Color,
 
     // Toast
-    val ToastBg       = Color(0xFF16282A)
-    val ToastFg       = Color(0xFFEAF5F4)
-    val ToastIcon     = Color(0xFF7FE0C0)
-}
+    val ToastBg: Color,
+    val ToastFg: Color,
+    val ToastIcon: Color,
+)
+
+/** The app's one shipped palette today. Mirrors the "White Coffee - M3 Redesign" design system. */
+val LightWcPalette = WcPalette(
+    // ── Brand teal ──
+    Primary       = Color(0xFF006A71),
+    PrimaryDark   = Color(0xFF00474C),
+    OnPrimary     = Color(0xFFFFFFFF),
+
+    // Hero header gradients
+    HeaderTop     = Color(0xFF00363B),
+    HeaderBottom  = Color(0xFF00585E),
+    LoginMid      = Color(0xFF00565C),
+    LoginBottom   = Color(0xFF00767E),
+
+    // Light-teal accents used on dark headers / chips
+    HeaderSub     = Color(0xFFA7E9EC),
+    HeaderSubSoft = Color(0xFFCDEFF1),
+    Accent        = Color(0xFFCDE7EC),
+    OnAccent      = Color(0xFF00474C),
+
+    // ── Surfaces & neutrals ──
+    ScreenBg      = Color(0xFFF4F9F9),
+    Surface       = Color(0xFFFFFFFF),
+    Border        = Color(0xFFE2E9E9),
+    BorderSoft    = Color(0xFFEAF1F0),
+    DashBorder    = Color(0xFFB6C7C7),
+    Divider       = Color(0xFFE6EDED),
+    FieldFill     = Color(0xFFF2F7F7),
+
+    // ── Text ──
+    TextPrimary   = Color(0xFF101414),
+    TextSecondary = Color(0xFF5A6566),
+    TextMuted     = Color(0xFF8591A0),
+    TextHint      = Color(0xFF8FA0A0),
+    TextOnReason  = Color(0xFF3A4445),
+
+    // ── Status (chips / badges) ──
+    SuccessBg     = Color(0xFFC7F0D2),
+    SuccessFg     = Color(0xFF0A5132),
+    WarnBg        = Color(0xFFFCEFC7),
+    WarnFg        = Color(0xFF8A6700),
+    SlBg          = Color(0xFFFFE1C2),
+    SlFg          = Color(0xFF8A4B00),
+    DangerBg      = Color(0xFFFFDAD6),
+    DangerFg      = Color(0xFFBA1A1A),
+
+    // Toast
+    ToastBg       = Color(0xFF16282A),
+    ToastFg       = Color(0xFFEAF5F4),
+    ToastIcon     = Color(0xFF7FE0C0),
+)
 
 /** A coloured module / icon-tile pairing (background + foreground). */
 data class WcTile(val bg: Color, val fg: Color)

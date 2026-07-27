@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.sp
 import com.raghav.whitecoffee.data.model.AccountStatus
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
 /**
@@ -33,7 +33,7 @@ import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 @Composable
 fun AccountSuspendedBlock(status: AccountStatus.Suspended) = WhiteCoffeeTheme {
     Column(
-        modifier = Modifier.fillMaxSize().background(WcColors.ScreenBg).padding(32.dp),
+        modifier = Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg).padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -44,21 +44,21 @@ fun AccountSuspendedBlock(status: AccountStatus.Suspended) = WhiteCoffeeTheme {
         ) { MsIcon(Ms.info, 40.sp, Color(0xFFBA1A1A)) }
 
         Spacer(Modifier.height(20.dp))
-        Text("Account suspended", color = WcColors.TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+        Text("Account suspended", color = WcTheme.colors.TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
 
         if (status.reason.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
-            Text(status.reason, color = WcColors.TextSecondary, fontSize = 15.sp, textAlign = TextAlign.Center)
+            Text(status.reason, color = WcTheme.colors.TextSecondary, fontSize = 15.sp, textAlign = TextAlign.Center)
         }
         if (status.expectedReturn.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
-            Text("Expected return: ${status.expectedReturn}", color = WcColors.TextMuted, fontSize = 13.sp)
+            Text("Expected return: ${status.expectedReturn}", color = WcTheme.colors.TextMuted, fontSize = 13.sp)
         }
 
         Spacer(Modifier.height(20.dp))
         Text(
             "Please contact your administrator. Your access will return automatically once restored.",
-            color = WcColors.TextMuted, fontSize = 13.sp, textAlign = TextAlign.Center,
+            color = WcTheme.colors.TextMuted, fontSize = 13.sp, textAlign = TextAlign.Center,
         )
     }
 }

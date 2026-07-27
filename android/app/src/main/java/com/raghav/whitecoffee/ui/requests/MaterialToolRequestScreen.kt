@@ -28,7 +28,7 @@ import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.SectionLabel
 import com.raghav.whitecoffee.ui.theme.WcCard
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
@@ -65,7 +65,7 @@ fun MaterialToolRequestScreen(
 
         Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             SectionLabel("ITEMS", Modifier.weight(1f))
-            Text("${items.size} added", color = WcColors.TextMuted, fontSize = 12.sp)
+            Text("${items.size} added", color = WcTheme.colors.TextMuted, fontSize = 12.sp)
         }
         items.forEachIndexed { i, row ->
             ItemEditorCard(index = i, removable = items.size > 1, onRemove = { items.removeAt(i) }) {
@@ -99,7 +99,7 @@ fun MaterialToolRequestScreen(
 
         if (error != null) {
             Spacer(Modifier.height(12.dp))
-            Text(error, color = WcColors.DangerFg, fontSize = 13.sp)
+            Text(error, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
         }
 
         Spacer(Modifier.height(24.dp))
@@ -123,12 +123,12 @@ internal fun ItemEditorCard(index: Int, removable: Boolean, onRemove: () -> Unit
         Column(Modifier.padding(13.dp)) {
             Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Item ${index + 1}", color = WcColors.TextSecondary, fontSize = 12.sp,
+                    "Item ${index + 1}", color = WcTheme.colors.TextSecondary, fontSize = 12.sp,
                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                 )
                 if (removable) {
                     Text(
-                        "Remove", color = WcColors.DangerFg, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        "Remove", color = WcTheme.colors.DangerFg, fontSize = 12.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable { onRemove() }.padding(4.dp),
                     )
                 }

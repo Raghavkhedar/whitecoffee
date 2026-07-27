@@ -28,7 +28,7 @@ import com.raghav.whitecoffee.ui.theme.AddItemButton
 import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.SectionLabel
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
@@ -82,7 +82,7 @@ fun MaterialToolBuyScreen(
                     WcField(row.spec2, { items[i] = row.copy(spec2 = it) }, placeholder = "Spec 2 (opt.)", modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(6.dp))
-                Text("₹%,.2f".format(lineTotal(row)), color = WcColors.SuccessFg, fontSize = 13.5.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.fillMaxWidth().padding(end = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                Text("₹%,.2f".format(lineTotal(row)), color = WcTheme.colors.SuccessFg, fontSize = 13.5.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.fillMaxWidth().padding(end = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
             Spacer(Modifier.height(10.dp))
         }
@@ -90,10 +90,10 @@ fun MaterialToolBuyScreen(
 
         Spacer(Modifier.height(18.dp))
         Row(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(WcColors.PrimaryDark).padding(18.dp),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(WcTheme.colors.PrimaryDark).padding(18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Grand total", color = WcColors.HeaderSub, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("Grand total", color = WcTheme.colors.HeaderSub, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             Text("₹%,.0f".format(grandTotal), color = androidx.compose.ui.graphics.Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
         }
 
@@ -109,7 +109,7 @@ fun MaterialToolBuyScreen(
 
         if (error != null) {
             Spacer(Modifier.height(12.dp))
-            Text(error, color = WcColors.DangerFg, fontSize = 13.sp)
+            Text(error, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
         }
 
         Spacer(Modifier.height(20.dp))

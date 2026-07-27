@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.ReadOnlyFieldBox
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
@@ -48,7 +48,7 @@ fun WorkProgressScreen(
             }
             Column(Modifier.weight(1f)) {
                 FieldLabel("Date"); Spacer(Modifier.height(7.dp))
-                ReadOnlyFieldBox(text = date, leadingIcon = Ms.event, leadingTint = WcColors.TextSecondary, onClick = onPickDate)
+                ReadOnlyFieldBox(text = date, leadingIcon = Ms.event, leadingTint = WcTheme.colors.TextSecondary, onClick = onPickDate)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -65,7 +65,7 @@ fun WorkProgressScreen(
 
         if (error != null) {
             Spacer(Modifier.height(12.dp))
-            Text(error, color = WcColors.DangerFg, fontSize = 13.sp)
+            Text(error, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
         }
 
         Spacer(Modifier.height(24.dp))

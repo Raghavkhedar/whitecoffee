@@ -33,7 +33,7 @@ import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.SectionLabel
 import com.raghav.whitecoffee.ui.theme.StatusBadge
 import com.raghav.whitecoffee.ui.theme.WcCard
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WcTopBar
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
@@ -47,7 +47,7 @@ fun RegularizationScreen(
     onRequest: (RegularizationDayItem) -> Unit,
     onRetry: () -> Unit,
 ) = WhiteCoffeeTheme {
-    Column(Modifier.fillMaxSize().background(WcColors.ScreenBg)) {
+    Column(Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg)) {
         OfflineBanner(isOnline)
         WcTopBar("Regularization", onBack)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 32.dp)) {
@@ -56,7 +56,7 @@ fun RegularizationScreen(
                 bg = Color(0xFFDDDFFF), fg = Color(0xFF2A2A8A),
             )
             Spacer(Modifier.height(8.dp))
-            Text(todayLabel, color = WcColors.TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+            Text(todayLabel, color = WcTheme.colors.TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
 
             when (state) {
                 is UiState.Success -> {
@@ -68,19 +68,19 @@ fun RegularizationScreen(
                 }
                 is UiState.Empty -> {
                     Spacer(Modifier.height(20.dp))
-                    EmptyState(Ms.task_alt, "On track", "Today's attendance is on track — no action needed.", iconTint = WcColors.SuccessFg)
+                    EmptyState(Ms.task_alt, "On track", "Today's attendance is on track — no action needed.", iconTint = WcTheme.colors.SuccessFg)
                 }
                 is UiState.Error -> {
                     Spacer(Modifier.height(20.dp))
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(state.message, color = WcColors.DangerFg, fontSize = 13.sp)
+                        Text(state.message, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
                         Spacer(Modifier.height(10.dp))
-                        Text("Retry", color = WcColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(WcColors.Accent).clickable { onRetry() }.padding(horizontal = 14.dp, vertical = 8.dp))
+                        Text("Retry", color = WcTheme.colors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(WcTheme.colors.Accent).clickable { onRetry() }.padding(horizontal = 14.dp, vertical = 8.dp))
                     }
                 }
                 else -> {
                     Spacer(Modifier.height(40.dp))
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Loading…", color = WcColors.TextMuted, fontSize = 13.sp) }
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Loading…", color = WcTheme.colors.TextMuted, fontSize = 13.sp) }
                 }
             }
         }
@@ -97,8 +97,8 @@ private fun FlaggedDayCard(item: RegularizationDayItem, onRequest: (Regularizati
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${item.dayOfWeek} · ${item.date}", color = WcColors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
-                    Text("Auto-marked: ${item.originalStatus}", color = WcColors.TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                    Text("${item.dayOfWeek} · ${item.date}", color = WcTheme.colors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+                    Text("Auto-marked: ${item.originalStatus}", color = WcTheme.colors.TextMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
                 }
                 val req = item.request
                 if (req != null) {
@@ -114,20 +114,20 @@ private fun FlaggedDayCard(item: RegularizationDayItem, onRequest: (Regularizati
                 if (req.status == "approved" && req.approvedStatus.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        MsIcon(Ms.check_circle, 15.sp, WcColors.SuccessFg)
+                        MsIcon(Ms.check_circle, 15.sp, WcTheme.colors.SuccessFg)
                         Spacer(Modifier.width(6.dp))
-                        Text("Marked as ${req.approvedStatus}", color = WcColors.SuccessFg, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                        Text("Marked as ${req.approvedStatus}", color = WcTheme.colors.SuccessFg, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
                 if (req.approverComment.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(WcColors.FieldFill).padding(horizontal = 13.dp, vertical = 11.dp)) {
-                        Text(req.approverComment, color = WcColors.TextOnReason, fontSize = 13.sp)
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(WcTheme.colors.FieldFill).padding(horizontal = 13.dp, vertical = 11.dp)) {
+                        Text(req.approverComment, color = WcTheme.colors.TextOnReason, fontSize = 13.sp)
                     }
                 } else if (req.reason.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(WcColors.FieldFill).padding(horizontal = 13.dp, vertical = 11.dp)) {
-                        Text(req.reason, color = WcColors.TextOnReason, fontSize = 13.sp)
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(WcTheme.colors.FieldFill).padding(horizontal = 13.dp, vertical = 11.dp)) {
+                        Text(req.reason, color = WcTheme.colors.TextOnReason, fontSize = 13.sp)
                     }
                 }
             }
