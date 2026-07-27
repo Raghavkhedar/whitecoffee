@@ -36,7 +36,7 @@ import com.raghav.whitecoffee.core.UiState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
-import com.raghav.whitecoffee.ui.attendance.OfficeAttendanceViewModel.OfficeState
+import com.raghav.whitecoffee.data.model.OfficeState
 import com.raghav.whitecoffee.ui.theme.EmptyState
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon

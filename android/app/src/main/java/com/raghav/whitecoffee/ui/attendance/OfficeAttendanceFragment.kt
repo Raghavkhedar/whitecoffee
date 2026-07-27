@@ -18,6 +18,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
+import com.raghav.whitecoffee.data.model.OfficeState
 import com.raghav.whitecoffee.data.location.LocationProvider
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -66,7 +67,7 @@ class OfficeAttendanceFragment : Fragment() {
                 onHomeIn = viewModel::homeIn,
                 onCheckIn = viewModel::checkIn,
                 onCheckOut = {
-                    (viewModel.uiState.value.day as? OfficeAttendanceViewModel.OfficeState.InOffice)?.let {
+                    (viewModel.uiState.value.day as? OfficeState.InOffice)?.let {
                         viewModel.checkOut(it.locationName)
                     }
                 },

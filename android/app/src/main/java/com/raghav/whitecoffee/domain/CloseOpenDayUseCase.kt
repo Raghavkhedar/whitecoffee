@@ -6,6 +6,8 @@ import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.DayClosePath
+import com.raghav.whitecoffee.data.model.OfficeState
+import com.raghav.whitecoffee.data.model.deriveOfficeState
 import com.raghav.whitecoffee.data.model.dayClosePath
 import com.raghav.whitecoffee.data.model.willLogoutCloseDay
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
@@ -101,7 +103,9 @@ class CloseOpenDayUseCase @Inject constructor(
      * Office day: close the office session if one is open, then the commute.
      *
      * Keys on the raw events rather than [AttendanceState] because `deriveAttendanceState` has
-     * no branch for office_in/office_out and reports `NoRecord` mid-office-day.
+     * no branch for office_in/office_out and reports `NoRecord` mid-office-day. The office phase
+     * comes from the shared [deriveOfficeState] — this used to re-implement that check inline,
+     * which is exactly the kind of second copy that lets the two answers drift.
      */
     private suspend fun closeOfficeDay(
         events: List<AttendanceRecord>,
@@ -109,11 +113,9 @@ class CloseOpenDayUseCase @Inject constructor(
     ): List<String> {
         val written = mutableListOf<String>()
 
-        val lastOffice = events.lastOrNull {
-            it.type == AttendanceType.OFFICE_IN || it.type == AttendanceType.OFFICE_OUT
-        }
-        if (lastOffice?.type == AttendanceType.OFFICE_IN) {
-            record(AttendanceType.OFFICE_OUT, loc, locationName = lastOffice.locationName)
+        val open = deriveOfficeState(events) as? OfficeState.InOffice
+        if (open != null) {
+            record(AttendanceType.OFFICE_OUT, loc, locationName = open.locationName)
             written += AttendanceType.OFFICE_OUT
         }
         record(AttendanceType.HOME_OUT, loc)

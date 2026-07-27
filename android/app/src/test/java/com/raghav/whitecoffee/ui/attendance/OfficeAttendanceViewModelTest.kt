@@ -1,5 +1,6 @@
 package com.raghav.whitecoffee.ui.attendance
 
+import com.raghav.whitecoffee.data.model.OfficeState
 import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
@@ -54,7 +55,7 @@ class OfficeAttendanceViewModelTest {
         val vm = subject()
         advanceUntilIdle()
 
-        assertEquals(OfficeAttendanceViewModel.OfficeState.NotStarted, vm.uiState.value.day)
+        assertEquals(OfficeState.NotStarted, vm.uiState.value.day)
     }
 
     @Test
@@ -65,7 +66,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn()
         advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.DayStarted)
+        assertTrue(vm.uiState.value.day is OfficeState.DayStarted)
         assertEquals(listOf(AttendanceType.HOME_IN), repo.recorded.map { it.type })
     }
 
@@ -78,20 +79,20 @@ class OfficeAttendanceViewModelTest {
         vm.checkIn("Head Office"); advanceUntilIdle()
 
         val inOffice = vm.uiState.value.day
-        assertTrue(inOffice is OfficeAttendanceViewModel.OfficeState.InOffice)
+        assertTrue(inOffice is OfficeState.InOffice)
         assertEquals(
             "Head Office",
-            (inOffice as OfficeAttendanceViewModel.OfficeState.InOffice).locationName
+            (inOffice as OfficeState.InOffice).locationName
         )
 
         vm.checkOut("Head Office"); advanceUntilIdle()
 
         // Back to DayStarted, NOT DayEnded — the office session cycles between the home gates.
-        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.DayStarted)
+        assertTrue(vm.uiState.value.day is OfficeState.DayStarted)
 
         // A second office session is allowed on the same day.
         vm.checkIn("Client Site"); advanceUntilIdle()
-        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.InOffice)
+        assertTrue(vm.uiState.value.day is OfficeState.InOffice)
 
         assertEquals(
             listOf(
@@ -112,7 +113,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn(); advanceUntilIdle()
         vm.homeOut(); advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.DayEnded)
+        assertTrue(vm.uiState.value.day is OfficeState.DayEnded)
     }
 
     @Test
@@ -135,7 +136,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn()
         advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.Error)
+        assertTrue(vm.uiState.value.day is OfficeState.Error)
         assertTrue("no punch may be written without a fix", repo.recorded.isEmpty())
     }
 
@@ -148,7 +149,7 @@ class OfficeAttendanceViewModelTest {
         vm.homeIn()
         advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.day is OfficeAttendanceViewModel.OfficeState.Error)
+        assertTrue(vm.uiState.value.day is OfficeState.Error)
     }
 
     /**
@@ -167,5 +168,126 @@ class OfficeAttendanceViewModelTest {
 
         assertEquals(1, repo.recorded.size)
         assertEquals(1, location.calls)
+    }
+
+    // ── write-time legality guard ─────────────────────────────────────────
+    //
+    // The office flow used to gate only on which buttons were drawn. Button visibility is UX,
+    // not a guarantee: a tap landing a frame after home_out reached Firestore and reopened a
+    // finished day, and the nightly compute scores whatever it finds. These assert on
+    // repo.recorded — that the punch never reached the repository at all, not merely that the
+    // screen showed an error afterwards.
+
+    @Test
+    fun `nothing may be recorded once the day is complete`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.homeIn(); advanceUntilIdle()
+        vm.homeOut(); advanceUntilIdle()
+        val afterClose = repo.recorded.size
+
+        vm.homeIn(); advanceUntilIdle()
+        vm.checkIn("Head Office"); advanceUntilIdle()
+        vm.checkOut("Head Office"); advanceUntilIdle()
+        vm.homeOut(); advanceUntilIdle()
+
+        assertEquals("no punch may follow home_out", afterClose, repo.recorded.size)
+        val state = vm.uiState.value.day
+        assertTrue(state is OfficeState.Error)
+        assertEquals("Your day is already complete.", (state as OfficeState.Error).message)
+    }
+
+    @Test
+    fun `office check-in is refused before the day has started`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.checkIn("Head Office")
+        advanceUntilIdle()
+
+        assertTrue(repo.recorded.isEmpty())
+        assertTrue(vm.uiState.value.day is OfficeState.Error)
+    }
+
+    @Test
+    fun `office check-out is refused when no session is open`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.homeIn(); advanceUntilIdle()
+        val afterHomeIn = repo.recorded.size
+
+        vm.checkOut("Head Office")
+        advanceUntilIdle()
+
+        assertEquals(afterHomeIn, repo.recorded.size)
+        assertTrue(vm.uiState.value.day is OfficeState.Error)
+    }
+
+    /**
+     * Ending the day mid-session would leave the `office_in` unclosed, so payroll has no closing
+     * punch to score against — the office equivalent of the unclosed `site_in` that scores LNF.
+     */
+    @Test
+    fun `ending the day is refused while still checked into the office`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.homeIn(); advanceUntilIdle()
+        vm.checkIn("Head Office"); advanceUntilIdle()
+        val beforeHomeOut = repo.recorded.size
+
+        vm.homeOut()
+        advanceUntilIdle()
+
+        assertEquals("home_out must not land mid-session", beforeHomeOut, repo.recorded.size)
+        val state = vm.uiState.value.day
+        assertTrue(state is OfficeState.Error)
+        assertEquals(
+            "Check out of the office before ending your day.",
+            (state as OfficeState.Error).message,
+        )
+    }
+
+    @Test
+    fun `a second home check-in cannot restart a running day`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.homeIn(); advanceUntilIdle()
+        val afterFirst = repo.recorded.size
+
+        vm.homeIn()
+        advanceUntilIdle()
+
+        assertEquals("home_in is once per day", afterFirst, repo.recorded.size)
+    }
+
+    /** The guard must not block the ordinary day — a full legal cycle still writes every leg. */
+    @Test
+    fun `a full legal office day still records every leg`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.homeIn(); advanceUntilIdle()
+        vm.checkIn("Head Office"); advanceUntilIdle()
+        vm.checkOut("Head Office"); advanceUntilIdle()
+        vm.homeIn(); advanceUntilIdle()          // refused — already started
+        vm.checkIn("Client Site"); advanceUntilIdle()
+        vm.checkOut("Client Site"); advanceUntilIdle()
+        vm.homeOut(); advanceUntilIdle()
+
+        assertEquals(
+            listOf(
+                AttendanceType.HOME_IN,
+                AttendanceType.OFFICE_IN,
+                AttendanceType.OFFICE_OUT,
+                AttendanceType.OFFICE_IN,
+                AttendanceType.OFFICE_OUT,
+                AttendanceType.HOME_OUT,
+            ),
+            repo.recorded.map { it.type },
+        )
     }
 }
