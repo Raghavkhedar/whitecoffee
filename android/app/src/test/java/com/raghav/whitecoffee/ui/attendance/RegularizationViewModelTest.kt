@@ -147,18 +147,17 @@ class RegularizationViewModelTest {
     }
 
     /**
-     * SUSPECTED BUG (documenting current behaviour, not fixing it): unlike the home-screen
-     * preview ([com.raghav.whitecoffee.domain.ResolveTodayStatusUseCase], which falls back to the
-     * default 10:00-18:00 window when an operations user has no admin-set plan — see
-     * ResolveTodayStatusUseCaseTest."ops with no plan falls back to the default window rather
-     * than going unmarked" — this ViewModel's own `deriveLiveStatus` (RegularizationViewModel.kt
-     * around line 127) returns null ("nothing to regularize") for ANY no-plan operations day,
-     * even one with real work events that the home screen would score (and could show as Half
-     * Day). An employee could see Half Day on the home screen for today and find nothing to fix
-     * here for that same day.
+     * A worked operations day with no admin-set shift must still be regularizable.
+     *
+     * Payroll's `shouldEvaluateDay` scores any ops day that has a plan OR approved leave OR real
+     * work events, falling back to 10:00–18:00 when the plan is missing, and the home screen
+     * mirrors that via ResolveTodayStatusUseCase. This screen used to return "nothing to
+     * regularize" for the same day, so an employee saw Half Day on the home screen and had no way
+     * to dispute it. Checking in at 13:00 is 180 minutes late against the default window — past
+     * the 120-minute short-leave threshold, so Half Day.
      */
     @Test
-    fun `an operations day worked with no planned shift shows nothing to regularize here`() =
+    fun `an operations day worked with no planned shift is still regularizable`() =
         runTest(dispatcher) {
             attendance = FakeAttendanceRepository(
                 listOf(at(13, 0, AttendanceType.SITE_IN), at(18, 0, AttendanceType.SITE_OUT))
@@ -167,10 +166,9 @@ class RegularizationViewModelTest {
             val vm = subject(session = FakeSessionManager(role = SessionManager.ROLE_OPERATIONS))
             advanceUntilIdle()
 
-            assertTrue(
-                "current behaviour: a worked ops day with no plan is treated as nothing to fix here",
-                vm.daysState.value is UiState.Empty
-            )
+            val state = vm.daysState.value
+            assertTrue("a worked ops day must be disputable", state is UiState.Success)
+            assertEquals("HalfDay", (state as UiState.Success).data.single().originalStatus)
         }
 
     // ── an existing request is attached ─────────────────────────────────

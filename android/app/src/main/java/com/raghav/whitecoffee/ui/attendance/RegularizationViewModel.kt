@@ -123,8 +123,14 @@ class RegularizationViewModel @Inject constructor(
             startMin = AttendanceStatusRules.OFFICE_START_MIN
             endMin = AttendanceStatusRules.OFFICE_END_MIN
         } else {
-            // No planned shift → payroll leaves the day unmarked; nothing to regularize.
-            val window = plannedWindow ?: return null
+            // No planned shift → the default 10:00–18:00, NOT "unmarked". Payroll's
+            // shouldEvaluateDay scores any operations day that has a plan OR approved leave OR
+            // actual work events, falling back to the default window when the plan is missing,
+            // and ResolveTodayStatusUseCase mirrors that for the home screen. Returning null
+            // here instead meant an employee saw Half Day on the home screen and then found
+            // nothing to fix on this screen for the same day — a status they could not dispute.
+            val window = plannedWindow
+                ?: (AttendanceStatusRules.OFFICE_START_MIN to AttendanceStatusRules.OFFICE_END_MIN)
             startMin = window.first
             endMin = window.second
         }
