@@ -109,6 +109,15 @@ sealed interface UiState<out T> {
 > was already holding, and sampling connectivity once so a reconnect never re-triggered the load.
 > Subscribe unconditionally and draw `OfflineBanner(isOnline)` over the content instead.
 
+### The office day is a state machine too — and it is guarded
+`OfficeState` + `deriveOfficeState` + `isOfficeEventAllowed` live in `data/model/`, beside
+`AttendanceState`, **not** in the ViewModel: the rules that read them are not UI, and while the
+type was nested `CloseOpenDayUseCase` could not reach it and re-implemented the "is a session
+open" check from raw events. `isOfficeEventAllowed` is checked **immediately before every write**,
+exactly as `isEventAllowed` is on the ops side — button visibility is UX, not a guarantee. Note
+`home_out` is refused mid-session: an unclosed `office_in` leaves the day with no closing punch
+for payroll to score against.
+
 ### Offline is the default, not a fallback
 Writes that must work in the field are **not awaited**: `document()` mints the id locally and
 `set()` is durable on disk the moment it returns. With persistence enabled a write Task resolves
@@ -564,7 +573,7 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 
 ### 🧹 TECH-DEBT BACKLOG (graph audit — deferred, need a working Gradle build to verify)
 - ~~**#4 Duplicated submit/reset boilerplate**~~ — **RESOLVED.** `PhotoSubmitViewModel` owns the submit sequence (reserve id → await local compression → write → queue upload → roll back the cache on failure); the four request ViewModels supply only collection, validation and write, and went 514 → 270 lines. `ApplyLeave`/`Regularization` were left out on purpose — they have no photos, so they share the shape but not the ordering rule that made extraction worth it.
-- ~~**#5 No test coverage**~~ — **RESOLVED for ViewModels.** `./gradlew :app:testDebugUnitTest --rerun-tasks` runs **199** tests, 0 failures. **Every ViewModel now has a suite**; nothing is blocked. Still untested: the repository *implementations* (see STILL OPEN below) and anything needing a Compose UI harness.
+- ~~**#5 No test coverage**~~ — **RESOLVED for ViewModels.** `./gradlew :app:testDebugUnitTest --rerun-tasks` runs **221** tests, 0 failures. **Every ViewModel now has a suite**; nothing is blocked. Repository *implementations* are covered two ways: `OfflineWritePolicyTest` (unit — a source-level fitness function that fails if a field-critical write awaits a server ack) and `RepositoryOfflineWriteTest` (instrumented, emulator-backed — see STILL OPEN). Anything needing a Compose UI harness remains untested.
 
   **Always pass `--rerun-tasks`.** Gradle reports `BUILD SUCCESSFUL` in ~2 s without running a thing otherwise, which will convince you a suite passed when it never executed.
 
@@ -572,8 +581,10 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 - ~~**#6 `UiState.Offline` couples UI-state to connectivity**~~ — **RESOLVED.** Variant deleted; see the UiState note above.
 
 ### 🧹 STILL OPEN
-- **`OfficeAttendanceViewModel` has no write-time legality guard.** The ops flow runs `isEventAllowed` immediately before every write, so an out-of-order tap never reaches Firestore; the office flow only gates on which buttons are *drawn*. A behaviour change, not a refactor — decide before fixing.
-- **No emulator tests for the repository implementations.** They have no fake seam because they *are* the seam, so the offline write behaviour is verified only by matching `recordEvent`. A Firestore-emulator suite (same shape as `firebase/rules-tests`) would close it.
+- **`RepositoryOfflineWriteTest` has never actually been run.** The instrumented suite
+  (`app/src/androidTest/`) is compile-verified only — it was written on a machine with no `adb`
+  and no device. Start the Firestore emulator (`firebase emulators:start --only firestore`) then
+  `./gradlew :app:connectedDebugAndroidTest`. **Treat its first run as unproven.**
 - **`WcTiles` is still hardcoded** — it bypasses the palette seam, so full dark mode needs it converted too.
 - **~279 KB of unused Space Grotesk / DM Sans TTFs** — removing them means editing `themes.xml` and visually checking the still-View-based dialogs.
 
