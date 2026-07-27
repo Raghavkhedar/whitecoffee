@@ -176,4 +176,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     androidTestImplementation(libs.junit.ext)
     androidTestImplementation(libs.espresso.core)
+    // For RepositoryOfflineWriteTest — the emulator-backed proof that field writes complete
+    // without a server round-trip. Instrumented because the Firestore Android SDK needs a device.
+    androidTestImplementation(libs.coroutines.test)
 }
