@@ -290,7 +290,8 @@ Delete old flat collections from Firestore Console — they only contain test da
 ## COLOR PALETTE (Material 3 Teal — Session 27, never deviate)
 
 The Compose UI uses the teal M3 palette defined in `ui/theme/Color.kt` (`WcPalette` /
-`LightWcPalette`). Do NOT add hardcoded colors — read `WcTheme.colors.X` (or `WcTiles`).
+`LightWcPalette`). Do NOT add hardcoded colors — read `WcTheme.colors.X`, including the
+per-module tiles at `WcTheme.colors.Tiles.X`.
 
 ```
 primary:        #006A71  — buttons, active states
@@ -306,8 +307,12 @@ header grad:    #00363B → #00585E  — dark teal hero headers
 status: Present/approved #C7F0D2/#0A5132 · Pending #FCEFC7/#8A6700 · Rejected #FFDAD6/#BA1A1A
 ```
 
-> NOTE: the old `res/values/colors.xml` (blue) is NOT yet reconciled and is only used by any
-> leftover XML chrome — the live Compose UI is entirely teal.
+> NOTE: the old `res/values/colors.xml` (blue) is NOT yet reconciled and is only used by
+> `activity_main.xml` + `themes.xml` — the live Compose UI is entirely teal.
+>
+> The only fonts shipped are `manrope_400..800` and the `material_symbols` subset. Space Grotesk
+> and DM Sans were deleted: the `WC.*` styles that carried them died with the XML layouts, and
+> framework/AppCompat `AlertDialog`s use `buttonBarButtonStyle`, never `materialButtonStyle`.
 
 > **Colours are reached through the theme, never as constants.** `WcColors` no longer exists.
 > The palette is a `WcPalette` data class (`LightWcPalette` is the only one shipped), held in
@@ -316,15 +321,18 @@ status: Present/approved #C7F0D2/#0A5132 · Pending #FCEFC7/#8A6700 · Rejected 
 > That derivation is what makes dark mode possible, and `ThemeTest` guards it — if it regressed
 > to constants every screen would still compile and still look right today while dark mode was
 > silently broken. Adding dark mode = one `DarkWcPalette` + defaulting `WhiteCoffeeTheme`'s
-> `palette` to `if (isSystemInDarkTheme()) …`. No call site changes. **`WcTiles` still bypasses
-> this** and must be converted too.
+> `palette` to `if (isSystemInDarkTheme()) …`. No call site changes — **every** colour in the app,
+> module tiles included, now comes through this seam.
 
 ---
 
 ## DESIGN SYSTEM (Compose — `ui/theme/`, Session 27)
 
 Single source of truth for the Material 3 UI. Build every new screen from these.
-- `Color.kt` — `WcPalette` (data class) + `LightWcPalette` + `WcTile`/`WcTiles` (per-module icon-tile bg/fg).
+- `Color.kt` — `WcPalette` + `LightWcPalette`, and `WcTile`/`WcTilePalette` + `LightWcTiles`
+  (per-module icon-tile bg/fg), reached as `WcTheme.colors.Tiles.X`. **`LightWcTiles` must stay
+  declared above `LightWcPalette`** — top-level vals in one file initialise in declaration order,
+  and the compiler rejects the reverse with "Variable 'LightWcTiles' must be initialized".
 - `Theme.kt` — `LocalWcPalette`, `WcTheme.colors`, `wcColorScheme(palette)`, `WhiteCoffeeTheme(palette, content)`.
 - `Spacing.kt` — `WcSpacing` dp scale. Applied in `Components.kt` only; screen spacing was left alone deliberately (visual churn, no benefit).
 - `Type.kt` — `Manrope` FontFamily (`res/font/manrope_400..800.ttf`) + `MaterialSymbols` font + `WcTypography`.
@@ -573,7 +581,7 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 
 ### 🧹 TECH-DEBT BACKLOG (graph audit — deferred, need a working Gradle build to verify)
 - ~~**#4 Duplicated submit/reset boilerplate**~~ — **RESOLVED.** `PhotoSubmitViewModel` owns the submit sequence (reserve id → await local compression → write → queue upload → roll back the cache on failure); the four request ViewModels supply only collection, validation and write, and went 514 → 270 lines. `ApplyLeave`/`Regularization` were left out on purpose — they have no photos, so they share the shape but not the ordering rule that made extraction worth it.
-- ~~**#5 No test coverage**~~ — **RESOLVED for ViewModels.** `./gradlew :app:testDebugUnitTest --rerun-tasks` runs **221** tests, 0 failures. **Every ViewModel now has a suite**; nothing is blocked. Repository *implementations* are covered two ways: `OfflineWritePolicyTest` (unit — a source-level fitness function that fails if a field-critical write awaits a server ack) and `RepositoryOfflineWriteTest` (instrumented, emulator-backed — see STILL OPEN). Anything needing a Compose UI harness remains untested.
+- ~~**#5 No test coverage**~~ — **RESOLVED for ViewModels.** `./gradlew :app:testDebugUnitTest --rerun-tasks` runs **224** tests, 0 failures. **Every ViewModel now has a suite**; nothing is blocked. Repository *implementations* are covered two ways: `OfflineWritePolicyTest` (unit — a source-level fitness function that fails if a field-critical write awaits a server ack) and `RepositoryOfflineWriteTest` (instrumented, emulator-backed — see STILL OPEN). Anything needing a Compose UI harness remains untested.
 
   **Always pass `--rerun-tasks`.** Gradle reports `BUILD SUCCESSFUL` in ~2 s without running a thing otherwise, which will convince you a suite passed when it never executed.
 
@@ -585,8 +593,8 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
   (`app/src/androidTest/`) is compile-verified only — it was written on a machine with no `adb`
   and no device. Start the Firestore emulator (`firebase emulators:start --only firestore`) then
   `./gradlew :app:connectedDebugAndroidTest`. **Treat its first run as unproven.**
-- **`WcTiles` is still hardcoded** — it bypasses the palette seam, so full dark mode needs it converted too.
-- **~279 KB of unused Space Grotesk / DM Sans TTFs** — removing them means editing `themes.xml` and visually checking the still-View-based dialogs.
+- **Dark mode itself is still unbuilt.** The seam is complete and every colour flows through it;
+  what is missing is a `DarkWcPalette` with chosen values — a branding decision, not a code one.
 
 ---
 
