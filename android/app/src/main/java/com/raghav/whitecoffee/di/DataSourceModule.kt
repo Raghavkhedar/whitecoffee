@@ -4,6 +4,8 @@ import com.raghav.whitecoffee.data.location.FusedLocationProvider
 import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.network.ConnectivityNetworkMonitor
 import com.raghav.whitecoffee.data.network.NetworkMonitor
+import com.raghav.whitecoffee.data.photo.PhotoPipeline
+import com.raghav.whitecoffee.data.photo.WorkManagerPhotoPipeline
 import com.raghav.whitecoffee.data.session.PrefsSessionManager
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.Binds
@@ -35,4 +37,8 @@ abstract class DataSourceModule {
     @Binds
     @Singleton
     abstract fun bindSessionManager(impl: PrefsSessionManager): SessionManager
+
+    @Binds
+    @Singleton
+    abstract fun bindPhotoPipeline(impl: WorkManagerPhotoPipeline): PhotoPipeline
 }
