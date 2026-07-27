@@ -4,6 +4,7 @@ import com.raghav.whitecoffee.data.model.LeaveRequest
 import com.raghav.whitecoffee.data.repository.LeaveRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 
 /**
  * In-memory [LeaveRepository] for unit tests.
@@ -27,19 +28,35 @@ class FakeLeaveRepository(
     /** Requests rejected by the subject, paired with the comment given. */
     val rejected = mutableListOf<Pair<String, String>>()
 
+    /** Every request handed to [submitLeaveRequest], in order — reads for field assertions. */
+    val submitted = mutableListOf<LeaveRequest>()
+
     /** When set, every suspending call fails with this error. */
     var failWith: Exception? = null
+
+    /**
+     * When set, both observe flows throw this instead of emitting — for exercising a
+     * ViewModel's `catch {}` branch, as distinct from [failWith] which only affects the
+     * suspending one-shot calls.
+     */
+    var flowFailWith: Throwable? = null
 
     fun setPending(list: List<LeaveRequest>) { pending.value = list }
 
     override suspend fun submitLeaveRequest(request: LeaveRequest): Result<String> {
         failWith?.let { return Result.failure(it) }
+        submitted += request
         return Result.success(request.id.ifEmpty { "generated-id" })
     }
 
-    override fun observeMyLeaveRequests(): Flow<List<LeaveRequest>> = pending
+    private fun stream(): Flow<List<LeaveRequest>> = pending.map {
+        flowFailWith?.let { err -> throw err }
+        it
+    }
 
-    override fun observePendingLeaveRequests(): Flow<List<LeaveRequest>> = pending
+    override fun observeMyLeaveRequests(): Flow<List<LeaveRequest>> = stream()
+
+    override fun observePendingLeaveRequests(): Flow<List<LeaveRequest>> = stream()
 
     override suspend fun approveLeave(
         targetUserId: String,

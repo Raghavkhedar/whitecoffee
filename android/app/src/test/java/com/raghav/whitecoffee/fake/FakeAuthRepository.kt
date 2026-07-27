@@ -23,7 +23,14 @@ class FakeAuthRepository(
     var logoutCount: Int = 0
         private set
 
-    override suspend fun login(email: String, password: String): Result<User> = loginResult
+    /** How many times [login] actually reached this fake — proves local validation short-circuited. */
+    var loginCallCount: Int = 0
+        private set
+
+    override suspend fun login(email: String, password: String): Result<User> {
+        loginCallCount++
+        return loginResult
+    }
 
     override fun logout() {
         logoutCount++
