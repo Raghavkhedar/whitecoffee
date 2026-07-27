@@ -45,7 +45,10 @@ class FirestoreNotificationRepository @Inject constructor(
      */
     override suspend fun markAsRead(notifId: String): Result<Unit> {
         return try {
-            collection().document(notifId).update("isRead", true).await()
+            // Not awaited: the update is applied to Firestore's local cache immediately and
+            // flushed on reconnect, so the bell badge clears offline. Awaiting would suspend
+            // until the server acknowledged, which never happens while offline.
+            collection().document(notifId).update("isRead", true)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -56,9 +59,12 @@ class FirestoreNotificationRepository @Inject constructor(
     override suspend fun markAllAsRead(): Result<Unit> {
         return try {
             val batch = firestore.batch()
+            // The read is awaited — get() resolves from the local cache when the server is
+            // unreachable, so it does not hang. The commit is not, for the same reason as
+            // [markAsRead]: it is durable locally and syncs later.
             val unread = collection().whereEqualTo("isRead", false).get().await()
             unread.documents.forEach { batch.update(it.reference, "isRead", true) }
-            batch.commit().await()
+            batch.commit()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

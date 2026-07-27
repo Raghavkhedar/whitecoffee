@@ -57,10 +57,19 @@ class FirestoreRegularizationRepository @Inject constructor(
                 reason         = reason,
                 submittedAt    = Timestamp.now()
             )
+            // Offline-first, like recordEvent: document() mints the id locally and set() is
+            // durable on disk the moment it returns. add().await() never completes while
+            // offline (that Task resolves on server acknowledgement), which hung the submit
+            // spinner and invited the user to retry into a duplicate.
+            //
+            // The duplicate check above reads through Firestore's cache, so offline it can
+            // only see requests this device already knows about. The server-side rules and the
+            // admin review remain the real guard against a double submission.
+            //
             // Stampable: the regularization create rule only asserts status=='pending'
             // (no hasOnly), so the audit keys are accepted.
-            val ref = regCol.add(request.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
-                .await()
+            val ref = regCol.document()
+            ref.set(request.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
