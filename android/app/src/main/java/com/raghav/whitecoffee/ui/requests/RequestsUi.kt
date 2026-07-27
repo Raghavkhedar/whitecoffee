@@ -44,6 +44,7 @@ import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
+import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.WcColors
 import java.io.File
 
@@ -58,11 +59,7 @@ fun RequestScaffold(
     Column(
         modifier = Modifier.fillMaxSize().background(WcColors.ScreenBg).verticalScroll(rememberScrollState()),
     ) {
-        if (!isOnline) {
-            Box(Modifier.fillMaxWidth().background(Color(0xFF78350F)).padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Text("No internet connection", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            }
-        }
+        OfflineBanner(isOnline)
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 48.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,

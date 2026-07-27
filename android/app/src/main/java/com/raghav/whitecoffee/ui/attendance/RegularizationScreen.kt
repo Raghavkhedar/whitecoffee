@@ -29,6 +29,7 @@ import com.raghav.whitecoffee.ui.theme.EmptyState
 import com.raghav.whitecoffee.ui.theme.InfoBanner
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
+import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.SectionLabel
 import com.raghav.whitecoffee.ui.theme.StatusBadge
 import com.raghav.whitecoffee.ui.theme.WcCard
@@ -41,11 +42,13 @@ import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 fun RegularizationScreen(
     state: UiState<List<RegularizationDayItem>>,
     todayLabel: String,
+    isOnline: Boolean,
     onBack: () -> Unit,
     onRequest: (RegularizationDayItem) -> Unit,
     onRetry: () -> Unit,
 ) = WhiteCoffeeTheme {
     Column(Modifier.fillMaxSize().background(WcColors.ScreenBg)) {
+        OfflineBanner(isOnline)
         WcTopBar("Regularization", onBack)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 32.dp)) {
             InfoBanner(
@@ -74,10 +77,6 @@ fun RegularizationScreen(
                         Spacer(Modifier.height(10.dp))
                         Text("Retry", color = WcColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(WcColors.Accent).clickable { onRetry() }.padding(horizontal = 14.dp, vertical = 8.dp))
                     }
-                }
-                is UiState.Offline -> {
-                    Spacer(Modifier.height(20.dp))
-                    EmptyState(Ms.info, "Offline", "Connect to load your attendance.")
                 }
                 else -> {
                     Spacer(Modifier.height(40.dp))

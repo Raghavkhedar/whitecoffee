@@ -19,7 +19,9 @@ sealed interface UiState<out T> {
 
     /** Operation failed — show error message with retry option. */
     data class Error(val message: String) : UiState<Nothing>
-
-    /** Device has no network — show offline banner. */
-    data object Offline : UiState<Nothing>
 }
+// There is deliberately no `Offline` state. Connectivity is not a screen state: Firestore is
+// configured with a persistent local cache, so being offline does not mean being dataless — a
+// screen still loads from disk and still accepts writes. An `Offline` variant invited ViewModels
+// to check connectivity and return *before* subscribing, which hid data the SDK already had.
+// Render connectivity with `OfflineBanner(isOnline)` over the content instead.

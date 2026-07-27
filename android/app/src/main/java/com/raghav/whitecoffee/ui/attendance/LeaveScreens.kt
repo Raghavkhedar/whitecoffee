@@ -45,6 +45,7 @@ import com.raghav.whitecoffee.ui.theme.EmptyState
 import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
+import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.ReadOnlyFieldBox
 import com.raghav.whitecoffee.ui.theme.StatusBadge
 import com.raghav.whitecoffee.ui.theme.WcCard
@@ -294,12 +295,14 @@ private fun LeaveHistoryCard(l: LeaveRequest) {
 @Composable
 fun LeaveApprovalsScreen(
     state: UiState<List<LeaveRequest>>,
+    isOnline: Boolean,
     onBack: () -> Unit,
     onApprove: (LeaveRequest) -> Unit,
     onReject: (LeaveRequest) -> Unit,
     onRetry: () -> Unit,
 ) = WhiteCoffeeTheme {
     Column(Modifier.fillMaxSize().background(WcColors.ScreenBg)) {
+        OfflineBanner(isOnline)
         WcTopBar("Leave Approvals", onBack)
         val list = (state as? UiState.Success)?.data.orEmpty()
         LazyColumn(
@@ -327,9 +330,6 @@ fun LeaveApprovalsScreen(
                     Spacer(Modifier.height(10.dp))
                     Text("Retry", color = WcColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onRetry() })
                 }
-            }
-            if (state is UiState.Offline) item {
-                EmptyState(Ms.info, "Offline", "Connect to load pending requests.")
             }
         }
     }

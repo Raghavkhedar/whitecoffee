@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -68,13 +67,17 @@ class RegularizationViewModel @Inject constructor(
 
     private var loadJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * Subscribes unconditionally — no connectivity pre-flight.
+     *
+     * Today's punches come from Firestore's persistent cache, and the status derivation is a pure
+     * function over them, so this screen works offline. The old `isOnline.first()` guard returned
+     * before subscribing and hid a verdict the app could compute locally; it also sampled
+     * connectivity once, leaving the screen stuck offline after a reconnect.
+     */
     fun loadToday() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            if (!networkMonitor.isOnline.first()) {
-                _daysState.value = UiState.Offline
-                return@launch
-            }
             _daysState.value = UiState.Loading()
             val plannedWindow = if (!usesFixedWindow) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()

@@ -40,6 +40,7 @@ import com.raghav.whitecoffee.ui.attendance.OfficeAttendanceViewModel.OfficeStat
 import com.raghav.whitecoffee.ui.theme.EmptyState
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
+import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.SectionLabel
 import com.raghav.whitecoffee.ui.theme.WcColors
 import com.raghav.whitecoffee.ui.theme.WcDialog
@@ -192,7 +193,7 @@ private fun AttendanceScaffold(
     Column(
         modifier = Modifier.fillMaxSize().background(WcColors.ScreenBg).verticalScroll(rememberScrollState()),
     ) {
-        if (!isOnline) Banner("No internet connection", Color(0xFF78350F))
+        OfflineBanner(isOnline)
         if (!gpsEnabled) {
             Row(
                 modifier = Modifier.fillMaxWidth().background(Color(0xFF8A1B1B)).padding(horizontal = 16.dp, vertical = 10.dp),
@@ -349,9 +350,3 @@ private fun timelineSub(e: AttendanceRecord): String = when (e.type) {
     else -> "GPS recorded"
 }
 
-@Composable
-private fun Banner(text: String, bg: Color) {
-    Box(Modifier.fillMaxWidth().background(bg).padding(horizontal = 18.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-    }
-}

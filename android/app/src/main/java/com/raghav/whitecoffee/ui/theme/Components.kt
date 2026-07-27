@@ -320,6 +320,37 @@ fun InfoBanner(text: String, bg: Color, fg: Color, icon: String = Ms.info, modif
     }
 }
 
+/**
+ * The app's one offline banner. Renders nothing when [isOnline].
+ *
+ * Connectivity is *informational*, never a gate: Firestore is configured with a persistent local
+ * cache (see `WhiteCoffeeApp`), so every screen still reads from disk and every write is durable
+ * the moment it is made. All this banner says is "your writes have not synced yet" — which is why
+ * it draws over the content rather than replacing it.
+ *
+ * One definition so the wording and colour cannot drift; call it at the top of a screen's Column.
+ */
+@Composable
+fun OfflineBanner(isOnline: Boolean, modifier: Modifier = Modifier) {
+    if (isOnline) return
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(OFFLINE_BANNER_BG)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "No internet connection",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private val OFFLINE_BANNER_BG = Color(0xFF78350F)
+
 // ── Styled input dialog (teal M3) — rounded card, title/subtitle, content slot ─
 // Replaces raw View AlertDialog + EditText prompts. Put WcField(s) in [content].
 @Composable
