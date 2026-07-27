@@ -33,7 +33,6 @@ import com.raghav.whitecoffee.ui.theme.IconTile
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcTile
-import com.raghav.whitecoffee.ui.theme.WcTiles
 import com.raghav.whitecoffee.ui.theme.WcTopBar
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import java.text.SimpleDateFormat
@@ -43,10 +42,10 @@ private val TimeFmt = SimpleDateFormat("d MMM · h:mm a", Locale.getDefault())
 
 @Composable
 private fun notifMeta(type: String): Pair<String, WcTile> = when (type) {
-    "leave_update" -> Ms.event_available to WcTiles.Leave
-    "work_reminder" -> Ms.schedule to WcTiles.Attendance
+    "leave_update" -> Ms.event_available to WcTheme.colors.Tiles.Leave
+    "work_reminder" -> Ms.schedule to WcTheme.colors.Tiles.Attendance
     "urgent" -> Ms.info to WcTile(WcTheme.colors.DangerBg, WcTheme.colors.DangerFg)
-    else -> Ms.notifications to WcTiles.Attendance
+    else -> Ms.notifications to WcTheme.colors.Tiles.Attendance
 }
 
 @Composable

@@ -30,7 +30,6 @@ import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
 import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcTile
-import com.raghav.whitecoffee.ui.theme.WcTiles
 import com.raghav.whitecoffee.ui.theme.WcTopBar
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
@@ -71,7 +70,7 @@ fun SalesAttendanceScreen(
                 title = "Office Day",
                 subtitle = "Check in / out at the office (Home → Office → Home)",
                 icon = Ms.apartment,
-                tile = WcTiles.Attendance,
+                tile = WcTheme.colors.Tiles.Attendance,
                 onClick = onOfficeDay,
             )
             Spacer(Modifier.height(14.dp))
@@ -79,7 +78,7 @@ fun SalesAttendanceScreen(
                 title = "Site Visit",
                 subtitle = "Out for a customer or site visit (Home → Site / Market → Home)",
                 icon = Ms.storefront,
-                tile = WcTiles.MaterialXfer,
+                tile = WcTheme.colors.Tiles.MaterialXfer,
                 onClick = onSiteVisit,
             )
         }

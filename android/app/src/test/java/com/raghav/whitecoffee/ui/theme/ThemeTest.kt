@@ -85,4 +85,43 @@ class ThemeTest {
         assertEquals(Color(0xFFF4F9F9), LightWcPalette.ScreenBg)
         assertEquals(Color(0xFF101414), LightWcPalette.TextPrimary)
     }
+
+    // ── module tiles ──────────────────────────────────────────────────────
+
+    /**
+     * `LightWcPalette.Tiles` is wired to the shipped tile set.
+     *
+     * Note on the ordering hazard nearby: `LightWcPalette` and `LightWcTiles` are top-level `val`s
+     * in the same file, which initialise in declaration order, so `LightWcTiles` must be declared
+     * first. That one is enforced by the **compiler** — reordering them fails with
+     * "Variable 'LightWcTiles' must be initialized", verified by mutation — so this test does not
+     * claim to catch it. What it does catch is the palette being wired to the wrong tile set, or
+     * to a stray copy.
+     */
+    @Test
+    fun `the palette's tiles are the shipped tile set`() {
+        assertEquals(LightWcTiles, LightWcPalette.Tiles)
+    }
+
+    @Test
+    fun `tiles travel with the palette so dark mode can restyle them`() {
+        val magenta = WcTile(Color(0xFFFF00FF), Color(0xFF000000))
+        val altered = LightWcPalette.copy(
+            Tiles = LightWcTiles.copy(Attendance = magenta)
+        )
+
+        assertEquals(magenta, altered.Tiles.Attendance)
+        // Untouched tiles carry over.
+        assertEquals(LightWcTiles.Leave, altered.Tiles.Leave)
+        // And the original is unchanged — the palette is a value, not shared mutable state.
+        assertEquals(Color(0xFFC6EEF1), LightWcPalette.Tiles.Attendance.bg)
+    }
+
+    @Test
+    fun `every module tile keeps its designed colours`() {
+        assertEquals(Color(0xFFC6EEF1), LightWcTiles.Attendance.bg)
+        assertEquals(Color(0xFF00474C), LightWcTiles.Attendance.fg)
+        assertEquals(Color(0xFFDDDFFF), LightWcTiles.Regularization.bg)
+        assertEquals(Color(0xFF8A1B43), LightWcTiles.Leave.fg)
+    }
 }

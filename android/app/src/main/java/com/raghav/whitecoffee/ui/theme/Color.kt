@@ -60,6 +60,48 @@ data class WcPalette(
     val ToastBg: Color,
     val ToastFg: Color,
     val ToastIcon: Color,
+
+    /** Per-module tile colours. See [WcTilePalette]. */
+    val Tiles: WcTilePalette,
+)
+
+/** A coloured module / icon-tile pairing (background + foreground). */
+data class WcTile(val bg: Color, val fg: Color)
+
+/**
+ * Tile colours per feature, matching the design's module grid.
+ *
+ * A data class held on [WcPalette] rather than a standalone `object` of constants, for the same
+ * reason the rest of the palette is: an `object` cannot be swapped, so it would be the one thing
+ * still pinned to light values when a dark palette arrives. Reach it via
+ * `WcTheme.colors.Tiles.Attendance`.
+ */
+data class WcTilePalette(
+    val Attendance: WcTile,
+    val MtRequest: WcTile,
+    val MtBuy: WcTile,
+    val MaterialXfer: WcTile,
+    val ToolXfer: WcTile,
+    val Work: WcTile,
+    val Leave: WcTile,
+    val Approvals: WcTile,
+    val Users: WcTile,
+    val Sites: WcTile,
+    val Regularization: WcTile,
+)
+
+val LightWcTiles = WcTilePalette(
+    Attendance     = WcTile(Color(0xFFC6EEF1), Color(0xFF00474C)),
+    MtRequest      = WcTile(Color(0xFFD7E2FF), Color(0xFF0A3A86)),
+    MtBuy          = WcTile(Color(0xFFC7F0D2), Color(0xFF0A5132)),
+    MaterialXfer   = WcTile(Color(0xFFE7DDFF), Color(0xFF3A1D8A)),
+    ToolXfer       = WcTile(Color(0xFFBFE8FF), Color(0xFF064A6E)),
+    Work           = WcTile(Color(0xFFFFE2AE), Color(0xFF6B4A00)),
+    Leave          = WcTile(Color(0xFFFFD7E0), Color(0xFF8A1B43)),
+    Approvals      = WcTile(Color(0xFFC7F1D9), Color(0xFF0A5132)),
+    Users          = WcTile(Color(0xFFE2E2F5), Color(0xFF34357A)),
+    Sites          = WcTile(Color(0xFFFFDCC2), Color(0xFF8A3A12)),
+    Regularization = WcTile(Color(0xFFDDDFFF), Color(0xFF2A2A8A)),
 )
 
 /** The app's one shipped palette today. Mirrors the "White Coffee - M3 Redesign" design system. */
@@ -111,22 +153,5 @@ val LightWcPalette = WcPalette(
     ToastBg       = Color(0xFF16282A),
     ToastFg       = Color(0xFFEAF5F4),
     ToastIcon     = Color(0xFF7FE0C0),
+    Tiles         = LightWcTiles,
 )
-
-/** A coloured module / icon-tile pairing (background + foreground). */
-data class WcTile(val bg: Color, val fg: Color)
-
-/** Tile colours per feature, matching the design's module grid. */
-object WcTiles {
-    val Attendance     = WcTile(Color(0xFFC6EEF1), Color(0xFF00474C))
-    val MtRequest      = WcTile(Color(0xFFD7E2FF), Color(0xFF0A3A86))
-    val MtBuy          = WcTile(Color(0xFFC7F0D2), Color(0xFF0A5132))
-    val MaterialXfer   = WcTile(Color(0xFFE7DDFF), Color(0xFF3A1D8A))
-    val ToolXfer       = WcTile(Color(0xFFBFE8FF), Color(0xFF064A6E))
-    val Work           = WcTile(Color(0xFFFFE2AE), Color(0xFF6B4A00))
-    val Leave          = WcTile(Color(0xFFFFD7E0), Color(0xFF8A1B43))
-    val Approvals      = WcTile(Color(0xFFC7F1D9), Color(0xFF0A5132))
-    val Users          = WcTile(Color(0xFFE2E2F5), Color(0xFF34357A))
-    val Sites          = WcTile(Color(0xFFFFDCC2), Color(0xFF8A3A12))
-    val Regularization = WcTile(Color(0xFFDDDFFF), Color(0xFF2A2A8A))
-}

@@ -37,7 +37,6 @@ import com.raghav.whitecoffee.ui.theme.MsIcon
 import com.raghav.whitecoffee.ui.theme.StatusBadge
 import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcTile
-import com.raghav.whitecoffee.ui.theme.WcTiles
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -79,15 +78,15 @@ fun HomeScreen(
     // four roles by decision, not by oversight, so a new role defaults to seeing it. Note
     // `isOffice` is true for admin as well, hence the explicit `!isAdmin` where admin is excluded.
     val modules = buildList {
-        /* all roles  */ add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTiles.Attendance, onAttendanceClick))
-        /* ops+office */ if (isOperations || (isOffice && !isAdmin)) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTiles.MtRequest, onMtRequestClick))
-        /* all roles  */ add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTiles.MtBuy, onMtBuyClick))
-        /* all roles  */ add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTiles.MaterialXfer, onMaterialTransferClick))
-        /* all roles  */ add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTiles.ToolXfer, onToolTransferClick))
-        /* ops only   */ if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTiles.Work, onWorkProgressClick))
-        /* all roles  */ add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTiles.Leave, onLeaveClick))
-        /* admin only */ if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTiles.Approvals, onLeaveApprovalsClick))
-        /* all roles  */ add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTiles.Regularization, onRegularizationClick))
+        /* all roles  */ add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTheme.colors.Tiles.Attendance, onAttendanceClick))
+        /* ops+office */ if (isOperations || (isOffice && !isAdmin)) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTheme.colors.Tiles.MtRequest, onMtRequestClick))
+        /* all roles  */ add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTheme.colors.Tiles.MtBuy, onMtBuyClick))
+        /* all roles  */ add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTheme.colors.Tiles.MaterialXfer, onMaterialTransferClick))
+        /* all roles  */ add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTheme.colors.Tiles.ToolXfer, onToolTransferClick))
+        /* ops only   */ if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTheme.colors.Tiles.Work, onWorkProgressClick))
+        /* all roles  */ add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTheme.colors.Tiles.Leave, onLeaveClick))
+        /* admin only */ if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTheme.colors.Tiles.Approvals, onLeaveApprovalsClick))
+        /* all roles  */ add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTheme.colors.Tiles.Regularization, onRegularizationClick))
     }
 
     Column(
