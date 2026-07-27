@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -38,13 +37,17 @@ class LeaveApprovalsViewModel @Inject constructor(
 
     private var loadJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * Subscribes unconditionally — no connectivity pre-flight.
+     *
+     * Firestore serves this query from its persistent cache, so an offline admin still sees the
+     * requests they loaded earlier. The old `isOnline.first()` guard returned before subscribing
+     * and rendered an empty offline state over data the SDK already had; it also sampled
+     * connectivity exactly once, so a reconnect never re-triggered the load.
+     */
     fun loadPending() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            if (!networkMonitor.isOnline.first()) {
-                _approvalsState.value = UiState.Offline
-                return@launch
-            }
             _approvalsState.value = UiState.Loading()
             leaveRepository.observePendingLeaveRequests()
                 .catch { _approvalsState.value = UiState.Error("Failed to load requests. Check Firestore index.") }

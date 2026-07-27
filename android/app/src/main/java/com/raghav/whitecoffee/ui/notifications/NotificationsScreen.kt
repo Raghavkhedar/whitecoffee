@@ -31,9 +31,8 @@ import com.raghav.whitecoffee.data.model.AppNotification
 import com.raghav.whitecoffee.ui.theme.EmptyState
 import com.raghav.whitecoffee.ui.theme.IconTile
 import com.raghav.whitecoffee.ui.theme.Ms
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcTile
-import com.raghav.whitecoffee.ui.theme.WcTiles
 import com.raghav.whitecoffee.ui.theme.WcTopBar
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import java.text.SimpleDateFormat
@@ -41,11 +40,12 @@ import java.util.Locale
 
 private val TimeFmt = SimpleDateFormat("d MMM · h:mm a", Locale.getDefault())
 
+@Composable
 private fun notifMeta(type: String): Pair<String, WcTile> = when (type) {
-    "leave_update" -> Ms.event_available to WcTiles.Leave
-    "work_reminder" -> Ms.schedule to WcTiles.Attendance
-    "urgent" -> Ms.info to WcTile(WcColors.DangerBg, WcColors.DangerFg)
-    else -> Ms.notifications to WcTiles.Attendance
+    "leave_update" -> Ms.event_available to WcTheme.colors.Tiles.Leave
+    "work_reminder" -> Ms.schedule to WcTheme.colors.Tiles.Attendance
+    "urgent" -> Ms.info to WcTile(WcTheme.colors.DangerBg, WcTheme.colors.DangerFg)
+    else -> Ms.notifications to WcTheme.colors.Tiles.Attendance
 }
 
 @Composable
@@ -59,10 +59,10 @@ fun NotificationsScreen(
     val list = (state as? UiState.Success)?.data.orEmpty()
     val hasUnread = list.any { !it.isRead }
 
-    Column(Modifier.fillMaxSize().background(WcColors.ScreenBg)) {
+    Column(Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg)) {
         WcTopBar("Notifications", onBack, trailing = {
             if (hasUnread) Text(
-                "Mark all read", color = WcColors.Primary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
+                "Mark all read", color = WcTheme.colors.Primary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clickable { onMarkAllRead() }.padding(8.dp),
             )
         })
@@ -78,13 +78,13 @@ fun NotificationsScreen(
             }
             is UiState.Error -> Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(state.message, color = WcColors.DangerFg, fontSize = 13.sp)
+                    Text(state.message, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
                     Spacer(Modifier.size(10.dp))
-                    Text("Retry", color = WcColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onRetry() })
+                    Text("Retry", color = WcTheme.colors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { onRetry() })
                 }
             }
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Loading…", color = WcColors.TextMuted, fontSize = 13.sp)
+                Text("Loading…", color = WcTheme.colors.TextMuted, fontSize = 13.sp)
             }
         }
     }
@@ -102,15 +102,15 @@ private fun NotificationRow(n: AppNotification, onMarkRead: (AppNotification) ->
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(n.title, color = WcColors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold)
+                Text(n.title, color = WcTheme.colors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold)
                 if (!n.isRead) {
                     Spacer(Modifier.width(7.dp))
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(WcColors.Primary))
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(WcTheme.colors.Primary))
                 }
             }
-            Text(n.body, color = WcColors.TextSecondary, fontSize = 12.5.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 3.dp))
+            Text(n.body, color = WcTheme.colors.TextSecondary, fontSize = 12.5.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 3.dp))
             val time = n.createdAt?.toDate()?.let { TimeFmt.format(it) } ?: ""
-            if (time.isNotBlank()) Text(time, color = WcColors.TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
+            if (time.isNotBlank()) Text(time, color = WcTheme.colors.TextMuted, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
         }
     }
 }

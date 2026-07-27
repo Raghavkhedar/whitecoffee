@@ -18,6 +18,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
+import com.raghav.whitecoffee.data.model.OfficeState
 import com.raghav.whitecoffee.data.location.LocationProvider
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -50,8 +51,9 @@ class OfficeAttendanceFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
-            val state by viewModel.state.collectAsStateWithLifecycle()
-            val events by viewModel.todayEvents.collectAsStateWithLifecycle()
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val state = uiState.day
+            val events = uiState.events
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             var showHomeOutConfirm by remember { mutableStateOf(false) }
 
@@ -65,7 +67,7 @@ class OfficeAttendanceFragment : Fragment() {
                 onHomeIn = viewModel::homeIn,
                 onCheckIn = viewModel::checkIn,
                 onCheckOut = {
-                    (viewModel.state.value as? OfficeAttendanceViewModel.OfficeState.InOffice)?.let {
+                    (viewModel.uiState.value.day as? OfficeState.InOffice)?.let {
                         viewModel.checkOut(it.locationName)
                     }
                 },

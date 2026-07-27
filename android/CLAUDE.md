@@ -65,6 +65,7 @@ Every repository, plus `LocationProvider`, `NetworkMonitor` and `SessionManager`
 | `LocationProvider` | `FusedLocationProvider` |
 | `NetworkMonitor` | `ConnectivityNetworkMonitor` |
 | `SessionManager` | `PrefsSessionManager` |
+| `PhotoPipeline` | `WorkManagerPhotoPipeline` |
 
 **Why:** the implementations need an `@ApplicationContext Context` (SharedPreferences,
 ConnectivityManager, GPS gates). While they were concrete classes, **no ViewModel could be
@@ -76,19 +77,57 @@ library**: tests use hand-written fakes in `app/src/test/java/.../fake/` per Goo
 Adding a repository = interface + impl + one `@Binds` line + a `Fake…` in test sources.
 Never add a `Context` (or `WorkManager`, or a raw `FirebaseFirestore`) to a ViewModel
 constructor — put it behind a contract in `data/` instead.
+
+`PhotoPipeline` is deliberately **one** seam covering both photo compression and upload
+scheduling, not two. A ViewModel has no interest in WorkManager; splitting cache from schedule
+would push the write-then-upload ordering rule (decision #10) back out into every caller.
+`PhotoUploadManager` stays concrete — it is only used by `PhotoUploadWorker`.
+
+### `domain/` — use cases, added only where logic was valuable AND trapped
+A domain layer is **optional** in Google's guidance, and this one is deliberately partial:
+`CloseOpenDayUseCase`, `RecordAttendanceEventUseCase`, `ResolveTodayStatusUseCase`. Each was
+extracted because it was duplicated or untestable *and* it decides something that costs money.
+A use case that merely forwards to a repository is not worth the indirection — do not add one.
 - ViewBinding = always cleared in `onDestroyView()` via BaseFragment
 - Coroutines = `viewModelScope` for all async, `repeatOnLifecycle(STARTED)` for collection
 
 ### UiState (sealed interface — use this for EVERY screen):
 ```kotlin
 sealed interface UiState<out T> {
-    data object Loading : UiState<Nothing>
+    data class Loading(val message: String = "") : UiState<Nothing>
     data class Success<T>(val data: T) : UiState<T>
     data object Empty : UiState<Nothing>
     data class Error(val message: String) : UiState<Nothing>
-    data object Offline : UiState<Nothing>
 }
 ```
+
+> **There is deliberately no `Offline` state — do not re-add one.** Connectivity is not a screen
+> state. Firestore runs with a 50 MB persistent cache (`WhiteCoffeeApp`), so offline does NOT mean
+> dataless: a screen still reads from disk and still accepts writes. The variant invited ViewModels
+> to check `isOnline.first()` and `return` **before subscribing**, which is exactly what
+> LeaveApprovals and Regularization did — rendering an empty offline screen over records the SDK
+> was already holding, and sampling connectivity once so a reconnect never re-triggered the load.
+> Subscribe unconditionally and draw `OfflineBanner(isOnline)` over the content instead.
+
+### The office day is a state machine too — and it is guarded
+`OfficeState` + `deriveOfficeState` + `isOfficeEventAllowed` live in `data/model/`, beside
+`AttendanceState`, **not** in the ViewModel: the rules that read them are not UI, and while the
+type was nested `CloseOpenDayUseCase` could not reach it and re-implemented the "is a session
+open" check from raw events. `isOfficeEventAllowed` is checked **immediately before every write**,
+exactly as `isEventAllowed` is on the ops side — button visibility is UX, not a guarantee. Note
+`home_out` is refused mid-session: an unclosed `office_in` leaves the day with no closing punch
+for payroll to score against.
+
+### Offline is the default, not a fallback
+Writes that must work in the field are **not awaited**: `document()` mints the id locally and
+`set()` is durable on disk the moment it returns. With persistence enabled a write Task resolves
+only on *server acknowledgement*, so `add().await()` **never completes while offline** — it hangs
+the spinner, the user assumes failure, and each retry queues another document. Reads keep their
+`await` (`get()` resolves from cache and cannot hang).
+
+The one deliberate exception is `approveLeave`/`rejectLeave`: they write to *another user's*
+document, the one path the rules can refuse, and a permission-denied only surfaces from the
+server. Reporting success for an approval the rules then reject is worse than a spinner at a desk.
 
 ---
 
@@ -250,8 +289,9 @@ Delete old flat collections from Firestore Console — they only contain test da
 
 ## COLOR PALETTE (Material 3 Teal — Session 27, never deviate)
 
-The Compose UI uses the teal M3 palette defined in `ui/theme/Color.kt` (`WcColors`). Do NOT
-add hardcoded colors — reference `WcColors` / `WcTiles`.
+The Compose UI uses the teal M3 palette defined in `ui/theme/Color.kt` (`WcPalette` /
+`LightWcPalette`). Do NOT add hardcoded colors — read `WcTheme.colors.X`, including the
+per-module tiles at `WcTheme.colors.Tiles.X`.
 
 ```
 primary:        #006A71  — buttons, active states
@@ -267,15 +307,34 @@ header grad:    #00363B → #00585E  — dark teal hero headers
 status: Present/approved #C7F0D2/#0A5132 · Pending #FCEFC7/#8A6700 · Rejected #FFDAD6/#BA1A1A
 ```
 
-> NOTE: the old `res/values/colors.xml` (blue) is NOT yet reconciled and is only used by any
-> leftover XML chrome — the live Compose UI is entirely teal via `WcColors`.
+> NOTE: the old `res/values/colors.xml` (blue) is NOT yet reconciled and is only used by
+> `activity_main.xml` + `themes.xml` — the live Compose UI is entirely teal.
+>
+> The only fonts shipped are `manrope_400..800` and the `material_symbols` subset. Space Grotesk
+> and DM Sans were deleted: the `WC.*` styles that carried them died with the XML layouts, and
+> framework/AppCompat `AlertDialog`s use `buttonBarButtonStyle`, never `materialButtonStyle`.
+
+> **Colours are reached through the theme, never as constants.** `WcColors` no longer exists.
+> The palette is a `WcPalette` data class (`LightWcPalette` is the only one shipped), held in
+> `LocalWcPalette` and provided by `WhiteCoffeeTheme`; screens read `WcTheme.colors.X`, and the
+> Material `colorScheme` is **derived from** the active palette rather than read from constants.
+> That derivation is what makes dark mode possible, and `ThemeTest` guards it — if it regressed
+> to constants every screen would still compile and still look right today while dark mode was
+> silently broken. Adding dark mode = one `DarkWcPalette` + defaulting `WhiteCoffeeTheme`'s
+> `palette` to `if (isSystemInDarkTheme()) …`. No call site changes — **every** colour in the app,
+> module tiles included, now comes through this seam.
 
 ---
 
 ## DESIGN SYSTEM (Compose — `ui/theme/`, Session 27)
 
 Single source of truth for the Material 3 UI. Build every new screen from these.
-- `Color.kt` — `WcColors` (palette) + `WcTile`/`WcTiles` (per-module icon-tile bg/fg).
+- `Color.kt` — `WcPalette` + `LightWcPalette`, and `WcTile`/`WcTilePalette` + `LightWcTiles`
+  (per-module icon-tile bg/fg), reached as `WcTheme.colors.Tiles.X`. **`LightWcTiles` must stay
+  declared above `LightWcPalette`** — top-level vals in one file initialise in declaration order,
+  and the compiler rejects the reverse with "Variable 'LightWcTiles' must be initialized".
+- `Theme.kt` — `LocalWcPalette`, `WcTheme.colors`, `wcColorScheme(palette)`, `WhiteCoffeeTheme(palette, content)`.
+- `Spacing.kt` — `WcSpacing` dp scale. Applied in `Components.kt` only; screen spacing was left alone deliberately (visual churn, no benefit).
 - `Type.kt` — `Manrope` FontFamily (`res/font/manrope_400..800.ttf`) + `MaterialSymbols` font + `WcTypography`.
 - `MsIcons.kt` — `object Ms` (icon name → PUA codepoint string) + `MsIcon(Ms.x, sizeSp, tint)`.
   Icons come from a **subset** font `res/font/material_symbols.ttf` (~10.6 KB, 49 glyphs).
@@ -521,9 +580,21 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 - Google Sheets export ✅ DONE
 
 ### 🧹 TECH-DEBT BACKLOG (graph audit — deferred, need a working Gradle build to verify)
-- **#4 Duplicated submit/reset boilerplate** — the 6 request/leave ViewModels (`MaterialToolRequest`, `MaterialToolBuy`, `Transfer`, `WorkProgress`, `ApplyLeave`, `Regularization`) repeat near-identical `submit()` / `resetSubmitState()` + `UiState` plumbing. Candidate for a shared base `SubmitViewModel<T>`.
-- ~~**#5 No test coverage**~~ — **partly resolved.** `./gradlew :app:testDebugUnitTest` runs **77** tests, 0 failures: `AttendanceRecordTest` (21), `AttendanceStatusRulesTest` (19), `LeaveCoverageTest` (14), `AttendanceViewModelTest` (9), `OfficeAttendanceViewModelTest` (8), `AccountStatusTest` (3), `FirestoreFlowTest` (2). The two ViewModel suites cover `deriveOfficeState()`, the `isEventAllowed` write-time guard, market-from-site auto-checkout, and the stress-test-#2.1 double-tap guard. **Still untested:** the 4 request ViewModels (blocked — they inject `WorkManager` + `PhotoUploadManager`, both still concrete), `MainViewModel` (blocked — injects raw `FirebaseFirestore`), `HomeViewModel`, `LeaveViewModel`, `LeaveApprovalsViewModel`, `NotificationsViewModel`, `RegularizationViewModel`, `LoginViewModel` (all now unblocked — fakes exist, tests not yet written), and the repository implementations themselves.
-- **#6 `UiState.Offline` couples UI-state to connectivity** — `NetworkMonitor` leaks into the `UiState` contract that all 18 ViewModels depend on. Low severity; revisit if `UiState` is reused outside this app.
+- ~~**#4 Duplicated submit/reset boilerplate**~~ — **RESOLVED.** `PhotoSubmitViewModel` owns the submit sequence (reserve id → await local compression → write → queue upload → roll back the cache on failure); the four request ViewModels supply only collection, validation and write, and went 514 → 270 lines. `ApplyLeave`/`Regularization` were left out on purpose — they have no photos, so they share the shape but not the ordering rule that made extraction worth it.
+- ~~**#5 No test coverage**~~ — **RESOLVED for ViewModels.** `./gradlew :app:testDebugUnitTest --rerun-tasks` runs **224** tests, 0 failures. **Every ViewModel now has a suite**; nothing is blocked. Repository *implementations* are covered two ways: `OfflineWritePolicyTest` (unit — a source-level fitness function that fails if a field-critical write awaits a server ack) and `RepositoryOfflineWriteTest` (instrumented, emulator-backed — see STILL OPEN). Anything needing a Compose UI harness remains untested.
+
+  **Always pass `--rerun-tasks`.** Gradle reports `BUILD SUCCESSFUL` in ~2 s without running a thing otherwise, which will convince you a suite passed when it never executed.
+
+  **A green run is not verification — mutation-test instead.** Break the invariant a test names, confirm *that* test fails, restore. Every change in the July refactor was checked this way, and it caught one test that would have passed against a bug. `testOptions.unitTests.isReturnDefaultValues = true` is on because `android.net.Uri` is abstract with a private constructor and the request ViewModels take `List<Uri>`; nothing under test reads a Uri.
+- ~~**#6 `UiState.Offline` couples UI-state to connectivity**~~ — **RESOLVED.** Variant deleted; see the UiState note above.
+
+### 🧹 STILL OPEN
+- **`RepositoryOfflineWriteTest` has never actually been run.** The instrumented suite
+  (`app/src/androidTest/`) is compile-verified only — it was written on a machine with no `adb`
+  and no device. Start the Firestore emulator (`firebase emulators:start --only firestore`) then
+  `./gradlew :app:connectedDebugAndroidTest`. **Treat its first run as unproven.**
+- **Dark mode itself is still unbuilt.** The seam is complete and every colour flows through it;
+  what is missing is a `DarkWcPalette` with chosen values — a branding decision, not a code one.
 
 ---
 
@@ -563,7 +634,7 @@ partner is GONE (updates `ConstraintLayout.LayoutParams` to `endToEnd=PARENT_ID`
 32. **No in-app admin user/site screens** — User & Site management are WEB-PORTAL ONLY. There is no `ui/admin/` package. `UserRepository` admin methods exist but are unused.
 33. **Office home events are data-only** — `home_in`/`home_out` for office users are recorded purely for record-keeping. Conveyance is **operations + sales** (`usesConveyance`), never office/admin; `computeDailyAttendanceStatus` for office keys on office_in/out. Never wire office home events into pay/status logic.
 34. **`MainViewModel` (app root) owns session + logout** — `@HiltViewModel` scoped to `MainActivity`. Two responsibilities:
-    (a) **Single-device session enforcement** — `startMonitor()` attaches a Firestore snapshot listener on `users/{uid}.activeSessionToken`; if the server token diverges from the cached `SessionManager.sessionToken` (account logged in elsewhere) it emits `sessionInvalidated`. Started via `startMonitorIfLoggedIn()` / `onLoginSuccess()`, torn down in `logout()` + `onCleared()`.
+    (a) **Single-device session enforcement** — `startMonitor()` collects `UserRepository.observeAccount(uid)`; if the server `activeSessionToken` diverges from the cached `SessionManager.sessionToken` (account logged in elsewhere) it emits `sessionInvalidated`. Started via `startMonitorIfLoggedIn()` / `onLoginSuccess()`. **There is no `onCleared()` teardown and none is needed** — the job runs in `viewModelScope`, which the framework cancels; `logout()` cancels early only so a signed-out user stops listening to a document they no longer have read access to. The predicate is the pure, tested `isSessionSuperseded(server, local)`, and its `serverToken.isNotEmpty()` half is load-bearing: a user doc predating the field reads `""`, and without that check every such user is ejected on every snapshot.
     (b) **Logout auto-checkout** — `logoutWithAutoCheckout()` records closing attendance events before signing out: operations → `SITE_OUT`/`MARKET_OUT` then `HOME_OUT` based on current `AttendanceState`; office → `OFFICE_OUT` (if still in office) then `HOME_OUT`. **Sales dispatches on the actual `AttendanceState`, NOT the role** — site/market checked-in takes the operations path, anything else the office path. This is load-bearing: sales is hybrid, so the open day cannot be inferred from the role, and sending a site-checked-in sales user down the office path leaves the `site_in` unclosed → the nightly compute scores the day **LNF = half pay**. Guarded by `_logoutInProgress`; auto-checkout failures are swallowed so logout always completes (offline-safe by design — do not "fix" the empty catch without preserving guaranteed logout).
 35. **Home check-out confirms before it writes (v1.7)** — `home_out` is the one attendance action gated by a dialog (`HomeOutConfirmDialog` in `ui/attendance/AttendanceScreen.kt`, hosted by `AttendanceFragment` + `OfficeAttendanceFragment`; sales inherits it via the chooser). Rationale: `home_out` is **terminal** — `deriveAttendanceState` returns `DayComplete` for good and `isEventAllowed` then blocks `HOME_IN` (needs `NoRecord`) and `SITE_IN` (needs `HomeCheckedIn`), so a stray tap cost the employee the rest of their day, and `home_in` → mis-tap left the day closed with **zero scored punches** (ops day unmarked/Absent). **A self-serve undo window and a biometric gate were both proposed and explicitly rejected** — if the dialog proves too easy to tap through, upgrade it to slide-to-confirm rather than adding undo or a fingerprint dependency. ⚠️ Known gap: `MainViewModel.logoutWithAutoCheckout()` still writes `HOME_OUT` with **no** prompt, so an accidental logout ends the day silently — same consequence, different door.
 

@@ -18,13 +18,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
 
@@ -69,13 +67,17 @@ class RegularizationViewModel @Inject constructor(
 
     private var loadJob: kotlinx.coroutines.Job? = null
 
+    /**
+     * Subscribes unconditionally — no connectivity pre-flight.
+     *
+     * Today's punches come from Firestore's persistent cache, and the status derivation is a pure
+     * function over them, so this screen works offline. The old `isOnline.first()` guard returned
+     * before subscribing and hid a verdict the app could compute locally; it also sampled
+     * connectivity once, leaving the screen stuck offline after a reconnect.
+     */
     fun loadToday() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            if (!networkMonitor.isOnline.first()) {
-                _daysState.value = UiState.Offline
-                return@launch
-            }
             _daysState.value = UiState.Loading()
             val plannedWindow = if (!usesFixedWindow) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
@@ -121,34 +123,27 @@ class RegularizationViewModel @Inject constructor(
             startMin = AttendanceStatusRules.OFFICE_START_MIN
             endMin = AttendanceStatusRules.OFFICE_END_MIN
         } else {
-            // No planned shift → payroll leaves the day unmarked; nothing to regularize.
-            val window = plannedWindow ?: return null
+            // No planned shift → the default 10:00–18:00, NOT "unmarked". Payroll's
+            // shouldEvaluateDay scores any operations day that has a plan OR approved leave OR
+            // actual work events, falling back to the default window when the plan is missing,
+            // and ResolveTodayStatusUseCase mirrors that for the home screen. Returning null
+            // here instead meant an employee saw Half Day on the home screen and then found
+            // nothing to fix on this screen for the same day — a status they could not dispute.
+            val window = plannedWindow
+                ?: (AttendanceStatusRules.OFFICE_START_MIN to AttendanceStatusRules.OFFICE_END_MIN)
             startMin = window.first
             endMin = window.second
         }
 
-        val inTypes = RoleCapabilities.attendanceInTypes(role)
-        val outTypes = RoleCapabilities.attendanceOutTypes(role)
-        val inRec = events.firstOrNull { it.type in inTypes } ?: return null
-        val lastInIdx = events.indexOfLast { it.type in inTypes }
-        val lastOutIdx = events.indexOfLast { it.type in outTypes }
-        // Only count the checkout if it's the final event (they haven't re-entered since).
-        val outRec = events.lastOrNull { it.type in outTypes }
-            ?.takeIf { lastOutIdx > lastInIdx }
+        val punches = AttendanceStatusRules.scorablePunches(events, role)
+        if (!punches.hasCheckIn) return null
 
-        val inMin = minutesOf(inRec) ?: return "HalfDay"
-        val outMin = outRec?.let { minutesOf(it) }
-        return when (AttendanceStatusRules.classify(inMin, outMin, startMin, endMin)) {
+        val inMin = punches.inMinutes ?: return "HalfDay"
+        return when (AttendanceStatusRules.classify(inMin, punches.outMinutes, startMin, endMin)) {
             AttendanceStatusRules.DayStatus.PRESENT -> null
             AttendanceStatusRules.DayStatus.SHORT_LEAVE -> "SL"
             AttendanceStatusRules.DayStatus.HALF_DAY -> "HalfDay"
         }
-    }
-
-    private fun minutesOf(record: AttendanceRecord): Int? {
-        val date = record.timestamp?.toDate() ?: return null
-        val cal = Calendar.getInstance().apply { time = date }
-        return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     }
 
     fun submitRequest(date: String, originalStatus: String, reason: String) {

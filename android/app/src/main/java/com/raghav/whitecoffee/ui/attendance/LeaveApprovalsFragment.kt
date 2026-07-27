@@ -38,6 +38,7 @@ class LeaveApprovalsFragment : Fragment() {
         setContent {
             val state by viewModel.approvalsState.collectAsStateWithLifecycle()
             val action by viewModel.actionState.collectAsStateWithLifecycle()
+            val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
 
             // Inline Compose reject dialog (replaces the old View AlertDialog).
             var rejectRequest by remember { mutableStateOf<LeaveRequest?>(null) }
@@ -52,6 +53,7 @@ class LeaveApprovalsFragment : Fragment() {
 
             LeaveApprovalsScreen(
                 state = state,
+                isOnline = isOnline,
                 onBack = { findNavController().navigateUp() },
                 onApprove = { viewModel.approve(it) },
                 onReject = { rejectRequest = it; reason = "" },

@@ -33,10 +33,19 @@ class FirestoreLeaveRepository @Inject constructor(
                 employeeId  = sessionManager.employeeId,
                 submittedAt = Timestamp.now()
             )
+            // Offline-first, like recordEvent: document() mints the id locally and set() is
+            // durable on disk the moment it returns, so this reports success without a server
+            // round-trip. The previous add().await() never completed while offline — Firestore
+            // resolves that Task on server acknowledgement — so the submit spinner hung, the
+            // user assumed failure, and every retry queued ANOTHER leave request for the
+            // approver. Note this makes the call return promptly; it does not make retries
+            // idempotent (each document() mints a fresh id). Removing the hang is what stops
+            // the duplicates, by not misleading the user into retrying.
+            //
             // Stampable: the leave-create rule checks status=='pending' + isValidLeaveDates,
             // neither of which uses hasOnly, so the extra audit keys are accepted.
-            val ref = leaveCol.add(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
-                .await()
+            val ref = leaveCol.document()
+            ref.set(data.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
             Result.success(ref.id)
         } catch (e: Exception) {
             Result.failure(e)
@@ -57,6 +66,16 @@ class FirestoreLeaveRepository @Inject constructor(
             .snapshotsAsFlow()
             .map { snap -> snap.documents.mapNotNull { LeaveRequest.fromDocument(it) } }
 
+    /**
+     * Deliberately awaited, unlike [submitLeaveRequest] — do not "fix" the asymmetry.
+     *
+     * This writes to *another user's* document, so it is the one leave path Firestore rules can
+     * refuse, and a permission-denied only surfaces from the server. Reporting success for an
+     * approval that the rules then reject would leave an admin believing a request was granted
+     * when it was not. An employee submitting their own leave is writing where they are already
+     * permitted, so returning before the round-trip costs nothing there. Approvals also happen
+     * at a desk, where a spinner is a fair price for a truthful answer.
+     */
     override suspend fun approveLeave(
         targetUserId: String,
         requestId: String,

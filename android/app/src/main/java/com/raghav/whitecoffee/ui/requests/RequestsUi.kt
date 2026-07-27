@@ -44,7 +44,8 @@ import androidx.core.content.FileProvider
 import com.bumptech.glide.Glide
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.OfflineBanner
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import java.io.File
 
 /** Top bar + offline banner + scrollable padded body for the request/transfer/work forms. */
@@ -56,13 +57,9 @@ fun RequestScaffold(
     body: @Composable () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().background(WcColors.ScreenBg).verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg).verticalScroll(rememberScrollState()),
     ) {
-        if (!isOnline) {
-            Box(Modifier.fillMaxWidth().background(Color(0xFF78350F)).padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-                Text("No internet connection", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            }
-        }
+        OfflineBanner(isOnline)
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 48.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -71,7 +68,7 @@ fun RequestScaffold(
                 MsIcon(Ms.arrow_back, 24.sp, Color(0xFF16201F))
             }
             Spacer(Modifier.width(6.dp))
-            Text(title, color = WcColors.TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = WcTheme.colors.TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
         }
         Column(Modifier.padding(horizontal = 18.dp).padding(bottom = 32.dp)) { body() }
     }
@@ -131,9 +128,9 @@ private fun PhotoSourceDialog(onCamera: () -> Unit, onGallery: () -> Unit, onDis
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp))
-                .background(WcColors.Surface).padding(horizontal = 20.dp, vertical = 20.dp),
+                .background(WcTheme.colors.Surface).padding(horizontal = 20.dp, vertical = 20.dp),
         ) {
-            Text("Add photo", color = WcColors.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Add photo", color = WcTheme.colors.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(16.dp))
             PhotoSourceRow(Ms.photo_camera, "Take a photo", "Open the camera now", onCamera)
             Spacer(Modifier.height(10.dp))
@@ -142,7 +139,7 @@ private fun PhotoSourceDialog(onCamera: () -> Unit, onGallery: () -> Unit, onDis
             Box(
                 modifier = Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp)).clickable { onDismiss() },
                 contentAlignment = Alignment.Center,
-            ) { Text("Cancel", color = WcColors.TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+            ) { Text("Cancel", color = WcTheme.colors.TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -151,18 +148,18 @@ private fun PhotoSourceDialog(onCamera: () -> Unit, onGallery: () -> Unit, onDis
 private fun PhotoSourceRow(icon: String, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .border(1.5.dp, WcColors.Border, RoundedCornerShape(16.dp)).clickable { onClick() }.padding(13.dp),
+            .border(1.5.dp, WcTheme.colors.Border, RoundedCornerShape(16.dp)).clickable { onClick() }.padding(13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(WcColors.Accent),
+            modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(WcTheme.colors.Accent),
             contentAlignment = Alignment.Center,
-        ) { MsIcon(icon, 22.sp, WcColors.Primary) }
+        ) { MsIcon(icon, 22.sp, WcTheme.colors.Primary) }
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = WcColors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = WcTheme.colors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(2.dp))
-            Text(subtitle, color = WcColors.TextMuted, fontSize = 12.5.sp)
+            Text(subtitle, color = WcTheme.colors.TextMuted, fontSize = 12.5.sp)
         }
     }
 }
@@ -173,7 +170,7 @@ fun PhotoStrip(uris: List<Uri>, onAdd: () -> Unit, onRemove: (Uri) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(
             modifier = Modifier.size(74.dp).clip(RoundedCornerShape(14.dp))
-                .border(1.5.dp, WcColors.DashBorder, RoundedCornerShape(14.dp)).clickable { onAdd() },
+                .border(1.5.dp, WcTheme.colors.DashBorder, RoundedCornerShape(14.dp)).clickable { onAdd() },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {

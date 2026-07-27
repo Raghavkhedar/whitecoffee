@@ -45,7 +45,7 @@ import com.raghav.whitecoffee.data.model.User
 import com.raghav.whitecoffee.ui.theme.DefaultTextStyle
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 
@@ -68,17 +68,17 @@ fun LoginScreen(
     val errorMessage = (uiState as? UiState.Error)?.message
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor = WcColors.Primary,
-        unfocusedBorderColor = WcColors.Border,
-        cursorColor = WcColors.Primary,
-        focusedContainerColor = WcColors.Surface,
-        unfocusedContainerColor = WcColors.Surface,
+        focusedBorderColor = WcTheme.colors.Primary,
+        unfocusedBorderColor = WcTheme.colors.Border,
+        cursorColor = WcTheme.colors.Primary,
+        focusedContainerColor = WcTheme.colors.Surface,
+        unfocusedContainerColor = WcTheme.colors.Surface,
     )
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(WcColors.ScreenBg)
+            .background(WcTheme.colors.ScreenBg)
             .verticalScroll(rememberScrollState()),
     ) {
         // ── Dark teal hero header ──
@@ -87,7 +87,7 @@ fun LoginScreen(
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        listOf(WcColors.HeaderTop, WcColors.LoginMid, WcColors.LoginBottom)
+                        listOf(WcTheme.colors.HeaderTop, WcTheme.colors.LoginMid, WcTheme.colors.LoginBottom)
                     )
                 )
                 .padding(top = 104.dp, bottom = 92.dp)
@@ -108,7 +108,7 @@ fun LoginScreen(
             Spacer(Modifier.height(7.dp))
             Text(
                 "Senken Engineering · Field Operations",
-                color = WcColors.HeaderSub,
+                color = WcTheme.colors.HeaderSub,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
             )
@@ -121,25 +121,25 @@ fun LoginScreen(
                 .padding(horizontal = 18.dp)
                 .offset(y = (-32).dp),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = WcColors.Surface),
+            colors = CardDefaults.cardColors(containerColor = WcTheme.colors.Surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         ) {
             Column(Modifier.padding(24.dp)) {
-                Text("Welcome back", color = WcColors.TextPrimary, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Welcome back", color = WcTheme.colors.TextPrimary, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(4.dp))
-                Text("Sign in with your company credentials", color = WcColors.TextSecondary, fontSize = 13.5.sp)
+                Text("Sign in with your company credentials", color = WcTheme.colors.TextSecondary, fontSize = 13.5.sp)
                 Spacer(Modifier.height(22.dp))
 
-                Text("Email or Employee ID", color = WcColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Email or Employee ID", color = WcTheme.colors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    placeholder = { Text("EMP001 or you@senken.in", color = WcColors.TextHint, fontSize = 15.sp) },
-                    leadingIcon = { MsIcon(Ms.mail, 20.sp, WcColors.Primary) },
+                    placeholder = { Text("EMP001 or you@senken.in", color = WcTheme.colors.TextHint, fontSize = 15.sp) },
+                    leadingIcon = { MsIcon(Ms.mail, 20.sp, WcTheme.colors.Primary) },
                     singleLine = true,
                     enabled = !isLoading,
-                    textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcColors.TextPrimary),
+                    textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcTheme.colors.TextPrimary),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
                     shape = RoundedCornerShape(14.dp),
                     colors = fieldColors,
@@ -147,22 +147,22 @@ fun LoginScreen(
                 )
                 Spacer(Modifier.height(16.dp))
 
-                Text("Password", color = WcColors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Password", color = WcTheme.colors.TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(7.dp))
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    placeholder = { Text("••••••••", color = WcColors.TextHint, fontSize = 15.sp) },
-                    leadingIcon = { MsIcon(Ms.lock, 20.sp, WcColors.TextHint) },
+                    placeholder = { Text("••••••••", color = WcTheme.colors.TextHint, fontSize = 15.sp) },
+                    leadingIcon = { MsIcon(Ms.lock, 20.sp, WcTheme.colors.TextHint) },
                     singleLine = true,
                     enabled = !isLoading,
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcColors.TextPrimary),
+                    textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcTheme.colors.TextPrimary),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { if (!isLoading) onLogin(email.trim(), password) }),
                     trailingIcon = {
                         TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Text(if (passwordVisible) "Hide" else "Show", color = WcColors.Primary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            Text(if (passwordVisible) "Hide" else "Show", color = WcTheme.colors.Primary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                         }
                     },
                     shape = RoundedCornerShape(14.dp),
@@ -172,7 +172,7 @@ fun LoginScreen(
 
                 if (errorMessage != null) {
                     Spacer(Modifier.height(10.dp))
-                    Text(errorMessage, color = WcColors.DangerFg, fontSize = 13.sp)
+                    Text(errorMessage, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
                 }
 
                 Spacer(Modifier.height(24.dp))
@@ -189,7 +189,7 @@ fun LoginScreen(
         Spacer(Modifier.height(26.dp))
         Text(
             "Senken Engineering © 2025",
-            color = WcColors.TextHint,
+            color = WcTheme.colors.TextHint,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(bottom = 36.dp),

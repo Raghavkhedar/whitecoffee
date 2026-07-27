@@ -29,6 +29,13 @@ class FakeAttendanceRepository(
     /** When set, every call fails with this error — for exercising failure branches. */
     var failWith: Exception? = null
 
+    /**
+     * When set, [observeTodayData] throws this instead of emitting — for exercising a
+     * ViewModel's `catch {}` branch on the live stream, as distinct from [failWith] which only
+     * affects the suspending one-shot calls.
+     */
+    var flowFailWith: Throwable? = null
+
     /** Planned window handed back by [getTodayPlannedWindow]; null means "no shift set". */
     var plannedWindow: Pair<Int, Int>? = null
 
@@ -42,7 +49,10 @@ class FakeAttendanceRepository(
     }
 
     override fun observeTodayData(): Flow<Pair<AttendanceState, List<AttendanceRecord>>> =
-        events.map { deriveAttendanceState(it) to it }
+        events.map {
+            flowFailWith?.let { err -> throw err }
+            deriveAttendanceState(it) to it
+        }
 
     override suspend fun getTodayPlannedWindow(): Result<Pair<Int, Int>?> {
         failWith?.let { return Result.failure(it) }

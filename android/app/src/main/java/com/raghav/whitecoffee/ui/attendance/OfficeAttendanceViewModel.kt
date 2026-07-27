@@ -6,14 +6,19 @@ import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.OfficeState
+import com.raghav.whitecoffee.data.model.deriveOfficeState
+import com.raghav.whitecoffee.data.model.isOfficeEventAllowed
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
+import com.raghav.whitecoffee.domain.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -27,27 +32,37 @@ class OfficeAttendanceViewModel @Inject constructor(
     val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    // Office day flow is sequential: Home In → (Office In/Out, repeatable) → Home Out.
-    // Home In/Out are once per day, GPS only, and are recorded for data only — they do
-    // NOT affect conveyance (ops-only) or attendance_status (office uses office_in/out).
-    sealed interface OfficeState {
-        data object Loading : OfficeState
-        // No home_in yet — day not started.
-        data object NotStarted : OfficeState
-        // Home In recorded, not currently in an office session.
-        data class DayStarted(val homeInTime: String) : OfficeState
-        // Currently checked into office. locationName = where they checked in from.
-        data class InOffice(val locationName: String, val checkInTime: String) : OfficeState
-        // Home Out recorded — day finished.
-        data class DayEnded(val homeOutTime: String) : OfficeState
-        data class Error(val message: String) : OfficeState
+    private val _uiState = MutableStateFlow(OfficeAttendanceUiState())
+    val uiState: StateFlow<OfficeAttendanceUiState> = _uiState.asStateFlow()
+
+    private fun setState(state: OfficeState) = _uiState.update { it.copy(day = state) }
+
+    /**
+     * Write-time legality check, run immediately before every office write.
+     *
+     * The operations flow has always had this; the office flow had nothing, so a stale button —
+     * or a tap landing in the frame after `home_out` — wrote straight to Firestore and reopened a
+     * finished day. Checking here rather than at render time is the point: the buttons are UX,
+     * this is the guarantee.
+     *
+     * The current phase is re-derived from the events rather than read from [_uiState] so a
+     * transient Loading/Error state cannot mask the real one and wave a punch through.
+     */
+    private fun guard(type: String): Boolean {
+        val state = deriveOfficeState(_uiState.value.events)
+        if (isOfficeEventAllowed(state, type)) return true
+        setState(
+            OfficeState.Error(
+                when {
+                    state is OfficeState.DayEnded -> "Your day is already complete."
+                    type == AttendanceType.HOME_OUT && state is OfficeState.InOffice ->
+                        "Check out of the office before ending your day."
+                    else -> "That action isn't available right now. Pull down to refresh."
+                }
+            )
+        )
+        return false
     }
-
-    private val _state = MutableStateFlow<OfficeState>(OfficeState.Loading)
-    val state: StateFlow<OfficeState> = _state.asStateFlow()
-
-    private val _todayEvents = MutableStateFlow<List<AttendanceRecord>>(emptyList())
-    val todayEvents: StateFlow<List<AttendanceRecord>> = _todayEvents.asStateFlow()
 
     // Double-tap / re-entrancy guard — drops a second tap that arrives before the first write
     // finishes, preventing duplicate office check-in/out docs (stress test #2.1).
@@ -71,15 +86,15 @@ class OfficeAttendanceViewModel @Inject constructor(
 
     fun loadTodayState() {
         viewModelScope.launch {
-            _state.value = OfficeState.Loading
+            setState(OfficeState.Loading)
             val result = attendanceRepository.getTodayData()
             if (result.isFailure) {
-                _state.value = OfficeState.NotStarted
+                setState(OfficeState.NotStarted)
                 return@launch
             }
             val (_, events) = result.getOrThrow()
-            _todayEvents.value = events
-            _state.value = deriveOfficeState(events)
+            // One update: the phase and the timeline it was derived from land together.
+            _uiState.value = OfficeAttendanceUiState(deriveOfficeState(events), events)
         }
     }
 
@@ -91,7 +106,8 @@ class OfficeAttendanceViewModel @Inject constructor(
 
     // locationName: free-text location the user types before checking in (e.g. "Office", "Client Site ABC")
     fun checkIn(locationName: String) = submitEvent {
-        _state.value = OfficeState.Loading
+        if (!guard(AttendanceType.OFFICE_IN)) return@submitEvent
+        setState(OfficeState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
                 val result = attendanceRepository.recordEvent(
@@ -102,13 +118,14 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, "Check-in failed. Try again.")
             }
-            else -> _state.value = OfficeState.Error(location.toMessage())
+            else -> setState(OfficeState.Error(location.toUserMessage()))
         }
     }
 
     // Records check-out using the same location name as the last check-in
     fun checkOut(locationName: String) = submitEvent {
-        _state.value = OfficeState.Loading
+        if (!guard(AttendanceType.OFFICE_OUT)) return@submitEvent
+        setState(OfficeState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
                 val result = attendanceRepository.recordEvent(
@@ -119,13 +136,14 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, "Check-out failed. Try again.")
             }
-            else -> _state.value = OfficeState.Error(location.toMessage())
+            else -> setState(OfficeState.Error(location.toUserMessage()))
         }
     }
 
     // Shared path for GPS-only home events.
     private fun recordSimpleEvent(type: String, failMessage: String) = submitEvent {
-        _state.value = OfficeState.Loading
+        if (!guard(type)) return@submitEvent
+        setState(OfficeState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success -> {
                 val result = attendanceRepository.recordEvent(
@@ -135,45 +153,29 @@ class OfficeAttendanceViewModel @Inject constructor(
                 )
                 handleResult(result, failMessage)
             }
-            else -> _state.value = OfficeState.Error(location.toMessage())
+            else -> setState(OfficeState.Error(location.toUserMessage()))
         }
     }
 
     // Optimistic update: append the new record and re-derive the day state.
     private fun handleResult(result: Result<AttendanceRecord>, failMessage: String) {
         if (result.isSuccess) {
-            val updated = _todayEvents.value + result.getOrThrow()
-            _todayEvents.value = updated
-            _state.value = deriveOfficeState(updated)
+            val updated = _uiState.value.events + result.getOrThrow()
+            _uiState.value = OfficeAttendanceUiState(deriveOfficeState(updated), updated)
         } else {
-            _state.value = OfficeState.Error(result.exceptionOrNull()?.message ?: failMessage)
+            setState(OfficeState.Error(result.exceptionOrNull()?.message ?: failMessage))
         }
     }
 
-    private fun LocationState.toMessage(): String = when (this) {
-        is LocationState.GpsDisabled     -> "GPS is disabled. Please enable location services."
-        is LocationState.PermissionDenied -> "Location permission denied."
-        is LocationState.LowAccuracy     -> "Location accuracy too low. Move to open area and try again."
-        is LocationState.Timeout         -> "Location timed out. Try again."
-        is LocationState.Success         -> ""
-    }
-
-    // Derives the day phase from today's events. Home In/Out are once-per-day gates;
-    // office_in/office_out cycle freely between them.
-    private fun deriveOfficeState(events: List<AttendanceRecord>): OfficeState {
-        val homeOut = events.lastOrNull { it.type == AttendanceType.HOME_OUT }
-        if (homeOut != null) return OfficeState.DayEnded(homeOut.displayTime())
-
-        val homeIn = events.lastOrNull { it.type == AttendanceType.HOME_IN }
-            ?: return OfficeState.NotStarted
-
-        val lastOffice = events.lastOrNull {
-            it.type == AttendanceType.OFFICE_IN || it.type == AttendanceType.OFFICE_OUT
-        }
-        return if (lastOffice?.type == AttendanceType.OFFICE_IN) {
-            OfficeState.InOffice(lastOffice.locationName, lastOffice.displayTime())
-        } else {
-            OfficeState.DayStarted(homeIn.displayTime())
-        }
-    }
 }
+
+/**
+ * Everything the office attendance screen renders, as one value.
+ *
+ * [day] is *derived from* [events], so they must never be published separately — a screen that
+ * read the new phase against the old timeline would show a check-in with no matching row.
+ */
+data class OfficeAttendanceUiState(
+    val day: OfficeState = OfficeState.Loading,
+    val events: List<AttendanceRecord> = emptyList(),
+)

@@ -46,8 +46,8 @@ fun WcTopBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(WcColors.ScreenBg)
-            .padding(start = 12.dp, end = 12.dp, top = 48.dp, bottom = 12.dp),
+            .background(WcTheme.colors.ScreenBg)
+            .padding(start = WcSpacing.Space12, end = WcSpacing.Space12, top = 48.dp, bottom = WcSpacing.Space12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -57,10 +57,10 @@ fun WcTopBar(
                 .clickable { onBack() },
             contentAlignment = Alignment.Center,
         ) { MsIcon(Ms.arrow_back, 24.sp, Color(0xFF16201F)) }
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(WcSpacing.Space6))
         Text(
             title,
-            color = WcColors.TextPrimary,
+            color = WcTheme.colors.TextPrimary,
             fontSize = 19.sp,
             fontWeight = FontWeight.ExtraBold,
             modifier = Modifier.weight(1f),
@@ -74,7 +74,7 @@ fun WcTopBar(
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
-        color = WcColors.TextSecondary,
+        color = WcTheme.colors.TextSecondary,
         fontSize = 12.sp,
         fontWeight = FontWeight.ExtraBold,
         letterSpacing = 0.6.sp,
@@ -86,7 +86,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 fun FieldLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
-        color = WcColors.TextSecondary,
+        color = WcTheme.colors.TextSecondary,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
         modifier = modifier,
@@ -108,7 +108,7 @@ fun WcPrimaryButton(
             .fillMaxWidth()
             .height(54.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (enabled) WcColors.Primary else WcColors.Primary.copy(alpha = 0.5f))
+            .background(if (enabled) WcTheme.colors.Primary else WcTheme.colors.Primary.copy(alpha = 0.5f))
             .clickable(enabled = enabled && !loading) { onClick() },
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
@@ -132,7 +132,7 @@ fun StatusBadge(label: String, bg: Color, fg: Color, modifier: Modifier = Modifi
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+            .padding(horizontal = WcSpacing.Space10, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (dot) {
@@ -148,13 +148,13 @@ fun StatusBadge(label: String, bg: Color, fg: Color, modifier: Modifier = Modifi
 fun WcCard(
     modifier: Modifier = Modifier,
     radius: Int = 18,
-    border: Color = WcColors.BorderSoft,
+    border: Color = WcTheme.colors.BorderSoft,
     content: @Composable () -> Unit,
 ) {
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(radius.dp))
-            .background(WcColors.Surface)
+            .background(WcTheme.colors.Surface)
             .border(1.dp, border, RoundedCornerShape(radius.dp)),
     ) { content() }
 }
@@ -191,17 +191,17 @@ fun WcField(
         enabled = enabled,
         singleLine = singleLine,
         minLines = minLines,
-        placeholder = { Text(placeholder, color = WcColors.TextHint, fontSize = 14.sp) },
-        leadingIcon = leadingIcon?.let { { MsIcon(it, 20.sp, WcColors.Primary) } },
-        textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcColors.TextPrimary),
+        placeholder = { Text(placeholder, color = WcTheme.colors.TextHint, fontSize = 14.sp) },
+        leadingIcon = leadingIcon?.let { { MsIcon(it, 20.sp, WcTheme.colors.Primary) } },
+        textStyle = DefaultTextStyle.copy(fontSize = 15.sp, color = WcTheme.colors.TextPrimary),
         shape = RoundedCornerShape(14.dp),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = WcColors.Primary,
-            unfocusedBorderColor = WcColors.Border,
-            cursorColor = WcColors.Primary,
-            focusedContainerColor = WcColors.Surface,
-            unfocusedContainerColor = WcColors.Surface,
+            focusedBorderColor = WcTheme.colors.Primary,
+            unfocusedBorderColor = WcTheme.colors.Border,
+            cursorColor = WcTheme.colors.Primary,
+            focusedContainerColor = WcTheme.colors.Surface,
+            unfocusedContainerColor = WcTheme.colors.Surface,
         ),
     )
 }
@@ -212,7 +212,7 @@ fun ReadOnlyFieldBox(
     text: String,
     modifier: Modifier = Modifier,
     leadingIcon: String? = null,
-    leadingTint: Color = WcColors.Primary,
+    leadingTint: Color = WcTheme.colors.Primary,
     trailingIcon: String? = null,
     onClick: (() -> Unit)? = null,
 ) {
@@ -220,18 +220,18 @@ fun ReadOnlyFieldBox(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(WcColors.Surface)
-            .border(1.5.dp, WcColors.Border, RoundedCornerShape(14.dp))
+            .background(WcTheme.colors.Surface)
+            .border(1.5.dp, WcTheme.colors.Border, RoundedCornerShape(14.dp))
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(14.dp),
+            .padding(WcSpacing.Space14),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leadingIcon != null) {
             MsIcon(leadingIcon, 20.sp, leadingTint)
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(WcSpacing.Space10))
         }
-        Text(text, color = WcColors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        if (trailingIcon != null) MsIcon(trailingIcon, 20.sp, WcColors.TextHint)
+        Text(text, color = WcTheme.colors.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        if (trailingIcon != null) MsIcon(trailingIcon, 20.sp, WcTheme.colors.TextHint)
     }
 }
 
@@ -242,15 +242,15 @@ fun AddItemButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .border(1.5.dp, WcColors.DashBorder, RoundedCornerShape(16.dp))
+            .border(1.5.dp, WcTheme.colors.DashBorder, RoundedCornerShape(16.dp))
             .clickable { onClick() }
-            .padding(14.dp),
+            .padding(WcSpacing.Space14),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MsIcon(icon, 20.sp, WcColors.Primary)
-        Spacer(Modifier.width(8.dp))
-        Text(text, color = WcColors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        MsIcon(icon, 20.sp, WcTheme.colors.Primary)
+        Spacer(Modifier.width(WcSpacing.Space8))
+        Text(text, color = WcTheme.colors.Primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -269,16 +269,16 @@ fun RemovableItemRow(
         Column(Modifier.padding(13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconTile(icon, tile)
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(WcSpacing.Space12))
                 Column(Modifier.weight(1f)) {
-                    Text(title, color = WcColors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+                    Text(title, color = WcTheme.colors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
-                    Text(subtitle, color = WcColors.TextHint, fontSize = 12.5.sp)
+                    Text(subtitle, color = WcTheme.colors.TextHint, fontSize = 12.5.sp)
                 }
                 Box(
                     modifier = Modifier.size(34.dp).clip(CircleShape).clickable { onRemove() },
                     contentAlignment = Alignment.Center,
-                ) { MsIcon(Ms.close, 20.sp, WcColors.DangerFg) }
+                ) { MsIcon(Ms.close, 20.sp, WcTheme.colors.DangerFg) }
             }
             if (trailingContent != null) trailingContent()
         }
@@ -293,14 +293,14 @@ fun EmptyState(icon: String, title: String, subtitle: String, modifier: Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .border(1.5.dp, Color(0xFFC4D2D2), RoundedCornerShape(18.dp))
-            .padding(vertical = 36.dp, horizontal = 20.dp),
+            .padding(vertical = 36.dp, horizontal = WcSpacing.Space20),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         MsIcon(icon, 34.sp, iconTint)
-        Spacer(Modifier.height(8.dp))
-        Text(title, color = WcColors.TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(WcSpacing.Space8))
+        Text(title, color = WcTheme.colors.TextSecondary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(3.dp))
-        Text(subtitle, color = WcColors.TextMuted, fontSize = 12.5.sp)
+        Text(subtitle, color = WcTheme.colors.TextMuted, fontSize = 12.5.sp)
     }
 }
 
@@ -312,13 +312,44 @@ fun InfoBanner(text: String, bg: Color, fg: Color, icon: String = Ms.info, modif
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(bg)
-            .padding(14.dp),
+            .padding(WcSpacing.Space14),
     ) {
         MsIcon(icon, 21.sp, fg)
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(WcSpacing.Space10))
         Text(text, color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp)
     }
 }
+
+/**
+ * The app's one offline banner. Renders nothing when [isOnline].
+ *
+ * Connectivity is *informational*, never a gate: Firestore is configured with a persistent local
+ * cache (see `WhiteCoffeeApp`), so every screen still reads from disk and every write is durable
+ * the moment it is made. All this banner says is "your writes have not synced yet" — which is why
+ * it draws over the content rather than replacing it.
+ *
+ * One definition so the wording and colour cannot drift; call it at the top of a screen's Column.
+ */
+@Composable
+fun OfflineBanner(isOnline: Boolean, modifier: Modifier = Modifier) {
+    if (isOnline) return
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(OFFLINE_BANNER_BG)
+            .padding(horizontal = WcSpacing.Space18, vertical = WcSpacing.Space10),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "No internet connection",
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private val OFFLINE_BANNER_BG = Color(0xFF78350F)
 
 // ── Styled input dialog (teal M3) — rounded card, title/subtitle, content slot ─
 // Replaces raw View AlertDialog + EditText prompts. Put WcField(s) in [content].
@@ -339,17 +370,17 @@ fun WcDialog(
             modifier = modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(WcColors.Surface)
-                .padding(horizontal = 22.dp, vertical = 20.dp),
+                .background(WcTheme.colors.Surface)
+                .padding(horizontal = 22.dp, vertical = WcSpacing.Space20),
         ) {
-            Text(title, color = WcColors.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = WcTheme.colors.TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
             if (subtitle != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(subtitle, color = WcColors.TextSecondary, fontSize = 13.sp)
+                Spacer(Modifier.height(WcSpacing.Space4))
+                Text(subtitle, color = WcTheme.colors.TextSecondary, fontSize = 13.sp)
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(WcSpacing.Space18))
             content()
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(WcSpacing.Space20))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -358,8 +389,8 @@ fun WcDialog(
                         .clip(RoundedCornerShape(16.dp))
                         .clickable { onDismiss() },
                     contentAlignment = Alignment.Center,
-                ) { Text(dismissText, color = WcColors.TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.width(10.dp))
+                ) { Text(dismissText, color = WcTheme.colors.TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
+                Spacer(Modifier.width(WcSpacing.Space10))
                 WcPrimaryButton(
                     text = confirmText,
                     onClick = onConfirm,
@@ -371,4 +402,4 @@ fun WcDialog(
     }
 }
 
-internal val ScreenContentPadding = PaddingValues(horizontal = 18.dp)
+internal val ScreenContentPadding = PaddingValues(horizontal = WcSpacing.Space18)

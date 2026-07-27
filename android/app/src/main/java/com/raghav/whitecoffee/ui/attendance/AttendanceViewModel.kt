@@ -12,6 +12,9 @@ import com.raghav.whitecoffee.data.model.isEventAllowed
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.session.SessionManager
+import com.raghav.whitecoffee.domain.RecordAttendanceEventUseCase
+import com.raghav.whitecoffee.domain.RecordEventOutcome
+import com.raghav.whitecoffee.domain.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,20 +36,19 @@ class AttendanceViewModel @Inject constructor(
     private val attendanceRepository: AttendanceRepository,
     private val locationProvider: LocationProvider,
     private val sessionManager: SessionManager,
+    private val recordAttendanceEvent: RecordAttendanceEventUseCase,
     networkMonitor: NetworkMonitor
 ) : ViewModel() {
 
     val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
-    private val _attendanceState = MutableStateFlow<UiState<AttendanceState>>(UiState.Loading())
-    val attendanceState: StateFlow<UiState<AttendanceState>> = _attendanceState.asStateFlow()
+    private val _uiState = MutableStateFlow(AttendanceUiState())
+    val uiState: StateFlow<AttendanceUiState> = _uiState.asStateFlow()
 
-    private val _todayEvents = MutableStateFlow<List<AttendanceRecord>>(emptyList())
-    val todayEvents: StateFlow<List<AttendanceRecord>> = _todayEvents.asStateFlow()
+    private fun setAction(action: ActionState) = _uiState.update { it.copy(action = action) }
 
-    private val _actionState = MutableStateFlow<ActionState>(ActionState.Idle)
-    val actionState: StateFlow<ActionState> = _actionState.asStateFlow()
+    private fun setError(message: String) = setAction(ActionState.Error(message))
 
     val isOperations: Boolean get() = sessionManager.isOperations
 
@@ -67,7 +70,7 @@ class AttendanceViewModel @Inject constructor(
     }
 
     private fun currentAttendanceState(): AttendanceState =
-        (_attendanceState.value as? UiState.Success)?.data ?: AttendanceState.NoRecord
+        (_uiState.value.day as? UiState.Success)?.data ?: AttendanceState.NoRecord
 
     // Write-time guard against the button-visibility gate being stale (e.g. a check-in button
     // still on screen for a moment after home_out landed). Checked right before every event write
@@ -75,7 +78,7 @@ class AttendanceViewModel @Inject constructor(
     private fun guardEvent(type: String): Boolean {
         val state = currentAttendanceState()
         if (isEventAllowed(state, type)) return true
-        _actionState.value = ActionState.Error(
+        setError(
             if (state is AttendanceState.DayComplete) "Your day is already complete."
             else "That action isn't available right now. Pull down to refresh."
         )
@@ -98,71 +101,35 @@ class AttendanceViewModel @Inject constructor(
 
     fun loadTodayData() {
         viewModelScope.launch {
-            _attendanceState.value = UiState.Loading()
+            _uiState.update { it.copy(day = UiState.Loading()) }
             attendanceRepository.observeTodayData()
-                .catch { _attendanceState.value = UiState.Error("Failed to load attendance. Try again.") }
+                .catch { e ->
+                    _uiState.update {
+                        it.copy(day = UiState.Error("Failed to load attendance. Try again."))
+                    }
+                }
                 .collect { (state, events) ->
-                    _attendanceState.value = UiState.Success(state)
-                    _todayEvents.value = events
+                    // One update, not two. The buttons key off `day` and the timeline off
+                    // `events`; as separate flows the screen could render a site check-in whose
+                    // event had not appeared in the timeline yet.
+                    _uiState.update { it.copy(day = UiState.Success(state), events = events) }
                 }
         }
     }
 
     // ── Home Check In ─────────────────────────────────────────────────────
 
-    fun homeCheckIn() = submitEvent {
-        if (!guardEvent(AttendanceType.HOME_IN)) return@submitEvent
-        _actionState.value = ActionState.Loading
-        when (val location = locationProvider.getCurrentLocation()) {
-            is LocationState.Success -> {
-                val result = attendanceRepository.recordEvent(
-                    type      = AttendanceType.HOME_IN,
-                    latitude  = location.latitude,
-                    longitude = location.longitude
-                )
-                handleResult(result)
-            }
-            is LocationState.GpsDisabled ->
-                _actionState.value = ActionState.Error("GPS is disabled. Please enable location services.")
-            is LocationState.PermissionDenied ->
-                _actionState.value = ActionState.Error("Location permission denied.")
-            is LocationState.LowAccuracy ->
-                _actionState.value = ActionState.Error("Location accuracy too low. Move to open area and try again.")
-            is LocationState.Timeout ->
-                _actionState.value = ActionState.Error("Location timed out. Try again.")
-        }
-    }
+    fun homeCheckIn() = submitEvent { record(AttendanceType.HOME_IN) }
 
     // ── Home Check Out ────────────────────────────────────────────────────
 
-    fun homeCheckOut() = submitEvent {
-        if (!guardEvent(AttendanceType.HOME_OUT)) return@submitEvent
-        _actionState.value = ActionState.Loading
-        when (val location = locationProvider.getCurrentLocation()) {
-            is LocationState.Success -> {
-                val result = attendanceRepository.recordEvent(
-                    type      = AttendanceType.HOME_OUT,
-                    latitude  = location.latitude,
-                    longitude = location.longitude
-                )
-                handleResult(result)
-            }
-            is LocationState.GpsDisabled ->
-                _actionState.value = ActionState.Error("GPS is disabled.")
-            is LocationState.PermissionDenied ->
-                _actionState.value = ActionState.Error("Location permission denied.")
-            is LocationState.LowAccuracy ->
-                _actionState.value = ActionState.Error("Location accuracy too low. Try again.")
-            is LocationState.Timeout ->
-                _actionState.value = ActionState.Error("Location timed out. Try again.")
-        }
-    }
+    fun homeCheckOut() = submitEvent { record(AttendanceType.HOME_OUT) }
 
     // ── Site Check In — Step 1: Show dialog for user to type Site Name + Site ID ──
 
     fun initiateSiteCheckIn() {
         if (!guardEvent(AttendanceType.SITE_IN)) return
-        _actionState.value = ActionState.SiteInputRequired
+        setAction(ActionState.SiteInputRequired)
     }
 
     // ── Site Check In — Step 2: User typed site name + ID, record event ───
@@ -170,80 +137,29 @@ class AttendanceViewModel @Inject constructor(
 
     fun confirmSiteCheckIn(siteId: String, siteName: String) {
         if (siteName.isBlank()) {
-            _actionState.value = ActionState.Error("Please enter the site name.")
+            setError("Please enter the site name.")
             return
         }
         submitEvent {
-            if (!guardEvent(AttendanceType.SITE_IN)) return@submitEvent
-            _actionState.value = ActionState.Loading
-            when (val location = locationProvider.getCurrentLocation()) {
-                is LocationState.Success -> {
-                    val result = attendanceRepository.recordEvent(
-                        type      = AttendanceType.SITE_IN,
-                        latitude  = location.latitude,
-                        longitude = location.longitude,
-                        siteId    = siteId.trim(),
-                        siteName  = siteName.trim()
-                    )
-                    handleResult(result)
-                }
-                is LocationState.GpsDisabled ->
-                    _actionState.value = ActionState.Error("GPS is disabled.")
-                is LocationState.PermissionDenied ->
-                    _actionState.value = ActionState.Error("Location permission denied.")
-                is LocationState.LowAccuracy ->
-                    _actionState.value = ActionState.Error("Location accuracy too low. Move to open area.")
-                is LocationState.Timeout ->
-                    _actionState.value = ActionState.Error("Location timed out. Try again.")
-            }
+            record(AttendanceType.SITE_IN, siteId = siteId.trim(), siteName = siteName.trim())
         }
     }
 
     // ── Site Check Out ────────────────────────────────────────────────────
 
     fun siteCheckOut(siteId: String, siteName: String) = submitEvent {
-        if (!guardEvent(AttendanceType.SITE_OUT)) return@submitEvent
-        _actionState.value = ActionState.Loading
-        when (val location = locationProvider.getCurrentLocation()) {
-            is LocationState.Success -> {
-                val result = attendanceRepository.recordEvent(
-                    type      = AttendanceType.SITE_OUT,
-                    latitude  = location.latitude,
-                    longitude = location.longitude,
-                    siteId    = siteId,
-                    siteName  = siteName
-                )
-                handleResult(result)
-            }
-            is LocationState.GpsDisabled ->
-                _actionState.value = ActionState.Error("GPS is disabled.")
-            is LocationState.PermissionDenied ->
-                _actionState.value = ActionState.Error("Location permission denied.")
-            is LocationState.LowAccuracy ->
-                _actionState.value = ActionState.Error("Location accuracy too low.")
-            is LocationState.Timeout ->
-                _actionState.value = ActionState.Error("Location timed out. Try again.")
-        }
+        record(AttendanceType.SITE_OUT, siteId = siteId, siteName = siteName)
     }
 
     // ── Market Check In — Step 1: Get location first ──────────────────────
 
     fun initiateMarketCheckIn() = submitEvent {
         if (!guardEvent(AttendanceType.MARKET_IN)) return@submitEvent
-        _actionState.value = ActionState.Loading
+        setAction(ActionState.Loading)
         when (val location = locationProvider.getCurrentLocation()) {
             is LocationState.Success ->
-                _actionState.value = ActionState.MarketNameRequired(
-                    location.latitude, location.longitude
-                )
-            is LocationState.GpsDisabled ->
-                _actionState.value = ActionState.Error("GPS is disabled.")
-            is LocationState.PermissionDenied ->
-                _actionState.value = ActionState.Error("Location permission denied.")
-            is LocationState.LowAccuracy ->
-                _actionState.value = ActionState.Error("Location accuracy too low.")
-            is LocationState.Timeout ->
-                _actionState.value = ActionState.Error("Location timed out. Try again.")
+                setAction(ActionState.MarketNameRequired(location.latitude, location.longitude))
+            else -> setError(location.toUserMessage())
         }
     }
 
@@ -253,14 +169,14 @@ class AttendanceViewModel @Inject constructor(
 
     fun confirmMarketCheckIn(marketName: String, latitude: Double, longitude: Double) {
         if (marketName.isBlank()) {
-            _actionState.value = ActionState.Error("Please enter the market name.")
+            setError("Please enter the market name.")
             return
         }
         submitEvent {
             if (!guardEvent(AttendanceType.MARKET_IN)) return@submitEvent
-            _actionState.value = ActionState.Loading
+            setAction(ActionState.Loading)
 
-            val currentState = (_attendanceState.value as? UiState.Success)?.data
+            val currentState = currentAttendanceState()
             if (currentState is AttendanceState.SiteCheckedIn) {
                 val siteRecord = currentState.record
                 val siteOutResult = attendanceRepository.recordEvent(
@@ -269,7 +185,7 @@ class AttendanceViewModel @Inject constructor(
                     siteId = siteRecord.siteId, siteName = siteRecord.siteName,
                 )
                 if (siteOutResult.isFailure) {
-                    _actionState.value = ActionState.Error(
+                    setError(
                         siteOutResult.exceptionOrNull()?.message ?: "Failed to auto check-out from site."
                     )
                     return@submitEvent
@@ -288,38 +204,66 @@ class AttendanceViewModel @Inject constructor(
     // ── Market Check Out ──────────────────────────────────────────────────
 
     fun marketCheckOut(marketName: String) = submitEvent {
-        if (!guardEvent(AttendanceType.MARKET_OUT)) return@submitEvent
-        _actionState.value = ActionState.Loading
-        when (val location = locationProvider.getCurrentLocation()) {
-            is LocationState.Success -> {
-                val result = attendanceRepository.recordEvent(
-                    type       = AttendanceType.MARKET_OUT,
-                    latitude   = location.latitude,
-                    longitude  = location.longitude,
-                    marketName = marketName
-                )
-                handleResult(result)
-            }
-            is LocationState.GpsDisabled ->
-                _actionState.value = ActionState.Error("GPS is disabled.")
-            is LocationState.PermissionDenied ->
-                _actionState.value = ActionState.Error("Location permission denied.")
-            is LocationState.LowAccuracy ->
-                _actionState.value = ActionState.Error("Location accuracy too low.")
-            is LocationState.Timeout ->
-                _actionState.value = ActionState.Error("Location timed out. Try again.")
-        }
+        record(AttendanceType.MARKET_OUT, marketName = marketName)
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private fun handleResult(result: Result<AttendanceRecord>) {
-        _actionState.value =
-            if (result.isSuccess) ActionState.Success
-            else ActionState.Error(result.exceptionOrNull()?.message ?: "Something went wrong. Try again.")
+    /**
+     * Records one punch and reflects the outcome in [ActionState].
+     *
+     * The legality check happens inside the use case, immediately before the write — see
+     * [RecordAttendanceEventUseCase]. Setting Loading first costs nothing: a rejected punch
+     * returns without suspending, so the UI never observes the intermediate state.
+     */
+    private suspend fun record(
+        type: String,
+        siteId: String = "",
+        siteName: String = "",
+        marketName: String = "",
+    ) {
+        setAction(ActionState.Loading)
+        val outcome = recordAttendanceEvent(
+            state = currentAttendanceState(),
+            type = type,
+            siteId = siteId,
+            siteName = siteName,
+            marketName = marketName,
+        )
+        setAction(
+            when (outcome) {
+                is RecordEventOutcome.Recorded -> ActionState.Success
+                is RecordEventOutcome.NotAllowed -> ActionState.Error(
+                    if (outcome.dayAlreadyComplete) "Your day is already complete."
+                    else "That action isn't available right now. Pull down to refresh."
+                )
+                is RecordEventOutcome.NoLocation -> ActionState.Error(outcome.state.toUserMessage())
+                is RecordEventOutcome.Failed -> ActionState.Error(
+                    outcome.error.message ?: "Something went wrong. Try again."
+                )
+            }
+        )
     }
 
-    fun resetActionState() {
-        _actionState.value = ActionState.Idle
+    private fun handleResult(result: Result<AttendanceRecord>) {
+        setAction(
+            if (result.isSuccess) ActionState.Success
+            else ActionState.Error(result.exceptionOrNull()?.message ?: "Something went wrong. Try again.")
+        )
     }
+
+    fun resetActionState() = setAction(ActionState.Idle)
 }
+
+/**
+ * Everything the operations attendance screen renders, as one value.
+ *
+ * [day] drives which buttons exist and [events] drives the timeline below them. They are derived
+ * from the same repository emission and so are updated together — as separate flows the screen
+ * could show a site check-in whose event had not yet reached the timeline.
+ */
+data class AttendanceUiState(
+    val day: UiState<AttendanceState> = UiState.Loading(),
+    val events: List<AttendanceRecord> = emptyList(),
+    val action: AttendanceViewModel.ActionState = AttendanceViewModel.ActionState.Idle,
+)

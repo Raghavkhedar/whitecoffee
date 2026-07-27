@@ -31,7 +31,6 @@
         <item name="android:textSize">15sp</item>
         <item name="android:textStyle">bold</item>
         <item name="android:letterSpacing">-0.01</item>
-        <item name="android:fontFamily">@font/wc_heading</item>
         <item name="cornerRadius">14dp</item>
         <item name="android:paddingTop">15dp</item>
         <item name="android:paddingBottom">15dp</item>
@@ -104,7 +103,6 @@
         <item name="android:textSize">15sp</item>
         <item name="android:paddingTop">14dp</item>
         <item name="android:paddingBottom">14dp</item>
-        <item name="android:fontFamily">@font/wc_body</item>
     </style>
 
     <!-- ── Typography ───────────────────────────────────────────────── -->
@@ -116,7 +114,6 @@
         <item name="android:textColor">@color/white</item>
         <item name="android:textStyle">bold</item>
         <item name="android:letterSpacing">-0.02</item>
-        <item name="android:fontFamily">@font/wc_heading</item>
     </style>
 
     <style name="WC.Text.SectionLabel">
@@ -131,13 +128,11 @@
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:lineSpacingMultiplier">1.45</item>
-        <item name="android:fontFamily">@font/wc_body</item>
     </style>
 
     <style name="WC.Text.Caption">
         <item name="android:textSize">12sp</item>
         <item name="android:textColor">@color/text_secondary</item>
-        <item name="android:fontFamily">@font/wc_body</item>
     </style>
 
     <style name="WC.Text.HeaderGreeting">
@@ -150,7 +145,6 @@
         <item name="android:textColor">@color/white</item>
         <item name="android:textStyle">bold</item>
         <item name="android:letterSpacing">-0.025</item>
-        <item name="android:fontFamily">@font/wc_heading</item>
     </style>
 
     <!-- ── FAB ──────────────────────────────────────────────────────── -->

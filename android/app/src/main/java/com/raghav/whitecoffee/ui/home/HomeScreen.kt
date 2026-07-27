@@ -35,9 +35,8 @@ import com.raghav.whitecoffee.ui.theme.IconTile
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.MsIcon
 import com.raghav.whitecoffee.ui.theme.StatusBadge
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcTile
-import com.raghav.whitecoffee.ui.theme.WcTiles
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -79,21 +78,21 @@ fun HomeScreen(
     // four roles by decision, not by oversight, so a new role defaults to seeing it. Note
     // `isOffice` is true for admin as well, hence the explicit `!isAdmin` where admin is excluded.
     val modules = buildList {
-        /* all roles  */ add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTiles.Attendance, onAttendanceClick))
-        /* ops+office */ if (isOperations || (isOffice && !isAdmin)) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTiles.MtRequest, onMtRequestClick))
-        /* all roles  */ add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTiles.MtBuy, onMtBuyClick))
-        /* all roles  */ add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTiles.MaterialXfer, onMaterialTransferClick))
-        /* all roles  */ add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTiles.ToolXfer, onToolTransferClick))
-        /* ops only   */ if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTiles.Work, onWorkProgressClick))
-        /* all roles  */ add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTiles.Leave, onLeaveClick))
-        /* admin only */ if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTiles.Approvals, onLeaveApprovalsClick))
-        /* all roles  */ add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTiles.Regularization, onRegularizationClick))
+        /* all roles  */ add(ModuleItem("Attendance", "Mark your day", Ms.schedule, WcTheme.colors.Tiles.Attendance, onAttendanceClick))
+        /* ops+office */ if (isOperations || (isOffice && !isAdmin)) add(ModuleItem("M&T Request", "Request materials", Ms.build, WcTheme.colors.Tiles.MtRequest, onMtRequestClick))
+        /* all roles  */ add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTheme.colors.Tiles.MtBuy, onMtBuyClick))
+        /* all roles  */ add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTheme.colors.Tiles.MaterialXfer, onMaterialTransferClick))
+        /* all roles  */ add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTheme.colors.Tiles.ToolXfer, onToolTransferClick))
+        /* ops only   */ if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTheme.colors.Tiles.Work, onWorkProgressClick))
+        /* all roles  */ add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTheme.colors.Tiles.Leave, onLeaveClick))
+        /* admin only */ if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTheme.colors.Tiles.Approvals, onLeaveApprovalsClick))
+        /* all roles  */ add(ModuleItem("Regularization", "Fix attendance", Ms.event_repeat, WcTheme.colors.Tiles.Regularization, onRegularizationClick))
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(WcColors.ScreenBg)
+            .background(WcTheme.colors.ScreenBg)
             .verticalScroll(rememberScrollState()),
     ) {
         if (!isOnline) OfflineBannerBar()
@@ -113,13 +112,13 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ActionButton("Check in", Ms.schedule, WcColors.Primary, Color.White, Modifier.weight(1f), onAttendanceClick)
-                ActionButton("Apply leave", Ms.event, WcColors.Accent, WcColors.OnAccent, Modifier.weight(1f), onLeaveClick)
+                ActionButton("Check in", Ms.schedule, WcTheme.colors.Primary, Color.White, Modifier.weight(1f), onAttendanceClick)
+                ActionButton("Apply leave", Ms.event, WcTheme.colors.Accent, WcTheme.colors.OnAccent, Modifier.weight(1f), onLeaveClick)
             }
 
             Text(
                 "MODULES",
-                color = WcColors.TextMuted,
+                color = WcTheme.colors.TextMuted,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
                 letterSpacing = 1.4.sp,
@@ -162,7 +161,7 @@ private fun HomeHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(WcColors.HeaderTop, WcColors.HeaderBottom)))
+            .background(Brush.verticalGradient(listOf(WcTheme.colors.HeaderTop, WcTheme.colors.HeaderBottom)))
             .padding(start = 20.dp, end = 20.dp, top = 54.dp, bottom = 62.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,7 +193,7 @@ private fun HomeHeader(
                     Box(
                         modifier = Modifier.align(Alignment.TopEnd).padding(top = 7.dp, end = 8.dp)
                             .size(16.dp).clip(CircleShape).background(Color(0xFFFF5A5F))
-                            .border(1.5.dp, WcColors.HeaderTop, CircleShape),
+                            .border(1.5.dp, WcTheme.colors.HeaderTop, CircleShape),
                         contentAlignment = Alignment.Center,
                     ) { Text(if (unreadCount > 9) "9+" else unreadCount.toString(), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold) }
                 }
@@ -206,7 +205,7 @@ private fun HomeHeader(
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MsIcon(Ms.verified_user, 14.sp, WcColors.HeaderSub)
+            MsIcon(Ms.verified_user, 14.sp, WcTheme.colors.HeaderSub)
             Spacer(Modifier.width(6.dp))
             Text(roleLabel, color = Color(0xFFEAFFFE), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp)
         }
@@ -228,20 +227,20 @@ private fun TodayStatusCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(22.dp))
-            .background(WcColors.Surface)
-            .border(1.dp, WcColors.BorderSoft, RoundedCornerShape(22.dp))
+            .background(WcTheme.colors.Surface)
+            .border(1.dp, WcTheme.colors.BorderSoft, RoundedCornerShape(22.dp))
             .padding(18.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(dayName, color = WcColors.TextMuted, fontSize = 11.sp)
+                Text(dayName, color = WcTheme.colors.TextMuted, fontSize = 11.sp)
                 Text(dateNum, color = Color(0xFF0B0F0F), fontSize = 33.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 35.sp)
-                Text(monthYear, color = WcColors.TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+                Text(monthYear, color = WcTheme.colors.TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
             }
-            Box(Modifier.width(1.dp).height(54.dp).background(WcColors.Divider))
+            Box(Modifier.width(1.dp).height(54.dp).background(WcTheme.colors.Divider))
             Spacer(Modifier.width(18.dp))
             Column(horizontalAlignment = Alignment.End) {
-                Text("TODAY", color = WcColors.TextMuted, fontSize = 10.sp, letterSpacing = 0.4.sp)
+                Text("TODAY", color = WcTheme.colors.TextMuted, fontSize = 10.sp, letterSpacing = 0.4.sp)
                 Spacer(Modifier.height(7.dp))
                 AttendanceStatusChip(todayStatus)
                 val location = (todayStatus as? TodayAttendanceStatus.Present)?.location
@@ -252,8 +251,8 @@ private fun TodayStatusCard(
                     ?: (todayStatus as? TodayAttendanceStatus.ShortLeave)?.since
                     ?: (todayStatus as? TodayAttendanceStatus.HalfDay)?.since
                     ?: (todayStatus as? TodayAttendanceStatus.Pending)?.since
-                if (location != null) Text(location, color = WcColors.TextSecondary, fontSize = 10.5.sp, modifier = Modifier.padding(top = 6.dp))
-                if (since != null) Text("Since $since", color = WcColors.TextMuted, fontSize = 10.5.sp, modifier = Modifier.padding(top = 1.dp))
+                if (location != null) Text(location, color = WcTheme.colors.TextSecondary, fontSize = 10.5.sp, modifier = Modifier.padding(top = 6.dp))
+                if (since != null) Text("Since $since", color = WcTheme.colors.TextMuted, fontSize = 10.5.sp, modifier = Modifier.padding(top = 1.dp))
             }
         }
     }
@@ -262,13 +261,13 @@ private fun TodayStatusCard(
 @Composable
 private fun AttendanceStatusChip(status: TodayAttendanceStatus) {
     val (bg, fg, label) = when (status) {
-        is TodayAttendanceStatus.Present -> Triple(WcColors.SuccessBg, WcColors.SuccessFg, "Present")
-        is TodayAttendanceStatus.ShortLeave -> Triple(WcColors.SlBg, WcColors.SlFg, "Short Leave")
-        is TodayAttendanceStatus.HalfDay -> Triple(WcColors.WarnBg, WcColors.WarnFg, "Half Day")
-        is TodayAttendanceStatus.Pending -> Triple(WcColors.Border, WcColors.TextMuted, "Pending")
-        is TodayAttendanceStatus.NotCheckedIn -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Not checked in")
-        is TodayAttendanceStatus.Loading -> Triple(WcColors.Border, WcColors.TextMuted, "Loading…")
-        is TodayAttendanceStatus.Error -> Triple(WcColors.DangerBg, WcColors.DangerFg, "Error")
+        is TodayAttendanceStatus.Present -> Triple(WcTheme.colors.SuccessBg, WcTheme.colors.SuccessFg, "Present")
+        is TodayAttendanceStatus.ShortLeave -> Triple(WcTheme.colors.SlBg, WcTheme.colors.SlFg, "Short Leave")
+        is TodayAttendanceStatus.HalfDay -> Triple(WcTheme.colors.WarnBg, WcTheme.colors.WarnFg, "Half Day")
+        is TodayAttendanceStatus.Pending -> Triple(WcTheme.colors.Border, WcTheme.colors.TextMuted, "Pending")
+        is TodayAttendanceStatus.NotCheckedIn -> Triple(WcTheme.colors.DangerBg, WcTheme.colors.DangerFg, "Not checked in")
+        is TodayAttendanceStatus.Loading -> Triple(WcTheme.colors.Border, WcTheme.colors.TextMuted, "Loading…")
+        is TodayAttendanceStatus.Error -> Triple(WcTheme.colors.DangerBg, WcTheme.colors.DangerFg, "Error")
     }
     StatusBadge(label, bg, fg)
 }
@@ -292,16 +291,16 @@ private fun ModuleCard(module: ModuleItem, modifier: Modifier) {
         modifier = modifier
             .heightIn(min = 118.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(WcColors.Surface)
-            .border(1.dp, WcColors.BorderSoft, RoundedCornerShape(20.dp))
+            .background(WcTheme.colors.Surface)
+            .border(1.dp, WcTheme.colors.BorderSoft, RoundedCornerShape(20.dp))
             .clickable { module.onClick() }
             .padding(15.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         IconTile(module.icon, module.tile, size = 46, radius = 15, iconSize = 24)
         Column {
-            Text(module.label, color = WcColors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 17.sp)
-            Text(module.sub, color = WcColors.TextHint, fontSize = 11.5.sp, modifier = Modifier.padding(top = 3.dp))
+            Text(module.label, color = WcTheme.colors.TextPrimary, fontSize = 14.5.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 17.sp)
+            Text(module.sub, color = WcTheme.colors.TextHint, fontSize = 11.5.sp, modifier = Modifier.padding(top = 3.dp))
         }
     }
 }

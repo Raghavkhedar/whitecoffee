@@ -6,10 +6,17 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.raghav.whitecoffee.data.firestore.AuditStamp
+import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
 import com.raghav.whitecoffee.data.firestore.withAuditStamp
+import com.raghav.whitecoffee.data.model.AccountSnapshot
 import com.raghav.whitecoffee.data.model.User
+import com.raghav.whitecoffee.data.model.accountStatusFrom
 import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,6 +45,26 @@ class FirestoreUserRepository @Inject constructor(
         role       = sessionManager.role,
         employeeId = sessionManager.employeeId
     )
+
+    override fun observeAccount(userId: String): Flow<AccountSnapshot> =
+        firestore.collection("users").document(userId)
+            .snapshotsAsFlow()
+            .filter { it.exists() }
+            .map { doc ->
+                AccountSnapshot(
+                    status = accountStatusFrom(
+                        active         = doc.getBoolean("active") ?: true,
+                        reason         = doc.getString("suspendedReason") ?: "",
+                        expectedReturn = doc.getString("expectedReturn") ?: "",
+                    ),
+                    activeSessionToken = doc.getString("activeSessionToken") ?: "",
+                )
+            }
+            // A listener error (offline, revoked read) must not propagate: the collector would
+            // tear down and the app would stop watching for suspension until the next login.
+            // Swallowing leaves the last good snapshot in place, which is the safe default —
+            // `active` also defaults to true so an unreadable doc never locks a user out.
+            .catch { }
 
     // ── Admin operations ──────────────────────────────────────────────────
 

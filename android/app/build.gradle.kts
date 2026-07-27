@@ -33,6 +33,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    testOptions {
+        unitTests {
+            // JVM unit tests link against a stub android.jar whose methods throw
+            // "not mocked" by default. The request ViewModels take List<Uri> from the photo
+            // picker, and Uri is abstract with a private constructor, so a test cannot make one
+            // any other way. Defaults let a Uri be passed as an opaque token — nothing under
+            // test inspects one; PhotoPipeline only counts them and hands them to the compressor.
+            isReturnDefaultValues = true
+        }
+    }
+
     signingConfigs {
         create("release") {
             if (keystorePropsFile.exists()) {
@@ -165,4 +176,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     androidTestImplementation(libs.junit.ext)
     androidTestImplementation(libs.espresso.core)
+    // For RepositoryOfflineWriteTest — the emulator-backed proof that field writes complete
+    // without a server round-trip. Instrumented because the Firestore Android SDK needs a device.
+    androidTestImplementation(libs.coroutines.test)
 }

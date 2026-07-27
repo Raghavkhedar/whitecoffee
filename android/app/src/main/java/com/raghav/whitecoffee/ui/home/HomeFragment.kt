@@ -43,11 +43,9 @@ class HomeFragment : Fragment() {
     ): View = ComposeView(requireContext()).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
         setContent {
-            val todayStatus  by viewModel.todayStatus.collectAsStateWithLifecycle()
+            val uiState      by viewModel.uiState.collectAsStateWithLifecycle()
             val isOnline     by viewModel.isOnline.collectAsStateWithLifecycle()
             val isLoggingOut by mainViewModel.logoutInProgress.collectAsStateWithLifecycle()
-            val unreadCount  by viewModel.unreadCount.collectAsStateWithLifecycle()
-            val logoutEndsDay by viewModel.logoutWouldEndDay.collectAsStateWithLifecycle()
             var showLogoutConfirm by remember { mutableStateOf(false) }
 
             // Collect logout-complete event and navigate once it fires.
@@ -59,19 +57,19 @@ class HomeFragment : Fragment() {
                 greeting         = viewModel.greeting,
                 userName         = viewModel.userName,
                 userRole         = viewModel.userRole,
-                todayStatus      = todayStatus,
+                todayStatus      = uiState.todayStatus,
                 isOperations     = viewModel.isOperations,
                 isOffice         = viewModel.isOffice,
                 isAdmin          = viewModel.isAdmin,
                 isOnline         = isOnline,
-                unreadCount      = unreadCount,
+                unreadCount      = uiState.unreadCount,
                 isLoggingOut     = isLoggingOut,
                 onBellClick      = { findNavController().navigate(R.id.action_homeFragment_to_notificationsFragment) },
                 // Logging out closes an open day by writing a terminal HOME_OUT, so it costs the
                 // rest of the day exactly like an accidental "End Day" tap — confirm it. When no
                 // day is open, auto-checkout writes nothing, so don't nag: log straight out.
                 onLogout         = {
-                    if (logoutEndsDay) showLogoutConfirm = true
+                    if (uiState.logoutWouldEndDay) showLogoutConfirm = true
                     else mainViewModel.logoutWithAutoCheckout()
                 },
                 onAttendanceClick = {

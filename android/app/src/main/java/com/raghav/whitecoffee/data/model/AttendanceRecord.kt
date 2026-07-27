@@ -163,14 +163,38 @@ fun willLogoutCloseDay(
     events: List<AttendanceRecord>,
     isOperations: Boolean,
     isSales: Boolean,
-): Boolean {
-    val inField = state is AttendanceState.SiteCheckedIn || state is AttendanceState.MarketCheckedIn
-    return if (isOperations || (isSales && inField)) {
+): Boolean = when (dayClosePath(state, isOperations, isSales)) {
+    DayClosePath.FIELD ->
         state is AttendanceState.SiteCheckedIn ||
             state is AttendanceState.MarketCheckedIn ||
             state is AttendanceState.HomeCheckedIn
-    } else {
+    DayClosePath.OFFICE ->
         events.any { it.type == AttendanceType.HOME_IN } &&
             events.none { it.type == AttendanceType.HOME_OUT }
-    }
+}
+
+/** Which set of closing events a logout must write. See [dayClosePath]. */
+enum class DayClosePath { FIELD, OFFICE }
+
+/**
+ * Which way an auto-checkout must close the day: the field path (site/market then home) or the
+ * office path (office then home).
+ *
+ * **This is the sales bug in one function.** Operations always take the field path and
+ * office/admin always take the office path, but sales is hybrid — the same person may be at a
+ * site today and in the office tomorrow — so its path is decided by the *live state*, never by
+ * the role. Sending a site-checked-in sales user down the office path leaves the `site_in`
+ * unclosed, and the nightly compute scores a day with no matching check-out as **LNF = half
+ * pay**. That is a payroll bug, not a cosmetic one.
+ *
+ * Deliberately NOT part of [RoleCapabilities]: every axis in that table is a constant per role,
+ * mirrored into the admin portal and Cloud Functions. This decision depends on runtime state and
+ * has no server-side counterpart — the backend never closes a day.
+ *
+ * Both the write ([CloseOpenDayUseCase]) and the warning the user sees ([willLogoutCloseDay])
+ * route through here, so the dialog can never disagree with what the logout actually does.
+ */
+fun dayClosePath(state: AttendanceState, isOperations: Boolean, isSales: Boolean): DayClosePath {
+    val inField = state is AttendanceState.SiteCheckedIn || state is AttendanceState.MarketCheckedIn
+    return if (isOperations || (isSales && inField)) DayClosePath.FIELD else DayClosePath.OFFICE
 }

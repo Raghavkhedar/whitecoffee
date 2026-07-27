@@ -25,7 +25,7 @@ import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
 import com.raghav.whitecoffee.ui.theme.ReadOnlyFieldBox
 import com.raghav.whitecoffee.ui.theme.SectionLabel
-import com.raghav.whitecoffee.ui.theme.WcColors
+import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcField
 import com.raghav.whitecoffee.ui.theme.WcPrimaryButton
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
@@ -100,7 +100,7 @@ fun TransferScreen(
         AddItemButton("Add item", onClick = { items.add(XferRow()) })
 
         Spacer(Modifier.height(18.dp))
-        ReadOnlyFieldBox(text = "Transfer date · $todayDate", leadingIcon = Ms.event, leadingTint = WcColors.TextSecondary)
+        ReadOnlyFieldBox(text = "Transfer date · $todayDate", leadingIcon = Ms.event, leadingTint = WcTheme.colors.TextSecondary)
 
         Spacer(Modifier.height(16.dp))
         FieldLabel("Notes"); Spacer(Modifier.height(9.dp))
@@ -112,7 +112,7 @@ fun TransferScreen(
 
         if (error != null) {
             Spacer(Modifier.height(12.dp))
-            Text(error, color = WcColors.DangerFg, fontSize = 13.sp)
+            Text(error, color = WcTheme.colors.DangerFg, fontSize = 13.sp)
         }
 
         Spacer(Modifier.height(22.dp))
