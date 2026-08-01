@@ -40,7 +40,7 @@ async function main() {
   const auth = new google.auth.GoogleAuth({ scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
   const sheets = google.sheets({ version: "v4", auth });
 
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const months = forecast.fiscalYearMonths(todayISO);
   const categories = dash.DASHBOARD_CATEGORIES;
 
@@ -75,18 +75,31 @@ async function main() {
     { range: `Charts!A${dash.DAILY_GRID_HEADER_ROW}`, values: [dash.buildDailyHeaderRow(categories)] },
     { range: `Charts!A${dash.DAILY_GRID_FIRST_DATA_ROW}`, values: dash.buildDailyGridRows(fyDates, categories) },
   ];
-  for (const u of valueUpdates) {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: FORECAST_SHEET_ID, range: u.range,
-      valueInputOption: "USER_ENTERED", requestBody: { values: u.values },
-    });
-  }
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: FORECAST_SHEET_ID,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: valueUpdates.map((u) => ({ range: u.range, values: u.values })),
+    },
+  });
+
+  // Delete any charts already on the Charts tab before re-adding — values.clear only clears
+  // cell values, not embedded chart objects, so without this a re-run stacks duplicate charts
+  // on top of the old ones at the same anchor cells.
+  const chartsMeta = await sheets.spreadsheets.get({
+    spreadsheetId: FORECAST_SHEET_ID,
+    ranges: ["Charts"],
+    fields: "sheets(properties.sheetId,charts.chartId)",
+  });
+  const existingChartIds = (chartsMeta.data.sheets[0]?.charts || []).map((c) => c.chartId);
+  const deleteChartRequests = existingChartIds.map((chartId) => ({ deleteEmbeddedObject: { objectId: chartId } }));
 
   // Data validation: checkboxes for the category list, dropdowns for Start/End Month.
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: FORECAST_SHEET_ID,
     requestBody: {
       requests: [
+        ...deleteChartRequests,
         {
           setDataValidation: {
             range: {
@@ -101,7 +114,7 @@ async function main() {
           setDataValidation: {
             range: { sheetId: chartsSheetId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: 4, endColumnIndex: 5 },
             rule: {
-              condition: { type: "ONE_OF_RANGE", values: [{ userEnteredValue: "=Charts!$Z$1:$Z$12" }] },
+              condition: { type: "ONE_OF_RANGE", values: [{ userEnteredValue: `=Charts!${dash.MONTH_ORDER_RANGE}` }] },
               strict: true, showCustomUi: true,
             },
           },
