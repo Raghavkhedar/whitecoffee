@@ -42,3 +42,46 @@ module.exports = {
   DASHBOARD_HEADER, DASHBOARD_CATEGORIES, colLetter,
   actualFormula, forecastFormula, varianceFormula, variancePctFormula, buildDashboardRows,
 };
+
+const CHECKLIST_FIRST_ROW = 2;
+const MONTH_ORDER_RANGE = "$Z$1:$Z$12";
+const MONTHLY_GRID_HEADER_ROW = 27;
+const MONTHLY_GRID_FIRST_DATA_ROW = 28;
+
+function buildChecklistRows(categories) {
+  return categories.map((c) => [true, c]);
+}
+
+function buildMonthlyHeaderRow(categories) {
+  const row = ["Month"];
+  categories.forEach((c) => { row.push(`${c} - Actual`); row.push(`${c} - Forecast`); });
+  return row;
+}
+
+function inMonthRangeClause(monthCellRef) {
+  return `MATCH(${monthCellRef},${MONTH_ORDER_RANGE},0)>=MATCH($E$1,${MONTH_ORDER_RANGE},0),` +
+    `MATCH(${monthCellRef},${MONTH_ORDER_RANGE},0)<=MATCH($E$2,${MONTH_ORDER_RANGE},0)`;
+}
+
+function buildMonthlyGridRows(months, categories) {
+  return months.map((month, mIdx) => {
+    const sheetRow = MONTHLY_GRID_FIRST_DATA_ROW + mIdx;
+    const monthCellRef = `$A${sheetRow}`;
+    const row = [month];
+    categories.forEach((category, cIdx) => {
+      const checkboxRef = `$B$${CHECKLIST_FIRST_ROW + cIdx}`;
+      const gate = `AND(${inMonthRangeClause(monthCellRef)},${checkboxRef}=TRUE)`;
+      row.push(`=IF(${gate},SUMIFS(Dashboard!$C:$C,Dashboard!$A:$A,${monthCellRef},Dashboard!$B:$B,"${category}"),"")`);
+      row.push(`=IF(${gate},SUMIFS(Dashboard!$D:$D,Dashboard!$A:$A,${monthCellRef},Dashboard!$B:$B,"${category}"),"")`);
+    });
+    return row;
+  });
+}
+
+module.exports.CHECKLIST_FIRST_ROW = CHECKLIST_FIRST_ROW;
+module.exports.MONTH_ORDER_RANGE = MONTH_ORDER_RANGE;
+module.exports.MONTHLY_GRID_HEADER_ROW = MONTHLY_GRID_HEADER_ROW;
+module.exports.MONTHLY_GRID_FIRST_DATA_ROW = MONTHLY_GRID_FIRST_DATA_ROW;
+module.exports.buildChecklistRows = buildChecklistRows;
+module.exports.buildMonthlyHeaderRow = buildMonthlyHeaderRow;
+module.exports.buildMonthlyGridRows = buildMonthlyGridRows;

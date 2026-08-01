@@ -38,3 +38,44 @@ test("buildDashboardRows produces one row per month x category, row numbers star
   // Second row (row 3 in the sheet) formulas reference row 3, not row 2.
   assert.equal(rows[1][2], "=SUMIFS('Daily Snapshot'!G:G,'Daily Snapshot'!B:B,B3,'Daily Snapshot'!F:F,A3)");
 });
+
+const {
+  CHECKLIST_FIRST_ROW, buildChecklistRows, MONTH_ORDER_RANGE,
+  MONTHLY_GRID_HEADER_ROW, MONTHLY_GRID_FIRST_DATA_ROW,
+  buildMonthlyHeaderRow, buildMonthlyGridRows,
+} = require("./forecastDashboard");
+
+test("CHECKLIST_FIRST_ROW is row 2 (row 1 is the header)", () => {
+  assert.equal(CHECKLIST_FIRST_ROW, 2);
+});
+
+test("buildChecklistRows defaults every category to checked", () => {
+  const rows = buildChecklistRows(["Manpower Expense", "Electricity"]);
+  assert.deepEqual(rows, [[true, "Manpower Expense"], [true, "Electricity"]]);
+});
+
+test("buildMonthlyHeaderRow alternates Actual/Forecast per category", () => {
+  const row = buildMonthlyHeaderRow(["Manpower Expense", "Electricity"]);
+  assert.deepEqual(row, [
+    "Month", "Manpower Expense - Actual", "Manpower Expense - Forecast",
+    "Electricity - Actual", "Electricity - Forecast",
+  ]);
+});
+
+test("buildMonthlyGridRows: month/checkbox range-gated SUMIFS lookup against Dashboard", () => {
+  const rows = buildMonthlyGridRows(["April 2026", "May 2026"], ["Manpower Expense", "Electricity"]);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0][0], "April 2026");
+  // category 0 (Manpower Expense) checkbox lives at B2 (CHECKLIST_FIRST_ROW + 0)
+  assert.equal(rows[0][1],
+    '=IF(AND(MATCH($A28,' + MONTH_ORDER_RANGE + ',0)>=MATCH($E$1,' + MONTH_ORDER_RANGE + ',0),' +
+    'MATCH($A28,' + MONTH_ORDER_RANGE + ',0)<=MATCH($E$2,' + MONTH_ORDER_RANGE + ',0),$B$2=TRUE),' +
+    'SUMIFS(Dashboard!$C:$C,Dashboard!$A:$A,$A28,Dashboard!$B:$B,"Manpower Expense"),"")');
+  assert.equal(rows[0][2],
+    '=IF(AND(MATCH($A28,' + MONTH_ORDER_RANGE + ',0)>=MATCH($E$1,' + MONTH_ORDER_RANGE + ',0),' +
+    'MATCH($A28,' + MONTH_ORDER_RANGE + ',0)<=MATCH($E$2,' + MONTH_ORDER_RANGE + ',0),$B$2=TRUE),' +
+    'SUMIFS(Dashboard!$D:$D,Dashboard!$A:$A,$A28,Dashboard!$B:$B,"Manpower Expense"),"")');
+  // category 1 (Electricity) checkbox lives at B3, row 2 of the grid is sheet row 29
+  assert.match(rows[1][3], /\$B\$3=TRUE/);
+  assert.match(rows[1][3], /\$A29/);
+});
