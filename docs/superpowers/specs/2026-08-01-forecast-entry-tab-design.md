@@ -42,10 +42,14 @@ The old `Forecast` tab is left in place, untouched.
 | E–K | `Salary` `Convy` `Incentive` `OT/WO` `PF` `ESI` `Special Allow` | Manpower component inputs; blank on non-EMP rows |
 | L | `Emp ID` | employee id on EMP rows; blank elsewhere |
 
-**`Incentive` (column G) is the renamed `Imprest`.** The rename is **display-only and scoped to
-this tab** — Firestore fields (`imprest`, `imprestPercent`), the admin UI, the Android app, and
-the `Daily Snapshot` actuals all keep saying "Imprest". Consequence accepted: this one component
-label does not self-match between forecast and actuals the way the category names do.
+**Four of the seven component labels do not self-match between forecast and actuals.** `Convy`
+here is `Conveyance` in the `Daily Snapshot` actuals; `Incentive` (column G) is the renamed
+`Imprest`; `OT/WO` is `OT amount`; and `Special Allow` is `Special Allowance`. Only `Salary`,
+`PF`, and `ESI` match verbatim. These are the manager's own wording for this tab and the
+renames are **display-only** — Firestore fields (`imprest`, `imprestPercent`, `otWo`, `sa`,
+`conveyance`), the admin UI, the Android app, and the `Daily Snapshot` actuals all keep their
+existing labels. Consequence accepted: a component-level forecast-vs-actual comparison needs a
+manual label mapping, not a literal string join.
 
 ### Block structure
 
@@ -95,9 +99,11 @@ Plus 8 blank EMP rows so he can add people without restructuring anything.
 
 ### Write guard
 
-`ensureTab`, then read `A1`. **If the tab has any content, log and return — write nothing.** Same
-guard as the current `Forecast` tab (`index.js:512-526`). Once created, the manager owns every
-cell; no nightly run can touch a number he typed.
+`ensureTab`, then read `A1:L50` and treat the tab as occupied if **any** cell in that range is
+non-empty — log and return, writing nothing. A single-cell `A1` sentinel was rejected: the manager
+owns every cell and is expected to restructure the tab, so clearing the sheet and retyping from a
+lower row would leave `A1` empty and invite the next nightly run to overwrite ~6,200 rows of his
+work. Once created, no scheduled run can touch a number he typed.
 
 ## Category list — 23, aligned across forecast and actuals
 
@@ -158,6 +164,18 @@ a bank-statement ledger, read-only:
 `"rental"`** — trimmed, case-insensitive substring, so `Rental`, `Rental of Space`, and
 `Office Rental` all match. **Amount = `Withdrawal Amt.`** (gross, not netted against
 `Deposit Amt.`). **Date = the `Date` column** (not `Value Dt`).
+
+**Rental rows are floored to the current fiscal year** (dropped if dated before 1 April of the FY
+containing today). `buildDailySnapshot` sizes its dense date grid from the global min/max of all
+flat rows, so a bank ledger carrying years of history would stretch the grid and multiply the
+`Daily Snapshot` payload across all 23 categories — with a 300 s timeout and no retry, enough to
+take the whole nightly export down. Other sources are not floored.
+
+Tab titles are resolved by case-insensitive substring via `pickTabName`, not hardcoded, and each
+tab is read under its own `try`/`catch` so one rename or permission failure cannot silence the
+other. When a tab yields `matched > 0` but zero rows, the run logs a **warning** naming an
+unparseable date format as the likely cause — Indian bank exports often use `dd/mm/yy`, which the
+4-digit-year parser rejects.
 
 Columns are located **by header name**, like the MDD reader, since this is a bank export whose
 column order can shift. If `Date`, `Withdrawal Amt.`, or both tag columns are missing, the tab
