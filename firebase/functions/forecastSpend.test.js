@@ -17,14 +17,14 @@ test("normTag trims, lowercases, collapses whitespace", () => {
 });
 
 test("catalog maps known tags to category names", () => {
-  assert.equal(VENDOR_CATEGORIES[normTag("Tool")], "Tool Purchase");
-  assert.equal(VENDOR_CATEGORIES[normTag("Transporter Purchase")], "Transporter Purchases");
-  assert.equal(OFFICE_CATEGORIES[normTag("Celebration")], "Welfare (Celebrations)");
+  assert.equal(VENDOR_CATEGORIES[normTag("Tool")], "Tools Purchase");
+  assert.equal(VENDOR_CATEGORIES[normTag("Transporter Purchase")], "Transporter Purchase");
+  assert.equal(OFFICE_CATEGORIES[normTag("Celebration")], "Celebration");
   assert.equal(OFFICE_CATEGORIES[normTag("stationery")], "Stationery");
-  assert.equal(OFFICE_CATEGORIES[normTag("overhead")], "OH (Overhead)");
-  assert.equal(OFFICE_CATEGORIES[normTag("cleaning eq")], "Office Cleaning Eqp. & Exp.");
+  assert.equal(OFFICE_CATEGORIES[normTag("overhead")], "Overhead");
+  assert.equal(OFFICE_CATEGORIES[normTag("cleaning eq")], "Office Cleaning");
   assert.equal(OFFICE_CATEGORIES[normTag("customer entertainment expenses")], "Client/Vendor Ent Expense");
-  assert.equal(OFFICE_CATEGORIES[normTag("subscription – hr related")], "Subscription – Job Portal");
+  assert.equal(OFFICE_CATEGORIES[normTag("subscription – hr related")], "Subscription Job Portal");
   assert.equal(OFFICE_CATEGORIES[normTag("Employee Welfare & Retention")], undefined);
 });
 
@@ -80,7 +80,7 @@ test("bucketMddTab: vendor rows filtered + parsed by tag", () => {
   ];
   const { rows, seenTags } = bucketMddTab({ values, resolve: vendorResolve });
   assert.deepEqual(rows, [
-    ["2026-07-09", "Tool Purchase", "", "", "", 1586],
+    ["2026-07-09", "Tools Purchase", "", "", "", 1586],
     ["2026-07-10", "Asset Purchase", "", "", "", 400],
   ]);
   assert.ok(seenTags.has("unknownn"));
@@ -145,15 +145,27 @@ test("bucketCommunication sums all dated rows, no tag filter", () => {
   assert.equal(dateCol, 2);
   assert.equal(amtCol, 4);
   assert.deepEqual(rows, [
-    ["2026-07-09", "Comm Expenses", "", "", "", 220.8],
-    ["2026-07-10", "Comm Expenses", "", "", "", 100],
+    ["2026-07-09", "Communication Expenses", "", "", "", 220.8],
+    ["2026-07-10", "Communication Expenses", "", "", "", 100],
   ]);
 });
 
-test("STANDALONE_CATEGORIES has the 21 non-Manpower categories", () => {
-  assert.equal(STANDALONE_CATEGORIES.length, 21);
+test("STANDALONE_CATEGORIES has the 22 non-Manpower categories", () => {
+  assert.equal(STANDALONE_CATEGORIES.length, 22);
   assert.ok(!STANDALONE_CATEGORIES.includes("Manpower Expense"));
-  assert.equal(STANDALONE_CATEGORIES[0], "Tool Purchase");
+  assert.equal(STANDALONE_CATEGORIES[0], "Purchase Stock");
+});
+
+test("STANDALONE_CATEGORIES has 22 entries, no duplicates, and includes Rental of Space", () => {
+  assert.equal(STANDALONE_CATEGORIES.length, 22);
+  assert.equal(new Set(STANDALONE_CATEGORIES).size, 22);
+  assert.ok(STANDALONE_CATEGORIES.includes("Rental of Space"));
+});
+
+test("every tag map value is a known standalone category", () => {
+  const known = new Set(STANDALONE_CATEGORIES);
+  for (const v of Object.values(VENDOR_CATEGORIES)) assert.ok(known.has(v), `unknown vendor category: ${v}`);
+  for (const v of Object.values(OFFICE_CATEGORIES)) assert.ok(known.has(v), `unknown office category: ${v}`);
 });
 
 test("fiscalYearMonths: 12 labels April→March for the FY containing the anchor", () => {

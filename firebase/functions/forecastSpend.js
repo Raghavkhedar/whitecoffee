@@ -10,11 +10,11 @@ function normTag(s) {
 
 // Vendor Payment tab tags → standalone category names.
 const VENDOR_CATEGORIES = {
-  [normTag("Tool")]: "Tool Purchase",
+  [normTag("Tool")]: "Tools Purchase",
   [normTag("Core Asset")]: "Core Asset",
   [normTag("Asset")]: "Asset Purchase",
   [normTag("Material Repair")]: "Material Repair",
-  [normTag("Transporter Purchase")]: "Transporter Purchases",
+  [normTag("Transporter Purchase")]: "Transporter Purchase",
   [normTag("Stock")]: "Purchase Stock",
 };
 
@@ -24,20 +24,20 @@ const VENDOR_CATEGORIES = {
 const OFFICE_CATEGORIES = {
   // Confirmed present in the Office Expense tab — exact tag strings from the live data.
   [normTag("asset repair")]: "Asset Repair",
-  [normTag("overhead")]: "OH (Overhead)",
-  [normTag("cleaning eq")]: "Office Cleaning Eqp. & Exp.",
-  [normTag("subscription – hr related")]: "Subscription – Job Portal", // NOTE: en-dash (–), not hyphen
+  [normTag("overhead")]: "Overhead",
+  [normTag("cleaning eq")]: "Office Cleaning",
+  [normTag("subscription – hr related")]: "Subscription Job Portal", // NOTE: en-dash (–), not hyphen
   [normTag("customer entertainment expenses")]: "Client/Vendor Ent Expense",
   [normTag("stationery")]: "Stationery",
-  [normTag("celebration")]: "Welfare (Celebrations)",
+  [normTag("celebration")]: "Celebration",
   // Not yet present in the data — best-guess spellings; will match once such rows appear.
   [normTag("Electricity")]: "Electricity",
   [normTag("Tool Repair")]: "Tool Repair",
   [normTag("Training Exp.")]: "Training Expense",
-  [normTag("Subscription - CLOUD")]: "Subscription – Cloud",
+  [normTag("Subscription - CLOUD")]: "Subscription CLOUD",
   [normTag("Building/General Maintenance (Electrical / Plumbing / Painting / Deep Cleaning)")]: "Maint. of Building",
-  [normTag("Chai / Biscuit / Tissue / Disposable")]: "Pantry / House Keeping",
-  [normTag("Expense Related to Sales and Advertisement")]: "Sales & Adv Expenses",
+  [normTag("Chai / Biscuit / Tissue / Disposable")]: "Pantry/House Cleaning",
+  [normTag("Expense Related to Sales and Advertisement")]: "Sale & Adv Expenses",
 };
 
 // Firestore dailySpend fields that feed Manpower, in display order. All stored positive
@@ -149,7 +149,7 @@ function pickTabName(titles, needle) {
   return (titles || []).find((t) => String(t).toLowerCase().includes(n)) || null;
 }
 
-// Communication tab: sum every dated row (no tag filter) into the "Comm Expenses" category.
+// Communication tab: sum every dated row (no tag filter) into the "Communication Expenses" category.
 function bucketCommunication(values) {
   const rows = [];
   if (!Array.isArray(values) || values.length === 0) return { rows, dateCol: -1, amtCol: -1 };
@@ -162,19 +162,19 @@ function bucketCommunication(values) {
     const date = parseDate(r[dateCol]);
     const amount = parseAmount(r[amtCol]);
     if (!date || amount === 0) continue;
-    rows.push([date, "Comm Expenses", "", "", "", amount]);
+    rows.push([date, "Communication Expenses", "", "", "", amount]);
   }
   return { rows, dateCol, amtCol };
 }
 
-// The 21 standalone categories in display order (category numbers 2..22 from the spec).
+// The 22 standalone categories in display order (categories 2..23 of the forecast catalog).
 // Manpower Expense (category 1) is NOT here — it is expanded per employee × component.
 const STANDALONE_CATEGORIES = [
-  "Tool Purchase", "Core Asset", "Asset Purchase", "Material Repair", "Transporter Purchases",
-  "Purchase Stock", "Electricity", "Asset Repair", "Tool Repair", "Welfare (Celebrations)",
-  "Client/Vendor Ent Expense", "Stationery", "Office Cleaning Eqp. & Exp.", "Training Expense",
-  "Subscription – Cloud", "Subscription – Job Portal", "Maint. of Building", "Pantry / House Keeping",
-  "OH (Overhead)", "Sales & Adv Expenses", "Comm Expenses",
+  "Purchase Stock", "Electricity", "Asset Repair", "Tool Repair", "Communication Expenses",
+  "Material Repair", "Transporter Purchase", "Celebration", "Stationery", "Office Cleaning",
+  "Core Asset", "Asset Purchase", "Training Expense", "Subscription CLOUD",
+  "Subscription Job Portal", "Maint. of Building", "Pantry/House Cleaning", "Tools Purchase",
+  "Overhead", "Rental of Space", "Sale & Adv Expenses", "Client/Vendor Ent Expense",
 ];
 
 const MONTHS = ["January", "February", "March", "April", "May", "June",
