@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 const {
   normTag, findCol, parseAmount, parseDate,
   VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
-  bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
+  bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication, bucketBankRental,
   monthLabelOf, datesInRange, buildDailySnapshot, distinctTags, fiscalYearMonths,
 } = require("./forecastSpend");
 
@@ -148,6 +148,71 @@ test("bucketCommunication sums all dated rows, no tag filter", () => {
     ["2026-07-09", "Communication Expenses", "", "", "", 220.8],
     ["2026-07-10", "Communication Expenses", "", "", "", 100],
   ]);
+});
+
+const BANK_HEADER = ["Date", "Narration", "Chq./Ref.No.", "Value Dt", "Withdrawal Amt.",
+  "Deposit Amt.", "Closing Balance", "Payee", "ID (EMP,VEN,OTH)", "comments", "Comments 2",
+  "Payment Tag", "Receipt Tag", "CR triggred", "bill done", "INVOICE RECEIVED"];
+
+const bankRow = ({ date = "01/04/2026", wd = "", dep = "", pay = "", rec = "" }) => {
+  const r = new Array(16).fill("");
+  r[0] = date; r[4] = wd; r[5] = dep; r[11] = pay; r[12] = rec;
+  return r;
+};
+
+test("bucketBankRental matches on the Payment Tag column", () => {
+  const out = bucketBankRental({ values: [BANK_HEADER, bankRow({ wd: "25000", pay: "Rental" })] });
+  assert.deepEqual(out.rows, [["2026-04-01", "Rental of Space", "", "", "", 25000]]);
+  assert.equal(out.matched, 1);
+});
+
+test("bucketBankRental matches on the Receipt Tag column too", () => {
+  const out = bucketBankRental({ values: [BANK_HEADER, bankRow({ wd: "30000", rec: "Rental of Space" })] });
+  assert.equal(out.rows.length, 1);
+  assert.equal(out.rows[0][5], 30000);
+});
+
+test("bucketBankRental matches case-insensitively and as a substring", () => {
+  const out = bucketBankRental({ values: [
+    BANK_HEADER,
+    bankRow({ wd: "1", pay: "  OFFICE RENTAL  " }),
+    bankRow({ wd: "2", pay: "rental of space" }),
+  ] });
+  assert.equal(out.rows.length, 2);
+});
+
+test("bucketBankRental ignores rows whose tags do not mention rental", () => {
+  const out = bucketBankRental({ values: [
+    BANK_HEADER,
+    bankRow({ wd: "500", pay: "Electricity" }),
+    bankRow({ wd: "600", rec: "Salary" }),
+  ] });
+  assert.deepEqual(out.rows, []);
+  assert.equal(out.matched, 0);
+});
+
+test("bucketBankRental takes Withdrawal Amt. and ignores Deposit Amt.", () => {
+  const out = bucketBankRental({ values: [BANK_HEADER, bankRow({ wd: "9000", dep: "4000", pay: "Rental" })] });
+  assert.equal(out.rows[0][5], 9000);
+});
+
+test("bucketBankRental skips a matched row with no withdrawal amount", () => {
+  const out = bucketBankRental({ values: [BANK_HEADER, bankRow({ wd: "", dep: "5000", pay: "Rental" })] });
+  assert.deepEqual(out.rows, []);
+  assert.equal(out.matched, 1, "counted as matched even though it produced no row");
+});
+
+test("bucketBankRental returns zero rows when a required column is missing", () => {
+  const header = BANK_HEADER.slice();
+  header[4] = "Debit Amount";               // no /withdrawal/ header any more
+  const out = bucketBankRental({ values: [header, bankRow({ wd: "25000", pay: "Rental" })] });
+  assert.deepEqual(out.rows, []);
+  assert.equal(out.amtCol, -1);
+});
+
+test("bucketBankRental tolerates empty input", () => {
+  assert.deepEqual(bucketBankRental({ values: [] }).rows, []);
+  assert.deepEqual(bucketBankRental({}).rows, []);
 });
 
 test("STANDALONE_CATEGORIES has the 22 non-Manpower categories", () => {

@@ -167,6 +167,38 @@ function bucketCommunication(values) {
   return { rows, dateCol, amtCol };
 }
 
+// Bank-ledger tabs (Bank, TBPR) → the "Rental of Space" category. A row counts as rent when
+// EITHER tag column mentions "rental" (trimmed, case-insensitive substring), so "Rental",
+// "Rental of Space" and "Office Rental" all match. Amount is the gross Withdrawal — deposits
+// are NOT netted off. Columns are located by header name because this is a bank export whose
+// column order can shift. `matched` counts tag hits before the date/amount filter, so the
+// caller can tell "no rent rows" apart from "rent rows we could not parse".
+function bucketBankRental({ values }) {
+  const rows = [];
+  if (!Array.isArray(values) || values.length === 0) {
+    return { rows, dateCol: -1, amtCol: -1, tagCols: [], matched: 0 };
+  }
+  const header = values[0] || [];
+  const dateCol = findCol(header, [/^\s*date\s*$/i]);
+  const amtCol = findCol(header, [/withdrawal/i]);
+  const tagCols = [findCol(header, [/payment tag/i]), findCol(header, [/receipt tag/i])]
+    .filter((c) => c >= 0);
+  if (dateCol < 0 || amtCol < 0 || tagCols.length === 0) {
+    return { rows, dateCol, amtCol, tagCols, matched: 0 };
+  }
+  let matched = 0;
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i] || [];
+    if (!tagCols.some((c) => normTag(r[c]).includes("rental"))) continue;
+    matched++;
+    const date = parseDate(r[dateCol]);
+    const amount = parseAmount(r[amtCol]);
+    if (!date || amount === 0) continue;
+    rows.push([date, "Rental of Space", "", "", "", amount]);
+  }
+  return { rows, dateCol, amtCol, tagCols, matched };
+}
+
 // The 22 standalone categories in display order (categories 2..23 of the forecast catalog).
 // Manpower Expense (category 1) is NOT here — it is expanded per employee × component.
 const STANDALONE_CATEGORIES = [
@@ -302,6 +334,6 @@ function distinctTags(values) {
 module.exports = {
   normTag, findCol, parseAmount, parseDate,
   VENDOR_CATEGORIES, OFFICE_CATEGORIES, MANPOWER_COMPONENTS, STANDALONE_CATEGORIES,
-  bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication,
+  bucketMddTab, dailySpendToFlat, pickTabName, bucketCommunication, bucketBankRental,
   monthLabelOf, datesInRange, buildDailySnapshot, distinctTags, fiscalYearMonths,
 };
