@@ -1,7 +1,7 @@
 # Forecast Entry Tab — expanded manager input template (design)
 
 **Date:** 2026-08-01
-**Status:** design approved in conversation; pending written review
+**Status:** design approved in conversation; open items resolved
 **Related:** [[2026-07-24-forecasting-daily-snapshot-design]] (the actuals this forecast is compared against)
 
 ## Goal
@@ -20,7 +20,11 @@ by the manager. He adds employees and line items himself.
 The existing template gives one cell per (category, month) — no room to say *which* employee or
 *which* purchase makes up the number. Forecasting Manpower means reasoning about individual
 salaries; forecasting Purchase Stock means listing the things you expect to buy. A single cell
-can't hold that thinking, so the manager wasn't using it.
+can't hold that thinking, so the manager wasn't using it — **verified 2026-08-01: the live
+`Forecast` tab is completely empty, every cell of all 22 rows × 12 months.**
+
+That emptiness also makes the category rename below free: there is nothing typed, and no chart
+built on the old strings, to break.
 
 ## Tab: `Forecast FY26-27`
 
@@ -57,12 +61,12 @@ Manpower Expense —Total   April 2026  =SUM(…)   SUBTOTAL
 Purchase Stock            April 2026            HEADER
   … 20 blank ITEM rows …
 Purchase Stock —Total     April 2026  =SUM(…)   SUBTOTAL
-  … 22 more categories …
+  … 21 more categories …
 GRAND TOTAL               April 2026  =SUM(…)   TOTAL
 ```
 
-Per month: 33 Manpower rows + (23 categories × 22 rows) + 1 grand total = **540 rows**.
-Twelve months + a header row = **~6,481 rows**. Well within Sheets limits.
+Per month: 33 Manpower rows + (22 categories × 22 rows) + 1 grand total = **518 rows**.
+Twelve months + a header row = **~6,217 rows**. Well within Sheets limits.
 
 ### Formulas
 
@@ -72,7 +76,7 @@ generation time:
 - **EMP row `Amount`** = `=SUM(E{r}:K{r})` — the 7 components across.
 - **Manpower `SUBTOTAL`** = `=SUM(C{first_emp}:C{last_emp})` — over all 30 EMP rows, blanks included.
 - **Category `SUBTOTAL`** = `=SUM(C{first_item}:C{last_item})` — over that category's 20 ITEM rows.
-- **`GRAND TOTAL`** = `=SUM()` of the 24 subtotal cells, listed explicitly (not a range — a range
+- **`GRAND TOTAL`** = `=SUM()` of the 23 subtotal cells, listed explicitly (not a range — a range
   would double-count the subtotals it spans).
 
 Amount cells are left **blank, not `0`**, so an untouched row reads as "not forecast" rather than
@@ -80,12 +84,12 @@ as a genuine forecast of zero.
 
 ### Roster
 
-The 22 EMP rows come from Firestore `users`, name-sorted, **excluding**:
+The EMP rows come from Firestore `users`, name-sorted, **excluding** test accounts (`EMP001`,
+`TEST001`, `TEST002`, `TEST003`) and `ADMIN-INFO`. Duplicate employee ids collapse to one row and
+log a warning — a safety net, not a fix for a known case.
 
-- test accounts: `EMP001`, `TEST001`, `TEST002`, `TEST003`
-- `ADMIN-INFO`
-- duplicate employee ids — `S369` currently appears twice, as both "Vishnu" and "Vishnu kumar";
-  keep the first by name sort and log the collision.
+**`S369` and `S369A` are different employees** ("Vishnu" and "Vishnu kumar"); the actuals confirm
+both ids appear independently. Both get their own row.
 
 Plus 8 blank EMP rows so he can add people without restructuring anything.
 
@@ -95,21 +99,18 @@ Plus 8 blank EMP rows so he can add people without restructuring anything.
 guard as the current `Forecast` tab (`index.js:512-526`). Once created, the manager owns every
 cell; no nightly run can touch a number he typed.
 
-## Category list — 24, aligned across forecast and actuals
+## Category list — 23, aligned across forecast and actuals
 
 The forecast tab and `Daily Snapshot` must use **identical category strings**, or the
 forecast-vs-actual comparison the whole sheet exists for cannot be built. The manager's names win;
 the actuals side is renamed to match.
 
-Order (as the manager listed them, with `Client/Vendor Ent Expense` appended):
-
 1. Manpower Expense *(per-employee grid)*
 2. Purchase Stock · 3. Electricity · 4. Asset Repair · 5. Tool Repair · 6. Communication Expenses ·
-7. Material Repair · 8. Transporter Purchase · 9. EMP Welfare & Retention · 10. Celebration ·
-11. Stationery · 12. Office Cleaning · 13. Core Asset · 14. Asset Purchase · 15. Training Expense ·
-16. Subscription CLOUD · 17. Subscription Job Portal · 18. Maint. of Building ·
-19. Pantry/House Cleaning · 20. Tools Purchase · 21. Overhead · 22. Rental of Space ·
-23. Sale & Adv Expenses · 24. Client/Vendor Ent Expense
+7. Material Repair · 8. Transporter Purchase · 9. Celebration · 10. Stationery · 11. Office Cleaning ·
+12. Core Asset · 13. Asset Purchase · 14. Training Expense · 15. Subscription CLOUD ·
+16. Subscription Job Portal · 17. Maint. of Building · 18. Pantry/House Cleaning · 19. Tools Purchase ·
+20. Overhead · 21. Rental of Space · 22. Sale & Adv Expenses · 23. Client/Vendor Ent Expense
 
 ### Renames on the actuals side (`forecastSpend.js`)
 
@@ -133,24 +134,39 @@ Category **values** in `VENDOR_CATEGORIES` / `OFFICE_CATEGORIES` / `STANDALONE_C
 `Core Asset`, `Asset Purchase`, `Purchase Stock`, `Stationery`, `Training Expense`,
 `Maint. of Building` are unchanged.
 
-### Two structural changes
+### Employee Welfare stays inside Manpower — DECIDED, no change
 
-**`EMP Welfare & Retention` becomes standalone.** Today it is a special case in `officeResolve`
-(`index.js:452-454`) that routes the `Employee Welfare & Retention` MDD tag into
-`Manpower Expense` as a lump line with a blank employee id. It becomes an ordinary standalone
-category:
+`officeResolve` (`index.js:452-454`) routes the `Employee Welfare & Retention` MDD tag into
+`Manpower Expense` as a lump line. **This stays exactly as it is.** Splitting it out was
+considered and rejected: it would shrink the Manpower actual and break continuity with past
+figures. `EMP Welfare & Retention` therefore does **not** appear as a category on the forecast
+tab. The catalog is 23, not 24.
 
-- add `[normTag("Employee Welfare & Retention")]: "EMP Welfare & Retention"` to `OFFICE_CATEGORIES`
-- delete the special case in `officeResolve`
-- simplify `expectOffice` (`index.js:468`), which no longer needs to append the tag by hand
+## New source: `Rental of Space`
 
-Effect on actuals: the amount leaves the Manpower total and becomes its own category line. Manpower
-actuals drop by that amount; the company total is unchanged.
+`Rental of Space` is a new category with no MDD tag. Its actuals come from a **third spreadsheet**,
+a bank-statement ledger, read-only:
 
-**`Rental of Space` is new.** No MDD tag maps to it yet, so its actuals stay at ₹0 until the tag is
-identified (see open items). It still appears in the forecast tab, and `STANDALONE_CATEGORIES`
-gains it so `Daily Snapshot` emits its dense zero rows — the line exists and reads as zero rather
-than being absent.
+- **Sheet id:** `10-8a0KmY7BI21mG5d3LuTPXHL0L-WJ7Zkj6Dfp9kvrA`
+- **Tabs read:** `Bank` and `TBPR`. A third tab exists (columns `Process … Source Tab |
+  Intended Destination | Reason Flagged`) — a flagged-exceptions sheet. **Not read.**
+- **Columns:** `Date | Narration | Chq./Ref.No. | Value Dt | Withdrawal Amt. | Deposit Amt. |
+  Closing Balance | Payee | ID (EMP,VEN,OTH) | comments | Comments 2 | Payment Tag | Receipt Tag |
+  CR triggred | bill done | INVOICE RECEIVED`
+
+**Matching rule:** a row counts as rent if **either `Payment Tag` or `Receipt Tag` contains
+`"rental"`** — trimmed, case-insensitive substring, so `Rental`, `Rental of Space`, and
+`Office Rental` all match. **Amount = `Withdrawal Amt.`** (gross, not netted against
+`Deposit Amt.`). **Date = the `Date` column** (not `Value Dt`).
+
+Columns are located **by header name**, like the MDD reader, since this is a bank export whose
+column order can shift. If `Date`, `Withdrawal Amt.`, or both tag columns are missing, the tab
+yields zero rows and logs a warning rather than throwing.
+
+**Access:** the service account `attendance-sheets-expor@white-coffee-92c27.iam.gserviceaccount.com`
+has been granted Editor on this sheet (read is all we need). **Verify at first run** — a 403 means
+re-share. When read on 2026-08-01 both tabs returned headers only, so the first run may legitimately
+find zero rent rows.
 
 ## Implementation shape
 
@@ -164,6 +180,12 @@ buildForecastTemplate({ employees, months, categories }) -> rows
 `fiscalYearMonths()`; `categories` defaults to the new catalog. Returns the full row array
 including formula strings. All row-number arithmetic lives here, where it can be asserted against.
 
+A second pure function handles the bank ledger, mirroring `bucketMddTab`:
+
+```js
+bucketBankRental({ values }) -> { rows, dateCol, amtCol, matched }
+```
+
 The integration side in `index.js` step 7 shrinks to: resolve the FY tab name, `ensureTab`, check
 `A1` for content, build the roster from the `users` snapshot already in scope, call
 `buildForecastTemplate`, write once.
@@ -175,31 +197,35 @@ the exclusion list is testable and visible rather than buried in a chain of `.fi
 
 `node --test` in `firebase/functions/` (no deps, matching the repo boundary):
 
-- **Row count and ordering** — 540 rows per month, 12 blocks, categories in catalog order, Manpower first.
+- **Row count and ordering** — 518 rows per month, 12 blocks, categories in catalog order, Manpower first.
 - **Type markers** — every row carries exactly one valid `Type`; counts per block are 1 HEADER +
   1 GRID_HEAD + 30 EMP + 1 SUBTOTAL for Manpower, 1 HEADER + 20 ITEM + 1 SUBTOTAL for the rest.
 - **Formula targets** — each SUBTOTAL's range covers exactly its own category's rows and no
-  neighbour's; the GRAND TOTAL references all 24 subtotal cells and no ranges.
-- **Roster filter** — test accounts and `ADMIN-INFO` are excluded; a duplicate id yields one row.
+  neighbour's; the GRAND TOTAL references all 23 subtotal cells and no ranges.
+- **Roster filter** — test accounts and `ADMIN-INFO` are excluded; a duplicate id yields one row;
+  `S369` and `S369A` both survive as distinct people.
 - **Blank not zero** — every input Amount cell is `""`.
 - **Category alignment** — the forecast catalog equals `["Manpower Expense", ...STANDALONE_CATEGORIES]`
   as a set. This is the test that keeps forecast and actuals from silently drifting apart again.
-- Existing `forecastSpend.test.js` cases updated for the renamed category values and the Welfare split.
+- **Bank rental bucketing** — matches on either tag column, case-insensitive substring; ignores
+  rows with no `Withdrawal Amt.`; tolerates a missing column by returning zero rows.
+- Existing `forecastSpend.test.js` cases updated for the renamed category values.
 
-Integration verified by a manual force-run: confirm the tab is created, formulas evaluate, and a
-second run leaves it untouched.
+Integration verified by a manual force-run: confirm the tab is created, formulas evaluate, the bank
+sheet reads without a 403, and a second run leaves everything untouched.
 
-## Open items
+## Out of scope — flagged for later
 
-1. **`Rental of Space` MDD tag** — which tag value in which tab carries rent? Until answered, its
-   actuals are ₹0.
-2. **Existing charts** — if the manager has built anything referencing the old category strings
-   (`Comm Expenses`, `OH (Overhead)`, …), those references break when `Daily Snapshot` is rewritten
-   with the new names. Confirm before deploying.
-3. **Manpower actuals drop** — splitting out `EMP Welfare & Retention` lowers the Manpower actual.
-   Confirm the manager expects Manpower to exclude it.
+**Negative salaries in `dailySpend`.** The live `SpendData` tab shows repeated negative
+`Salary` values (`Usha −2000`, `Anshuman Srivastava −2000`, `Bapi nuniya −1996`, `Vishnu −1992`)
+and negative `OT amount` values across July 2026. On a spend sheet a negative salary is not a
+meaningful figure — something upstream in the `dailySpend` snapshot is producing them. This
+predates the current work and is not addressed here, but it means Manpower actuals are currently
+understated and should not be trusted for forecasting until investigated.
 
 ## Security note
 
-No new exposure. The tab contains no actuals — only employee names and ids, which the Forecasting
-sheet already carries via `SpendData` and `Daily Snapshot`. MDD stays read-only.
+No new exposure from the forecast tab: it contains no actuals, only employee names and ids that
+the Forecasting sheet already carries. The bank ledger is **read-only** and only `Rental of Space`
+rows are extracted — no narration, payee, or balance data is copied into the Forecasting sheet.
+MDD stays read-only.
