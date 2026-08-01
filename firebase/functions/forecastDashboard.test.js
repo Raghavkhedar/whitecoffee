@@ -114,3 +114,30 @@ test("buildDailyGridRows: date/range/checkbox-gated cumulative SUMIFS against Da
   assert.match(rows[1][2], /\$B\$3=TRUE/);
   assert.match(rows[1][2], /\$A44/);
 });
+
+const { buildMonthlyChartRequest, buildDailyChartRequest } = require("./forecastDashboard");
+
+test("buildMonthlyChartRequest: LINE chart, domain = Month column, one series per Actual/Forecast column", () => {
+  const req = buildMonthlyChartRequest({ chartsSheetId: 123, categoryCount: 2, monthCount: 12 });
+  const chart = req.addChart.chart.spec.basicChart;
+  assert.equal(chart.chartType, "LINE");
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].sheetId, 123);
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].startColumnIndex, 0); // column A
+  // GridRange row/column indexes are 0-based: sheet row 27 (MONTHLY_GRID_HEADER_ROW, 1-based) = 26.
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].startRowIndex, 26);
+  // endRowIndex is exclusive: 26 (header) + 1 (header row) + 12 (months) = 39, spanning 13 rows total.
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].endRowIndex, 26 + 1 + 12);
+  assert.equal(chart.series.length, 4); // 2 categories x (Actual, Forecast)
+  assert.equal(chart.series[0].series.sourceRange.sources[0].startColumnIndex, 1); // column B
+});
+
+test("buildDailyChartRequest: LINE chart, domain = Date column, one series per category", () => {
+  const req = buildDailyChartRequest({ chartsSheetId: 123, categoryCount: 3, dayCount: 365 });
+  const chart = req.addChart.chart.spec.basicChart;
+  assert.equal(chart.chartType, "LINE");
+  // GridRange row/column indexes are 0-based: sheet row 42 (DAILY_GRID_HEADER_ROW, 1-based) = 41.
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].startRowIndex, 41);
+  // endRowIndex is exclusive: 41 (header) + 1 (header row) + 365 (days) = 407, spanning 366 rows total.
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].endRowIndex, 41 + 1 + 365);
+  assert.equal(chart.series.length, 3);
+});

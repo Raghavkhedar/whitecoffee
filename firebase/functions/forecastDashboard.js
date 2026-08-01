@@ -119,3 +119,105 @@ module.exports.DAILY_GRID_FIRST_DATA_ROW = DAILY_GRID_FIRST_DATA_ROW;
 module.exports.fiscalYearDates = fiscalYearDates;
 module.exports.buildDailyHeaderRow = buildDailyHeaderRow;
 module.exports.buildDailyGridRows = buildDailyGridRows;
+
+function buildMonthlyChartRequest({ chartsSheetId, categoryCount, monthCount }) {
+  const headerRow0 = MONTHLY_GRID_HEADER_ROW - 1;       // 0-based
+  const firstDataRow0 = MONTHLY_GRID_FIRST_DATA_ROW - 1; // 0-based
+  const lastDataRowExcl0 = firstDataRow0 + monthCount;
+  const seriesCount = categoryCount * 2;
+  const series = [];
+  for (let i = 0; i < seriesCount; i++) {
+    const col = 1 + i; // column B onward
+    series.push({
+      series: {
+        sourceRange: {
+          sources: [{
+            sheetId: chartsSheetId,
+            startRowIndex: headerRow0, endRowIndex: lastDataRowExcl0,
+            startColumnIndex: col, endColumnIndex: col + 1,
+          }],
+        },
+      },
+      targetAxis: "LEFT_AXIS",
+    });
+  }
+  return {
+    addChart: {
+      chart: {
+        spec: {
+          title: "Monthly Actual vs Forecast",
+          basicChart: {
+            chartType: "LINE",
+            legendPosition: "BOTTOM_LEGEND",
+            headerCount: 1,
+            domains: [{
+              domain: {
+                sourceRange: {
+                  sources: [{
+                    sheetId: chartsSheetId,
+                    startRowIndex: headerRow0, endRowIndex: lastDataRowExcl0,
+                    startColumnIndex: 0, endColumnIndex: 1,
+                  }],
+                },
+              },
+            }],
+            series,
+          },
+        },
+        position: { overlayPosition: { anchorCell: { sheetId: chartsSheetId, rowIndex: 4, columnIndex: 9 } } },
+      },
+    },
+  };
+}
+
+function buildDailyChartRequest({ chartsSheetId, categoryCount, dayCount }) {
+  const headerRow0 = DAILY_GRID_HEADER_ROW - 1;
+  const firstDataRow0 = DAILY_GRID_FIRST_DATA_ROW - 1;
+  const lastDataRowExcl0 = firstDataRow0 + dayCount;
+  const series = [];
+  for (let i = 0; i < categoryCount; i++) {
+    const col = 1 + i;
+    series.push({
+      series: {
+        sourceRange: {
+          sources: [{
+            sheetId: chartsSheetId,
+            startRowIndex: headerRow0, endRowIndex: lastDataRowExcl0,
+            startColumnIndex: col, endColumnIndex: col + 1,
+          }],
+        },
+      },
+      targetAxis: "LEFT_AXIS",
+    });
+  }
+  return {
+    addChart: {
+      chart: {
+        spec: {
+          title: "Daily Cumulative Spend",
+          basicChart: {
+            chartType: "LINE",
+            legendPosition: "BOTTOM_LEGEND",
+            headerCount: 1,
+            domains: [{
+              domain: {
+                sourceRange: {
+                  sources: [{
+                    sheetId: chartsSheetId,
+                    startRowIndex: headerRow0, endRowIndex: lastDataRowExcl0,
+                    startColumnIndex: 0, endColumnIndex: 1,
+                  }],
+                },
+              },
+            }],
+            series,
+          },
+        },
+        position: { overlayPosition: { anchorCell: { sheetId: chartsSheetId, rowIndex: 19, columnIndex: 9 } } },
+      },
+    },
+  };
+}
+
+module.exports.buildMonthlyChartRequest = buildMonthlyChartRequest;
+module.exports.buildDailyChartRequest = buildDailyChartRequest;
