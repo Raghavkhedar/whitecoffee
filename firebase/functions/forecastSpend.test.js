@@ -234,6 +234,43 @@ test("every tag map value is a known standalone category", () => {
   for (const v of Object.values(OFFICE_CATEGORIES)) assert.ok(known.has(v), `unknown office category: ${v}`);
 });
 
+// Pin the full catalog literally, in order. bucketCommunication and bucketBankRental emit their
+// category via a hardcoded string literal ("Communication Expenses" / "Rental of Space"), not
+// from a tag map, so the "every tag map value is a known standalone category" test above cannot
+// see either — this is the test that catches one side of that pairing being renamed and not the
+// other, for ALL 22 categories, not just those two.
+test("STANDALONE_CATEGORIES is pinned to the full 22-name catalog, in order", () => {
+  assert.deepEqual(STANDALONE_CATEGORIES, [
+    "Purchase Stock", "Electricity", "Asset Repair", "Tool Repair", "Communication Expenses",
+    "Material Repair", "Transporter Purchase", "Celebration", "Stationery", "Office Cleaning",
+    "Core Asset", "Asset Purchase", "Training Expense", "Subscription CLOUD",
+    "Subscription Job Portal", "Maint. of Building", "Pantry/House Cleaning", "Tools Purchase",
+    "Overhead", "Rental of Space", "Sale & Adv Expenses", "Client/Vendor Ent Expense",
+  ]);
+});
+
+test("bucketCommunication's emitted category is a known standalone category", () => {
+  const values = [
+    ["Timestamp", "Email", "Date", "Particulars", "Amount", "Comment"],
+    ["x", "y", "09/07/2026", "sim recharge", "220.8", ""],
+  ];
+  const { rows } = bucketCommunication(values);
+  assert.ok(rows.length > 0);
+  assert.ok(
+    STANDALONE_CATEGORIES.includes(rows[0][1]),
+    `bucketCommunication emits '${rows[0][1]}', which is not in STANDALONE_CATEGORIES`,
+  );
+});
+
+test("bucketBankRental's emitted category is a known standalone category", () => {
+  const out = bucketBankRental({ values: [BANK_HEADER, bankRow({ wd: "25000", pay: "Rental" })] });
+  assert.ok(out.rows.length > 0);
+  assert.ok(
+    STANDALONE_CATEGORIES.includes(out.rows[0][1]),
+    `bucketBankRental emits '${out.rows[0][1]}', which is not in STANDALONE_CATEGORIES`,
+  );
+});
+
 test("fiscalYearMonths: 12 labels April→March for the FY containing the anchor", () => {
   const fm = fiscalYearMonths("2026-07-01");
   assert.equal(fm.length, 12);
