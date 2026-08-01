@@ -740,7 +740,7 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("attendance").get();
       const header = [
         "Date", "Employee Name", "Employee ID", "Role",
-        "In Time", "In Location", "In Site ID", "Out Time", "Out Location", "Out Site ID",
+        "In Time", "In Location", "Out Time", "Out Location",
         "All Activity", "OT (mins)", "Daily Status", "PL Balance", "WO Balance",
       ];
 
@@ -851,8 +851,8 @@ exports.exportToSheets = onSchedule(
           userNameMap.get(uid) ?? "",
           userEmpIdMap.get(uid) ?? "",
           role,
-          timeIST(firstIn?.timestamp), locOf(firstIn), siteIdOf(firstIn),
-          timeIST(lastOut?.timestamp), locOf(lastOut), siteIdOf(lastOut),
+          timeIST(firstIn?.timestamp), locOf(firstIn),
+          timeIST(lastOut?.timestamp), locOf(lastOut),
           allActivity,
           otMins > 0 ? otMins : "",
           statusMap.get(`${uid}__${date}`) || "",
