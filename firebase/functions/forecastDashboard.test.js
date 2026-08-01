@@ -49,6 +49,12 @@ test("CHECKLIST_FIRST_ROW is row 2 (row 1 is the header)", () => {
   assert.equal(CHECKLIST_FIRST_ROW, 2);
 });
 
+test("checklist has room before the monthly grid header (won't silently collide)", () => {
+  assert.ok(CHECKLIST_FIRST_ROW + DASHBOARD_CATEGORIES.length <= MONTHLY_GRID_HEADER_ROW,
+    `checklist would reach row ${CHECKLIST_FIRST_ROW + DASHBOARD_CATEGORIES.length}, ` +
+    `colliding with the monthly grid header at row ${MONTHLY_GRID_HEADER_ROW}`);
+});
+
 test("buildChecklistRows defaults every category to checked", () => {
   const rows = buildChecklistRows(["Manpower Expense", "Electricity"]);
   assert.deepEqual(rows, [[true, "Manpower Expense"], [true, "Electricity"]]);
@@ -66,18 +72,29 @@ test("buildMonthlyGridRows: month/checkbox range-gated SUMIFS lookup against Das
   const rows = buildMonthlyGridRows(["April 2026", "May 2026"], ["Manpower Expense", "Electricity"]);
   assert.equal(rows.length, 2);
   assert.equal(rows[0][0], "April 2026");
-  // category 0 (Manpower Expense) checkbox lives at B2 (CHECKLIST_FIRST_ROW + 0)
+  // category 0 (Manpower Expense) checkbox lives at A2 (CHECKLIST_FIRST_ROW + 0)
   assert.equal(rows[0][1],
     '=IF(AND(MATCH($A28,' + MONTH_ORDER_RANGE + ',0)>=MATCH($E$1,' + MONTH_ORDER_RANGE + ',0),' +
-    'MATCH($A28,' + MONTH_ORDER_RANGE + ',0)<=MATCH($E$2,' + MONTH_ORDER_RANGE + ',0),$B$2=TRUE),' +
+    'MATCH($A28,' + MONTH_ORDER_RANGE + ',0)<=MATCH($E$2,' + MONTH_ORDER_RANGE + ',0),$A$2=TRUE),' +
     'SUMIFS(Dashboard!$C:$C,Dashboard!$A:$A,$A28,Dashboard!$B:$B,"Manpower Expense"),"")');
   assert.equal(rows[0][2],
     '=IF(AND(MATCH($A28,' + MONTH_ORDER_RANGE + ',0)>=MATCH($E$1,' + MONTH_ORDER_RANGE + ',0),' +
-    'MATCH($A28,' + MONTH_ORDER_RANGE + ',0)<=MATCH($E$2,' + MONTH_ORDER_RANGE + ',0),$B$2=TRUE),' +
+    'MATCH($A28,' + MONTH_ORDER_RANGE + ',0)<=MATCH($E$2,' + MONTH_ORDER_RANGE + ',0),$A$2=TRUE),' +
     'SUMIFS(Dashboard!$D:$D,Dashboard!$A:$A,$A28,Dashboard!$B:$B,"Manpower Expense"),"")');
-  // category 1 (Electricity) checkbox lives at B3, row 2 of the grid is sheet row 29
-  assert.match(rows[1][3], /\$B\$3=TRUE/);
+  // category 1 (Electricity) checkbox lives at A3, row 2 of the grid is sheet row 29
+  assert.match(rows[1][3], /\$A\$3=TRUE/);
   assert.match(rows[1][3], /\$A29/);
+});
+
+test("buildChecklistRows + buildMonthlyGridRows agree on which column holds the checkbox", () => {
+  // buildChecklistRows writes [boolean, categoryName] pairs starting at column A (index 0), so the
+  // boolean — the actual checkbox — must be array index 0, not the category name at index 1.
+  const checklist = buildChecklistRows(["Manpower Expense", "Electricity"]);
+  assert.equal(checklist[0][0], true);
+  assert.equal(typeof checklist[0][0], "boolean");
+  // The monthly grid's gate formula must reference that same column (A), not B (the category name).
+  const rows = buildMonthlyGridRows(["April 2026"], ["Manpower Expense"]);
+  assert.match(rows[0][1], /\$A\$2=TRUE/);
 });
 
 const {
@@ -108,10 +125,10 @@ test("buildDailyGridRows: date/range/checkbox-gated cumulative SUMIFS against Da
   assert.equal(rows.length, 2);
   assert.equal(rows[0][0], "2026-04-01");
   assert.equal(rows[0][1],
-    '=IF(AND($A43>=$H$1,$A43<=$H$2,$B$2=TRUE),' +
+    '=IF(AND($A43>=$H$1,$A43<=$H$2,$A$2=TRUE),' +
     "SUMIFS('Daily Snapshot'!$G:$G,'Daily Snapshot'!$B:$B,\"Manpower Expense\",'Daily Snapshot'!$A:$A,\"<=\"&$A43),\"\")");
-  // category 1 checkbox is $B$3, second row is sheet row 44
-  assert.match(rows[1][2], /\$B\$3=TRUE/);
+  // category 1 checkbox is $A$3, second row is sheet row 44
+  assert.match(rows[1][2], /\$A\$3=TRUE/);
   assert.match(rows[1][2], /\$A44/);
 });
 

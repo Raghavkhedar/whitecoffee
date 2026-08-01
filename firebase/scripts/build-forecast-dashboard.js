@@ -29,9 +29,17 @@ async function ensureTab(sheets, spreadsheetId, tabName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId });
   const existing = meta.data.sheets.find((s) => s.properties.title === tabName);
   if (existing) return existing.properties.sheetId;
+  // Default new-sheet size is 26 cols x 1000 rows — too narrow for the Charts tab's monthly
+  // grid, which needs up to column AU (47 cols) for 23 categories. Size generously up front.
   const res = await sheets.spreadsheets.batchUpdate({
     spreadsheetId,
-    requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+    requestBody: {
+      requests: [{
+        addSheet: {
+          properties: { title: tabName, gridProperties: { rowCount: 500, columnCount: 60 } },
+        },
+      }],
+    },
   });
   return res.data.replies[0].addSheet.properties.sheetId;
 }
@@ -67,7 +75,10 @@ async function main() {
 
   const valueUpdates = [
     { range: "Charts!A1", values: [["Include?", "Category", "", "Start Month", months[0], "", "Start Date", fyDates[0]]] },
-    { range: "Charts!A2", values: [["", "", "", "End Month", months[months.length - 1], "", "End Date", todayISO]] },
+    // Narrowed to start at D2 (not A2): columns A/B of row 2 belong to the checklist's first row
+    // (CHECKLIST_FIRST_ROW = 2), written separately below. Writing blanks over A2/B2 here would
+    // overlap that write in the same values.batchUpdate call, risking order-dependent clobbering.
+    { range: "Charts!D2", values: [["End Month", months[months.length - 1], "", "End Date", todayISO]] },
     { range: `Charts!A${dash.CHECKLIST_FIRST_ROW}`, values: checklistRows },
     { range: "Charts!Z1", values: monthOrderCol },
     { range: `Charts!A${dash.MONTHLY_GRID_HEADER_ROW}`, values: [dash.buildMonthlyHeaderRow(categories)] },

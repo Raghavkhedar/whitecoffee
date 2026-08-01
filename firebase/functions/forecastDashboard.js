@@ -69,7 +69,7 @@ function buildMonthlyGridRows(months, categories) {
     const monthCellRef = `$A${sheetRow}`;
     const row = [month];
     categories.forEach((category, cIdx) => {
-      const checkboxRef = `$B$${CHECKLIST_FIRST_ROW + cIdx}`;
+      const checkboxRef = `$A$${CHECKLIST_FIRST_ROW + cIdx}`;
       const gate = `AND(${inMonthRangeClause(monthCellRef)},${checkboxRef}=TRUE)`;
       row.push(`=IF(${gate},SUMIFS(Dashboard!$C:$C,Dashboard!$A:$A,${monthCellRef},Dashboard!$B:$B,"${category}"),"")`);
       row.push(`=IF(${gate},SUMIFS(Dashboard!$D:$D,Dashboard!$A:$A,${monthCellRef},Dashboard!$B:$B,"${category}"),"")`);
@@ -106,7 +106,7 @@ function buildDailyGridRows(dates, categories) {
     const dateCellRef = `$A${sheetRow}`;
     const row = [date];
     categories.forEach((category, cIdx) => {
-      const checkboxRef = `$B$${CHECKLIST_FIRST_ROW + cIdx}`;
+      const checkboxRef = `$A$${CHECKLIST_FIRST_ROW + cIdx}`;
       const gate = `AND(${dateCellRef}>=$H$1,${dateCellRef}<=$H$2,${checkboxRef}=TRUE)`;
       row.push(`=IF(${gate},SUMIFS('Daily Snapshot'!$G:$G,'Daily Snapshot'!$B:$B,"${category}",'Daily Snapshot'!$A:$A,"<="&${dateCellRef}),"")`);
     });
