@@ -79,3 +79,38 @@ test("buildMonthlyGridRows: month/checkbox range-gated SUMIFS lookup against Das
   assert.match(rows[1][3], /\$B\$3=TRUE/);
   assert.match(rows[1][3], /\$A29/);
 });
+
+const {
+  DAILY_GRID_HEADER_ROW, DAILY_GRID_FIRST_DATA_ROW,
+  fiscalYearDates, buildDailyHeaderRow, buildDailyGridRows,
+} = require("./forecastDashboard");
+
+test("fiscalYearDates spans April 1 of the FY start year through March 31 of the next year", () => {
+  const dates = fiscalYearDates("2026-08-01"); // FY2026-27, containing today per the design
+  assert.equal(dates[0], "2026-04-01");
+  assert.equal(dates[dates.length - 1], "2027-03-31");
+  assert.equal(dates.length, 365); // 2027 is not a leap year
+});
+
+test("fiscalYearDates: an anchor date in Jan-Mar belongs to the FY that started the previous April", () => {
+  const dates = fiscalYearDates("2027-02-15");
+  assert.equal(dates[0], "2026-04-01");
+  assert.equal(dates[dates.length - 1], "2027-03-31");
+});
+
+test("buildDailyHeaderRow: one Cumulative column per category", () => {
+  const row = buildDailyHeaderRow(["Manpower Expense", "Electricity"]);
+  assert.deepEqual(row, ["Date", "Manpower Expense - Cumulative", "Electricity - Cumulative"]);
+});
+
+test("buildDailyGridRows: date/range/checkbox-gated cumulative SUMIFS against Daily Snapshot", () => {
+  const rows = buildDailyGridRows(["2026-04-01", "2026-04-02"], ["Manpower Expense", "Electricity"]);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0][0], "2026-04-01");
+  assert.equal(rows[0][1],
+    '=IF(AND($A43>=$H$1,$A43<=$H$2,$B$2=TRUE),' +
+    "SUMIFS('Daily Snapshot'!$G:$G,'Daily Snapshot'!$B:$B,\"Manpower Expense\",'Daily Snapshot'!$A:$A,\"<=\"&$A43),\"\")");
+  // category 1 checkbox is $B$3, second row is sheet row 44
+  assert.match(rows[1][2], /\$B\$3=TRUE/);
+  assert.match(rows[1][2], /\$A44/);
+});
