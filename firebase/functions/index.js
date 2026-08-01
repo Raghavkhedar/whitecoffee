@@ -100,6 +100,8 @@ const SHEET_ID_MANPOWER = "1U66-ldSNMm01f3rnJabJe0BxTUFvDglSX5rAFqXDJZ4";
 // Forecasting export target + the MDD ledger source (read-only). See forecastSpend.js.
 const FORECAST_SHEET_ID = "1ON35PHx0B5vZAUwhvPQ5IYL-3JK_Rqy4dCfMrs11NKo";
 const MDD_SHEET_ID = "1rsmpHOeOeVBG8XzIFZlnEAa2pzyxr4S0UYOYGyulFyQ";
+// Bank-statement ledger — the ONLY source for the "Rental of Space" category. Read-only.
+const BANK_SHEET_ID = "10-8a0KmY7BI21mG5d3LuTPXHL0L-WJ7Zkj6Dfp9kvrA";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -461,7 +463,27 @@ exports.exportForecastSpend = onSchedule(
     const vendor = forecast.bucketMddTab({ values: vendorVals, resolve: vendorResolve });
     const office = forecast.bucketMddTab({ values: officeVals, resolve: officeResolve });
     const comm = forecast.bucketCommunication(commVals);
-    flat.push(...vendor.rows, ...office.rows, ...comm.rows);
+
+    // Rental of Space lives in a separate bank-statement ledger, not MDD. Two tabs; the third
+    // tab there is a flagged-exceptions sheet and is deliberately not read. A failure to read
+    // it must not take the whole export down — rent is one category out of 23.
+    let rentalRows = [];
+    try {
+      const bankVals = await Promise.all(["Bank", "TBPR"].map(async (tab) => {
+        const res = await sheets.spreadsheets.values.get({ spreadsheetId: BANK_SHEET_ID, range: tab });
+        return res.data.values || [];
+      }));
+      bankVals.forEach((values, i) => {
+        const b = forecast.bucketBankRental({ values });
+        rentalRows = rentalRows.concat(b.rows);
+        console.log(`forecast: bank tab '${["Bank", "TBPR"][i]}' dateCol=${b.dateCol} amtCol=${b.amtCol} ` +
+          `tagCols=[${b.tagCols.join(",")}] matched=${b.matched} rows=${b.rows.length}`);
+      });
+    } catch (e) {
+      console.error(`forecast: bank ledger read FAILED (Rental of Space will be 0): ${e.message}`);
+    }
+
+    flat.push(...vendor.rows, ...office.rows, ...comm.rows, ...rentalRows);
 
     // 4) Typo protection — warn on any catalog tag that never appeared in its tab.
     const missVendor = Object.keys(forecast.VENDOR_CATEGORIES).filter((t) => !vendor.seenTags.has(t));
@@ -476,7 +498,7 @@ exports.exportForecastSpend = onSchedule(
     console.log(`forecast[diag]: vendor tags seen = ${[...vendor.seenTags].join(" | ") || "(none)"}`);
     console.log(`forecast[diag]: office tags seen = ${[...office.seenTags].join(" | ") || "(none)"}`);
     const diagDates = flat.map((r) => r[0]).filter(Boolean).sort();
-    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - comm.rows.length}`);
+    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - comm.rows.length - rentalRows.length}`);
     console.log(`forecast[diag]: date span ${diagDates[0]} .. ${diagDates[diagDates.length - 1]}`);
     // Drop future-dated rows (data-entry typos, e.g. a stray 2027 date) before building the grid.
     const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -507,22 +529,33 @@ exports.exportForecastSpend = onSchedule(
     });
     console.log(`forecast: wrote ${flat.length} SpendData rows + ${snapshot.length} Daily Snapshot rows`);
 
-    // 7) Forecast entry template — the manager types his forecast ₹ per category per month here,
-    // then builds his own charts / comparison against Daily Snapshot. Created ONCE and never
-    // overwritten: if the tab already has content (his entries), we leave it completely alone.
-    await ensureTab(sheets, FORECAST_SHEET_ID, "Forecast");
-    const existingForecast = await sheets.spreadsheets.values.get({ spreadsheetId: FORECAST_SHEET_ID, range: "Forecast!A1" });
+    // 7) Forecast entry tab — the manager types his forecast here: a per-employee Manpower grid
+    // plus 20 blank line-item rows per category, one block per fiscal month. Created ONCE and
+    // never overwritten: if the tab already has content (his entries), we leave it alone.
+    const fyTab = `Forecast ${forecast.fiscalYearLabel(todayIST)}`;
+    await ensureTab(sheets, FORECAST_SHEET_ID, fyTab);
+    const existingForecast = await sheets.spreadsheets.values.get({
+      spreadsheetId: FORECAST_SHEET_ID, range: `${fyTab}!A1`,
+    });
     if (!existingForecast.data.values || existingForecast.data.values.length === 0) {
-      const cats = ["Manpower Expense", ...forecast.STANDALONE_CATEGORIES];
-      const months = forecast.fiscalYearMonths(todayIST);
-      const template = [["Category", ...months], ...cats.map((c) => [c])];
+      // Read the roster only when we are actually going to write — on every later run this
+      // branch is skipped and the Firestore read never happens.
+      const usersSnap = await db.collection("users").get();
+      const { employees, duplicates } = forecast.forecastRoster(usersSnap.docs.map((d) => d.data()));
+      if (duplicates.length) {
+        console.warn(`forecast: duplicate employee ids collapsed to one row: ${duplicates.join(", ")}`);
+      }
+      const template = forecast.buildForecastTemplate({
+        employees, months: forecast.fiscalYearMonths(todayIST),
+      });
       await sheets.spreadsheets.values.update({
-        spreadsheetId: FORECAST_SHEET_ID, range: "Forecast!A1",
+        spreadsheetId: FORECAST_SHEET_ID, range: `${fyTab}!A1`,
         valueInputOption: "USER_ENTERED", requestBody: { values: template },
       });
-      console.log("forecast: created blank Forecast entry template (22 categories × 12 fiscal months)");
+      console.log(`forecast: created '${fyTab}' — ${template.length} rows, ` +
+        `${employees.length} employees × 12 months`);
     } else {
-      console.log("forecast: Forecast tab already has content — left untouched");
+      console.log(`forecast: '${fyTab}' already has content — left untouched`);
     }
   },
 );
