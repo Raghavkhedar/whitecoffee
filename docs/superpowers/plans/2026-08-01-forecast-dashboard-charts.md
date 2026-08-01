@@ -470,7 +470,7 @@ test("buildMonthlyChartRequest: LINE chart, domain = Month column, one series pe
   assert.equal(chart.domains[0].domain.sourceRange.sources[0].startColumnIndex, 0); // column A
   // GridRange row/column indexes are 0-based: sheet row 27 (MONTHLY_GRID_HEADER_ROW, 1-based) = 26.
   assert.equal(chart.domains[0].domain.sourceRange.sources[0].startRowIndex, 26);
-  assert.equal(chart.domains[0].domain.sourceRange.sources[0].endRowIndex, 26 + 12); // header + 12 months
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].endRowIndex, 27 + 12); // firstDataRow0(27) + 12 months = 39
   assert.equal(chart.series.length, 4); // 2 categories x (Actual, Forecast)
   assert.equal(chart.series[0].series.sourceRange.sources[0].startColumnIndex, 1); // column B
 });
@@ -481,7 +481,7 @@ test("buildDailyChartRequest: LINE chart, domain = Date column, one series per c
   assert.equal(chart.chartType, "LINE");
   // GridRange row/column indexes are 0-based: sheet row 42 (DAILY_GRID_HEADER_ROW, 1-based) = 41.
   assert.equal(chart.domains[0].domain.sourceRange.sources[0].startRowIndex, 41);
-  assert.equal(chart.domains[0].domain.sourceRange.sources[0].endRowIndex, 41 + 365);
+  assert.equal(chart.domains[0].domain.sourceRange.sources[0].endRowIndex, 42 + 365); // firstDataRow0(42) + 365 days = 407
   assert.equal(chart.series.length, 3);
 });
 ```
