@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getAllUsers, createUserProfile, updateUserProfile,
-  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail,
+  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail, getPasswordResetLink,
   getCompensationMap, getSpecialAllowance, setSpecialAllowance, isMonthLocked } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
 import { firebaseConfig } from '@/lib/firebase';
-import { syntheticLoginEmail } from '@/lib/constants';
+import { syntheticLoginEmail, LOGIN_EMAIL_DOMAIN } from '@/lib/constants';
+import { resolveResetPassword, MIN_PASSWORD_LENGTH } from '@/lib/passwordReset';
+import { classifyLoginEmailChange, loginChangeWarning, describeLogin, idLoginWorks, validateContactEmail } from '@/lib/loginIdentity';
 import { istTodayStr } from '@/lib/date';
 import type { User, SpecialAllowance } from '@/types';
 import Icon from '@/components/Icon';
@@ -96,6 +98,11 @@ export default function UsersPage() {
   const [form, setForm]         = useState<FormState>({ ...EMPTY_FORM });
   const [saving, setSaving]     = useState(false);
   const [formError, setFormError] = useState('');
+  // Success note for a password reset — shows the password that is now ACTUALLY on the
+  // account, so what the admin hands over can never drift from what was set.
+  const [pwNote, setPwNote]     = useState('');
+  // A minted reset link + who it should go to. Bearer credential: shown, never logged.
+  const [resetLink, setResetLink] = useState<{ link: string; note: string } | null>(null);
   const [query, setQuery]       = useState('');
   const [showInactive, setShowInactive] = useState(false);
   // Inline suspend sub-form (inside the edit modal): required reason + optional return date.
@@ -184,6 +191,8 @@ export default function UsersPage() {
     setEditing(null);
     setForm({ ...EMPTY_FORM });
     setFormError('');
+    setPwNote('');
+    setResetLink(null);
     resetSuspendForm();
     resetSaForm();
     setShowModal(true);
@@ -210,6 +219,8 @@ export default function UsersPage() {
       conveyanceRateType: u.conveyanceRateType ? String(u.conveyanceRateType) as '1' | '2' : '',
     });
     setFormError('');
+    setPwNote('');
+    setResetLink(null);
     resetSuspendForm();
     resetSaForm();
     setShowModal(true);
@@ -230,20 +241,39 @@ export default function UsersPage() {
       const homeLng = form.homeLng ? parseFloat(form.homeLng) : undefined;
       const conveyanceRateType = form.conveyanceRateType ? (parseInt(form.conveyanceRateType) as 1 | 2) : undefined;
       const contactEmail = form.contactEmail.trim().toLowerCase();
+      // Reset links and notifications go here — a login key with no mailbox behind it
+      // would swallow them silently. Blank is fine; wrong is not.
+      const contact = validateContactEmail(contactEmail);
+      if (!contact.ok) {
+        setFormError(contact.reason === 'not-a-mailbox'
+          ? `${contactEmail} is a login key, not a mailbox — nothing sent there can arrive. Use a real email, or leave it blank.`
+          : 'Contact email is not a valid email address.');
+        setSaving(false);
+        return;
+      }
       // Categories only apply to roles that get them (operations); switching to another role clears them.
       const categories = getsCategories(form.role) ? form.categories : [];
       // Level applies to all roles; "None" stores null.
       const level = form.level || null;
 
       if (editing) {
-        // Login email goes through a Cloud Function (Auth + doc); validate before touching anything.
+        // Login email goes through a Cloud Function (Auth + doc); validate and get
+        // explicit consent BEFORE touching anything. Pointing the account at a personal
+        // address silently kills employee-ID login (see lib/loginIdentity.ts) — that is
+        // never obvious from the form, so it must be confirmed, not assumed.
         const nextLogin = form.loginEmail.trim().toLowerCase();
-        const loginChanged = nextLogin !== (editing.email ?? '').toLowerCase();
-        if (loginChanged && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextLogin)) {
+        const change = classifyLoginEmailChange(form.employeeId, editing.email ?? '', nextLogin);
+        if (change.kind === 'invalid') {
           setFormError('Login email is not a valid email address.');
           setSaving(false);
           return;
         }
+        const warning = loginChangeWarning(change);
+        if (warning && !window.confirm(warning)) {
+          setSaving(false);
+          return;
+        }
+        const loginChanged = change.kind !== 'unchanged';
         await updateUserProfile(editing.id, {
           name: form.name.trim(), role: form.role, level, employeeId: form.employeeId.trim(),
           tabAccess: form.tabAccess, categories, contactEmail, salaryRate,
@@ -332,15 +362,57 @@ export default function UsersPage() {
     setSaSaving(false);
   }
 
+  // ⚠️ ASK FIRST, WRITE SECOND. The prompt box is editable, so whatever the admin types
+  // is the password that must land on the account. The old order (set a random password,
+  // then show it in an editable prompt whose return value was discarded) meant the
+  // password admins typed and handed over was never the one on the account — see the
+  // header comment in lib/passwordReset.ts for the incident this cost.
   async function handleResetPassword() {
     if (!editing) return;
-    const temp = makeTempPassword();
+    const who = editing.name || 'this employee';
+    const outcome = resolveResetPassword(window.prompt(
+      `Set a new password for ${who} (at least ${MIN_PASSWORD_LENGTH} characters).\n\n`
+      + `Type the one you want, or keep the suggested password below.`,
+      makeTempPassword(),
+    ));
+
+    if (!outcome.ok) {
+      setPwNote('');
+      // Cancel means cancel — nothing was written, so there is nothing to report.
+      if (outcome.reason === 'too-short') {
+        setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters — nothing was changed.`);
+      }
+      return;
+    }
+
     setSaving(true);
+    setFormError('');
     try {
-      await resetUserPassword(editing.id, temp);
-      window.prompt(`New password for ${editing.name || 'this employee'} — copy and hand it over:`, temp);
+      await resetUserPassword(editing.id, outcome.password);
+      setPwNote(`Password for ${who} is now:  ${outcome.password}`);
     } catch (e: unknown) {
+      setPwNote('');
       setFormError(e instanceof Error ? e.message : 'Password reset failed. Try again.');
+    }
+    setSaving(false);
+  }
+
+  // Preferred over handleResetPassword: the EMPLOYEE redeems the link and chooses their
+  // own password, so no password is ever invented, transcribed, or handed over — the
+  // whole class of failure behind the 2026-07-31 lockouts simply cannot occur.
+  async function handleResetLink() {
+    if (!editing) return;
+    setSaving(true);
+    setFormError('');
+    setPwNote('');
+    try {
+      const { link, delivery } = await getPasswordResetLink(editing.id);
+      const to = delivery.channel === 'email'
+        ? `Send it to ${delivery.to}.`
+        : 'No usable contact email on file — pass this link to them directly (WhatsApp, SMS, in person).';
+      setResetLink({ link, note: to });
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'Could not generate a reset link.');
     }
     setSaving(false);
   }
@@ -518,13 +590,25 @@ export default function UsersPage() {
                 <div>
                   <label className="label">Login Email <span className="text-text-secondary font-normal">(the credential this employee signs in with)</span></label>
                   <input className="input" type="email" value={form.loginEmail} onChange={e => setForm(f => ({ ...f, loginEmail: e.target.value }))} placeholder="ravi@whitecoffee.internal" />
+                  {/* Live, and describes the value CURRENTLY TYPED — so the moment an
+                      admin replaces the synthetic address with a personal one, the line
+                      turns amber and says the employee ID will stop working. Saving then
+                      asks for confirmation on top (loginChangeWarning). */}
+                  <p className={`text-[12px] mt-1 ${idLoginWorks(form.employeeId, form.loginEmail) ? 'text-text-secondary' : 'text-[#A15C00]'}`}>
+                    {describeLogin(form.employeeId, form.loginEmail)}
+                  </p>
                   <p className="text-[12px] text-text-secondary mt-1">Changing this updates their sign-in credential immediately — they must use the new email to log in.</p>
                 </div>
               )}
 
               <div>
-                <label className="label">Contact Email <span className="text-text-secondary font-normal">(optional — notifications only, not a login)</span></label>
-                <input className="input" type="email" value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="ravi@senken.com" />
+                <label className="label">Contact Email <span className="text-text-secondary font-normal">(optional — a real inbox this person reads)</span></label>
+                <input className="input" type="email" value={form.contactEmail} onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))} placeholder="rinki@gmail.com" />
+                {/* Naming what it is FOR is the fix: the old label said "notifications
+                    only, not a login", and admins still pasted the login address here. */}
+                <p className="text-[12px] text-text-secondary mt-1">
+                  Where password-reset links and notifications are sent. Must be a real inbox — never their <span className="font-mono">@{LOGIN_EMAIL_DOMAIN}</span> login. Leave blank if they have no email.
+                </p>
               </div>
 
               {!editing && <div><label className="label">Initial Password</label><input className="input" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" /></div>}
@@ -690,9 +774,40 @@ export default function UsersPage() {
 
               {editing && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-border">
-                  <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
-                    Reset password (set a new temporary one)
+                  {/* Listed first because it is the better tool: the employee sets their
+                      own password, so none is ever invented or transcribed. */}
+                  <button className="w-full text-sm text-primary hover:underline text-center disabled:opacity-50" onClick={handleResetLink} disabled={saving}>
+                    Send a reset link (they choose their own password)
                   </button>
+
+                  {resetLink && (
+                    <div className="rounded-[10px] bg-[#F1F7F1] border border-[#CFE3CF] p-3 text-[13px] space-y-2">
+                      <p className="text-text-primary">{resetLink.note}</p>
+                      <p className="font-mono break-all text-[12px] text-text-secondary">{resetLink.link}</p>
+                      <button
+                        type="button"
+                        className="text-primary underline text-[12px]"
+                        onClick={() => navigator.clipboard?.writeText(resetLink.link)}
+                      >
+                        Copy link
+                      </button>
+                      <p className="text-[12px] text-text-secondary">
+                        Single-use, and it expires — generate a fresh one if it has been sitting a while. Anyone holding this link can set the password, so send it only to the employee.
+                      </p>
+                    </div>
+                  )}
+
+                  <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
+                    Or set a password yourself
+                  </button>
+
+                  {/* The password now actually on the account. Shown until the modal is
+                      reopened so the admin can copy it without racing a dialog. */}
+                  {pwNote && (
+                    <p className="rounded-[10px] bg-[#F1F7F1] border border-[#CFE3CF] p-3 text-[13px] font-mono break-all text-text-primary">
+                      {pwNote}
+                    </p>
+                  )}
 
                   {editing.active === false ? (
                     <>

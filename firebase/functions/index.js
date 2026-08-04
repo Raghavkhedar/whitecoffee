@@ -19,6 +19,8 @@ const { buildManpowerVisits } = require("./manpowerVisits");
 const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
 const { computeDeductions } = require("./payrollDeductions");
+// Where a password-reset link should be delivered (see passwordReset.js).
+const { resolveResetDelivery } = require("./passwordReset");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
@@ -100,6 +102,8 @@ const SHEET_ID_MANPOWER = "1U66-ldSNMm01f3rnJabJe0BxTUFvDglSX5rAFqXDJZ4";
 // Forecasting export target + the MDD ledger source (read-only). See forecastSpend.js.
 const FORECAST_SHEET_ID = "1ON35PHx0B5vZAUwhvPQ5IYL-3JK_Rqy4dCfMrs11NKo";
 const MDD_SHEET_ID = "1rsmpHOeOeVBG8XzIFZlnEAa2pzyxr4S0UYOYGyulFyQ";
+// Bank-statement ledger — the ONLY source for the "Rental of Space" category. Read-only.
+const BANK_SHEET_ID = "10-8a0KmY7BI21mG5d3LuTPXHL0L-WJ7Zkj6Dfp9kvrA";
 
 // Conveyance rates are now stored in Firestore (config/conveyance) and
 // assigned per employee (user.conveyanceRateType = 1 or 2).
@@ -421,6 +425,9 @@ exports.exportForecastSpend = onSchedule(
     const auth = new google.auth.GoogleAuth({ credentials: keyJson, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
     const sheets = google.sheets({ version: "v4", auth });
     const db = admin.firestore();
+    // Computed once, up front — used for the future-date filter, the bank-ledger FY lower
+    // bound, and the FY forecast entry tab name below.
+    const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
     // 1) Firestore Manpower — all snapshotted months (feeds the overall running total).
     const dsSnap = await db.collection("dailySpend").get();
@@ -461,7 +468,63 @@ exports.exportForecastSpend = onSchedule(
     const vendor = forecast.bucketMddTab({ values: vendorVals, resolve: vendorResolve });
     const office = forecast.bucketMddTab({ values: officeVals, resolve: officeResolve });
     const comm = forecast.bucketCommunication(commVals);
-    flat.push(...vendor.rows, ...office.rows, ...comm.rows);
+
+    // Rental of Space lives in a separate bank-statement ledger, not MDD. Two tabs; the third
+    // tab there is a flagged-exceptions sheet and is deliberately not read. Tab titles drift
+    // like the MDD tabs do, so resolve them the same way (case-insensitive substring) instead
+    // of hardcoding literal names, and give each tab its own read + try/catch — renaming or
+    // breaking one tab must not silence the other's contribution. bucketBankRental is pure, so
+    // it is called OUTSIDE the try that guards the network read: a bug in it must surface as a
+    // real crash/log, not get mislabelled as "bank tab read FAILED".
+    let rentalRows = [];
+    let bankTitles = [];
+    try {
+      const bankMeta = await sheets.spreadsheets.get({ spreadsheetId: BANK_SHEET_ID });
+      bankTitles = bankMeta.data.sheets.map((s) => s.properties.title);
+    } catch (e) {
+      console.error(`forecast: bank ledger tab list read FAILED (Rental of Space will be 0): ${e.message}`);
+    }
+    for (const needle of ["bank", "tbpr"]) {
+      const tabName = forecast.pickTabName(bankTitles, needle);
+      if (!tabName) {
+        console.warn(`forecast: bank tab matching '${needle}' not found among [${bankTitles.join(", ")}]`);
+        continue;
+      }
+      let values;
+      try {
+        const res = await sheets.spreadsheets.values.get({ spreadsheetId: BANK_SHEET_ID, range: tabName });
+        values = res.data.values || [];
+      } catch (e) {
+        console.error(`forecast: bank tab '${tabName}' read FAILED (skipped): ${e.message}`);
+        continue;
+      }
+      const b = forecast.bucketBankRental({ values });
+      rentalRows = rentalRows.concat(b.rows);
+      if (b.matched > 0 && b.rows.length === 0) {
+        // matched > 0 but 0 rows means every matched row failed the date/amount parse — most
+        // likely a two-digit-year export (dd/mm/yy), which parseDate does not accept.
+        console.warn(`forecast: bank tab '${tabName}' matched ${b.matched} rental row(s) but produced 0 rows — ` +
+          `likely an unparseable date format (e.g. a two-digit year, dd/mm/yy)`);
+      } else {
+        console.log(`forecast: bank tab '${tabName}' dateCol=${b.dateCol} amtCol=${b.amtCol} ` +
+          `tagCols=[${b.tagCols.join(",")}] matched=${b.matched} rows=${b.rows.length}`);
+      }
+    }
+
+    // The bank ledger is its own source with its own, potentially much longer history than the
+    // MDD tabs — without a lower bound here, the Daily Snapshot's dense per-date grid (and its
+    // payload) grows with however far back the bank tabs go, which can take the whole 300s
+    // nightly export down. Bound bank rows ONLY to the current fiscal year; no other source's
+    // filtering changes.
+    const [tYear, tMonth] = todayIST.split("-").map(Number);
+    const fyStartISO = `${tMonth >= 4 ? tYear : tYear - 1}-04-01`;
+    const rentalBefore = rentalRows.length;
+    rentalRows = rentalRows.filter((r) => r[0] >= fyStartISO);
+    if (rentalBefore !== rentalRows.length) {
+      console.log(`forecast: dropped ${rentalBefore - rentalRows.length} bank row(s) dated before FY start ${fyStartISO}`);
+    }
+
+    flat.push(...vendor.rows, ...office.rows, ...comm.rows, ...rentalRows);
 
     // 4) Typo protection — warn on any catalog tag that never appeared in its tab.
     const missVendor = Object.keys(forecast.VENDOR_CATEGORIES).filter((t) => !vendor.seenTags.has(t));
@@ -476,10 +539,9 @@ exports.exportForecastSpend = onSchedule(
     console.log(`forecast[diag]: vendor tags seen = ${[...vendor.seenTags].join(" | ") || "(none)"}`);
     console.log(`forecast[diag]: office tags seen = ${[...office.seenTags].join(" | ") || "(none)"}`);
     const diagDates = flat.map((r) => r[0]).filter(Boolean).sort();
-    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - comm.rows.length}`);
+    console.log(`forecast[diag]: firestore manpower rows = ${flat.length - vendor.rows.length - office.rows.length - comm.rows.length - rentalRows.length}`);
     console.log(`forecast[diag]: date span ${diagDates[0]} .. ${diagDates[diagDates.length - 1]}`);
     // Drop future-dated rows (data-entry typos, e.g. a stray 2027 date) before building the grid.
-    const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const before = flat.length;
     for (let i = flat.length - 1; i >= 0; i--) if (flat[i][0] > todayIST) flat.splice(i, 1);
     if (before !== flat.length) console.log(`forecast: dropped ${before - flat.length} future-dated row(s) after ${todayIST}`);
@@ -507,22 +569,39 @@ exports.exportForecastSpend = onSchedule(
     });
     console.log(`forecast: wrote ${flat.length} SpendData rows + ${snapshot.length} Daily Snapshot rows`);
 
-    // 7) Forecast entry template — the manager types his forecast ₹ per category per month here,
-    // then builds his own charts / comparison against Daily Snapshot. Created ONCE and never
-    // overwritten: if the tab already has content (his entries), we leave it completely alone.
-    await ensureTab(sheets, FORECAST_SHEET_ID, "Forecast");
-    const existingForecast = await sheets.spreadsheets.values.get({ spreadsheetId: FORECAST_SHEET_ID, range: "Forecast!A1" });
-    if (!existingForecast.data.values || existingForecast.data.values.length === 0) {
-      const cats = ["Manpower Expense", ...forecast.STANDALONE_CATEGORIES];
-      const months = forecast.fiscalYearMonths(todayIST);
-      const template = [["Category", ...months], ...cats.map((c) => [c])];
+    // 7) Forecast entry tab — the manager types his forecast here: a per-employee Manpower grid
+    // plus 20 blank line-item rows per category, one block per fiscal month. Created ONCE and
+    // never overwritten: if the tab already has content (his entries), we leave it alone.
+    const fyTab = `Forecast ${forecast.fiscalYearLabel(todayIST)}`;
+    await ensureTab(sheets, FORECAST_SHEET_ID, fyTab);
+    const existingForecast = await sheets.spreadsheets.values.get({
+      spreadsheetId: FORECAST_SHEET_ID, range: `${fyTab}!A1:L50`,
+    });
+    // The manager owns every cell in this tab and is expected to restructure it (retype
+    // starting below row 1, delete column A, etc.) — a single-cell A1 check would read that
+    // as "empty" and overwrite ~6,200 rows of his work. Any non-empty cell anywhere in the
+    // checked range counts as "occupied".
+    const forecastOccupied = (existingForecast.data.values || [])
+      .some((row) => (row || []).some((cell) => String(cell == null ? "" : cell).trim() !== ""));
+    if (!forecastOccupied) {
+      // Read the roster only when we are actually going to write — on every later run this
+      // branch is skipped and the Firestore read never happens.
+      const usersSnap = await db.collection("users").get();
+      const { employees, duplicates } = forecast.forecastRoster(usersSnap.docs.map((d) => d.data()));
+      if (duplicates.length) {
+        console.warn(`forecast: duplicate employee ids collapsed to one row: ${duplicates.join(", ")}`);
+      }
+      const template = forecast.buildForecastTemplate({
+        employees, months: forecast.fiscalYearMonths(todayIST),
+      });
       await sheets.spreadsheets.values.update({
-        spreadsheetId: FORECAST_SHEET_ID, range: "Forecast!A1",
+        spreadsheetId: FORECAST_SHEET_ID, range: `${fyTab}!A1`,
         valueInputOption: "USER_ENTERED", requestBody: { values: template },
       });
-      console.log("forecast: created blank Forecast entry template (22 categories × 12 fiscal months)");
+      console.log(`forecast: created '${fyTab}' — ${template.length} rows, ` +
+        `${employees.length} employees × 12 months`);
     } else {
-      console.log("forecast: Forecast tab already has content — left untouched");
+      console.log(`forecast: '${fyTab}' already has content — left untouched`);
     }
   },
 );
@@ -663,7 +742,7 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("attendance").get();
       const header = [
         "Date", "Employee Name", "Employee ID", "Role",
-        "In Time", "In Location", "In Site ID", "Out Time", "Out Location", "Out Site ID",
+        "In Time", "In Location", "Out Time", "Out Location",
         "All Activity", "OT (mins)", "Daily Status", "PL Balance", "WO Balance",
       ];
 
@@ -774,8 +853,8 @@ exports.exportToSheets = onSchedule(
           userNameMap.get(uid) ?? "",
           userEmpIdMap.get(uid) ?? "",
           role,
-          timeIST(firstIn?.timestamp), locOf(firstIn), siteIdOf(firstIn),
-          timeIST(lastOut?.timestamp), locOf(lastOut), siteIdOf(lastOut),
+          timeIST(firstIn?.timestamp), locOf(firstIn),
+          timeIST(lastOut?.timestamp), locOf(lastOut),
           allActivity,
           otMins > 0 ? otMins : "",
           statusMap.get(`${uid}__${date}`) || "",
@@ -2090,6 +2169,45 @@ exports.resetUserPassword = onCall(async (request) => {
   await admin.auth().updateUser(uid, { password: newPassword });
   console.log(`resetUserPassword: ${uid}`);
   return { success: true };
+});
+
+// ── Admin-issued password-reset LINK (Admin SDK) ──────────────────────────────
+// The employee sets their own password, so nobody has to invent one, write it down, or
+// hand it over — which is how the 2026-07-31 lockouts happened.
+//
+// generatePasswordResetLink only MINTS a URL; it sends nothing, and it does not care
+// whether the address is deliverable. That is precisely why it works here: our staff sign
+// in as `<empId>@whitecoffee.internal`, which has no mailbox, yet the link is still valid.
+// Delivery is ours to choose (resolveResetDelivery) — a real contactEmail, or the admin
+// passing it on by hand.
+//
+// ⚠️ ADMIN-ONLY, deliberately. An UNAUTHENTICATED version of this — "type your employee
+// ID and get a reset link" — would hand full account takeover to anyone who can guess an
+// ID (they are sequential). Self-service is only safe once the link is delivered
+// out-of-band to an address the requester must already control, i.e. once email sending
+// exists. Do not relax this gate before then.
+exports.generatePasswordResetLink = onCall(async (request) => {
+  await assertAdmin(request);
+  const { uid } = request.data || {};
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
+
+  const userRecord = await admin.auth().getUser(uid).catch(() => null);
+  if (!userRecord) throw new HttpsError("not-found", "No Auth account for that user.");
+
+  const snap = await admin.firestore().doc(`users/${uid}`).get();
+  const delivery = resolveResetDelivery(snap.exists ? snap.data() : {});
+
+  let link;
+  try {
+    link = await admin.auth().generatePasswordResetLink(userRecord.email);
+  } catch (e) {
+    throw new HttpsError("internal", e.message || "Could not generate a reset link.");
+  }
+
+  // The link is a bearer credential — whoever holds it can set the password. It is
+  // returned to an authenticated admin only, and never logged.
+  console.log(`generatePasswordResetLink: ${uid} (delivery=${delivery.channel})`);
+  return { link, delivery };
 });
 
 // ── Admin login-email change (Admin SDK) ──────────────────────────────────────

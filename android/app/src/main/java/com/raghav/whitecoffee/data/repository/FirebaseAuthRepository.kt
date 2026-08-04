@@ -97,24 +97,16 @@ class FirebaseAuthRepository @Inject constructor(
     }
 
     /**
-     * Maps Firebase exception messages to user-friendly strings.
+     * Maps a Firebase auth failure to the message the employee sees.
+     *
+     * ⚠️ Classifies by exception TYPE, not by message text. The previous version matched
+     * on `e.message.contains("password")` / `"no user record"`; Firebase's
+     * email-enumeration protection stopped emitting those strings, so both branches went
+     * dead and every failure — wrong password, missing account, moved login email —
+     * surfaced as one bare "Login failed." See AuthErrors.kt.
      */
-    private fun mapAuthException(e: Exception): Exception {
-        val message = when {
-            e.message?.contains("password") == true ->
-                "Incorrect password. Please try again."
-            e.message?.contains("no user record") == true ||
-                    e.message?.contains("user-not-found") == true ->
-                "No account found with this email."
-            e.message?.contains("network") == true ->
-                "Network error. Check your connection and try again."
-            e.message?.contains("too-many-requests") == true ->
-                "Too many failed attempts. Please try again later."
-            else ->
-                "Login failed. Please try again."
-        }
-        return Exception(message)
-    }
+    private fun mapAuthException(e: Exception): Exception =
+        Exception(authFailureMessage(classifyAuthException(e)))
 
     companion object {
         /**
