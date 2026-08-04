@@ -19,6 +19,8 @@ const { buildManpowerVisits } = require("./manpowerVisits");
 const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
 const { computeDeductions } = require("./payrollDeductions");
+// Where a password-reset link should be delivered (see passwordReset.js).
+const { resolveResetDelivery } = require("./passwordReset");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
@@ -2167,6 +2169,45 @@ exports.resetUserPassword = onCall(async (request) => {
   await admin.auth().updateUser(uid, { password: newPassword });
   console.log(`resetUserPassword: ${uid}`);
   return { success: true };
+});
+
+// ── Admin-issued password-reset LINK (Admin SDK) ──────────────────────────────
+// The employee sets their own password, so nobody has to invent one, write it down, or
+// hand it over — which is how the 2026-07-31 lockouts happened.
+//
+// generatePasswordResetLink only MINTS a URL; it sends nothing, and it does not care
+// whether the address is deliverable. That is precisely why it works here: our staff sign
+// in as `<empId>@whitecoffee.internal`, which has no mailbox, yet the link is still valid.
+// Delivery is ours to choose (resolveResetDelivery) — a real contactEmail, or the admin
+// passing it on by hand.
+//
+// ⚠️ ADMIN-ONLY, deliberately. An UNAUTHENTICATED version of this — "type your employee
+// ID and get a reset link" — would hand full account takeover to anyone who can guess an
+// ID (they are sequential). Self-service is only safe once the link is delivered
+// out-of-band to an address the requester must already control, i.e. once email sending
+// exists. Do not relax this gate before then.
+exports.generatePasswordResetLink = onCall(async (request) => {
+  await assertAdmin(request);
+  const { uid } = request.data || {};
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
+
+  const userRecord = await admin.auth().getUser(uid).catch(() => null);
+  if (!userRecord) throw new HttpsError("not-found", "No Auth account for that user.");
+
+  const snap = await admin.firestore().doc(`users/${uid}`).get();
+  const delivery = resolveResetDelivery(snap.exists ? snap.data() : {});
+
+  let link;
+  try {
+    link = await admin.auth().generatePasswordResetLink(userRecord.email);
+  } catch (e) {
+    throw new HttpsError("internal", e.message || "Could not generate a reset link.");
+  }
+
+  // The link is a bearer credential — whoever holds it can set the password. It is
+  // returned to an authenticated admin only, and never logged.
+  console.log(`generatePasswordResetLink: ${uid} (delivery=${delivery.channel})`);
+  return { link, delivery };
 });
 
 // ── Admin login-email change (Admin SDK) ──────────────────────────────────────
