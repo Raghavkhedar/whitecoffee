@@ -4,6 +4,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getAllUsers, createUserProfile, updateUserProfile,
   employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail, getPasswordResetLink,
+  revokeUserSessions,
   getCompensationMap, getSpecialAllowance, setSpecialAllowance, isMonthLocked } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
 import { firebaseConfig } from '@/lib/firebase';
@@ -417,6 +418,30 @@ export default function UsersPage() {
     setSaving(false);
   }
 
+  // Sign the employee out of every device. Confirmed because it interrupts whoever is
+  // legitimately working right now — a field technician mid-check-in gets dropped too.
+  async function handleRevokeSessions() {
+    if (!editing) return;
+    const who = editing.name || 'this employee';
+    if (!window.confirm(
+      `Sign ${who} out of every device, including their phone?\n\n`
+      + 'They can sign back in with the SAME password — this does not change it. '
+      + 'If the password may be known to someone else, reset it as well.\n\n'
+      + 'Continue?',
+    )) return;
+
+    setSaving(true);
+    setFormError('');
+    setPwNote('');
+    try {
+      await revokeUserSessions(editing.id);
+      setPwNote(`${who} has been signed out everywhere. Their password is unchanged.`);
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : 'Could not revoke sessions.');
+    }
+    setSaving(false);
+  }
+
   // Suspend the employee: reason required, expected-return optional (informational).
   async function handleSuspend() {
     if (!editing) return;
@@ -799,6 +824,10 @@ export default function UsersPage() {
 
                   <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
                     Or set a password yourself
+                  </button>
+
+                  <button className="w-full text-sm text-text-secondary hover:text-red-600 underline text-center disabled:opacity-50" onClick={handleRevokeSessions} disabled={saving}>
+                    Sign out of all devices
                   </button>
 
                   {/* The password now actually on the account. Shown until the modal is

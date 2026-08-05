@@ -2347,6 +2347,50 @@ exports.requestPasswordReset = onCall({ secrets: ["RESEND_API_KEY"] }, async (re
   return { message: SELF_SERVICE_MESSAGE };
 });
 
+// ── Force sign-out everywhere (Admin SDK) ─────────────────────────────────────
+// "This person's password may be compromised — get them out of everything, now."
+//
+// This is the answer to the portal having no session enforcement, and it is deliberately
+// NOT a mirror of the app's single-device rule. Mirroring would mean the portal writing
+// `activeSessionToken` on login, which would eject an admin's own phone every time they
+// opened the portal — the two surfaces are meant to be used at the same time.
+//
+// Two mechanisms, because the surfaces revoke differently:
+//
+//   1. revokeRefreshTokens invalidates every refresh token, which is what actually ends a
+//      portal session. ⚠️ Already-issued ID tokens stay valid until they expire, so the
+//      portal can survive up to an hour unless firestore.rules starts checking
+//      `request.auth.token.auth_time` against a revocation timestamp. Accepted for now:
+//      this is a "someone may have my password" tool, not a containment boundary.
+//
+//   2. A FRESH RANDOM activeSessionToken ejects the phones immediately, since the app
+//      watches the field live. ⚠️ It must be non-empty and different — NOT cleared.
+//      `isSessionSuperseded` treats an empty/absent token as "no session recorded" and
+//      never signs anyone out (a doc predating the field would otherwise eject its owner
+//      on every snapshot). Writing "" here would look like it worked and do nothing.
+exports.revokeUserSessions = onCall(async (request) => {
+  const actor = await assertAdmin(request);
+  const { uid } = request.data || {};
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
+
+  const userRecord = await admin.auth().getUser(uid).catch(() => null);
+  if (!userRecord) throw new HttpsError("not-found", "No Auth account for that user.");
+
+  await admin.auth().revokeRefreshTokens(uid);
+
+  // A token no device can be holding. Stamped for the audit log like any other write;
+  // auditLog.js redacts the VALUE, so the trail records that sessions were revoked and by
+  // whom without publishing a live session token.
+  await admin.firestore().doc(`users/${uid}`).update({
+    activeSessionToken: require("node:crypto").randomUUID(),
+    lastModifiedBy: actor,
+    lastModifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log(`revokeUserSessions: ${uid} by ${actor}`);
+  return { success: true };
+});
+
 // ── Admin login-email change (Admin SDK) ──────────────────────────────────────
 // Changes the employee's sign-in credential in Auth AND mirrors it on the user doc
 // so the two never drift. The employee logs in with the new email afterwards.

@@ -182,6 +182,14 @@ export async function requestPasswordReset(identifier: string): Promise<string> 
   return (res.data as { message: string }).message;
 }
 
+// Force this employee out of every signed-in session, on the phone and the portal.
+// For "their password may be compromised" — it does NOT change the password, so pair it
+// with a reset. Phones drop immediately (the app watches activeSessionToken live); a
+// portal tab can survive up to an hour, until its current ID token expires.
+export async function revokeUserSessions(uid: string) {
+  await httpsCallable(functions, 'revokeUserSessions')({ uid });
+}
+
 // Admin changes the employee's login email. Updates Firebase Auth AND the user doc
 // (Admin SDK) so the sign-in credential and the mirrored `email` field stay in sync.
 export async function updateUserEmail(uid: string, email: string) {
