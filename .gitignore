@@ -11,10 +11,6 @@ firebase/functions/*.local
 **/serviceAccount*.json
 **/*-serviceaccount*.json
 **/wckey.json
-# Rollback backups written by purge-inline-pay.js — every employee's salary, in plaintext.
-# The whole point of that migration is that pay stops being readable by whoever can read a
-# user record; committing the backup would put it in every clone of the repo instead.
-firebase/scripts/inline-pay-backup-*.json
 
 # Android / Gradle
 android/.gradle/
