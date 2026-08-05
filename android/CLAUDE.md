@@ -250,11 +250,29 @@ See `SiteRepository.kt` and `SiteTask.kt` for re-enable instructions.
 | emergencyContact | String | Phone number (Session 28) |
 | placeOfVisit | String | Where employee will be during leave (Session 28) |
 | reason | String | |
-| status | String | pending / approved / rejected |
+| status | String | pending / approved / rejected — stays `approved` even when fully cancelled |
+| approvedDates | List&lt;String&gt; | Days the approver GRANTED. **Empty = the whole range** (compatibility rule) |
+| cancelledDates | List&lt;String&gt; | Granted days an admin later REVOKED. **Empty = nothing cancelled** (inverted vs above) |
+| cancelledBy | String | Admin who cancelled (portal-only field; app never writes it) |
+| cancelComment | String | Mandatory cancellation reason |
+| lastCancelledAt | Timestamp | |
 | approvedBy | String | Manager's name |
 | approverComment | String | Rejection reason |
 | submittedAt | Timestamp | |
 | reviewedAt | Timestamp | |
+
+> **Partial approval + cancellation are OVERLAYS, and the app is read-only for both.** Neither
+> ever rewrites `fromDate`/`toDate`/`totalDays` — those stay the record of what was asked for.
+> Effective leave = granted − cancelled, derived by `approvalCoverage()` into `LeaveCoverage`
+> (`effectiveGrantedDates`/`effectiveGrantedDays`/`isCancelled`/`isPartiallyCancelled`); the
+> `grantedDates`/`grantedDays` pair keeps meaning the ORIGINAL grant and never shrinks. ⚠️ The
+> two empty cases are **inverted** — empty `approvedDates` grants everything, empty
+> `cancelledDates` cancels nothing. Both defaults read in the employee's favour, which is what
+> lets every legacy document behave unchanged. `LeaveScreens.kt` shows the **effective** days
+> (a line still counting a cancelled day as granted is exactly what causes an unexplained
+> Absent) and a full cancellation renders in the REJECTED colours despite `status == "approved"`.
+> Mirrors `firebase/functions/leaveCoverage.js` + `admin/src/lib/leaveDates.ts` — **change all
+> three together**; covered by `LeaveCoverageTest` (23 tests).
 
 > **Session 28 leave form:** Leave type field removed. New fields added: Joining Date, Emergency Contact, Place of Visit. Applicant Name auto-filled from `SessionManager`. `leaveType` kept in the model with empty default to avoid breaking old records.
 

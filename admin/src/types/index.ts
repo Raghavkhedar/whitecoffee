@@ -140,6 +140,17 @@ export interface LeaveRequest {
   // approved leave a missing/empty value means the ENTIRE range was granted. "Partial" is
   // derived from this (see src/lib/leaveDates.ts), never stored as a status.
   approvedDates?: string[];
+  // Sorted "yyyy-MM-dd" dates an admin later CANCELLED, a subset of what was granted.
+  // A second overlay on top of `approvedDates` — and note the inverted empty case:
+  // empty/absent `approvedDates` means "all granted", empty/absent `cancelledDates`
+  // means "nothing cancelled". Neither `approvedDates` nor the from/to range is ever
+  // rewritten by a cancellation, so the document keeps the whole history: asked for,
+  // granted, then revoked. Effective leave = granted minus cancelled (see
+  // src/lib/leaveDates.ts `effectiveGrantedDates`).
+  cancelledDates?: string[];
+  cancelledBy?: string;
+  cancelComment?: string;
+  lastCancelledAt?: Timestamp;
   approvedBy: string;
   approverComment: string;
   submittedAt?: Timestamp;

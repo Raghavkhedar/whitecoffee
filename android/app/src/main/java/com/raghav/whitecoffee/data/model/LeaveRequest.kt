@@ -28,6 +28,16 @@ data class LeaveRequest(
      * only: see [approvalCoverage]. Never a status value — `status` stays approved/rejected.
      */
     val approvedDates: List<String> = emptyList(),
+    /**
+     * Sorted "yyyy-MM-dd" days an admin CANCELLED after approving them. A second overlay on
+     * top of [approvedDates], and note the INVERTED empty case: empty [approvedDates] means
+     * "everything granted", empty `cancelledDates` means "nothing cancelled". Both defaults
+     * read in the employee's favour, which is why a legacy document behaves unchanged.
+     *
+     * Cancellation is admin-only (the web portal) — the app never writes this. Derived state
+     * only: see [approvalCoverage]. `status` stays "approved"; there is no "cancelled" status.
+     */
+    val cancelledDates: List<String> = emptyList(),
     val submittedAt: Timestamp? = null,
     val reviewedAt: Timestamp? = null
 ) {
@@ -47,6 +57,7 @@ data class LeaveRequest(
         "approvedBy"       to approvedBy,
         "approverComment"  to approverComment,
         "approvedDates"    to approvedDates,
+        "cancelledDates"   to cancelledDates,
         "submittedAt"      to submittedAt,
         "reviewedAt"       to reviewedAt
     )
@@ -75,6 +86,9 @@ data class LeaveRequest(
                     approvedDates    = (doc.get("approvedDates") as? List<*>)
                         ?.mapNotNull { (it as? String)?.trim()?.takeIf(String::isNotEmpty) }
                         ?: emptyList(),
+                    cancelledDates   = (doc.get("cancelledDates") as? List<*>)
+                        ?.mapNotNull { (it as? String)?.trim()?.takeIf(String::isNotEmpty) }
+                        ?: emptyList(),
                     submittedAt      = doc.getTimestamp("submittedAt"),
                     reviewedAt       = doc.getTimestamp("reviewedAt")
                 )
@@ -93,12 +107,26 @@ data class LeaveRequest(
 data class LeaveCoverage(
     /** Inclusive days spanned by fromDate…toDate — what the employee asked for. */
     val requestedDays: Int,
-    /** Days actually granted. Zero unless the request is approved. */
+    /** Days originally granted. Zero unless the request is approved. */
     val grantedDays: Int,
-    /** The granted dates, sorted "yyyy-MM-dd". Full range when nothing narrower was set. */
+    /** The originally granted dates, sorted "yyyy-MM-dd". Full range when nothing narrower was set. */
     val grantedDates: List<String>,
     /** Approved, but for fewer days than were requested. */
     val isPartial: Boolean,
+    /** Granted days an admin later cancelled, sorted. Empty when nothing was cancelled. */
+    val cancelledDates: List<String> = emptyList(),
+    /**
+     * The days the employee STILL has off — granted minus cancelled. Show this, not
+     * [grantedDates]: that pair stays the record of the approval decision and never shrinks,
+     * while this is what the employee can actually take.
+     */
+    val effectiveGrantedDates: List<String> = grantedDates,
+    /** How many days are still off, after cancellations. */
+    val effectiveGrantedDays: Int = grantedDays,
+    /** True once any granted day has been cancelled. */
+    val isCancelled: Boolean = false,
+    /** True when some — but not all — granted days were cancelled. */
+    val isPartiallyCancelled: Boolean = false,
 )
 
 /**
@@ -121,17 +149,52 @@ fun LeaveRequest.approvalCoverage(): LeaveCoverage {
 
     val picked = approvedDates.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
     if (picked.isEmpty()) {
-        // Compatibility rule — the whole range was granted.
-        return LeaveCoverage(requestedDays, requestedDays, range, isPartial = false)
+        // Compatibility rule — the whole range was granted. `grantedDays` deliberately falls back
+        // to `requestedDays` rather than `range.size`, so an unparseable range still reads as a
+        // FULL grant instead of "nothing granted" — the safe direction for payroll. The cancelled
+        // count is subtracted from that same number to keep the two consistent.
+        val cancelled = boundedCancellations(range)
+        return LeaveCoverage(
+            requestedDays         = requestedDays,
+            grantedDays           = requestedDays,
+            grantedDates          = range,
+            isPartial             = false,
+            cancelledDates        = cancelled,
+            effectiveGrantedDates = range - cancelled.toSet(),
+            effectiveGrantedDays  = (requestedDays - cancelled.size).coerceAtLeast(0),
+            isCancelled           = cancelled.isNotEmpty(),
+            isPartiallyCancelled  = cancelled.isNotEmpty() && cancelled.size < requestedDays,
+        )
     }
 
-    val granted = if (range.isEmpty()) picked else picked.filter { it in range }
+    val granted   = if (range.isEmpty()) picked else picked.filter { it in range }
+    val cancelled = boundedCancellations(granted)
+    val effective = granted - cancelled.toSet()
     return LeaveCoverage(
-        requestedDays = requestedDays,
-        grantedDays   = granted.size,
-        grantedDates  = granted,
-        isPartial     = requestedDays > 0 && granted.size < requestedDays,
+        requestedDays         = requestedDays,
+        grantedDays           = granted.size,
+        grantedDates          = granted,
+        isPartial             = requestedDays > 0 && granted.size < requestedDays,
+        cancelledDates        = cancelled,
+        effectiveGrantedDates = effective,
+        effectiveGrantedDays  = effective.size,
+        isCancelled           = cancelled.isNotEmpty(),
+        isPartiallyCancelled  = cancelled.isNotEmpty() && effective.isNotEmpty(),
     )
+}
+
+/**
+ * Cancellations bounded to what was actually [granted] — a stray entry for a day that was
+ * never granted, or that falls outside the request, cancels nothing. Mirrors the way
+ * `approvedDates` is bounded by the requested range, and the backend's `leaveCoverage.js`.
+ */
+private fun LeaveRequest.boundedCancellations(granted: List<String>): List<String> {
+    if (cancelledDates.isEmpty() || granted.isEmpty()) return emptyList()
+    val grantedSet = granted.toSet()
+    return cancelledDates.map { it.trim() }
+        .filter { it.isNotEmpty() && it in grantedSet }
+        .distinct()
+        .sorted()
 }
 
 /** Inclusive "yyyy-MM-dd" days from [from] to [to]. Empty when either date is unusable. */

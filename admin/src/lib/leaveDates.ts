@@ -10,6 +10,17 @@
 // every writer that predates partial approval (notably the Android approve
 // action) therefore keeps its current meaning with no backfill.
 //
+// `cancelledDates` is a SECOND overlay on top of that, recording days an admin
+// later revoked. Its empty case is the opposite of `approvedDates`: empty means
+// nothing cancelled (empty `approvedDates` means everything granted). Both
+// defaults read in the employee's favour, which is what keeps legacy documents
+// behaving exactly as they always have.
+//
+// `grantedDates` therefore keeps meaning "what the approver ORIGINALLY granted"
+// and never shrinks; `effectiveGrantedDates` is that minus cancellations, i.e.
+// what the employee still has today. Everything user-facing wants the latter —
+// the split exists so a cancellation never rewrites the record of the approval.
+//
 // All arithmetic is done on "yyyy-mm-ddT00:00:00Z" instants read back with the
 // getUTC* accessors, so a browser in any timezone yields the same IST calendar
 // dates (the same discipline the Cloud Functions use).
@@ -34,6 +45,7 @@ export interface LeaveLike {
   toDate?: string;
   status?: string;
   approvedDates?: string[];
+  cancelledDates?: string[];
 }
 
 /**
@@ -68,6 +80,49 @@ export function grantedDates(leave: LeaveLike): string[] {
   if (!approved || approved.length === 0) return requested;
   const inRange = new Set(requested);
   return approved.filter(d => inRange.has(d)).sort();
+}
+
+/**
+ * The granted dates an admin later CANCELLED. Bounded by what was actually
+ * granted, so a stray entry — a date never granted, or outside the request —
+ * is ignored exactly as `grantedDates` ignores one outside the range.
+ *
+ * Empty/absent means nothing was cancelled. This is deliberately NOT the mirror
+ * of the `approvedDates` compatibility rule: reading an empty array as "all
+ * cancelled" would silently unpay every leave in the database.
+ */
+export function cancelledDates(leave: LeaveLike): string[] {
+  const cancelled = leave.cancelledDates;
+  if (!cancelled || cancelled.length === 0) return [];
+  const granted = new Set(grantedDates(leave));
+  return cancelled.filter(d => granted.has(d)).sort();
+}
+
+/**
+ * The dates the employee STILL has off — granted minus cancelled. This is what
+ * every user-facing surface should show, and what the backend scorer agrees
+ * with (`leaveCoversDate` subtracts cancellations last, so a cancelled day is
+ * an ordinary working day again).
+ */
+export function effectiveGrantedDates(leave: LeaveLike): string[] {
+  const cancelled = new Set(cancelledDates(leave));
+  if (cancelled.size === 0) return grantedDates(leave);
+  return grantedDates(leave).filter(d => !cancelled.has(d));
+}
+
+/** How many days the employee still has off, after cancellations. */
+export function effectiveGrantedDayCount(leave: LeaveLike): number {
+  return effectiveGrantedDates(leave).length;
+}
+
+/** True once any granted day has been cancelled. */
+export function isCancelled(leave: LeaveLike): boolean {
+  return cancelledDates(leave).length > 0;
+}
+
+/** True when SOME but not all granted days were cancelled — the leave is partly alive. */
+export function isPartiallyCancelled(leave: LeaveLike): boolean {
+  return isCancelled(leave) && effectiveGrantedDates(leave).length > 0;
 }
 
 /** Requested dates that were NOT granted — normal working days, the employee is expected in. */
@@ -140,4 +195,37 @@ export function partialApprovalMessage(leave: LeaveLike): { title: string; body:
   let body = `${granted.length} of your ${total} requested days were approved: ${formatDatesShort(granted)}.`;
   if (ungranted.length > 0) body += ` You are expected at work on ${formatDatesShort(ungranted)}.`;
   return { title: 'Leave partially approved', body };
+}
+
+/**
+ * The employee-facing message for a CANCELLED approval. Same priority as the
+ * partial-approval message and for the same reason: the load-bearing sentence is
+ * the one naming days they must now turn up for. Someone who was told they had
+ * leave will not check the portal again — this notification is the only thing
+ * standing between a cancellation and an unexplained Absent on their record.
+ *
+ * `cancelledNow` is the dates revoked by THIS action, not the cumulative set, so
+ * a second cancellation on the same leave reports only what just changed. Pass
+ * the leave in whatever state you hold it — the message never reads
+ * `leave.cancelledDates`, only the requested range and the surviving days.
+ */
+export function leaveCancelledMessage(
+  leave: LeaveLike, cancelledNow: string[],
+): { title: string; body: string } {
+  const revoked   = [...cancelledNow].filter(d => DATE_RE.test(d)).sort();
+  const cancelledSet = new Set(revoked);
+  // Computed from the ORIGINAL grant minus what this action revoked, so the count is
+  // right whether or not the caller's `leave` has been refreshed from Firestore yet.
+  const remaining = grantedDates(leave).filter(d => !cancelledSet.has(d));
+
+  const dayWord = revoked.length === 1 ? 'day' : 'days';
+  let body = `${revoked.length} approved leave ${dayWord} ${revoked.length === 1 ? 'has' : 'have'} been cancelled: ${formatDatesShort(revoked)}. You are expected at work on ${revoked.length === 1 ? 'that day' : 'those days'}.`;
+  body += remaining.length > 0
+    ? ` Your remaining approved leave: ${formatDatesShort(remaining)}.`
+    : ' You have no approved leave days left on this request.';
+
+  return {
+    title: remaining.length > 0 ? 'Leave partially cancelled' : 'Leave cancelled',
+    body,
+  };
 }
