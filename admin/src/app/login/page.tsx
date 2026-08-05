@@ -6,6 +6,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { hasPortalAccess, landingPath } from '@/lib/portalAccess';
 import { resolveLoginEmail } from '@/lib/constants';
+import { requestPasswordReset } from '@/lib/firestore';
 import type { User } from '@/types';
 
 export default function LoginPage() {
@@ -15,6 +16,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
+  // Reset flow. `resetNote` is the server's fixed reply; it is deliberately shown
+  // verbatim rather than reworded, because it is identical for every outcome.
+  const [resetting, setResetting] = useState(false);
+  const [resetNote, setResetNote] = useState('');
+
+  async function handleForgot() {
+    setError('');
+    setResetNote('');
+    if (!identifier.trim()) {
+      setError('Type your employee ID or email above first, then tap "Forgot password?".');
+      return;
+    }
+    setResetting(true);
+    try {
+      setResetNote(await requestPasswordReset(identifier));
+    } catch (e) {
+      // The only errors the server raises here are rate limits and a blank identifier —
+      // never anything that reveals whether the account exists.
+      const msg = (e as { message?: string })?.message;
+      setError(msg || 'Could not request a reset just now. Try again in a minute.');
+    } finally {
+      setResetting(false);
+    }
+  }
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -83,8 +108,22 @@ export default function LoginPage() {
               />
             </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
+            {resetNote && (
+              <p className="text-sm text-text-secondary bg-background border border-border-custom rounded p-3">
+                {resetNote}
+              </p>
+            )}
             <button type="submit" className="btn-primary w-full" disabled={loading}>
               {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+            {/* type="button" — inside a <form>, a bare <button> submits it. */}
+            <button
+              type="button"
+              onClick={handleForgot}
+              disabled={resetting || loading}
+              className="w-full text-sm text-text-secondary hover:text-primary disabled:opacity-50"
+            >
+              {resetting ? 'Sending…' : 'Forgot password?'}
             </button>
           </form>
         </div>

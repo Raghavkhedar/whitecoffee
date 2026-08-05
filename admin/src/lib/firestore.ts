@@ -172,6 +172,16 @@ export async function getPasswordResetLink(uid: string): Promise<{ link: string;
   return res.data as { link: string; delivery: ResetDelivery };
 }
 
+// "I forgot my password", called by an employee who is NOT signed in.
+// Unlike getPasswordResetLink above, this never returns the link — the server mails it to
+// the contactEmail already on the employee's record. The reply is one fixed message for
+// every outcome (sent / no such account / no address on file), so it cannot be used to
+// discover which employee IDs are real. See functions/selfServiceReset.js.
+export async function requestPasswordReset(identifier: string): Promise<string> {
+  const res = await httpsCallable(functions, 'requestPasswordReset')({ identifier });
+  return (res.data as { message: string }).message;
+}
+
 // Admin changes the employee's login email. Updates Firebase Auth AND the user doc
 // (Admin SDK) so the sign-in credential and the mirrored `email` field stay in sync.
 export async function updateUserEmail(uid: string, email: string) {
