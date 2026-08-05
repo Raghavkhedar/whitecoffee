@@ -2,12 +2,13 @@
 
 import {
   collection, collectionGroup, doc, getDocs, getDoc,
-  setDoc, updateDoc, deleteDoc, deleteField, writeBatch,
+  setDoc, updateDoc, deleteDoc, deleteField, writeBatch, increment,
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from './firebase';
 import { istTodayStr } from './date';
+import { effectiveGrantedDates } from './leaveDates';
 import { PAY_FIELDS, type Pay } from './compensation';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
@@ -172,6 +173,24 @@ export async function getPasswordResetLink(uid: string): Promise<{ link: string;
   return res.data as { link: string; delivery: ResetDelivery };
 }
 
+// "I forgot my password", called by an employee who is NOT signed in.
+// Unlike getPasswordResetLink above, this never returns the link — the server mails it to
+// the contactEmail already on the employee's record. The reply is one fixed message for
+// every outcome (sent / no such account / no address on file), so it cannot be used to
+// discover which employee IDs are real. See functions/selfServiceReset.js.
+export async function requestPasswordReset(identifier: string): Promise<string> {
+  const res = await httpsCallable(functions, 'requestPasswordReset')({ identifier });
+  return (res.data as { message: string }).message;
+}
+
+// Force this employee out of every signed-in session, on the phone and the portal.
+// For "their password may be compromised" — it does NOT change the password, so pair it
+// with a reset. Phones drop immediately (the app watches activeSessionToken live); a
+// portal tab can survive up to an hour, until its current ID token expires.
+export async function revokeUserSessions(uid: string) {
+  await httpsCallable(functions, 'revokeUserSessions')({ uid });
+}
+
 // Admin changes the employee's login email. Updates Firebase Auth AND the user doc
 // (Admin SDK) so the sign-in credential and the mirrored `email` field stay in sync.
 export async function updateUserEmail(uid: string, email: string) {
@@ -297,6 +316,109 @@ export async function rejectLeave(
     doc(db, 'users', userId, 'leave_requests', requestId),
     stamped({ status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() })
   );
+}
+
+/**
+ * Cancel days from an ALREADY-APPROVED leave — the undo an approval never had.
+ * Date-level, and allowed at any time, including after the days have been scored
+ * into payroll.
+ *
+ * `status` stays `'approved'` and `approvedDates` is never rewritten: cancellation
+ * only ADDS `cancelledDates`, so the document keeps the full history (asked for →
+ * granted → revoked) and every existing `status === 'approved'` reader keeps
+ * working. What changes is coverage — `leaveCoversDate` subtracts cancellations
+ * last, so a cancelled day becomes an ordinary working day again.
+ *
+ * Two things happen per cancelled date, and only one of them is automatic:
+ *
+ *  - **Future / never-scored dates** need no attendance write at all. No
+ *    `attendance_status` doc exists yet, and the nightly scorer will simply stop
+ *    seeing leave for that day. This is why there is no past-vs-future branch here.
+ *  - **Already-scored dates** are reverted to `Absent` — a PL/LWP day has zero
+ *    punches by construction, so with the leave gone it is exactly the scorer's own
+ *    `no leave → Absent` fallback.
+ *
+ * ⚠️ The revert is gated on `markedBy === 'auto'`, upholding the same invariant the
+ * nightly function does: an admin-marked day is never silently rewritten. If someone
+ * regularized the day after the leave scored it, that later decision wins — the date
+ * is still recorded as cancelled, but its status doc is left alone and returned in
+ * `skippedDates` so the caller can say so out loud.
+ *
+ * ⚠️ Only a **PL** day refunds `plBalance`. LWP is leave taken with a zero balance —
+ * it never decremented anything, so refunding it would mint leave out of nothing.
+ * This is the codebase's first `plBalance` increment outside the monthly accrual in
+ * `accrueMonthlyLeave`; every other write is a decrement.
+ *
+ * Re-cancelling an already-cancelled date is a safe no-op: the UI only offers days
+ * that are still granted, and even if one slipped through, the revert wrote
+ * `markedBy: 'admin'`, so the guard above rejects it and no second refund happens.
+ */
+export async function cancelLeave(
+  userId: string, requestId: string, cancellerName: string,
+  datesToCancel: string[], reason: string,
+): Promise<{ cancelled: string[]; skippedDates: string[]; refundedDays: number }> {
+  const trimmedReason = reason.trim();
+  // A cancellation moves money and revokes time off someone has already planned around.
+  // Both guards are load-bearing, not validation theatre — the UI enforces them too.
+  if (!trimmedReason) throw new Error('cancelLeave: a reason is required.');
+  if (datesToCancel.length === 0) throw new Error('cancelLeave: no dates selected — nothing to cancel.');
+
+  const leaveRef  = doc(db, 'users', userId, 'leave_requests', requestId);
+  const leaveSnap = await getDoc(leaveRef);
+  if (!leaveSnap.exists()) throw new Error('cancelLeave: leave request not found.');
+  const leave = { id: leaveSnap.id, ...leaveSnap.data() } as LeaveRequest;
+  if (leave.status !== 'approved') {
+    throw new Error('cancelLeave: only an approved leave can be cancelled.');
+  }
+
+  // Re-derive what is still granted from the SERVER copy rather than trusting the
+  // caller's list: a stale tab could otherwise "cancel" a day another admin already
+  // cancelled and double-refund it.
+  const stillGranted = new Set(effectiveGrantedDates(leave));
+  const cancelling   = Array.from(new Set(datesToCancel)).filter(d => stillGranted.has(d)).sort();
+  if (cancelling.length === 0) {
+    throw new Error('cancelLeave: none of those dates are currently granted by this leave.');
+  }
+
+  // Every read resolves BEFORE the batch opens — a Firestore batch cannot read.
+  const statusRefs  = cancelling.map(d => doc(db, 'users', userId, 'attendance_status', d));
+  const statusSnaps = await Promise.all(statusRefs.map(r => getDoc(r)));
+
+  const batch = writeBatch(db);
+  const skippedDates: string[] = [];
+  let refundedDays = 0;
+
+  statusSnaps.forEach((snap, i) => {
+    // No doc = never scored (a future date, a Sunday, a holiday). Nothing to undo,
+    // and NOT a skip — the cancellation lands cleanly.
+    if (!snap.exists()) return;
+    const data = snap.data() as AttendanceStatus;
+    const scoredAsLeave = data.status === 'PL' || data.status === 'LWP';
+    if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(cancelling[i]); return; }
+
+    batch.set(
+      statusRefs[i],
+      stamped({ status: 'Absent', markedBy: 'admin', updatedAt: Timestamp.now() }),
+      { merge: true },
+    );
+    if (data.status === 'PL') refundedDays += 1; // PL only — see the LWP note above
+  });
+
+  if (refundedDays > 0) {
+    batch.update(doc(db, 'users', userId), stamped({ plBalance: increment(refundedDays) }));
+  }
+
+  // Union, never overwrite — a second cancellation must not un-cancel the first.
+  const merged = Array.from(new Set([...(leave.cancelledDates ?? []), ...cancelling])).sort();
+  batch.update(leaveRef, stamped({
+    cancelledDates:  merged,
+    cancelledBy:     cancellerName,
+    cancelComment:   trimmedReason,
+    lastCancelledAt: Timestamp.now(),
+  }));
+
+  await batch.commit();
+  return { cancelled: cancelling, skippedDates, refundedDays };
 }
 
 // ── Regularization Requests ───────────────────────────────────────────────

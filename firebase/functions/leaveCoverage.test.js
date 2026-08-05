@@ -131,3 +131,83 @@ test("grantedDayCount: null when the whole range is granted, else the subset siz
   assert.equal(grantedDayCount(leave({ status: "rejected" })), null);
   assert.equal(grantedDayCount(leave({ approvedDates: ["2026-07-21", "2026-07-22", "2026-07-24"] })), 3);
 });
+
+// ── Cancellation — a second overlay, subtracted last ────────────────────────
+
+test("cancelled date is not covered, on a full-range approval", () => {
+  const l = leave({ cancelledDates: ["2026-07-23"] });
+  assert.equal(leaveCoversDate(l, "2026-07-23"), false);
+  assert.equal(leaveCoversDate(l, "2026-07-22"), true); // its neighbours are untouched
+  assert.equal(leaveCoversDate(l, "2026-07-24"), true);
+});
+
+test("cancelled date is not covered, on a partially-approved leave", () => {
+  const l = leave({
+    approvedDates: ["2026-07-21", "2026-07-22", "2026-07-24"],
+    cancelledDates: ["2026-07-22"],
+  });
+  assert.equal(leaveCoversDate(l, "2026-07-22"), false); // granted, then revoked
+  assert.equal(leaveCoversDate(l, "2026-07-21"), true);
+  assert.equal(leaveCoversDate(l, "2026-07-24"), true);
+  assert.equal(leaveCoversDate(l, "2026-07-23"), false); // never granted in the first place
+});
+
+// Empty cancelledDates must NOT mirror the approvedDates compatibility rule. Reading it
+// as "everything cancelled" would unpay every legacy leave at once; reading it as
+// "nothing cancelled" is the only safe default, and every existing document relies on it.
+test("missing / empty / non-array cancelledDates cancels nothing", () => {
+  assert.equal(leaveCoversDate(leave({ cancelledDates: [] }), "2026-07-23"), true);
+  assert.equal(leaveCoversDate(leave({ cancelledDates: null }), "2026-07-23"), true);
+  assert.equal(leaveCoversDate(leave({ cancelledDates: "2026-07-23" }), "2026-07-23"), true);
+  assert.equal(leaveCoversDate(leave(), "2026-07-23"), true);
+});
+
+test("a cancelled date outside the requested range is a no-op", () => {
+  const l = leave({ cancelledDates: ["2026-08-01"] });
+  assert.equal(leaveCoversDate(l, "2026-07-23"), true);
+  assert.equal(leaveCoversDate(l, "2026-08-01"), false); // outside the request anyway
+  assert.equal(grantedDayCount(l), 5); // never subtracts a day it did not grant
+});
+
+test("cancelling every requested day covers nothing", () => {
+  const l = leave({
+    cancelledDates: ["2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25"],
+  });
+  for (const d of ["2026-07-21", "2026-07-23", "2026-07-25"]) {
+    assert.equal(leaveCoversDate(l, d), false);
+  }
+  assert.equal(grantedDayCount(l), 0);
+});
+
+test("explicitGrantedDates excludes cancelled days from the exported count", () => {
+  const l = leave({
+    approvedDates: ["2026-07-21", "2026-07-22", "2026-07-24"],
+    cancelledDates: ["2026-07-22"],
+  });
+  assert.deepEqual(explicitGrantedDates(l), ["2026-07-21", "2026-07-24"]);
+  assert.equal(grantedDayCount(l), 2);
+});
+
+// The dangerous direction: null means "fall back to totalDays", so a fully-cancelled
+// leave reporting null would bill the Sheets export for 5 days nobody is taking.
+test("a FULLY cancelled restricted grant reports 0, never null/totalDays", () => {
+  const l = leave({
+    approvedDates: ["2026-07-21", "2026-07-22"],
+    cancelledDates: ["2026-07-21", "2026-07-22"],
+  });
+  assert.deepEqual(explicitGrantedDates(l), []);
+  assert.equal(grantedDayCount(l), 0); // NOT null
+});
+
+test("a partially cancelled full-range grant subtracts from totalDays", () => {
+  assert.equal(grantedDayCount(leave({ cancelledDates: ["2026-07-23"] })), 4);
+  assert.equal(grantedDayCount(leave({ cancelledDates: ["2026-07-23", "2026-07-24"] })), 3);
+  // Out-of-range cancellations are not subtracted — only days it actually granted.
+  assert.equal(grantedDayCount(leave({ cancelledDates: ["2026-07-23", "2026-09-09"] })), 4);
+});
+
+test("cancellation on a pending / rejected leave grants nothing either way", () => {
+  const l = leave({ status: "pending", cancelledDates: ["2026-07-23"] });
+  assert.equal(leaveCoversDate(l, "2026-07-22"), false);
+  assert.equal(grantedDayCount(l), null);
+});

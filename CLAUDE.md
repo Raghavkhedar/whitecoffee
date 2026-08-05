@@ -10,7 +10,7 @@ Two products for Senken Engineering, one Firebase project (`white-coffee-92c27`)
 Both clients use the **client Firebase SDK**, so `firebase/firestore.rules` is not one
 layer of defence among several — **it is the defence**. Anything the rules permit, an
 employee can do directly against the API with their own login, bypassing both apps.
-It has an emulator test suite: `cd firebase/rules-tests && npm test` (72 tests). Run it
+It has an emulator test suite: `cd firebase/rules-tests && npm test` (79 tests). Run it
 before and after ANY rule change — it has already caught a real regression.
 Two traps it exists to catch:
 - **Rules are DOCUMENT-level.** No field-level read control: if a rule lets you read a

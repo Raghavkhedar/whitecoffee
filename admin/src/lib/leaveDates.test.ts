@@ -3,6 +3,8 @@
 import {
   expandDateRange, grantedDates, ungrantedDates, grantedDayCount, requestedDayCount,
   isPartialApproval, isSunday, formatDayLabel, formatDatesShort, partialApprovalMessage,
+  cancelledDates, effectiveGrantedDates, effectiveGrantedDayCount, isCancelled,
+  isPartiallyCancelled, leaveCancelledMessage,
 } from './leaveDates';
 
 let passed = 0;
@@ -94,6 +96,72 @@ eq('names granted AND expected days',
   partialApprovalMessage({ ...RANGE, status: 'approved', approvedDates: ['2026-07-21', '2026-07-22', '2026-07-24'] }),
   { title: 'Leave partially approved',
     body: '3 of your 5 requested days were approved: 21, 22, 24 Jul. You are expected at work on 23, 25 Jul.' });
+
+console.log('\nCancellation — the second overlay:');
+const APPROVED = { ...RANGE, status: 'approved' };
+eq('no cancelledDates → nothing cancelled', cancelledDates(APPROVED), []);
+eq('empty cancelledDates → nothing cancelled (NOT the approvedDates rule)',
+  cancelledDates({ ...APPROVED, cancelledDates: [] }), []);
+eq('cancelled day is recorded',
+  cancelledDates({ ...APPROVED, cancelledDates: ['2026-07-23'] }), ['2026-07-23']);
+eq('cancelled days come back sorted',
+  cancelledDates({ ...APPROVED, cancelledDates: ['2026-07-24', '2026-07-22'] }),
+  ['2026-07-22', '2026-07-24']);
+eq('a date outside the requested range cannot be cancelled',
+  cancelledDates({ ...APPROVED, cancelledDates: ['2026-08-09'] }), []);
+eq('a never-granted date cannot be cancelled',
+  cancelledDates({ ...APPROVED, approvedDates: ['2026-07-21'], cancelledDates: ['2026-07-23'] }), []);
+
+eq('effective = granted minus cancelled (full-range grant)',
+  effectiveGrantedDates({ ...APPROVED, cancelledDates: ['2026-07-23'] }),
+  ['2026-07-21', '2026-07-22', '2026-07-24', '2026-07-25']);
+eq('effective = granted minus cancelled (partial grant)',
+  effectiveGrantedDates({ ...APPROVED, approvedDates: ['2026-07-21', '2026-07-22', '2026-07-24'],
+    cancelledDates: ['2026-07-22'] }),
+  ['2026-07-21', '2026-07-24']);
+eq('cancelling everything leaves nothing effective',
+  effectiveGrantedDates({ ...APPROVED,
+    cancelledDates: ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25'] }), []);
+eq('effective count after one cancellation',
+  effectiveGrantedDayCount({ ...APPROVED, cancelledDates: ['2026-07-23'] }), 4);
+eq('effective count with nothing cancelled matches granted',
+  effectiveGrantedDayCount(APPROVED), 5);
+
+// The original grant is a RECORD and must never shrink — a cancellation adds an
+// overlay, it does not rewrite what the approver decided.
+eq('grantedDates is untouched by a cancellation',
+  grantedDates({ ...APPROVED, cancelledDates: ['2026-07-23'] }),
+  ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25']);
+eq('isPartialApproval is untouched by a cancellation',
+  isPartialApproval({ ...APPROVED, cancelledDates: ['2026-07-23'] }), false);
+
+eq('isCancelled false when nothing cancelled', isCancelled(APPROVED), false);
+eq('isCancelled true after a cancellation',
+  isCancelled({ ...APPROVED, cancelledDates: ['2026-07-23'] }), true);
+eq('isPartiallyCancelled true when some days survive',
+  isPartiallyCancelled({ ...APPROVED, cancelledDates: ['2026-07-23'] }), true);
+eq('isPartiallyCancelled false when every day is cancelled',
+  isPartiallyCancelled({ ...APPROVED,
+    cancelledDates: ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25'] }), false);
+
+console.log('\nCancellation notification:');
+eq('names the cancelled days AND what survives',
+  leaveCancelledMessage(APPROVED, ['2026-07-23', '2026-07-25']),
+  { title: 'Leave partially cancelled',
+    body: '2 approved leave days have been cancelled: 23, 25 Jul. You are expected at work on those days. Your remaining approved leave: 21, 22, 24 Jul.' });
+eq('singular wording for a single day',
+  leaveCancelledMessage(APPROVED, ['2026-07-23']),
+  { title: 'Leave partially cancelled',
+    body: '1 approved leave day has been cancelled: 23 Jul. You are expected at work on that day. Your remaining approved leave: 21, 22, 24, 25 Jul.' });
+eq('full cancellation says nothing is left',
+  leaveCancelledMessage(APPROVED, ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25']),
+  { title: 'Leave cancelled',
+    body: '5 approved leave days have been cancelled: 21, 22, 23, 24, 25 Jul. You are expected at work on those days. You have no approved leave days left on this request.' });
+// The caller passes the pre-cancel leave plus the dates just revoked, so the message
+// must not depend on `cancelledDates` already being written back to the document.
+eq('message reads only cancelledNow, not the stored field',
+  leaveCancelledMessage({ ...APPROVED, cancelledDates: ['2026-07-23'] }, ['2026-07-23']).body,
+  leaveCancelledMessage(APPROVED, ['2026-07-23']).body);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

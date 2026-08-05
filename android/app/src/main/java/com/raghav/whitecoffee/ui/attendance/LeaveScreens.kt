@@ -63,18 +63,34 @@ internal fun leaveStatusColors(status: String): Triple<Color, Color, String> = w
 }
 
 /**
- * Status badge for a leave request, with the partial case split out. Still an approval, so
- * it keeps the approved colours — only the label and the granted-dates line differ.
+ * Status badge for a leave request, with the partial and cancelled cases split out.
+ *
+ * A fully-cancelled approval is shown in the REJECTED colours: `status` is still "approved"
+ * (cancellation is an overlay, not a status), but telling someone their leave is approved
+ * when every day of it has been revoked is the one reading that could send them home on a
+ * working day. A partly-cancelled leave keeps the approved colours — some of it survives.
  */
 @Composable
-internal fun leaveStatusBadge(l: LeaveRequest): Triple<Color, Color, String> =
-    if (l.approvalCoverage().isPartial) {
-        Triple(WcTheme.colors.SuccessBg, WcTheme.colors.SuccessFg, "Partially Approved")
-    } else {
-        leaveStatusColors(l.status)
+internal fun leaveStatusBadge(l: LeaveRequest): Triple<Color, Color, String> {
+    val coverage = l.approvalCoverage()
+    return when {
+        coverage.isCancelled && coverage.effectiveGrantedDays == 0 ->
+            Triple(WcTheme.colors.DangerBg, WcTheme.colors.DangerFg, "Cancelled")
+        coverage.isPartiallyCancelled ->
+            Triple(WcTheme.colors.SuccessBg, WcTheme.colors.SuccessFg, "Partly Cancelled")
+        coverage.isPartial ->
+            Triple(WcTheme.colors.SuccessBg, WcTheme.colors.SuccessFg, "Partially Approved")
+        else -> leaveStatusColors(l.status)
     }
+}
 
-/** "3 of 5 days granted · 21, 22, 24 Jul" — only rendered for a partial approval. */
+/**
+ * "3 of 5 days granted · 21, 22, 24 Jul" — the days the employee actually has off.
+ *
+ * Reads the EFFECTIVE dates, not the original grant: once a day is cancelled the employee is
+ * expected at work, and a line still counting it as granted is exactly the sentence that would
+ * cause an unexplained Absent.
+ */
 @Composable
 private fun GrantedDatesRow(coverage: LeaveCoverage) {
     Spacer(Modifier.height(6.dp))
@@ -82,9 +98,28 @@ private fun GrantedDatesRow(coverage: LeaveCoverage) {
         MsIcon(Ms.task_alt, 15.sp, WcTheme.colors.SuccessFg)
         Spacer(Modifier.width(6.dp))
         Text(
-            "${coverage.grantedDays} of ${coverage.requestedDays} days granted" +
-                formatGrantedDates(coverage.grantedDates).let { if (it.isBlank()) "" else " · $it" },
+            "${coverage.effectiveGrantedDays} of ${coverage.requestedDays} days granted" +
+                formatGrantedDates(coverage.effectiveGrantedDates).let { if (it.isBlank()) "" else " · $it" },
             color = WcTheme.colors.SuccessFg,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 17.sp,
+        )
+    }
+}
+
+/** "1 day cancelled · 23 Jul — you are expected at work" — only for a cancelled approval. */
+@Composable
+private fun CancelledDatesRow(coverage: LeaveCoverage) {
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.Top) {
+        MsIcon(Ms.info, 15.sp, WcTheme.colors.DangerFg)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "${coverage.cancelledDates.size} ${if (coverage.cancelledDates.size == 1) "day" else "days"} cancelled" +
+                formatGrantedDates(coverage.cancelledDates).let { if (it.isBlank()) "" else " · $it" } +
+                " — you are expected at work",
+            color = WcTheme.colors.DangerFg,
             fontSize = 12.5.sp,
             fontWeight = FontWeight.SemiBold,
             lineHeight = 17.sp,
@@ -281,7 +316,13 @@ private fun LeaveHistoryCard(l: LeaveRequest) {
                     fontSize = 13.sp,
                 )
             }
-            if (coverage.isPartial) GrantedDatesRow(coverage)
+            // A cancellation also makes the granted days differ from the requested range, so the
+            // breakdown is shown for it too — suppressed only when nothing at all survives, where
+            // "0 of 5 days granted" would just restate the cancelled line below it.
+            if ((coverage.isPartial || coverage.isCancelled) && coverage.effectiveGrantedDays > 0) {
+                GrantedDatesRow(coverage)
+            }
+            if (coverage.isCancelled) CancelledDatesRow(coverage)
             if (l.placeOfVisit.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -375,7 +416,13 @@ private fun ApprovalCard(a: LeaveRequest, onApprove: (LeaveRequest) -> Unit, onR
                     fontSize = 13.sp,
                 )
             }
-            if (coverage.isPartial) GrantedDatesRow(coverage)
+            // A cancellation also makes the granted days differ from the requested range, so the
+            // breakdown is shown for it too — suppressed only when nothing at all survives, where
+            // "0 of 5 days granted" would just restate the cancelled line below it.
+            if ((coverage.isPartial || coverage.isCancelled) && coverage.effectiveGrantedDays > 0) {
+                GrantedDatesRow(coverage)
+            }
+            if (coverage.isCancelled) CancelledDatesRow(coverage)
             if (a.placeOfVisit.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {

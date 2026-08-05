@@ -168,3 +168,9 @@ Portal-side: a test for the granted-day count derivation and the partial/full sp
 - Editing the granted dates after an approval — re-approval is not a flow today and this
   design does not add one.
 - Half-day leave.
+
+> **Superseded in part (2026-08-05):** revoking granted days *is* a flow now — see
+> `2026-08-05-leave-cancellation-design.md`, which adds a `cancelledDates` overlay on top of
+> `approvedDates` using the same never-rewrite discipline. It does **not** add re-approval:
+> a cancelled day is revoked, not re-granted, and `approvedDates` still stays exactly as the
+> approver left it.

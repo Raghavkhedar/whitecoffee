@@ -21,6 +21,14 @@ const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dash
 const { computeDeductions } = require("./payrollDeductions");
 // Where a password-reset link should be delivered (see passwordReset.js).
 const { resolveResetDelivery } = require("./passwordReset");
+// Unauthenticated "I forgot my password" — rate limits and enumeration safety
+// (see selfServiceReset.js for why an unauthenticated endpoint is safe here).
+const {
+  resolveLoginEmail, normalizeIdentifier, classifyAttempt,
+  SELF_SERVICE_MESSAGE, PER_IDENTIFIER, PER_IP,
+} = require("./selfServiceReset");
+// Outbound transactional email (see mailer.js — needs RESEND_API_KEY + a verified domain).
+const { sendPasswordResetEmail } = require("./mailer");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
@@ -81,6 +89,10 @@ const OPS_OUT_TYPES = new Set(["site_out", "market_out"]);
 
 const SHEETS_KEY   = defineSecret("ATTENDANCE_SHEETS_KEY");
 const MAPS_KEY     = defineSecret("MAPS_API_KEY");
+// Transactional email for self-service password reset. Until this is set AND the sending
+// domain is verified, requestPasswordReset runs end to end but delivers nothing.
+//   firebase functions:secrets:set RESEND_API_KEY
+const RESEND_KEY   = defineSecret("RESEND_API_KEY");
 // Sheet1: Employee Dashboard, Leave Requests, Conveyance
 const SHEET_ID_1 = "1Qwi1-H13OEAQmVWVf2VRahpG8NiUIDow-QQKQKWh57M";
 // Sheet2: Attendance
@@ -2208,6 +2220,175 @@ exports.generatePasswordResetLink = onCall(async (request) => {
   // returned to an authenticated admin only, and never logged.
   console.log(`generatePasswordResetLink: ${uid} (delivery=${delivery.channel})`);
   return { link, delivery };
+});
+
+// ── Self-service password reset (UNAUTHENTICATED) ─────────────────────────────
+// "I forgot my password" from the login screen, with no admin in the loop. This is the
+// endpoint the admin-only one above says must not exist until email sending does — the
+// difference is that this one NEVER RETURNS THE LINK. It mails it to the contactEmail
+// already on the employee's record, an inbox the caller must already control. Guessing
+// a colleague's employee ID therefore achieves nothing but sending them an email.
+//
+// Three invariants hold this together. Break any one and the endpoint becomes a hole:
+//   1. Every path returns the SAME message. Not "no such user", not "no email on file",
+//      not "sent" — one string. Employee IDs are sequential, so a reply that varied by
+//      outcome would let anyone map the company by sweeping S001..S999.
+//   2. Attempts are recorded for EVERY identifier, real or not. Recording only for real
+//      accounts would make the throttle itself a existence oracle: a request that got
+//      rate-limited would prove the account exists.
+//   3. The link is never returned, never logged, and never put in an error message.
+//
+// Failures to send are swallowed on purpose. An employee cannot act on "the mail server
+// rejected us" and telling them would leak that the address exists; it goes to the log
+// and to passwordResetRequests, which is where an admin will actually look.
+const throttleKey = (value) =>
+  require("node:crypto").createHash("sha256").update(value).digest("hex").slice(0, 32);
+
+/**
+ * Consumes one unit of a rate-limit budget, transactionally. Returns the classification.
+ * The read-modify-write must be a transaction: without one, a burst of parallel calls
+ * all read the same empty history and every one of them is allowed.
+ */
+async function consumeRateLimit(db, collection, key, now, limits) {
+  const ref = db.collection(collection).doc(throttleKey(key));
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const verdict = classifyAttempt(snap.exists ? snap.data().attempts : [], now, limits);
+    if (verdict.allowed) {
+      tx.set(ref, { attempts: verdict.history, updatedAt: now });
+    }
+    return verdict;
+  });
+}
+
+exports.requestPasswordReset = onCall({ secrets: ["RESEND_API_KEY"] }, async (request) => {
+  const identifier = normalizeIdentifier(request.data?.identifier);
+  // A blank box is a client-side mistake, not an account question — safe to say plainly.
+  if (!identifier) {
+    throw new HttpsError("invalid-argument", "Enter your employee ID or email address.");
+  }
+
+  const db = admin.firestore();
+  const now = Date.now();
+
+  // The IP budget is checked first and is the coarser of the two: it stops one machine
+  // from walking the whole ID space even at one request per identifier.
+  const ip = request.rawRequest?.ip
+    || String(request.rawRequest?.headers?.["x-forwarded-for"] || "").split(",")[0].trim()
+    || "unknown";
+
+  const byIp = await consumeRateLimit(db, "passwordResetThrottle", `ip:${ip}`, now, PER_IP);
+  if (!byIp.allowed) {
+    throw new HttpsError("resource-exhausted", "Too many reset requests. Try again later.");
+  }
+
+  const byId = await consumeRateLimit(db, "passwordResetThrottle", `id:${identifier}`, now, PER_IDENTIFIER);
+  if (!byId.allowed) {
+    const mins = Math.max(1, Math.ceil(byId.retryAfterMs / 60000));
+    throw new HttpsError(
+      "resource-exhausted",
+      `A reset link was requested for that ID recently. Try again in ${mins} minute(s), `
+      + "or check your email — one may already be waiting.",
+    );
+  }
+
+  // Everything from here on returns SELF_SERVICE_MESSAGE no matter what happens.
+  // `outcome` exists only for the log and for admins reading passwordResetRequests.
+  let outcome = "sent";
+  try {
+    const loginEmail = resolveLoginEmail(identifier);
+    const userRecord = await admin.auth().getUserByEmail(loginEmail).catch(() => null);
+
+    if (!userRecord) {
+      outcome = "no-such-account";
+    } else if (userRecord.disabled) {
+      // A disabled account is a former employee. A new password would not let them in,
+      // and mailing one to a personal address they still control is worse than useless.
+      outcome = "account-disabled";
+    } else {
+      const snap = await db.doc(`users/${userRecord.uid}`).get();
+      const user = snap.exists ? snap.data() : {};
+      const delivery = resolveResetDelivery(user);
+
+      if (delivery.channel !== "email") {
+        // Common and legitimate: field staff often have no email at all. The employee is
+        // told to contact their administrator, and this row is how the admin finds out.
+        outcome = `undeliverable:${delivery.reason}`;
+      } else {
+        const link = await admin.auth().generatePasswordResetLink(loginEmail);
+        try {
+          await sendPasswordResetEmail({
+            apiKey: RESEND_KEY.value(),
+            to: delivery.to,
+            name: user.name,
+            link,
+          });
+        } catch (e) {
+          // Note the absence of `link` here — an error log is not a safe place for a
+          // bearer credential that sets a password.
+          outcome = "send-failed";
+          console.error(`requestPasswordReset send failed for ${identifier}: ${e.message}`);
+        }
+      }
+    }
+  } catch (e) {
+    outcome = "error";
+    console.error(`requestPasswordReset failed for ${identifier}: ${e.message}`);
+  }
+
+  // Admin-visible trail. Deliberately records the identifier as TYPED, so an admin can
+  // see that someone has been trying "S45O" with a letter O and get them unstuck.
+  await db.collection("passwordResetRequests").add({
+    identifier, outcome, ip,
+    at: admin.firestore.FieldValue.serverTimestamp(),
+  }).catch(() => { /* the trail is not worth failing the request over */ });
+
+  console.log(`requestPasswordReset: ${identifier} → ${outcome}`);
+  return { message: SELF_SERVICE_MESSAGE };
+});
+
+// ── Force sign-out everywhere (Admin SDK) ─────────────────────────────────────
+// "This person's password may be compromised — get them out of everything, now."
+//
+// This is the answer to the portal having no session enforcement, and it is deliberately
+// NOT a mirror of the app's single-device rule. Mirroring would mean the portal writing
+// `activeSessionToken` on login, which would eject an admin's own phone every time they
+// opened the portal — the two surfaces are meant to be used at the same time.
+//
+// Two mechanisms, because the surfaces revoke differently:
+//
+//   1. revokeRefreshTokens invalidates every refresh token, which is what actually ends a
+//      portal session. ⚠️ Already-issued ID tokens stay valid until they expire, so the
+//      portal can survive up to an hour unless firestore.rules starts checking
+//      `request.auth.token.auth_time` against a revocation timestamp. Accepted for now:
+//      this is a "someone may have my password" tool, not a containment boundary.
+//
+//   2. A FRESH RANDOM activeSessionToken ejects the phones immediately, since the app
+//      watches the field live. ⚠️ It must be non-empty and different — NOT cleared.
+//      `isSessionSuperseded` treats an empty/absent token as "no session recorded" and
+//      never signs anyone out (a doc predating the field would otherwise eject its owner
+//      on every snapshot). Writing "" here would look like it worked and do nothing.
+exports.revokeUserSessions = onCall(async (request) => {
+  const actor = await assertAdmin(request);
+  const { uid } = request.data || {};
+  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
+
+  const userRecord = await admin.auth().getUser(uid).catch(() => null);
+  if (!userRecord) throw new HttpsError("not-found", "No Auth account for that user.");
+
+  await admin.auth().revokeRefreshTokens(uid);
+
+  // A token no device can be holding. Stamped for the audit log like any other write;
+  // auditLog.js redacts the VALUE, so the trail records that sessions were revoked and by
+  // whom without publishing a live session token.
+  await admin.firestore().doc(`users/${uid}`).update({
+    activeSessionToken: require("node:crypto").randomUUID(),
+    lastModifiedBy: actor,
+    lastModifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  console.log(`revokeUserSessions: ${uid} by ${actor}`);
+  return { success: true };
 });
 
 // ── Admin login-email change (Admin SDK) ──────────────────────────────────────

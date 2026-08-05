@@ -24,6 +24,7 @@ class LeaveCoverageTest {
         from: String = "2026-07-21",
         to: String = "2026-07-25",
         approvedDates: List<String> = emptyList(),
+        cancelledDates: List<String> = emptyList(),
     ) = LeaveRequest(
         userId = "u1",
         fromDate = from,
@@ -31,6 +32,7 @@ class LeaveCoverageTest {
         totalDays = 5,
         status = status,
         approvedDates = approvedDates,
+        cancelledDates = cancelledDates,
     )
 
     // ── Compatibility rule ───────────────────────────────────────────────────
@@ -131,6 +133,100 @@ class LeaveCoverageTest {
         ).approvalCoverage()
         assertEquals(0, c.requestedDays)
         assertFalse(c.isPartial)
+    }
+
+    // ── Cancellation (admin-only overlay; the app only ever reads it) ────────
+    @Test
+    fun `cancelling a day removes it from the effective grant`() {
+        val c = leave(cancelledDates = listOf("2026-07-23")).approvalCoverage()
+        assertTrue(c.isCancelled)
+        assertTrue(c.isPartiallyCancelled)
+        assertEquals(listOf("2026-07-23"), c.cancelledDates)
+        assertEquals(4, c.effectiveGrantedDays)
+        assertEquals(
+            listOf("2026-07-21", "2026-07-22", "2026-07-24", "2026-07-25"),
+            c.effectiveGrantedDates,
+        )
+    }
+
+    // The original grant is the RECORD of what the approver decided and must never shrink —
+    // cancellation adds an overlay, it does not rewrite history.
+    @Test
+    fun `cancelling does not alter the original granted dates`() {
+        val c = leave(cancelledDates = listOf("2026-07-23")).approvalCoverage()
+        assertEquals(5, c.grantedDays)
+        assertEquals(
+            listOf("2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25"),
+            c.grantedDates,
+        )
+        assertFalse(c.isPartial)
+    }
+
+    @Test
+    fun `cancelling every granted day leaves nothing and is not partial cancellation`() {
+        val all = listOf("2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25")
+        val c = leave(cancelledDates = all).approvalCoverage()
+        assertTrue(c.isCancelled)
+        assertFalse(c.isPartiallyCancelled)
+        assertEquals(0, c.effectiveGrantedDays)
+        assertEquals(emptyList<String>(), c.effectiveGrantedDates)
+    }
+
+    @Test
+    fun `cancellation composes with a partial approval`() {
+        val c = leave(
+            approvedDates = listOf("2026-07-21", "2026-07-22", "2026-07-24"),
+            cancelledDates = listOf("2026-07-22"),
+        ).approvalCoverage()
+        assertTrue(c.isPartial)          // 3 of 5 originally granted
+        assertEquals(3, c.grantedDays)
+        assertTrue(c.isCancelled)
+        assertEquals(2, c.effectiveGrantedDays)
+        assertEquals(listOf("2026-07-21", "2026-07-24"), c.effectiveGrantedDates)
+    }
+
+    // Empty cancelledDates must NOT mirror the approvedDates compatibility rule. Reading it as
+    // "everything cancelled" would silently revoke every leave in the database at once.
+    @Test
+    fun `empty cancelledDates cancels nothing`() {
+        val c = leave(cancelledDates = emptyList()).approvalCoverage()
+        assertFalse(c.isCancelled)
+        assertEquals(5, c.effectiveGrantedDays)
+        assertEquals(c.grantedDates, c.effectiveGrantedDates)
+    }
+
+    @Test
+    fun `a day that was never granted cannot be cancelled`() {
+        val c = leave(
+            approvedDates = listOf("2026-07-21"),
+            cancelledDates = listOf("2026-07-23"),   // granted only 21st
+        ).approvalCoverage()
+        assertFalse(c.isCancelled)
+        assertEquals(emptyList<String>(), c.cancelledDates)
+        assertEquals(1, c.effectiveGrantedDays)
+    }
+
+    @Test
+    fun `a cancelled date outside the requested range is ignored`() {
+        val c = leave(cancelledDates = listOf("2026-08-01")).approvalCoverage()
+        assertFalse(c.isCancelled)
+        assertEquals(5, c.effectiveGrantedDays)
+    }
+
+    @Test
+    fun `cancelled dates are sorted and de-duplicated`() {
+        val c = leave(cancelledDates = listOf("2026-07-24", "2026-07-22", "2026-07-24"))
+            .approvalCoverage()
+        assertEquals(listOf("2026-07-22", "2026-07-24"), c.cancelledDates)
+        assertEquals(3, c.effectiveGrantedDays)
+    }
+
+    @Test
+    fun `cancellation on a pending request grants nothing either way`() {
+        val c = leave(status = "pending", cancelledDates = listOf("2026-07-23")).approvalCoverage()
+        assertEquals(0, c.grantedDays)
+        assertEquals(0, c.effectiveGrantedDays)
+        assertFalse(c.isCancelled)
     }
 
     // ── Display formatting ───────────────────────────────────────────────────
