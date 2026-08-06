@@ -13,9 +13,11 @@
 // which — with Firebase email-enumeration protection on — is the same message shown for
 // an account that does not exist, so nobody could tell the two apart. On 2026-07-31 this
 // burned an hour across two new hires and five reset attempts before the passwords were
-// set by hand with firebase/scripts/set-passwords.js.
+// set by hand with a since-deleted admin CLI script.
 //
 // The rule now: NOTHING is written until the admin's input has been read and validated.
+//
+// This is the ONLY password-setting path in the product — see docs/password-policy.md.
 
 /** Firebase Auth rejects passwords under 6 characters. Fail here, before the call. */
 export const MIN_PASSWORD_LENGTH = 6;

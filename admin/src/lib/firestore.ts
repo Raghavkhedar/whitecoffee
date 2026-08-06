@@ -153,34 +153,13 @@ export async function setUserActive(
   await httpsCallable(functions, 'setUserActive')({ uid, active, ...opts });
 }
 
-// Admin sets a new password directly. Prefer getPasswordResetLink below where possible —
-// it lets the employee choose their own password, so nobody has to transcribe one.
+// THE only way a password is ever set on this system: an admin, on /users, types one.
+// Reset links and self-service resets were built and then deliberately removed — staff
+// sign in as `<empId>@whitecoffee.internal`, which has no mailbox, so there is nowhere to
+// deliver a link. Keeping one path means there is never a question of which one is live.
+// See docs/password-policy.md before adding a second.
 export async function resetUserPassword(uid: string, newPassword: string) {
   await httpsCallable(functions, 'resetUserPassword')({ uid, newPassword });
-}
-
-// Delivery routing for a reset link, decided server-side (functions/passwordReset.js).
-export type ResetDelivery =
-  | { channel: 'email'; to: string }
-  | { channel: 'manual'; reason: 'no-contact-email' | 'contact-invalid' | 'contact-is-not-a-mailbox' };
-
-// Admin mints a password-reset link the EMPLOYEE redeems to set their own password.
-// Works for synthetic `@whitecoffee.internal` logins: Firebase generates the link without
-// sending or validating deliverability, so we choose how it reaches them.
-// ⚠️ The returned link is a bearer credential — anyone holding it can set the password.
-export async function getPasswordResetLink(uid: string): Promise<{ link: string; delivery: ResetDelivery }> {
-  const res = await httpsCallable(functions, 'generatePasswordResetLink')({ uid });
-  return res.data as { link: string; delivery: ResetDelivery };
-}
-
-// "I forgot my password", called by an employee who is NOT signed in.
-// Unlike getPasswordResetLink above, this never returns the link — the server mails it to
-// the contactEmail already on the employee's record. The reply is one fixed message for
-// every outcome (sent / no such account / no address on file), so it cannot be used to
-// discover which employee IDs are real. See functions/selfServiceReset.js.
-export async function requestPasswordReset(identifier: string): Promise<string> {
-  const res = await httpsCallable(functions, 'requestPasswordReset')({ identifier });
-  return (res.data as { message: string }).message;
 }
 
 // Force this employee out of every signed-in session, on the phone and the portal.

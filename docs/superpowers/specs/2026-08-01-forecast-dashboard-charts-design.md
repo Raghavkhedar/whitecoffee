@@ -92,7 +92,7 @@ manually.
 ## Implementation mechanism
 
 A one-off local Node script, `firebase/scripts/build-forecast-dashboard.js`, following the same
-pattern as `firebase/scripts/set-passwords.js`:
+pattern as the other admin scripts in `firebase/scripts/` (e.g. `migrate-compensation.js`):
 
 - Auth: the existing `ATTENDANCE_SHEETS_KEY` Firebase secret (same service account
   `exportForecastSpend` already uses), pulled locally via

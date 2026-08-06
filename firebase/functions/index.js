@@ -19,16 +19,6 @@ const { buildManpowerVisits } = require("./manpowerVisits");
 const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
 const { computeDeductions } = require("./payrollDeductions");
-// Where a password-reset link should be delivered (see passwordReset.js).
-const { resolveResetDelivery } = require("./passwordReset");
-// Unauthenticated "I forgot my password" — rate limits and enumeration safety
-// (see selfServiceReset.js for why an unauthenticated endpoint is safe here).
-const {
-  resolveLoginEmail, normalizeIdentifier, classifyAttempt,
-  SELF_SERVICE_MESSAGE, PER_IDENTIFIER, PER_IP,
-} = require("./selfServiceReset");
-// Outbound transactional email (see mailer.js — needs RESEND_API_KEY + a verified domain).
-const { sendPasswordResetEmail } = require("./mailer");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
@@ -89,10 +79,6 @@ const OPS_OUT_TYPES = new Set(["site_out", "market_out"]);
 
 const SHEETS_KEY   = defineSecret("ATTENDANCE_SHEETS_KEY");
 const MAPS_KEY     = defineSecret("MAPS_API_KEY");
-// Transactional email for self-service password reset. Until this is set AND the sending
-// domain is verified, requestPasswordReset runs end to end but delivers nothing.
-//   firebase functions:secrets:set RESEND_API_KEY
-const RESEND_KEY   = defineSecret("RESEND_API_KEY");
 // Sheet1: Employee Dashboard, Leave Requests, Conveyance
 const SHEET_ID_1 = "1Qwi1-H13OEAQmVWVf2VRahpG8NiUIDow-QQKQKWh57M";
 // Sheet2: Attendance
@@ -2169,9 +2155,15 @@ exports.setUserActive = onCall(async (request) => {
   return { success: true };
 });
 
-// ── Admin password reset (Admin SDK) ──────────────────────────────────────────
-// Synthetic-email logins can't receive reset links, so the admin sets a new password
-// directly and reads it back to hand over to the employee.
+// ── Admin password reset (Admin SDK) — THE ONLY WAY A PASSWORD IS EVER SET ────
+// Staff sign in as `<empId>@whitecoffee.internal`, a login key with no mailbox, so no
+// emailed reset can reach them. An admin sets the password on /users and hands it over.
+//
+// ⚠️ A reset-link callable (generatePasswordResetLink) and an unauthenticated
+// self-service endpoint both existed and were REMOVED on 2026-08-05 by decision, not by
+// accident — one path means there is never a question of which one is authoritative.
+// Read docs/password-policy.md before adding a second; an unauthenticated variant in
+// particular is account takeover for anyone who can guess a sequential employee ID.
 exports.resetUserPassword = onCall(async (request) => {
   await assertAdmin(request);
   const { uid, newPassword } = request.data || {};
@@ -2181,170 +2173,6 @@ exports.resetUserPassword = onCall(async (request) => {
   await admin.auth().updateUser(uid, { password: newPassword });
   console.log(`resetUserPassword: ${uid}`);
   return { success: true };
-});
-
-// ── Admin-issued password-reset LINK (Admin SDK) ──────────────────────────────
-// The employee sets their own password, so nobody has to invent one, write it down, or
-// hand it over — which is how the 2026-07-31 lockouts happened.
-//
-// generatePasswordResetLink only MINTS a URL; it sends nothing, and it does not care
-// whether the address is deliverable. That is precisely why it works here: our staff sign
-// in as `<empId>@whitecoffee.internal`, which has no mailbox, yet the link is still valid.
-// Delivery is ours to choose (resolveResetDelivery) — a real contactEmail, or the admin
-// passing it on by hand.
-//
-// ⚠️ ADMIN-ONLY, deliberately. An UNAUTHENTICATED version of this — "type your employee
-// ID and get a reset link" — would hand full account takeover to anyone who can guess an
-// ID (they are sequential). Self-service is only safe once the link is delivered
-// out-of-band to an address the requester must already control, i.e. once email sending
-// exists. Do not relax this gate before then.
-exports.generatePasswordResetLink = onCall(async (request) => {
-  await assertAdmin(request);
-  const { uid } = request.data || {};
-  if (!uid) throw new HttpsError("invalid-argument", "uid is required.");
-
-  const userRecord = await admin.auth().getUser(uid).catch(() => null);
-  if (!userRecord) throw new HttpsError("not-found", "No Auth account for that user.");
-
-  const snap = await admin.firestore().doc(`users/${uid}`).get();
-  const delivery = resolveResetDelivery(snap.exists ? snap.data() : {});
-
-  let link;
-  try {
-    link = await admin.auth().generatePasswordResetLink(userRecord.email);
-  } catch (e) {
-    throw new HttpsError("internal", e.message || "Could not generate a reset link.");
-  }
-
-  // The link is a bearer credential — whoever holds it can set the password. It is
-  // returned to an authenticated admin only, and never logged.
-  console.log(`generatePasswordResetLink: ${uid} (delivery=${delivery.channel})`);
-  return { link, delivery };
-});
-
-// ── Self-service password reset (UNAUTHENTICATED) ─────────────────────────────
-// "I forgot my password" from the login screen, with no admin in the loop. This is the
-// endpoint the admin-only one above says must not exist until email sending does — the
-// difference is that this one NEVER RETURNS THE LINK. It mails it to the contactEmail
-// already on the employee's record, an inbox the caller must already control. Guessing
-// a colleague's employee ID therefore achieves nothing but sending them an email.
-//
-// Three invariants hold this together. Break any one and the endpoint becomes a hole:
-//   1. Every path returns the SAME message. Not "no such user", not "no email on file",
-//      not "sent" — one string. Employee IDs are sequential, so a reply that varied by
-//      outcome would let anyone map the company by sweeping S001..S999.
-//   2. Attempts are recorded for EVERY identifier, real or not. Recording only for real
-//      accounts would make the throttle itself a existence oracle: a request that got
-//      rate-limited would prove the account exists.
-//   3. The link is never returned, never logged, and never put in an error message.
-//
-// Failures to send are swallowed on purpose. An employee cannot act on "the mail server
-// rejected us" and telling them would leak that the address exists; it goes to the log
-// and to passwordResetRequests, which is where an admin will actually look.
-const throttleKey = (value) =>
-  require("node:crypto").createHash("sha256").update(value).digest("hex").slice(0, 32);
-
-/**
- * Consumes one unit of a rate-limit budget, transactionally. Returns the classification.
- * The read-modify-write must be a transaction: without one, a burst of parallel calls
- * all read the same empty history and every one of them is allowed.
- */
-async function consumeRateLimit(db, collection, key, now, limits) {
-  const ref = db.collection(collection).doc(throttleKey(key));
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const verdict = classifyAttempt(snap.exists ? snap.data().attempts : [], now, limits);
-    if (verdict.allowed) {
-      tx.set(ref, { attempts: verdict.history, updatedAt: now });
-    }
-    return verdict;
-  });
-}
-
-exports.requestPasswordReset = onCall({ secrets: ["RESEND_API_KEY"] }, async (request) => {
-  const identifier = normalizeIdentifier(request.data?.identifier);
-  // A blank box is a client-side mistake, not an account question — safe to say plainly.
-  if (!identifier) {
-    throw new HttpsError("invalid-argument", "Enter your employee ID or email address.");
-  }
-
-  const db = admin.firestore();
-  const now = Date.now();
-
-  // The IP budget is checked first and is the coarser of the two: it stops one machine
-  // from walking the whole ID space even at one request per identifier.
-  const ip = request.rawRequest?.ip
-    || String(request.rawRequest?.headers?.["x-forwarded-for"] || "").split(",")[0].trim()
-    || "unknown";
-
-  const byIp = await consumeRateLimit(db, "passwordResetThrottle", `ip:${ip}`, now, PER_IP);
-  if (!byIp.allowed) {
-    throw new HttpsError("resource-exhausted", "Too many reset requests. Try again later.");
-  }
-
-  const byId = await consumeRateLimit(db, "passwordResetThrottle", `id:${identifier}`, now, PER_IDENTIFIER);
-  if (!byId.allowed) {
-    const mins = Math.max(1, Math.ceil(byId.retryAfterMs / 60000));
-    throw new HttpsError(
-      "resource-exhausted",
-      `A reset link was requested for that ID recently. Try again in ${mins} minute(s), `
-      + "or check your email — one may already be waiting.",
-    );
-  }
-
-  // Everything from here on returns SELF_SERVICE_MESSAGE no matter what happens.
-  // `outcome` exists only for the log and for admins reading passwordResetRequests.
-  let outcome = "sent";
-  try {
-    const loginEmail = resolveLoginEmail(identifier);
-    const userRecord = await admin.auth().getUserByEmail(loginEmail).catch(() => null);
-
-    if (!userRecord) {
-      outcome = "no-such-account";
-    } else if (userRecord.disabled) {
-      // A disabled account is a former employee. A new password would not let them in,
-      // and mailing one to a personal address they still control is worse than useless.
-      outcome = "account-disabled";
-    } else {
-      const snap = await db.doc(`users/${userRecord.uid}`).get();
-      const user = snap.exists ? snap.data() : {};
-      const delivery = resolveResetDelivery(user);
-
-      if (delivery.channel !== "email") {
-        // Common and legitimate: field staff often have no email at all. The employee is
-        // told to contact their administrator, and this row is how the admin finds out.
-        outcome = `undeliverable:${delivery.reason}`;
-      } else {
-        const link = await admin.auth().generatePasswordResetLink(loginEmail);
-        try {
-          await sendPasswordResetEmail({
-            apiKey: RESEND_KEY.value(),
-            to: delivery.to,
-            name: user.name,
-            link,
-          });
-        } catch (e) {
-          // Note the absence of `link` here — an error log is not a safe place for a
-          // bearer credential that sets a password.
-          outcome = "send-failed";
-          console.error(`requestPasswordReset send failed for ${identifier}: ${e.message}`);
-        }
-      }
-    }
-  } catch (e) {
-    outcome = "error";
-    console.error(`requestPasswordReset failed for ${identifier}: ${e.message}`);
-  }
-
-  // Admin-visible trail. Deliberately records the identifier as TYPED, so an admin can
-  // see that someone has been trying "S45O" with a letter O and get them unstuck.
-  await db.collection("passwordResetRequests").add({
-    identifier, outcome, ip,
-    at: admin.firestore.FieldValue.serverTimestamp(),
-  }).catch(() => { /* the trail is not worth failing the request over */ });
-
-  console.log(`requestPasswordReset: ${identifier} → ${outcome}`);
-  return { message: SELF_SERVICE_MESSAGE };
 });
 
 // ── Force sign-out everywhere (Admin SDK) ─────────────────────────────────────

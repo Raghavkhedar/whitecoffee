@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getAllUsers, createUserProfile, updateUserProfile,
-  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail, getPasswordResetLink,
+  employeeIdInUse, setUserActive, resetUserPassword, updateUserEmail,
   revokeUserSessions,
   getCompensationMap, getSpecialAllowance, setSpecialAllowance, isMonthLocked } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
@@ -102,8 +102,6 @@ export default function UsersPage() {
   // Success note for a password reset — shows the password that is now ACTUALLY on the
   // account, so what the admin hands over can never drift from what was set.
   const [pwNote, setPwNote]     = useState('');
-  // A minted reset link + who it should go to. Bearer credential: shown, never logged.
-  const [resetLink, setResetLink] = useState<{ link: string; note: string } | null>(null);
   const [query, setQuery]       = useState('');
   const [showInactive, setShowInactive] = useState(false);
   // Inline suspend sub-form (inside the edit modal): required reason + optional return date.
@@ -193,7 +191,6 @@ export default function UsersPage() {
     setForm({ ...EMPTY_FORM });
     setFormError('');
     setPwNote('');
-    setResetLink(null);
     resetSuspendForm();
     resetSaForm();
     setShowModal(true);
@@ -221,7 +218,6 @@ export default function UsersPage() {
     });
     setFormError('');
     setPwNote('');
-    setResetLink(null);
     resetSuspendForm();
     resetSaForm();
     setShowModal(true);
@@ -394,26 +390,6 @@ export default function UsersPage() {
     } catch (e: unknown) {
       setPwNote('');
       setFormError(e instanceof Error ? e.message : 'Password reset failed. Try again.');
-    }
-    setSaving(false);
-  }
-
-  // Preferred over handleResetPassword: the EMPLOYEE redeems the link and chooses their
-  // own password, so no password is ever invented, transcribed, or handed over — the
-  // whole class of failure behind the 2026-07-31 lockouts simply cannot occur.
-  async function handleResetLink() {
-    if (!editing) return;
-    setSaving(true);
-    setFormError('');
-    setPwNote('');
-    try {
-      const { link, delivery } = await getPasswordResetLink(editing.id);
-      const to = delivery.channel === 'email'
-        ? `Send it to ${delivery.to}.`
-        : 'No usable contact email on file — pass this link to them directly (WhatsApp, SMS, in person).';
-      setResetLink({ link, note: to });
-    } catch (e: unknown) {
-      setFormError(e instanceof Error ? e.message : 'Could not generate a reset link.');
     }
     setSaving(false);
   }
@@ -799,31 +775,10 @@ export default function UsersPage() {
 
               {editing && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-border">
-                  {/* Listed first because it is the better tool: the employee sets their
-                      own password, so none is ever invented or transcribed. */}
-                  <button className="w-full text-sm text-primary hover:underline text-center disabled:opacity-50" onClick={handleResetLink} disabled={saving}>
-                    Send a reset link (they choose their own password)
-                  </button>
-
-                  {resetLink && (
-                    <div className="rounded-[10px] bg-[#F1F7F1] border border-[#CFE3CF] p-3 text-[13px] space-y-2">
-                      <p className="text-text-primary">{resetLink.note}</p>
-                      <p className="font-mono break-all text-[12px] text-text-secondary">{resetLink.link}</p>
-                      <button
-                        type="button"
-                        className="text-primary underline text-[12px]"
-                        onClick={() => navigator.clipboard?.writeText(resetLink.link)}
-                      >
-                        Copy link
-                      </button>
-                      <p className="text-[12px] text-text-secondary">
-                        Single-use, and it expires — generate a fresh one if it has been sitting a while. Anyone holding this link can set the password, so send it only to the employee.
-                      </p>
-                    </div>
-                  )}
-
-                  <button className="w-full text-sm text-text-secondary hover:text-primary underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
-                    Or set a password yourself
+                  {/* The ONLY password-setting control in the product. See the comment on
+                      handleResetPassword — ask first, write second. */}
+                  <button className="w-full text-sm text-primary hover:underline text-center disabled:opacity-50" onClick={handleResetPassword} disabled={saving}>
+                    Set a new password
                   </button>
 
                   <button className="w-full text-sm text-text-secondary hover:text-red-600 underline text-center disabled:opacity-50" onClick={handleRevokeSessions} disabled={saving}>
