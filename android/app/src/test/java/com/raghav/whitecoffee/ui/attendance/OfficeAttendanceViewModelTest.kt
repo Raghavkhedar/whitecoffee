@@ -2,8 +2,12 @@ package com.raghav.whitecoffee.ui.attendance
 
 import com.raghav.whitecoffee.data.model.OfficeState
 import com.raghav.whitecoffee.data.location.LocationState
+import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.notification.AttendanceEntry
+import com.raghav.whitecoffee.fake.FakeAttendanceNotifier
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
+import com.raghav.whitecoffee.fake.FakeClock
 import com.raghav.whitecoffee.fake.FakeLocationProvider
 import com.raghav.whitecoffee.fake.FakeNetworkMonitor
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +19,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -37,18 +43,26 @@ class OfficeAttendanceViewModelTest {
 
     private lateinit var repo: FakeAttendanceRepository
     private lateinit var location: FakeLocationProvider
+    private lateinit var clock: FakeClock
+    private lateinit var notifier: FakeAttendanceNotifier
+
+    private val today = "2026-07-25"
+    private val yesterday = "2026-07-24"
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repo = FakeAttendanceRepository()
         location = FakeLocationProvider()
+        clock = FakeClock(today)
+        notifier = FakeAttendanceNotifier()
     }
 
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun subject() = OfficeAttendanceViewModel(repo, location, FakeNetworkMonitor())
+    private fun subject() =
+        OfficeAttendanceViewModel(repo, location, clock, notifier, FakeNetworkMonitor())
 
     @Test
     fun `a day with no punches starts NotStarted`() = runTest(dispatcher) {
@@ -262,6 +276,134 @@ class OfficeAttendanceViewModelTest {
         advanceUntilIdle()
 
         assertEquals("home_in is once per day", afterFirst, repo.recorded.size)
+    }
+
+    // ── the day-rollover guard ────────────────────────────────────────────
+    //
+    // THE most expensive bug this suite covers. The app computed "today" once, in init, and
+    // `observeTodayData()` baked the date into its Firestore query outside the flow builder, so an
+    // app left open overnight woke up holding YESTERDAY's events. The phase guard above then did
+    // its job perfectly against the wrong day — it saw an open office session and waved an
+    // `office_out` through — and the write landed stamped with the REAL today. Production shows
+    // exactly this: employee S338's 2026-08-08 opens with an `office_out`, and 2026-08-07 was left
+    // unclosed and scored LNF = half pay.
+    //
+    // These assert on repo.recorded: that the punch never reached the repository at all.
+
+    /** A seeded punch from some other day. `timestamp` is irrelevant — only `date` is judged. */
+    private fun seed(type: String, date: String) = AttendanceRecord(
+        id = "seed-$type", userId = "u1", date = date, type = type,
+    )
+
+    @Test
+    fun `an office check-out is refused when the events on screen are yesterday's`() =
+        runTest(dispatcher) {
+            // Yesterday: started the day and checked into the office, never checked out.
+            repo = FakeAttendanceRepository(
+                listOf(seed(AttendanceType.HOME_IN, yesterday), seed(AttendanceType.OFFICE_IN, yesterday))
+            )
+            val vm = subject()
+            advanceUntilIdle()
+
+            // The phase read off those events is InOffice, so the phase guard alone would allow it.
+            assertTrue(vm.uiState.value.day is OfficeState.InOffice)
+            val before = repo.recorded.size
+
+            vm.checkOut("Head Office")
+            advanceUntilIdle()
+
+            assertEquals(
+                "an office_out must never be authorised from another day's events",
+                before,
+                repo.recorded.size,
+            )
+            assertNotNull("the refusal must explain itself", vm.uiState.value.notice)
+        }
+
+    @Test
+    fun `home out is refused when the events on screen are yesterday's`() = runTest(dispatcher) {
+        repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, yesterday)))
+        val vm = subject()
+        advanceUntilIdle()
+        val before = repo.recorded.size
+
+        vm.homeOut()
+        advanceUntilIdle()
+
+        assertEquals("home_out is terminal — it must land on the right day", before, repo.recorded.size)
+        assertNotNull(vm.uiState.value.notice)
+    }
+
+    /** The refusal must also RELOAD, or the employee is stuck looking at yesterday forever. */
+    @Test
+    fun `a refused stale punch reloads the day and then lets the new one start`() =
+        runTest(dispatcher) {
+            repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, yesterday)))
+            val vm = subject()
+            advanceUntilIdle()
+
+            // The new day has no punches yet — this is what the reload will find.
+            repo.setEvents(emptyList())
+
+            vm.homeIn()          // refused: derived from yesterday's events
+            advanceUntilIdle()
+            assertTrue("nothing may be written from a stale day", repo.recorded.isEmpty())
+            assertNotNull(vm.uiState.value.notice)
+            assertEquals(OfficeState.NotStarted, vm.uiState.value.day)
+
+            vm.homeIn()          // accepted: the reload left today's (empty) events on screen
+            advanceUntilIdle()
+
+            assertEquals(listOf(AttendanceType.HOME_IN), repo.recorded.map { it.type })
+            assertEquals(today, repo.recorded.single().date)
+            assertNull("a completed punch clears the notice", vm.uiState.value.notice)
+        }
+
+    /** The guard must not fire on the ordinary case — every event already belongs to today. */
+    @Test
+    fun `today's own events are never treated as stale`() = runTest(dispatcher) {
+        repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, today)))
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.checkIn("Head Office")
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.day is OfficeState.InOffice)
+        assertNull(vm.uiState.value.notice)
+    }
+
+    // ── ongoing "still checked in" reminder ───────────────────────────────
+
+    @Test
+    fun `an office check-in posts the ongoing reminder and check-out clears it`() =
+        runTest(dispatcher) {
+            val vm = subject()
+            advanceUntilIdle()
+
+            vm.homeIn(); advanceUntilIdle()
+            assertNull("home_in is a commute marker — no office session is open", notifier.showing)
+
+            vm.checkIn("Head Office"); advanceUntilIdle()
+            assertNotNull("an open office_in must be reminded about", notifier.showing)
+            assertEquals(AttendanceEntry.OFFICE, notifier.showing?.entry)
+
+            vm.checkOut("Head Office"); advanceUntilIdle()
+            assertNull("the matching office_out must take the reminder down", notifier.showing)
+        }
+
+    @Test
+    fun `ending the day clears the ongoing reminder`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.homeIn(); advanceUntilIdle()
+        vm.checkIn("Head Office"); advanceUntilIdle()
+        vm.checkOut("Head Office"); advanceUntilIdle()
+        vm.homeOut(); advanceUntilIdle()
+
+        assertNull(notifier.showing)
+        assertTrue(vm.uiState.value.day is OfficeState.DayEnded)
     }
 
     /** The guard must not block the ordinary day — a full legal cycle still writes every leg. */

@@ -40,6 +40,7 @@ class RegularizationFragment : Fragment() {
             val state by viewModel.daysState.collectAsStateWithLifecycle()
             val submit by viewModel.submitState.collectAsStateWithLifecycle()
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+            val todayLabel by viewModel.todayLabel.collectAsStateWithLifecycle()
 
             // Inline Compose regularize dialog (replaces the old View AlertDialog).
             var dialogItem by remember { mutableStateOf<RegularizationDayItem?>(null) }
@@ -55,7 +56,7 @@ class RegularizationFragment : Fragment() {
 
             RegularizationScreen(
                 state = state,
-                todayLabel = viewModel.todayLabel,
+                todayLabel = todayLabel,
                 isOnline = isOnline,
                 onBack = { findNavController().navigateUp() },
                 onRequest = { dialogItem = it; reason = "" },

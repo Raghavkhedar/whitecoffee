@@ -1,8 +1,12 @@
 package com.raghav.whitecoffee.ui.attendance
 
 import com.raghav.whitecoffee.data.location.LocationState
+import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.notification.AttendanceEntry
+import com.raghav.whitecoffee.fake.FakeAttendanceNotifier
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
+import com.raghav.whitecoffee.fake.FakeClock
 import com.raghav.whitecoffee.fake.FakeLocationProvider
 import com.raghav.whitecoffee.fake.FakeNetworkMonitor
 import com.raghav.whitecoffee.domain.RecordAttendanceEventUseCase
@@ -16,6 +20,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -34,12 +40,19 @@ class AttendanceViewModelTest {
 
     private lateinit var repo: FakeAttendanceRepository
     private lateinit var location: FakeLocationProvider
+    private lateinit var clock: FakeClock
+    private lateinit var notifier: FakeAttendanceNotifier
+
+    private val today = "2026-07-25"
+    private val yesterday = "2026-07-24"
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         repo = FakeAttendanceRepository()
         location = FakeLocationProvider()
+        clock = FakeClock(today)
+        notifier = FakeAttendanceNotifier()
     }
 
     @After
@@ -48,6 +61,7 @@ class AttendanceViewModelTest {
     private fun subject() = AttendanceViewModel(
         repo, location, FakeSessionManager(),
         RecordAttendanceEventUseCase(repo, location),
+        clock, notifier,
         FakeNetworkMonitor()
     )
 
@@ -215,4 +229,162 @@ class AttendanceViewModelTest {
         assertEquals(1, repo.recorded.size)
         assertEquals(1, location.calls)
     }
+
+    // ── the day-rollover guard ────────────────────────────────────────────
+    //
+    // `observeTodayData()` used to read LocalDate.now() OUTSIDE its flow builder, baking a fixed
+    // date into the Firestore query for the life of the subscription; the ViewModel loaded once,
+    // in init. An app left open overnight therefore kept receiving yesterday's documents, the
+    // phase derived from them still looked like an open site visit, and the `site_out` it
+    // authorised was stamped with the REAL today — leaving yesterday with an unclosed `site_in`,
+    // which the nightly compute scores LNF = half pay.
+    //
+    // These assert on repo.recorded: that the punch never reached the repository at all.
+
+    /** A seeded punch from some other day. Only `date` is judged here. */
+    private fun seed(type: String, date: String) = AttendanceRecord(
+        id = "seed-$type", userId = "u1", date = date, type = type,
+    )
+
+    @Test
+    fun `a site check-out is refused when the events on screen are yesterday's`() =
+        runTest(dispatcher) {
+            // Yesterday: left home and checked into a site, never checked out.
+            repo = FakeAttendanceRepository(
+                listOf(seed(AttendanceType.HOME_IN, yesterday), seed(AttendanceType.SITE_IN, yesterday))
+            )
+            val vm = subject()
+            advanceUntilIdle()
+            val before = repo.recorded.size
+
+            vm.siteCheckOut("S-001", "Gurugaon Site")
+            advanceUntilIdle()
+
+            assertEquals(
+                "a site_out must never be authorised from another day's events",
+                before,
+                repo.recorded.size,
+            )
+            val action = vm.uiState.value.action
+            assertTrue(action is AttendanceViewModel.ActionState.Error)
+        }
+
+    @Test
+    fun `home check-out is refused when the events on screen are yesterday's`() =
+        runTest(dispatcher) {
+            repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, yesterday)))
+            val vm = subject()
+            advanceUntilIdle()
+            val before = repo.recorded.size
+
+            vm.homeCheckOut()
+            advanceUntilIdle()
+
+            assertEquals(
+                "home_out is terminal — it must land on the right day",
+                before,
+                repo.recorded.size,
+            )
+            assertTrue(vm.uiState.value.action is AttendanceViewModel.ActionState.Error)
+        }
+
+    /** The dialog-opening guard is on the same path — a stale day must not even offer the form. */
+    @Test
+    fun `the site check-in dialog is refused when the events on screen are yesterday's`() =
+        runTest(dispatcher) {
+            repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, yesterday)))
+            val vm = subject()
+            advanceUntilIdle()
+
+            vm.initiateSiteCheckIn()
+            advanceUntilIdle()
+
+            assertTrue(vm.uiState.value.action is AttendanceViewModel.ActionState.Error)
+        }
+
+    /**
+     * The refusal must also RE-SUBSCRIBE, or the employee is stuck on yesterday forever.
+     *
+     * Staged deliberately: the seeded events stay in place across the refused tap, because
+     * swapping them out first would let the ordinary phase guard refuse the punch and this test
+     * would pass without the freshness check existing at all.
+     */
+    @Test
+    fun `a refused stale punch re-subscribes to today and then lets the new day start`() =
+        runTest(dispatcher) {
+            repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, yesterday)))
+            val vm = subject()
+            advanceUntilIdle()
+            val seeded = repo.recorded.size
+            val subscriptionsBefore = repo.loads
+
+            // The phase says HomeCheckedIn, so home_out is a legal transition — on yesterday.
+            vm.homeCheckOut()
+            advanceUntilIdle()
+
+            assertEquals("nothing may be written from a stale day", seeded, repo.recorded.size)
+            assertTrue(
+                "a stale screen must re-subscribe, not sit on yesterday",
+                repo.loads > subscriptionsBefore,
+            )
+
+            // The new day's (empty) punches arrive on the fresh subscription.
+            repo.setEvents(emptyList())
+            advanceUntilIdle()
+
+            vm.homeCheckIn()
+            advanceUntilIdle()
+
+            assertEquals(listOf(AttendanceType.HOME_IN), types())
+            assertEquals(today, repo.recorded.single().date)
+        }
+
+    /** The guard must not fire on the ordinary case — every event already belongs to today. */
+    @Test
+    fun `today's own events are never treated as stale`() = runTest(dispatcher) {
+        repo = FakeAttendanceRepository(listOf(seed(AttendanceType.HOME_IN, today)))
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.confirmSiteCheckIn("S-001", "Gurugaon Site")
+        advanceUntilIdle()
+
+        assertEquals(AttendanceType.SITE_IN, repo.recorded.last().type)
+    }
+
+    // ── ongoing "still checked in" reminder ───────────────────────────────
+
+    @Test
+    fun `a site check-in posts the ongoing reminder and check-out clears it`() =
+        runTest(dispatcher) {
+            val vm = subject()
+            advanceUntilIdle()
+
+            vm.homeCheckIn(); advanceUntilIdle()
+            assertNull("home_in is a commute marker and is never scored", notifier.showing)
+
+            vm.confirmSiteCheckIn("S-001", "Gurugaon Site"); advanceUntilIdle()
+            assertNotNull("an unclosed site_in is what scores LNF — remind them", notifier.showing)
+            assertEquals(AttendanceEntry.OPERATIONS, notifier.showing?.entry)
+
+            vm.siteCheckOut("S-001", "Gurugaon Site"); advanceUntilIdle()
+            assertNull("the matching site_out must take the reminder down", notifier.showing)
+        }
+
+    @Test
+    fun `a market check-in keeps the reminder up and ending the day clears it`() =
+        runTest(dispatcher) {
+            val vm = subject()
+            advanceUntilIdle()
+
+            vm.homeCheckIn(); advanceUntilIdle()
+            vm.confirmMarketCheckIn("Sadar Bazaar", 28.6, 77.2); advanceUntilIdle()
+            assertNotNull(notifier.showing)
+
+            vm.marketCheckOut("Sadar Bazaar"); advanceUntilIdle()
+            assertNull(notifier.showing)
+
+            vm.homeCheckOut(); advanceUntilIdle()
+            assertNull(notifier.showing)
+        }
 }

@@ -7,10 +7,12 @@ import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.RegularizationRequest
 import com.raghav.whitecoffee.data.session.SessionManager
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
+import com.raghav.whitecoffee.fake.FakeClock
 import com.raghav.whitecoffee.fake.FakeNetworkMonitor
 import com.raghav.whitecoffee.fake.FakeRegularizationRepository
 import com.raghav.whitecoffee.fake.FakeSessionManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -55,10 +57,15 @@ class RegularizationViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
+    // The clock is pinned to the real current date, not FakeClock's default, because these
+    // tests build their events with Calendar.getInstance() — i.e. actually today. A fixed
+    // fake date would make the filed `date` disagree with the events it was derived from,
+    // which is the very bug the seam exists to prevent.
     private fun subject(
         session: FakeSessionManager = FakeSessionManager(),
         network: FakeNetworkMonitor = FakeNetworkMonitor(),
-    ) = RegularizationViewModel(repo, attendance, session, network)
+        clock: FakeClock = FakeClock(java.time.LocalDate.now().toString()),
+    ) = RegularizationViewModel(repo, attendance, session, network, clock)
 
     /** An event at local [hour]:[minute] today. */
     private fun at(hour: Int, minute: Int, type: String, siteName: String = ""): AttendanceRecord {
@@ -94,6 +101,41 @@ class RegularizationViewModelTest {
         advanceUntilIdle()
 
         assertTrue(vm.daysState.value is UiState.Empty)
+    }
+
+    // ── day rollover — the filed date must follow the clock ──────────────
+
+    @Test
+    fun `the filed date follows the clock across midnight`() = runTest(dispatcher) {
+        // The screen is left open overnight. `date` here is not a label: it is what
+        // submitRequest() files against, and an admin approving a request rewrites THAT day's
+        // attendance_status. Frozen at construction, an employee disputing today's status would
+        // silently file against yesterday and get yesterday's pay rewritten instead.
+        val clock = FakeClock("2026-08-07")
+        attendance = FakeAttendanceRepository(listOf(at(13, 0, AttendanceType.OFFICE_IN)))
+        val vm = subject(session = FakeSessionManager(role = SessionManager.ROLE_OFFICE), clock = clock)
+        advanceUntilIdle()
+        assertEquals("2026-08-07", singleItem(vm).date)
+
+        clock.rollOver("2026-08-08")
+        advanceUntilIdle()
+
+        assertEquals("2026-08-08", singleItem(vm).date)
+    }
+
+    @Test
+    fun `the header label follows the clock across midnight`() = runTest(dispatcher) {
+        val clock = FakeClock("2026-08-07")
+        val vm = subject(clock = clock)
+        val collect = launch { vm.todayLabel.collect { } }   // stateIn is WhileSubscribed
+        advanceUntilIdle()
+        assertTrue(vm.todayLabel.value.startsWith("7 Aug 2026"))
+
+        clock.rollOver("2026-08-08")
+        advanceUntilIdle()
+
+        assertTrue(vm.todayLabel.value.startsWith("8 Aug 2026"))
+        collect.cancel()
     }
 
     // ── regularizable statuses ───────────────────────────────────────────

@@ -143,6 +143,9 @@ fun OfficeAttendanceScreen(
     events: List<AttendanceRecord>,
     isOnline: Boolean,
     gpsEnabled: Boolean,
+    // Shown alongside the phase rather than replacing it — the day-rollover refusal must explain
+    // itself without also removing the buttons the employee needs to start the new day.
+    notice: String? = null,
     onBack: () -> Unit,
     onEnableGps: () -> Unit,
     onHomeIn: () -> Unit,
@@ -162,7 +165,7 @@ fun OfficeAttendanceScreen(
     }
 
     AttendanceScaffold(onBack = onBack, isOnline = isOnline, gpsEnabled = gpsEnabled, onEnableGps = onEnableGps, events = events) {
-        StatusCard(title = title, sub = sub, error = error, done = state is OfficeState.DayEnded) {
+        StatusCard(title = title, sub = sub, error = notice ?: error, done = state is OfficeState.DayEnded) {
             when (state) {
                 is OfficeState.NotStarted -> CardActionButton("Start Day — Home In", Ms.home, onHomeIn)
                 is OfficeState.DayStarted -> {

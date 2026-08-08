@@ -11,11 +11,12 @@ import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceStatusRules
 import com.raghav.whitecoffee.data.model.deriveAttendanceState
 import com.raghav.whitecoffee.data.session.SessionManager
+import com.raghav.whitecoffee.data.time.Clock
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,37 +31,51 @@ class FirestoreAttendanceRepository @Inject constructor(
     // Only for reading the mock-location status of the fix behind this punch, so the
     // server can flag it. Injecting the provider avoids threading the flag through all
     // ten recordEvent call sites.
-    private val locationProvider: LocationProvider
+    private val locationProvider: LocationProvider,
+    // "What day is it" is injected, not read from LocalDate.now() inline — see [Clock]. Every
+    // read below asks it again; a date held anywhere is how the rollover bug happened.
+    private val clock: Clock,
 ) : AttendanceRepository {
 
     private val userDoc    get() = firestore.collection("users").document(sessionManager.userId)
     private val collection get() = userDoc.collection("attendance")
-    private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
     override suspend fun getTodayData(): Result<Pair<AttendanceState, List<AttendanceRecord>>> {
         return try {
-            val today = LocalDate.now().format(dateFormatter)
             val snapshot = collection
-                .whereEqualTo("date", today)
+                .whereEqualTo("date", clock.today())
                 .get()
                 .await()
-            val events = snapshot.documents
-                .mapNotNull { AttendanceRecord.fromDocument(it) }
-                .sortedBy { it.timestamp?.toDate()?.time ?: 0L }
-            Result.success(Pair(deriveAttendanceState(events), events))
+            Result.success(toDayData(snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) }))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    override fun observeTodayData(): Flow<Pair<AttendanceState, List<AttendanceRecord>>> {
-        val today = LocalDate.now().format(dateFormatter)
-        return collection.whereEqualTo("date", today).snapshotsAsFlow().map { snapshot ->
-            val events = snapshot.documents
-                .mapNotNull { AttendanceRecord.fromDocument(it) }
-                .sortedBy { it.timestamp?.toDate()?.time ?: 0L }
-            Pair(deriveAttendanceState(events), events)
+    /**
+     * Live today's-events subscription that survives midnight.
+     *
+     * The date is resolved **inside** the flow, per emission of [todayStream], not once when the
+     * flow is built. The previous version read `LocalDate.now()` outside the builder, so the
+     * `whereEqualTo("date", …)` filter was frozen at whatever day the subscription started: an app
+     * left open overnight kept listening to yesterday's documents and handed the ViewModels a
+     * stale event list to authorise punches from. `flatMapLatest` closes the old listener and
+     * attaches one for the new day the moment the date changes.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun observeTodayData(): Flow<Pair<AttendanceState, List<AttendanceRecord>>> =
+        clock.todayStream().flatMapLatest { today ->
+            collection.whereEqualTo("date", today).snapshotsAsFlow().map { snapshot ->
+                toDayData(snapshot.documents.mapNotNull { AttendanceRecord.fromDocument(it) })
+            }
         }
+
+    /** Orders the day's punches and derives its state — the one shape both readers return. */
+    private fun toDayData(
+        records: List<AttendanceRecord>,
+    ): Pair<AttendanceState, List<AttendanceRecord>> {
+        val events = records.sortedBy { it.timestamp?.toDate()?.time ?: 0L }
+        return Pair(deriveAttendanceState(events), events)
     }
 
     /**
@@ -70,8 +85,7 @@ class FirestoreAttendanceRepository @Inject constructor(
      */
     override suspend fun getTodayPlannedWindow(): Result<Pair<Int, Int>?> {
         return try {
-            val today = LocalDate.now().format(dateFormatter)
-            val doc = userDoc.collection("planned_hours").document(today).get().await()
+            val doc = userDoc.collection("planned_hours").document(clock.today()).get().await()
             val window = AttendanceStatusRules.resolveOpsWindow(
                 doc.getString("startTime"),
                 doc.getString("endTime"),
@@ -101,14 +115,17 @@ class FirestoreAttendanceRepository @Inject constructor(
         locationName: String
     ): Result<AttendanceRecord> {
         return try {
-            val today = LocalDate.now().format(dateFormatter)
             val ref = collection.document()
             val record = AttendanceRecord(
                 id           = ref.id,
                 userId       = sessionManager.userId,
                 employeeId   = sessionManager.employeeId,
                 userName     = sessionManager.name,
-                date         = today,
+                // The REAL today, read now. This is the half of the rollover bug that made it
+                // expensive: the punch was always stamped correctly, it was the *authorisation*
+                // that was made against yesterday's events. The stale-day guard upstream
+                // (eventsAreStale) is what keeps the two in agreement.
+                date         = clock.today(),
                 type         = type,
                 timestamp    = Timestamp.now(),
                 latitude     = latitude,

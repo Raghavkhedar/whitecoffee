@@ -62,6 +62,7 @@ class OfficeAttendanceFragment : Fragment() {
                 events = events,
                 isOnline = isOnline,
                 gpsEnabled = gpsEnabled.value,
+                notice = uiState.notice,
                 onBack = { findNavController().navigateUp() },
                 onEnableGps = { startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)) },
                 onHomeIn = viewModel::homeIn,
@@ -96,5 +97,10 @@ class OfficeAttendanceFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         gpsEnabled.value = locationProvider.isGpsEnabled()
+        // Re-read the day on every resume. The ViewModel used to load exactly once, in init, so an
+        // app left open overnight came back to the foreground still showing — and still
+        // authorising punches against — YESTERDAY's events. The write-time guard refuses such a
+        // punch outright; this is what makes the screen correct instead of merely safe.
+        viewModel.loadTodayState()
     }
 }

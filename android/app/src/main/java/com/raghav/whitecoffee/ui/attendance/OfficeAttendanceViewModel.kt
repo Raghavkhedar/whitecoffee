@@ -8,11 +8,16 @@ import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.OfficeState
 import com.raghav.whitecoffee.data.model.deriveOfficeState
+import com.raghav.whitecoffee.data.model.eventsAreStale
 import com.raghav.whitecoffee.data.model.isOfficeEventAllowed
 import com.raghav.whitecoffee.data.network.NetworkMonitor
+import com.raghav.whitecoffee.data.notification.AttendanceEntry
+import com.raghav.whitecoffee.data.notification.AttendanceNotifier
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
+import com.raghav.whitecoffee.data.time.Clock
 import com.raghav.whitecoffee.domain.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +31,8 @@ import javax.inject.Inject
 class OfficeAttendanceViewModel @Inject constructor(
     private val attendanceRepository: AttendanceRepository,
     private val locationProvider: LocationProvider,
+    private val clock: Clock,
+    private val notifier: AttendanceNotifier,
     networkMonitor: NetworkMonitor
 ) : ViewModel() {
 
@@ -47,8 +54,13 @@ class OfficeAttendanceViewModel @Inject constructor(
      *
      * The current phase is re-derived from the events rather than read from [_uiState] so a
      * transient Loading/Error state cannot mask the real one and wave a punch through.
+     *
+     * **Freshness is checked before the phase, and it is the more important half.** The phase
+     * rules are perfectly correct code reading the wrong day; see [refuseStaleDay].
      */
-    private fun guard(type: String): Boolean {
+    private suspend fun guard(type: String): Boolean {
+        if (refuseStaleDay()) return false
+
         val state = deriveOfficeState(_uiState.value.events)
         if (isOfficeEventAllowed(state, type)) return true
         setState(
@@ -80,22 +92,53 @@ class OfficeAttendanceViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Refuses the punch when the events on screen belong to a different day, reloads, and says so.
+     *
+     * This is the day-rollover fix. `init { loadTodayState() }` was the only load and the phase was
+     * re-derived from whatever `_uiState.events` happened to hold, so an app resumed the next
+     * morning authorised an `office_out` against yesterday's open session — and the write landed
+     * stamped with the real today, leaving yesterday unclosed and scored LNF = half pay.
+     *
+     * The reload is **awaited before** the message is published: the other way round, the load
+     * would land a moment later and wipe the explanation off the screen, leaving the employee
+     * looking at a silently different day.
+     */
+    private suspend fun refuseStaleDay(): Boolean {
+        if (!eventsAreStale(_uiState.value.events, clock.today())) return false
+        reloadToday()
+        _uiState.update { it.copy(notice = ROLLOVER_NOTICE) }
+        return true
+    }
+
     init {
         loadTodayState()
     }
 
+    /**
+     * Non-blocking reload. Called from `init` **and from the fragment's `onResume`** — an app
+     * brought back to the foreground the next morning must not keep yesterday's day on screen.
+     * The previous load is cancelled so a slow one cannot land on top of a newer one.
+     */
     fun loadTodayState() {
-        viewModelScope.launch {
-            setState(OfficeState.Loading)
-            val result = attendanceRepository.getTodayData()
-            if (result.isFailure) {
-                setState(OfficeState.NotStarted)
-                return@launch
-            }
-            val (_, events) = result.getOrThrow()
-            // One update: the phase and the timeline it was derived from land together.
-            _uiState.value = OfficeAttendanceUiState(deriveOfficeState(events), events)
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch { reloadToday() }
+    }
+
+    private var loadJob: Job? = null
+
+    private suspend fun reloadToday() {
+        setState(OfficeState.Loading)
+        val result = attendanceRepository.getTodayData()
+        if (result.isFailure) {
+            setState(OfficeState.NotStarted)
+            return
         }
+        val (_, events) = result.getOrThrow()
+        // One update: the phase and the timeline it was derived from land together. The notice is
+        // dropped here — a fresh load has nothing left to explain.
+        _uiState.value = OfficeAttendanceUiState(deriveOfficeState(events), events)
+        syncSessionReminder(events)
     }
 
     // ── Home In — starts the day (GPS only, once per day) ──────────────────
@@ -162,11 +205,32 @@ class OfficeAttendanceViewModel @Inject constructor(
         if (result.isSuccess) {
             val updated = _uiState.value.events + result.getOrThrow()
             _uiState.value = OfficeAttendanceUiState(deriveOfficeState(updated), updated)
+            syncSessionReminder(updated)
         } else {
             setState(OfficeState.Error(result.exceptionOrNull()?.message ?: failMessage))
         }
     }
 
+    /**
+     * Keeps the ongoing "still checked in" reminder in step with the day.
+     *
+     * Driven off the derived phase rather than off "which button was just tapped", so there is one
+     * rule: an open `office_in` shows it, everything else — the matching `office_out`, `home_out`,
+     * a day that was never started — clears it. A reminder left up after check-out would train
+     * people to ignore the one notification that protects half a day's pay.
+     */
+    private fun syncSessionReminder(events: List<AttendanceRecord>) {
+        when (val state = deriveOfficeState(events)) {
+            is OfficeState.InOffice -> notifier.showCheckedIn(state.checkInTime, AttendanceEntry.OFFICE)
+            else -> notifier.clear()
+        }
+    }
+
+    private companion object {
+        const val ROLLOVER_NOTICE =
+            "The date changed while this screen was open, so today's attendance has been " +
+                "reloaded. Nothing was recorded — check the day above and tap again."
+    }
 }
 
 /**
@@ -178,4 +242,13 @@ class OfficeAttendanceViewModel @Inject constructor(
 data class OfficeAttendanceUiState(
     val day: OfficeState = OfficeState.Loading,
     val events: List<AttendanceRecord> = emptyList(),
+    /**
+     * A transient explanation shown *alongside* the real phase, not instead of it.
+     *
+     * [OfficeState.Error] replaces the phase, which also removes every button — fine for "that
+     * action isn't available", fatal for the day-rollover refusal, which every office employee
+     * would hit on the first tap of a morning and which must leave them able to start their day
+     * immediately.
+     */
+    val notice: String? = null,
 )
