@@ -52,6 +52,11 @@ const { withPay } = require("./compensation");
 // Server-side verdict on client-written punches — see punchIntegrity.js for why this is
 // detection rather than prevention (offline check-in must keep working).
 const { assessPunch } = require("./punchIntegrity");
+// Is a punch structurally possible given the rest of its day? A punch can be individually
+// honest and still impossible in sequence — see punchSequence.js.
+const { assessSequence, isDayOpen } = require("./punchSequence");
+// Auto-file a regularization for a day that scored LNF because a check-out was forgotten.
+const { needsAutoRegularization, buildAutoRegularization } = require("./unclosedDay");
 // Before/after audit entry for every write — see auditLog.js on why the actor is
 // best-effort and why there is no IP.
 const { buildEntry } = require("./auditLog");
@@ -1703,6 +1708,175 @@ exports.sendPushNotification = onDocumentCreated(
   }
 );
 
+// ── Auto-file regularizations for unclosed days — 00:30 IST, day after ──────
+//
+// An employee who checks in and forgets to check out leaves one punch, which the 23:59
+// scorer reads as LNF — half a day's pay — silently. Regularization already fixes a
+// wrongly-scored day, but it begins with the employee NOTICING, and they do not: the
+// deduction surfaces weeks later on a payslip. This files the request for them so the day
+// reaches an admin the next morning, while it can still be remembered.
+//
+// It DECIDES NOTHING about pay. It opens a question; the admin's approval is what rewrites
+// `attendance_status`, exactly as for an employee-filed request.
+//
+// DELIBERATELY A SEPARATE FUNCTION, not a tail on computeDailyAttendanceStatus. That job
+// writes pay and has just been hardened so one bad user cannot poison the run; bolting an
+// extra write pass onto it would put this feature inside the blast radius of payroll for no
+// benefit. Failing to file a request must never be able to cost anyone their status doc.
+//
+// Idempotent two ways: the document ID is deterministic (`auto-{date}`), so a retry
+// overwrites rather than duplicating, and needsAutoRegularization refuses to file over a
+// pending/approved request — including the one a previous run created.
+exports.autoFileUnclosedDays = onSchedule(
+  {
+    schedule: "30 0 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
+  async () => {
+    const db = admin.firestore();
+
+    // Yesterday in IST — the day the 23:59 scorer just finished. Cloud functions run on a
+    // UTC clock, so shift +05:30 before reading the parts; at 00:30 IST a bare new Date()
+    // is still on the previous UTC day and would name the wrong target.
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const date = new Date(nowIST.getTime() - 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+
+    // PER-USER READS, NOT A FILTERED collectionGroup. A collection-group query with a
+    // `where` needs a COLLECTION_GROUP-scoped index declared in firestore.indexes.json, and
+    // declaring a fieldOverride on `attendance*.date` REPLACES the automatic single-field
+    // indexes — including the collection-scoped one the Android app's own
+    // `attendance.whereEqualTo("date", today)` depends on. Getting that wrong breaks live
+    // check-ins to save a few reads on a nightly job. The status doc is keyed BY date, so
+    // this is a direct get rather than a query anyway — cheaper than the collectionGroup.
+    const usersSnap = await db.collection("users").get();
+    const perUser = await Promise.all(usersSnap.docs.map(async (userDoc) => {
+      const userRef = db.collection("users").doc(userDoc.id);
+      const [statusDoc, requestSnap] = await Promise.all([
+        userRef.collection("attendance_status").doc(date).get(),
+        userRef.collection("regularization_requests").where("date", "==", date).get(),
+      ]);
+      return {
+        userId: userDoc.id,
+        status: statusDoc.exists ? statusDoc.data() : null,
+        requests: requestSnap.docs.map((d) => d.data()),
+      };
+    }));
+
+    const batch = db.batch();
+    const filed = [];
+    let scanned = 0;
+    for (const { userId, status, requests } of perUser) {
+      if (!status) continue;
+      scanned++;
+      if (!needsAutoRegularization(status, requests)) continue;
+
+      const request = buildAutoRegularization({
+        user: { userId, name: status.userName, employeeId: status.employeeId },
+        date,
+        status,
+        nowMillis: Date.now(),
+      });
+      batch.set(
+        db.collection("users").doc(userId)
+          .collection("regularization_requests").doc(`auto-${date}`),
+        {
+          ...request,
+          // The pure module returns an ISO string so it stays clock-free and testable; the
+          // stored field must be a Timestamp like every other submittedAt in the schema.
+          submittedAt: admin.firestore.Timestamp.fromDate(new Date(request.submittedAt)),
+        }
+      );
+      filed.push(status.employeeId || userId);
+    }
+
+    if (filed.length > 0) await batch.commit();
+
+    // Run record, same contract as the nightly summary: a silent no-op and a silent failure
+    // look identical without one. `ok:false` is what an alert should fire on.
+    await db.doc(`system/auto_regularization/daily/${date}`).set({
+      date,
+      ranAt: admin.firestore.Timestamp.now(),
+      scanned,
+      filed: filed.length,
+      employees: filed,
+      ok: true,
+    });
+
+    console.log(`autoFileUnclosedDays: ${date} — scanned ${scanned}, filed ${filed.length}`);
+  }
+);
+
+// ── Open-session reminder — 18:30 IST, "you are still checked in" ───────────
+//
+// Attacks the CAUSE of an unclosed day rather than its consequence: a nudge while the
+// employee can still act beats a regularization the next morning. autoFileUnclosedDays is
+// the safety net for when this is missed or ignored — both exist on purpose.
+//
+// Sends ONLY a `sent_notifications` doc, which sendPushNotification fans out to FCM. It
+// deliberately does NOT also write users/{uid}/notifications: FcmService.onMessageReceived
+// already saves an in-app copy when it receives one, so writing our own would give every
+// foregrounded employee two identical rows.
+//
+// Idempotent by deterministic doc ID: sendPushNotification triggers on document CREATION,
+// so a re-run `set`s the same path, which is an update and does not fire the trigger again.
+// A retry therefore cannot push the same reminder twice.
+//
+// No Sunday/holiday calendar logic, deliberately: someone with no punches has an unopened
+// day, isDayOpen returns false, and they are never messaged. The data already says who is
+// working.
+exports.openSessionReminder = onSchedule(
+  {
+    schedule: "30 18 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
+  async () => {
+    const db = admin.firestore();
+
+    // Today in IST. 18:30 IST is 13:00 UTC, so the UTC date happens to agree today — but
+    // shift anyway, because the rule is the rule and a schedule change must not silently
+    // reintroduce the bug.
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const today = nowIST.toISOString().slice(0, 10);
+
+    // Per-user reads rather than a filtered collectionGroup — same reason as
+    // autoFileUnclosedDays: the index a filtered collection-group query needs would override
+    // the automatic one the app's own attendance query relies on. This is the identical
+    // query the Android client already runs for its own day, at collection scope.
+    const usersSnap = await db.collection("users").get();
+    const perUser = await Promise.all(usersSnap.docs.map(async (userDoc) => {
+      const punchSnap = await db.collection("users").doc(userDoc.id)
+        .collection("attendance").where("date", "==", today).get();
+      return {
+        userId: userDoc.id,
+        user: userDoc.data(),
+        punches: punchSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      };
+    }));
+
+    const batch = db.batch();
+    const nudged = [];
+    for (const { userId, user, punches } of perUser) {
+      if (!isDayOpen(punches, user.role)) continue;
+
+      batch.set(db.collection("sent_notifications").doc(`open-session-${userId}-${today}`), {
+        title: "You are still checked in",
+        body: "Your day has no check-out yet. Please check out in the app — an unclosed day is recorded as a half day.",
+        type: "attendance",
+        recipientType: "specific",
+        recipientId: userId,
+        sentAt: admin.firestore.Timestamp.now(),
+        sentBy: "openSessionReminder",
+      });
+      nudged.push(user.employeeId || userId);
+    }
+
+    if (nudged.length > 0) await batch.commit();
+
+    console.log(`openSessionReminder: ${today} — ${nudged.length} open session(s): ${nudged.join(", ") || "none"}`);
+  }
+);
+
 // ── Monthly Regularization Reminder — 25th of each month, 10 AM IST ─────────
 exports.regularizationReminder = onSchedule(
   // Retry-safe only because the notification doc ID is now deterministic per month
@@ -2403,6 +2577,42 @@ exports.onPunchWritten = onDocumentCreated(
     const receivedAt = Date.now();
 
     const patch = assessPunch(punch, receivedAt);
+
+    // Sequence check — is this punch possible given the rest of its day? assessPunch judges
+    // the punch ALONE (clock, date, mock GPS) and cannot see that an `office_out` arrived
+    // with nothing open, which is exactly how a stale client wrote one as the first event of
+    // a day. That needs the day, so it costs two reads and lives here rather than in the
+    // pure module.
+    //
+    // Read the day against the date assessPunch SETTLED ON, not the one the client sent: a
+    // corrected `date` means the client named the wrong day, and querying the original would
+    // assess this punch against a day it does not belong to.
+    const day = patch.date || punch.date;
+    try {
+      const userRef = admin.firestore().collection("users").doc(event.params.userId);
+      const [userDoc, daySnap] = await Promise.all([
+        userRef.get(),
+        userRef.collection("attendance").where("date", "==", day).get(),
+      ]);
+      const dayPunches = daySnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const { flags } = assessSequence(
+        { id: snap.id, ...punch },
+        dayPunches,
+        userDoc.data() && userDoc.data().role
+      );
+      if (flags.length > 0) {
+        patch.integrity.flags = patch.integrity.flags.concat(flags);
+        // `trusted` was decided by assessPunch before these flags existed — restate it over
+        // the full set, or a sequence-flagged punch would still claim to be trusted.
+        patch.integrity.trusted = false;
+      }
+    } catch (e) {
+      // A sequence check that cannot read the day must not cost the punch its annotation:
+      // the clock/date/mock verdict is independently useful and is already computed. Degrade
+      // to that rather than losing both.
+      console.error(`onPunchWritten: sequence check failed for ${snap.ref.path}: ${e.message}`);
+    }
+
     try {
       await snap.ref.update(patch);
     } catch (e) {
