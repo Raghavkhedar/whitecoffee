@@ -4,10 +4,14 @@ import com.raghav.whitecoffee.data.location.FusedLocationProvider
 import com.raghav.whitecoffee.data.location.LocationProvider
 import com.raghav.whitecoffee.data.network.ConnectivityNetworkMonitor
 import com.raghav.whitecoffee.data.network.NetworkMonitor
+import com.raghav.whitecoffee.data.notification.AttendanceNotifier
+import com.raghav.whitecoffee.data.notification.SystemAttendanceNotifier
 import com.raghav.whitecoffee.data.photo.PhotoPipeline
 import com.raghav.whitecoffee.data.photo.WorkManagerPhotoPipeline
 import com.raghav.whitecoffee.data.session.PrefsSessionManager
 import com.raghav.whitecoffee.data.session.SessionManager
+import com.raghav.whitecoffee.data.time.Clock
+import com.raghav.whitecoffee.data.time.SystemClock
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -41,4 +45,16 @@ abstract class DataSourceModule {
     @Binds
     @Singleton
     abstract fun bindPhotoPipeline(impl: WorkManagerPhotoPipeline): PhotoPipeline
+
+    /**
+     * "What day is it" is a data source too — and one that decides pay. Behind a contract so a
+     * test can walk the app over midnight; see [Clock].
+     */
+    @Binds
+    @Singleton
+    abstract fun bindClock(impl: SystemClock): Clock
+
+    @Binds
+    @Singleton
+    abstract fun bindAttendanceNotifier(impl: SystemAttendanceNotifier): AttendanceNotifier
 }

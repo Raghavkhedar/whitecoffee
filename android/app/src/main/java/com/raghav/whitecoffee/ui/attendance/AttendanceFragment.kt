@@ -131,6 +131,11 @@ class AttendanceFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         gpsEnabled.value = locationProvider.isGpsEnabled()
+        // Re-subscribe on every resume. The subscription used to be built once, in init, against a
+        // date baked into the Firestore query — an app resumed the next morning kept listening to
+        // yesterday's documents and would have authorised a site_out against them. Cheap:
+        // loadTodayData() cancels the previous collector before starting a new one.
+        viewModel.loadTodayData()
     }
 }
 

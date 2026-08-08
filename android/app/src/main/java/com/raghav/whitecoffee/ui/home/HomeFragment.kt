@@ -1,14 +1,18 @@
 package com.raghav.whitecoffee.ui.home
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.viewModels
@@ -35,6 +40,17 @@ class HomeFragment : Fragment() {
 
     private val viewModel: HomeViewModel by viewModels()
     private val mainViewModel: MainViewModel by activityViewModels()
+
+    /**
+     * POST_NOTIFICATIONS. Denial is non-fatal by design: the in-app notifications screen and the
+     * unread bell keep working untouched, the user just loses the system-tray copies.
+     *
+     * The battery prompt is chained onto the result so the two dialogs never stack on top of each
+     * other on a first launch.
+     */
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { promptBatteryOptimization() }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -106,7 +122,33 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        promptBatteryOptimization()
+        // Home is the one screen every user passes through after login, which is why the ask
+        // lives here. If the permission flow runs, the battery prompt follows in its callback.
+        if (!requestNotificationPermissionIfNeeded()) promptBatteryOptimization()
+    }
+
+    /**
+     * Asks for POST_NOTIFICATIONS on Android 13+ (API 33). Returns true if a request was launched.
+     *
+     * The manifest has declared this permission all along, but nothing ever requested it at
+     * runtime — and since API 33 it is a runtime permission that starts **denied**, which turns
+     * every `NotificationManager.notify()` into a silent no-op. Both delivery paths died on it:
+     * `FcmService` builds a correct notification that was simply dropped, and FCM's own tray
+     * notifications for a backgrounded app were dropped too. It is also what the ongoing
+     * "you're still checked in" reminder needs, which is the one worth real money.
+     *
+     * Guarded on SDK_INT: below 33 the permission is granted at install and requesting it is a
+     * no-op that would still cost a launcher round-trip. minSdk here is 26.
+     */
+    private fun requestNotificationPermissionIfNeeded(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        val granted = ContextCompat.checkSelfPermission(
+            requireContext(),
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) return false
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        return true
     }
 
     override fun onResume() {

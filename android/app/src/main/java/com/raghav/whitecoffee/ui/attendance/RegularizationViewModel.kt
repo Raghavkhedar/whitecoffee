@@ -11,13 +11,17 @@ import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.RegularizationRepository
 import com.raghav.whitecoffee.data.session.SessionManager
+import com.raghav.whitecoffee.data.time.Clock
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -38,7 +42,8 @@ class RegularizationViewModel @Inject constructor(
     private val repository: RegularizationRepository,
     private val attendanceRepository: AttendanceRepository,
     private val sessionManager: SessionManager,
-    private val networkMonitor: NetworkMonitor
+    private val networkMonitor: NetworkMonitor,
+    private val clock: Clock
 ) : ViewModel() {
 
     val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
@@ -50,11 +55,20 @@ class RegularizationViewModel @Inject constructor(
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
-    val todayLabel: String = run {
-        val today = LocalDate.now()
-        val formatter = DateTimeFormatter.ofPattern("d MMM yyyy, EEE", Locale.getDefault())
-        today.format(formatter)
-    }
+    /**
+     * The date shown in the header, re-derived when the day rolls over.
+     *
+     * Was a plain `val` read from `LocalDate.now()` at construction, which froze it for the life
+     * of the ViewModel — the same defect as the attendance screens, and on this screen it also
+     * mislabels the day whose status is being disputed.
+     */
+    val todayLabel: StateFlow<String> = clock.todayStream()
+        .map { LocalDate.parse(it).format(LABEL_FORMAT) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            LocalDate.parse(clock.today()).format(LABEL_FORMAT),
+        )
 
     private val role: String get() = sessionManager.role
 
@@ -75,6 +89,7 @@ class RegularizationViewModel @Inject constructor(
      * before subscribing and hid a verdict the app could compute locally; it also sampled
      * connectivity once, leaving the screen stuck offline after a reconnect.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun loadToday() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -82,26 +97,38 @@ class RegularizationViewModel @Inject constructor(
             val plannedWindow = if (!usesFixedWindow) {
                 attendanceRepository.getTodayPlannedWindow().getOrNull()
             } else null
-            val today = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-
-            combine(
-                attendanceRepository.observeTodayData(),
-                repository.observeRequestForDate(today)
-            ) { data, request ->
-                val liveStatus = deriveLiveStatus(data.second, plannedWindow)
-                if (liveStatus == null) {
-                    UiState.Empty
-                } else {
-                    UiState.Success(
-                        listOf(
-                            RegularizationDayItem(
-                                date = today,
-                                dayOfWeek = getDayOfWeek(today),
-                                originalStatus = liveStatus,
-                                request = request
+            // The day is resolved INSIDE the stream, not once when this coroutine started.
+            //
+            // This is a write path, not just a label: `date` below becomes
+            // RegularizationDayItem.date, which is what submitRequest() files against. With the
+            // day frozen at construction, a screen left open across midnight would show TODAY's
+            // punches (observeTodayData self-heals) while filing the request against YESTERDAY —
+            // and an admin approving it rewrites the wrong day's attendance_status. flatMapLatest
+            // tears the whole combine down at rollover and rebuilds it, so the punches, the
+            // existing request and the filed date can never be about different days.
+            clock.todayStream().flatMapLatest { today ->
+                combine(
+                    attendanceRepository.observeTodayData(),
+                    repository.observeRequestForDate(today)
+                ) { data, request ->
+                    val liveStatus = deriveLiveStatus(data.second, plannedWindow)
+                    // Stated explicitly: without the old `.collect` directly downstream to infer
+                    // from, the two branches otherwise unify as UiState<Nothing>.
+                    val day: UiState<List<RegularizationDayItem>> = if (liveStatus == null) {
+                        UiState.Empty
+                    } else {
+                        UiState.Success(
+                            listOf(
+                                RegularizationDayItem(
+                                    date = today,
+                                    dayOfWeek = getDayOfWeek(today),
+                                    originalStatus = liveStatus,
+                                    request = request
+                                )
                             )
                         )
-                    )
+                    }
+                    day
                 }
             }
                 .catch { _daysState.value = UiState.Error("Something went wrong.") }
@@ -165,6 +192,7 @@ class RegularizationViewModel @Inject constructor(
     }
 
     companion object {
+        private val LABEL_FORMAT = DateTimeFormatter.ofPattern("d MMM yyyy, EEE", Locale.getDefault())
         private val DAY_FORMAT = SimpleDateFormat("EEE", Locale.getDefault())
         private val DATE_PARSE = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 

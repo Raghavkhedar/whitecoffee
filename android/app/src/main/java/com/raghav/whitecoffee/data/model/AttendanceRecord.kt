@@ -146,6 +146,30 @@ fun isEventAllowed(state: AttendanceState, type: String): Boolean = when (type) 
 }
 
 /**
+ * Whether [events] describes a day other than [today] — i.e. whether the screen is holding a
+ * stale day and no punch may be authorised from it.
+ *
+ * **This is the day-rollover invariant, and it is about money.** The app used to compute "today"
+ * once, at construction, and never again: `init { loadTodayState() }` was the only call site and
+ * `observeTodayData()` read `LocalDate.now()` *outside* its flow builder, baking a fixed date into
+ * the Firestore query forever. An app left open overnight therefore woke up holding yesterday's
+ * event list. The phase guards ([isEventAllowed] / [isOfficeEventAllowed]) then did their job
+ * perfectly against the wrong data — they saw an open session and waved an `office_out` through —
+ * and `recordEvent` stamped it with the REAL today. Production shows exactly that: employee S338's
+ * 2026-08-08 opens with an `office_out`, and 2026-08-07 was left unclosed and scored LNF = half pay.
+ *
+ * So the phase check is necessary but not sufficient. Freshness is checked FIRST, at every write
+ * site, and a mismatch reloads instead of writing.
+ *
+ * A blank `date` counts as fresh: `AttendanceRecord.fromDocument` refuses a document without one,
+ * so blank means "constructed in-memory, date not relevant", and the default must read in the
+ * employee's favour — refusing a legitimate punch costs them the same half day this guard exists
+ * to protect.
+ */
+fun eventsAreStale(events: List<AttendanceRecord>, today: String): Boolean =
+    events.any { it.date.isNotBlank() && it.date != today }
+
+/**
  * Whether logging out right now would close the user's day — i.e. whether MainViewModel's
  * auto-checkout would write a HOME_OUT, which is terminal (see [deriveAttendanceState]).
  *

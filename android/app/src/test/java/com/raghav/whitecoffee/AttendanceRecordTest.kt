@@ -4,6 +4,7 @@ import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.deriveAttendanceState
+import com.raghav.whitecoffee.data.model.eventsAreStale
 import com.raghav.whitecoffee.data.model.isEventAllowed
 import com.raghav.whitecoffee.data.model.willLogoutCloseDay
 import org.junit.Assert.assertEquals
@@ -136,5 +137,50 @@ class AttendanceRecordTest {
     @Test fun `sales on an office day takes the office path`() {
         val events = listOf(event(AttendanceType.HOME_IN), event(AttendanceType.OFFICE_IN))
         assertTrue(willLogoutCloseDay(AttendanceState.NoRecord, events, isOperations = false, isSales = true))
+    }
+
+    // ── eventsAreStale — the day-rollover invariant ───────────────────────
+    //
+    // The phase machine above is correct code. Run it against yesterday's events and it
+    // authorises a punch for a day that ended — which is what happened: an app left open
+    // overnight waved an office_out through, the write was stamped with the real today, and the
+    // previous day was left unclosed and scored LNF = half pay.
+
+    private fun dated(type: String, date: String) = AttendanceRecord(type = type, date = date)
+
+    @Test fun `an empty day is never stale`() {
+        assertFalse(eventsAreStale(emptyList(), "2026-08-08"))
+    }
+
+    @Test fun `events from today are not stale`() {
+        val events = listOf(
+            dated(AttendanceType.HOME_IN, "2026-08-08"),
+            dated(AttendanceType.OFFICE_IN, "2026-08-08"),
+        )
+        assertFalse(eventsAreStale(events, "2026-08-08"))
+    }
+
+    @Test fun `events from yesterday are stale`() {
+        val events = listOf(
+            dated(AttendanceType.HOME_IN, "2026-08-07"),
+            dated(AttendanceType.OFFICE_IN, "2026-08-07"),
+        )
+        assertTrue(eventsAreStale(events, "2026-08-08"))
+    }
+
+    @Test fun `a single leftover event from another day makes the whole list stale`() {
+        // Half-migrated state is the dangerous one: the optimistic append writes today's record
+        // onto a list still holding yesterday's, and the derived phase then spans two days.
+        val events = listOf(
+            dated(AttendanceType.HOME_IN, "2026-08-07"),
+            dated(AttendanceType.OFFICE_IN, "2026-08-08"),
+        )
+        assertTrue(eventsAreStale(events, "2026-08-08"))
+    }
+
+    @Test fun `a blank date reads in the employee's favour and is not stale`() {
+        // fromDocument refuses a document with no date, so blank means "built in memory". A
+        // refusal here would block a legitimate punch, costing the same half day this guards.
+        assertFalse(eventsAreStale(listOf(event(AttendanceType.HOME_IN)), "2026-08-08"))
     }
 }

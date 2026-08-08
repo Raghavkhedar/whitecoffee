@@ -617,5 +617,22 @@ service cloud.firestore {
       allow read:  if isLoggedIn() && isAdmin();
       allow write: if false;
     }
+
+    // ── /system/** — Operational run records ─────────────────────────────
+    // Written ONLY by Cloud Functions (Admin SDK bypasses rules). Two kinds:
+    //   system/nightly_runs/computeDailyAttendanceStatus/{date}
+    //     — per-run summary (expected vs scored, per-user failures). An `ok: false`
+    //       doc is the signal that a night was partial and pay may be short.
+    //   system/accruals/monthly/{YYYY-MM}
+    //     — the PL-accrual idempotency marker. Its EXISTENCE is what stops a retry
+    //       double-crediting every employee a paid leave day.
+    // `allow write: if false` is load-bearing, not boilerplate: a client able to
+    // delete the accrual marker could re-trigger a second month of PL for everyone,
+    // and one able to forge a run summary could mask a shortfall. Admin-only read —
+    // the failure entries carry employee IDs.
+    match /system/{docId=**} {
+      allow read:  if isLoggedIn() && isAdmin();
+      allow write: if false;
+    }
   }
 }

@@ -42,17 +42,36 @@ class FakeAttendanceRepository(
     /** Clock used to stamp recorded events, so tests can control ordering. */
     var now: () -> Timestamp = { Timestamp(Date(0L)) }
 
+    /**
+     * The `date` stamped on recorded events — the real repository reads this from the injected
+     * Clock at write time. A rollover test sets this to the NEW day while the events already held
+     * carry the old one, which is exactly the production shape of the bug.
+     */
+    var today: String = "2026-07-25"
+
+    /** How many times a caller re-read the day. Asserts that a stale screen actually reloaded. */
+    var loads: Int = 0
+        private set
+
+    /** Replaces the stored events — lets a test simulate a new day's data arriving underneath. */
+    fun setEvents(newEvents: List<AttendanceRecord>) {
+        events.value = newEvents
+    }
+
     override suspend fun getTodayData(): Result<Pair<AttendanceState, List<AttendanceRecord>>> {
+        loads++
         failWith?.let { return Result.failure(it) }
         val current = events.value
         return Result.success(deriveAttendanceState(current) to current)
     }
 
-    override fun observeTodayData(): Flow<Pair<AttendanceState, List<AttendanceRecord>>> =
-        events.map {
+    override fun observeTodayData(): Flow<Pair<AttendanceState, List<AttendanceRecord>>> {
+        loads++
+        return events.map {
             flowFailWith?.let { err -> throw err }
             deriveAttendanceState(it) to it
         }
+    }
 
     override suspend fun getTodayPlannedWindow(): Result<Pair<Int, Int>?> {
         failWith?.let { return Result.failure(it) }
@@ -74,7 +93,7 @@ class FakeAttendanceRepository(
             userId       = "u1",
             employeeId   = "EMP001",
             userName     = "Test User",
-            date         = "2026-07-25",
+            date         = today,
             type         = type,
             timestamp    = now(),
             latitude     = latitude,

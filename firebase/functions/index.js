@@ -52,6 +52,11 @@ const { withPay } = require("./compensation");
 // Server-side verdict on client-written punches — see punchIntegrity.js for why this is
 // detection rather than prevention (offline check-in must keep working).
 const { assessPunch } = require("./punchIntegrity");
+// Is a punch structurally possible given the rest of its day? A punch can be individually
+// honest and still impossible in sequence — see punchSequence.js.
+const { assessSequence, isDayOpen } = require("./punchSequence");
+// Auto-file a regularization for a day that scored LNF because a check-out was forgotten.
+const { needsAutoRegularization, buildAutoRegularization } = require("./unclosedDay");
 // Before/after audit entry for every write — see auditLog.js on why the actor is
 // best-effort and why there is no IP.
 const { buildEntry } = require("./auditLog");
@@ -212,23 +217,75 @@ async function writeTab(sheets, spreadsheetId, tabName, rows) {
 }
 
 // ── Monthly PL Accrual — midnight IST on 1st of each month ──────────────────
+// ⚠️ IDEMPOTENCY IS LOAD-BEARING HERE. This function does a blind
+// `increment(1)` on every user's plBalance, so running it twice for the same month
+// silently grants everyone a free paid leave day — real money, and invisible until
+// someone audits balances. It therefore claims a per-month marker doc with
+// `batch.create()`, which FAILS if the marker already exists. Because a Firestore
+// batch is atomic, the claim and the increments land together or not at all: a second
+// run (scheduler retry, manual re-trigger, overlapping instance) aborts the entire
+// batch and no balance moves. Do not replace `create` with `set` — `set` overwrites
+// and re-opens the double-accrual hole.
 exports.accrueMonthlyLeave = onSchedule(
-  { schedule: "0 0 1 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120 },
+  {
+    schedule: "0 0 1 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
   async () => {
     const db = admin.firestore();
+
+    // IST month key. The run fires at 00:00 IST on the 1st, which is 18:30 UTC on the
+    // *previous* day — a bare `new Date()` here would name the wrong month. Shift +05:30
+    // and read UTC parts, per the monorepo's IST rule.
+    const nowIST   = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const monthKey = nowIST.toISOString().slice(0, 7); // YYYY-MM
+
     const usersSnap = await db.collection("users").get();
+
+    // Firestore caps a batch at 500 writes; this one is users + 1 marker. Fail loudly
+    // rather than silently truncating payroll if the company ever outgrows that.
+    if (usersSnap.size + 1 > 500) {
+      throw new Error(
+        `accrueMonthlyLeave: ${usersSnap.size} users exceeds the 500-write batch limit — ` +
+        `split into chunked batches before this can run safely.`
+      );
+    }
+
     const batch = db.batch();
     usersSnap.docs.forEach((doc) => {
       batch.update(doc.ref, { plBalance: admin.firestore.FieldValue.increment(1) });
     });
-    await batch.commit();
-    console.log(`accrueMonthlyLeave: +1 PL applied to ${usersSnap.size} users`);
+    // The guard: create() throws ALREADY_EXISTS if this month was already accrued,
+    // which aborts the whole atomic batch — including every increment above.
+    batch.create(db.doc(`system/accruals/monthly/${monthKey}`), {
+      month: monthKey,
+      appliedTo: usersSnap.size,
+      ranAt: admin.firestore.Timestamp.now(),
+    });
+
+    try {
+      await batch.commit();
+    } catch (err) {
+      if (err && (err.code === 6 || err.code === "already-exists")) {
+        console.log(`accrueMonthlyLeave: ${monthKey} already accrued — skipping (no balances changed)`);
+        return;
+      }
+      throw err; // transient/infra — let the scheduler retry
+    }
+    console.log(`accrueMonthlyLeave: +1 PL applied to ${usersSnap.size} users for ${monthKey}`);
   }
 );
 
 // ── Daily Attendance Status — 23:59 IST, ALL users ──────────────────────────
 exports.computeDailyAttendanceStatus = onSchedule(
-  { schedule: "59 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300 },
+  // Retry-safe: status/daily_hours writes are `set` with deterministic doc IDs, and the
+  // PL decrement is gated on `priorStatus`, which a retry re-reads — so a re-run cannot
+  // double-deduct. Per-user failures are caught below and deliberately do NOT throw
+  // (retrying will not fix bad data); only infra failures reach the scheduler.
+  {
+    schedule: "59 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
   async () => {
     const db = admin.firestore();
     const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
@@ -305,108 +362,159 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
     const batch           = db.batch();
     const plDeductions    = [];
+    // Per-user scoring failures. A single malformed user doc must NOT cost every other
+    // employee their day: all writes accumulate into ONE batch committed after the loop,
+    // so an uncaught throw here used to mean nobody got scored at all — and since this
+    // function only ever writes *today*, the following night would not repair it. That is
+    // the failure mode behind the 2026-07-17 backfill. Collect and continue instead.
+    const failures        = [];
+    let   scored          = 0;
 
     for (const user of allUsers) {
       if (adminOverrides.has(user.id)) continue;
-      const events = (eventsByUser.get(user.id) || []).sort(
-        (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
-      );
+      try {
+        const events = (eventsByUser.get(user.id) || []).sort(
+          (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
+        );
 
-      const role        = user.role;
-      const fixedWindow = usesFixedWindow(role); // office/admin/sales: fixed 10–18; operations: planned shift
-      const plan  = plannedHours.get(user.id);
-      const leave = leavesToday.get(user.id);
+        const role        = user.role;
+        const fixedWindow = usesFixedWindow(role); // office/admin/sales: fixed 10–18; operations: planned shift
+        const plan  = plannedHours.get(user.id);
+        const leave = leavesToday.get(user.id);
 
-      // First check-in / last check-out across this role's event types. Operations:
-      // site + market. Office/admin: office. Sales (hybrid): office + site + market —
-      // scored against the same fixed window as office. Resolved BEFORE the skip below,
-      // which needs to know whether the user actually worked.
-      const inTypes  = attendanceInTypes(role);
-      const outTypes = attendanceOutTypes(role);
-      const checkIns  = events.filter((e) => inTypes.includes(e.type));
-      const checkOuts = events.filter((e) => outTypes.includes(e.type));
-      const worked = checkIns.length > 0 || checkOuts.length > 0;
+        // First check-in / last check-out across this role's event types. Operations:
+        // site + market. Office/admin: office. Sales (hybrid): office + site + market —
+        // scored against the same fixed window as office. Resolved BEFORE the skip below,
+        // which needs to know whether the user actually worked.
+        const inTypes  = attendanceInTypes(role);
+        const outTypes = attendanceOutTypes(role);
+        const checkIns  = events.filter((e) => inTypes.includes(e.type));
+        const checkOuts = events.filter((e) => outTypes.includes(e.type));
+        const worked = checkIns.length > 0 || checkOuts.length > 0;
 
-      // Every active user is scored on every working day, all roles alike. Sundays and
-      // holidays never reach this loop (both return above), offboarded users are filtered
-      // out of allUsers, and admin-marked days (WO / regularization) are skipped at the top.
-      // So an ops day reaching here with no plan, no leave and no punches is a no-show and
-      // scores Absent — days off must be marked WO or leave.
+        // Every active user is scored on every working day, all roles alike. Sundays and
+        // holidays never reach this loop (both return above), offboarded users are filtered
+        // out of allUsers, and admin-marked days (WO / regularization) are skipped at the top.
+        // So an ops day reaching here with no plan, no leave and no punches is a no-show and
+        // scores Absent — days off must be marked WO or leave.
 
-      // Working window: fixed-window roles use 10:00–18:00; operations use the planned
-      // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
-      // fallback). Ops with no plan keeps the 10:00–18:00 default — matching the portal's
-      // otLedger DEFAULT_SHIFT_START_MIN/END_MIN, which already scored these days that way.
-      let startMin = OFFICE_START_MIN;
-      let endMin = OFFICE_END_MIN;
-      if (!fixedWindow) {
-        const window = resolveOpsWindow(plan?.startTime, plan?.endTime);
-        if (window) { startMin = window.startMin; endMin = window.endMin; }
-      }
-
-      let status;
-
-      if (checkIns.length > 0 && checkOuts.length > 0) {
-        const firstIn  = checkIns[0];
-        const lastOut  = checkOuts[checkOuts.length - 1];
-        const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-        const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-
-        // The off-minutes formula lives in attendanceRules.classify, not inline here — inline it
-        // had no test coverage, since the test suite graded its own copy of the arithmetic.
-        status = classify(inMinutes, outMinutes, startMin, endMin);
-      } else if (checkIns.length > 0 || checkOuts.length > 0) {
-        status = "LNF";
-      } else {
-        if (leave) {
-          const balance = user.plBalance || 0;
-          if (balance > 0) {
-            status = "PL";
-            // Only deduct when today wasn't already counted as PL, so a re-run
-            // (manual trigger / retry) doesn't decrement the balance twice.
-            if (priorStatus.get(user.id) !== "PL") plDeductions.push(user.id);
-          } else {
-            status = "LWP";
-          }
-        } else {
-          status = "Absent";
+        // Working window: fixed-window roles use 10:00–18:00; operations use the planned
+        // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
+        // fallback). Ops with no plan keeps the 10:00–18:00 default — matching the portal's
+        // otLedger DEFAULT_SHIFT_START_MIN/END_MIN, which already scored these days that way.
+        let startMin = OFFICE_START_MIN;
+        let endMin = OFFICE_END_MIN;
+        if (!fixedWindow) {
+          const window = resolveOpsWindow(plan?.startTime, plan?.endTime);
+          if (window) { startMin = window.startMin; endMin = window.endMin; }
         }
-      }
 
-      batch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
-        date: today, userId: user.id, userName: user.name || "",
-        employeeId: user.employeeId || "", role: user.role, status,
-        markedBy: "auto", updatedAt: admin.firestore.Timestamp.now(),
-      });
+        let status;
 
-      // Per-day worked hours → shortage (auto) and overtime (admin-approved later).
-      // Only on fully-worked days, and only for roles that run the OT/shortage ledger
-      // (operations). Fixed-window roles (office/admin/sales) have no OT/shortage.
-      if (usesOtShortageLedger(role) && checkIns.length > 0 && checkOuts.length > 0) {
-        const firstIn    = checkIns[0];
-        const lastOut     = checkOuts[checkOuts.length - 1];
-        const inMin       = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-        const outMin      = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-        const actualMins  = Math.max(0, outMin - inMin);
-        const plannedMins = Math.max(0, endMin - startMin);
-        // Shortage = late-in + early-out; OT = late-out only (arriving early never earns OT).
-        const shortageMins = Math.max(0, inMin - startMin) + Math.max(0, endMin - outMin);
-        const otMins       = Math.max(0, outMin - endMin);
+        if (checkIns.length > 0 && checkOuts.length > 0) {
+          const firstIn  = checkIns[0];
+          const lastOut  = checkOuts[checkOuts.length - 1];
+          const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+          const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
 
-        // Per-day canonical record (the OT/shortage ledger reads this, not a lifetime counter).
-        batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
-          date: today, userId: user.id, role: user.role,
-          plannedMins, actualMins, shortageMins, otMins,
-          updatedAt: admin.firestore.Timestamp.now(),
+          // The off-minutes formula lives in attendanceRules.classify, not inline here — inline it
+          // had no test coverage, since the test suite graded its own copy of the arithmetic.
+          status = classify(inMinutes, outMinutes, startMin, endMin);
+        } else if (checkIns.length > 0 || checkOuts.length > 0) {
+          status = "LNF";
+        } else {
+          if (leave) {
+            const balance = user.plBalance || 0;
+            if (balance > 0) {
+              status = "PL";
+              // Only deduct when today wasn't already counted as PL, so a re-run
+              // (manual trigger / retry) doesn't decrement the balance twice.
+              if (priorStatus.get(user.id) !== "PL") plDeductions.push(user.id);
+            } else {
+              status = "LWP";
+            }
+          } else {
+            status = "Absent";
+          }
+        }
+
+        batch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
+          date: today, userId: user.id, userName: user.name || "",
+          employeeId: user.employeeId || "", role: user.role, status,
+          markedBy: "auto", updatedAt: admin.firestore.Timestamp.now(),
         });
+
+        // Per-day worked hours → shortage (auto) and overtime (admin-approved later).
+        // Only on fully-worked days, and only for roles that run the OT/shortage ledger
+        // (operations). Fixed-window roles (office/admin/sales) have no OT/shortage.
+        if (usesOtShortageLedger(role) && checkIns.length > 0 && checkOuts.length > 0) {
+          const firstIn    = checkIns[0];
+          const lastOut     = checkOuts[checkOuts.length - 1];
+          const inMin       = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
+          const outMin      = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
+          const actualMins  = Math.max(0, outMin - inMin);
+          const plannedMins = Math.max(0, endMin - startMin);
+          // Shortage = late-in + early-out; OT = late-out only (arriving early never earns OT).
+          const shortageMins = Math.max(0, inMin - startMin) + Math.max(0, endMin - outMin);
+          const otMins       = Math.max(0, outMin - endMin);
+
+          // Per-day canonical record (the OT/shortage ledger reads this, not a lifetime counter).
+          batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
+            date: today, userId: user.id, role: user.role,
+            plannedMins, actualMins, shortageMins, otMins,
+            updatedAt: admin.firestore.Timestamp.now(),
+          });
+        }
+        scored++;
+      } catch (err) {
+        // Deterministic per-user data problem (malformed timestamp, unexpected null).
+        // Retrying the whole run will not fix it, so we do NOT rethrow — we record it,
+        // finish scoring everyone else, and surface it in the run summary below.
+        failures.push({ userId: user.id, employeeId: user.employeeId || "", message: String(err && err.message || err) });
+        console.error(`computeDailyAttendanceStatus: FAILED to score user ${user.id} (${user.employeeId || "no empId"}) for ${today}:`, err);
       }
     }
 
+    // Commit and PL deductions stay OUTSIDE the per-user guard: a failure here is
+    // infrastructural, not per-user, and SHOULD throw so Cloud Scheduler retries it.
     await batch.commit();
+
+    // PL decrements are individual writes, so one failure must not strand the rest.
+    // Re-runs are safe: `priorStatus` is re-read each run and a user already recorded
+    // as PL today is never decremented twice.
+    const plFailures = [];
     for (const uid of plDeductions) {
-      await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
+      try {
+        await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
+      } catch (err) {
+        plFailures.push({ userId: uid, message: String(err && err.message || err) });
+        console.error(`computeDailyAttendanceStatus: FAILED PL decrement for ${uid} on ${today}:`, err);
+      }
     }
-    console.log(`computeDailyAttendanceStatus: ${allUsers.length} users for ${today}, PL deducted: ${plDeductions.length}`);
+
+    const expected = allUsers.length - adminOverrides.size;
+    console.log(
+      `computeDailyAttendanceStatus: ${today} — scored ${scored}/${expected} ` +
+      `(${allUsers.length} active, ${adminOverrides.size} admin-marked), ` +
+      `PL deducted ${plDeductions.length - plFailures.length}/${plDeductions.length}, ` +
+      `failures ${failures.length}`
+    );
+
+    // Run summary — makes a partial night DETECTABLE. Without this a silent shortfall
+    // only surfaces when an employee queries their payslip. Alert on `ok === false`.
+    await db.doc(`system/nightly_runs/computeDailyAttendanceStatus/${today}`).set({
+      date: today,
+      ranAt: admin.firestore.Timestamp.now(),
+      activeUsers: allUsers.length,
+      adminMarked: adminOverrides.size,
+      expected,
+      scored,
+      plDeducted: plDeductions.length - plFailures.length,
+      plAttempted: plDeductions.length,
+      failures,
+      plFailures,
+      ok: failures.length === 0 && plFailures.length === 0 && scored === expected,
+    });
   }
 );
 
@@ -417,7 +525,13 @@ exports.computeDailyAttendanceStatus = onSchedule(
 // Forecasting sheet. Runs after snapshotDailySpend (22:30 IST) so Manpower is fresh.
 // MDD is READ-ONLY; only the Forecasting sheet is written.
 exports.exportForecastSpend = onSchedule(
-  { schedule: "15 23 * * *", timeZone: "Asia/Kolkata", secrets: ["ATTENDANCE_SHEETS_KEY"], timeoutSeconds: 300, memory: "512MiB" },
+  // Retry-safe: every tab goes through writeTab(), which clears the range and rewrites
+  // it wholesale — a re-run reproduces the same sheet rather than appending.
+  {
+    schedule: "15 23 * * *", timeZone: "Asia/Kolkata", secrets: ["ATTENDANCE_SHEETS_KEY"],
+    timeoutSeconds: 300, memory: "512MiB",
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
   async () => {
     const keyJson = JSON.parse(SHEETS_KEY.value());
     const auth = new google.auth.GoogleAuth({ credentials: keyJson, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
@@ -606,7 +720,14 @@ exports.exportForecastSpend = onSchedule(
 
 // ── Daily Sheets Export ───────────────────────────────────────────────────────
 exports.exportToSheets = onSchedule(
-  { schedule: "0 22 * * *", timeZone: "Asia/Kolkata", secrets: ["ATTENDANCE_SHEETS_KEY", "MAPS_API_KEY"], timeoutSeconds: 540, memory: "512MiB" },
+  // Retry-safe: writeTab() clears and rewrites each tab, and frozen past-month blocks are
+  // re-emitted verbatim from what the sheet already holds, so a re-run is reproducible.
+  {
+    schedule: "0 22 * * *", timeZone: "Asia/Kolkata",
+    secrets: ["ATTENDANCE_SHEETS_KEY", "MAPS_API_KEY"],
+    timeoutSeconds: 540, memory: "512MiB",
+    retryCount: 2, minBackoffSeconds: 120, maxDoublings: 1,
+  },
   async () => {
     const keyJson = JSON.parse(SHEETS_KEY.value());
     const auth    = new google.auth.GoogleAuth({ credentials: keyJson, scopes: ["https://www.googleapis.com/auth/spreadsheets"] });
@@ -1587,9 +1708,183 @@ exports.sendPushNotification = onDocumentCreated(
   }
 );
 
+// ── Auto-file regularizations for unclosed days — 00:30 IST, day after ──────
+//
+// An employee who checks in and forgets to check out leaves one punch, which the 23:59
+// scorer reads as LNF — half a day's pay — silently. Regularization already fixes a
+// wrongly-scored day, but it begins with the employee NOTICING, and they do not: the
+// deduction surfaces weeks later on a payslip. This files the request for them so the day
+// reaches an admin the next morning, while it can still be remembered.
+//
+// It DECIDES NOTHING about pay. It opens a question; the admin's approval is what rewrites
+// `attendance_status`, exactly as for an employee-filed request.
+//
+// DELIBERATELY A SEPARATE FUNCTION, not a tail on computeDailyAttendanceStatus. That job
+// writes pay and has just been hardened so one bad user cannot poison the run; bolting an
+// extra write pass onto it would put this feature inside the blast radius of payroll for no
+// benefit. Failing to file a request must never be able to cost anyone their status doc.
+//
+// Idempotent two ways: the document ID is deterministic (`auto-{date}`), so a retry
+// overwrites rather than duplicating, and needsAutoRegularization refuses to file over a
+// pending/approved request — including the one a previous run created.
+exports.autoFileUnclosedDays = onSchedule(
+  {
+    schedule: "30 0 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
+  async () => {
+    const db = admin.firestore();
+
+    // Yesterday in IST — the day the 23:59 scorer just finished. Cloud functions run on a
+    // UTC clock, so shift +05:30 before reading the parts; at 00:30 IST a bare new Date()
+    // is still on the previous UTC day and would name the wrong target.
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const date = new Date(nowIST.getTime() - 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+
+    // PER-USER READS, NOT A FILTERED collectionGroup. A collection-group query with a
+    // `where` needs a COLLECTION_GROUP-scoped index declared in firestore.indexes.json, and
+    // declaring a fieldOverride on `attendance*.date` REPLACES the automatic single-field
+    // indexes — including the collection-scoped one the Android app's own
+    // `attendance.whereEqualTo("date", today)` depends on. Getting that wrong breaks live
+    // check-ins to save a few reads on a nightly job. The status doc is keyed BY date, so
+    // this is a direct get rather than a query anyway — cheaper than the collectionGroup.
+    const usersSnap = await db.collection("users").get();
+    const perUser = await Promise.all(usersSnap.docs.map(async (userDoc) => {
+      const userRef = db.collection("users").doc(userDoc.id);
+      const [statusDoc, requestSnap] = await Promise.all([
+        userRef.collection("attendance_status").doc(date).get(),
+        userRef.collection("regularization_requests").where("date", "==", date).get(),
+      ]);
+      return {
+        userId: userDoc.id,
+        status: statusDoc.exists ? statusDoc.data() : null,
+        requests: requestSnap.docs.map((d) => d.data()),
+      };
+    }));
+
+    const batch = db.batch();
+    const filed = [];
+    let scanned = 0;
+    for (const { userId, status, requests } of perUser) {
+      if (!status) continue;
+      scanned++;
+      if (!needsAutoRegularization(status, requests)) continue;
+
+      const request = buildAutoRegularization({
+        user: { userId, name: status.userName, employeeId: status.employeeId },
+        date,
+        status,
+        nowMillis: Date.now(),
+      });
+      batch.set(
+        db.collection("users").doc(userId)
+          .collection("regularization_requests").doc(`auto-${date}`),
+        {
+          ...request,
+          // The pure module returns an ISO string so it stays clock-free and testable; the
+          // stored field must be a Timestamp like every other submittedAt in the schema.
+          submittedAt: admin.firestore.Timestamp.fromDate(new Date(request.submittedAt)),
+        }
+      );
+      filed.push(status.employeeId || userId);
+    }
+
+    if (filed.length > 0) await batch.commit();
+
+    // Run record, same contract as the nightly summary: a silent no-op and a silent failure
+    // look identical without one. `ok:false` is what an alert should fire on.
+    await db.doc(`system/auto_regularization/daily/${date}`).set({
+      date,
+      ranAt: admin.firestore.Timestamp.now(),
+      scanned,
+      filed: filed.length,
+      employees: filed,
+      ok: true,
+    });
+
+    console.log(`autoFileUnclosedDays: ${date} — scanned ${scanned}, filed ${filed.length}`);
+  }
+);
+
+// ── Open-session reminder — 18:30 IST, "you are still checked in" ───────────
+//
+// Attacks the CAUSE of an unclosed day rather than its consequence: a nudge while the
+// employee can still act beats a regularization the next morning. autoFileUnclosedDays is
+// the safety net for when this is missed or ignored — both exist on purpose.
+//
+// Sends ONLY a `sent_notifications` doc, which sendPushNotification fans out to FCM. It
+// deliberately does NOT also write users/{uid}/notifications: FcmService.onMessageReceived
+// already saves an in-app copy when it receives one, so writing our own would give every
+// foregrounded employee two identical rows.
+//
+// Idempotent by deterministic doc ID: sendPushNotification triggers on document CREATION,
+// so a re-run `set`s the same path, which is an update and does not fire the trigger again.
+// A retry therefore cannot push the same reminder twice.
+//
+// No Sunday/holiday calendar logic, deliberately: someone with no punches has an unopened
+// day, isDayOpen returns false, and they are never messaged. The data already says who is
+// working.
+exports.openSessionReminder = onSchedule(
+  {
+    schedule: "30 18 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
+  async () => {
+    const db = admin.firestore();
+
+    // Today in IST. 18:30 IST is 13:00 UTC, so the UTC date happens to agree today — but
+    // shift anyway, because the rule is the rule and a schedule change must not silently
+    // reintroduce the bug.
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const today = nowIST.toISOString().slice(0, 10);
+
+    // Per-user reads rather than a filtered collectionGroup — same reason as
+    // autoFileUnclosedDays: the index a filtered collection-group query needs would override
+    // the automatic one the app's own attendance query relies on. This is the identical
+    // query the Android client already runs for its own day, at collection scope.
+    const usersSnap = await db.collection("users").get();
+    const perUser = await Promise.all(usersSnap.docs.map(async (userDoc) => {
+      const punchSnap = await db.collection("users").doc(userDoc.id)
+        .collection("attendance").where("date", "==", today).get();
+      return {
+        userId: userDoc.id,
+        user: userDoc.data(),
+        punches: punchSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      };
+    }));
+
+    const batch = db.batch();
+    const nudged = [];
+    for (const { userId, user, punches } of perUser) {
+      if (!isDayOpen(punches, user.role)) continue;
+
+      batch.set(db.collection("sent_notifications").doc(`open-session-${userId}-${today}`), {
+        title: "You are still checked in",
+        body: "Your day has no check-out yet. Please check out in the app — an unclosed day is recorded as a half day.",
+        type: "attendance",
+        recipientType: "specific",
+        recipientId: userId,
+        sentAt: admin.firestore.Timestamp.now(),
+        sentBy: "openSessionReminder",
+      });
+      nudged.push(user.employeeId || userId);
+    }
+
+    if (nudged.length > 0) await batch.commit();
+
+    console.log(`openSessionReminder: ${today} — ${nudged.length} open session(s): ${nudged.join(", ") || "none"}`);
+  }
+);
+
 // ── Monthly Regularization Reminder — 25th of each month, 10 AM IST ─────────
 exports.regularizationReminder = onSchedule(
-  { schedule: "0 10 25 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120 },
+  // Retry-safe only because the notification doc ID is now deterministic per month
+  // (see below) — a re-run overwrites the same reminder instead of duplicating it.
+  {
+    schedule: "0 10 25 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
   async () => {
     const db = admin.firestore();
 
@@ -1609,10 +1904,18 @@ exports.regularizationReminder = onSchedule(
       return;
     }
 
+    // Deterministic notification ID, keyed to the IST month this reminder is for.
+    // An auto-ID `.doc()` here meant every re-run (scheduler retry, manual trigger)
+    // pushed ANOTHER copy of the same reminder at every admin. With a fixed ID the
+    // re-run overwrites the existing notification instead of duplicating it.
+    const nowIST    = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const monthKey  = nowIST.toISOString().slice(0, 7); // YYYY-MM
+    const notifId   = `regularization-reminder-${monthKey}`;
+
     const notifBatch = db.batch();
     adminsSnap.docs.forEach((adminDoc) => {
       const notifRef = db.collection("users").doc(adminDoc.id)
-        .collection("notifications").doc();
+        .collection("notifications").doc(notifId);
       notifBatch.set(notifRef, {
         title: "Regularization Review Pending",
         body: `${pending.length} attendance regularization request(s) need your review.`,
@@ -1643,7 +1946,12 @@ exports.regularizationReminder = onSchedule(
 // A locked month is never recomputed (openWindowMonths stops at the first locked month).
 // See docs/superpowers/specs/2026-07-24-daily-spend-snapshot-design.md.
 exports.snapshotDailySpend = onSchedule(
-  { schedule: "30 22 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300, memory: "512MiB" },
+  // Retry-safe: dailySpend rows use deterministic `{uid}__{date}` IDs and the pass is a
+  // recompute-and-overwrite (locked months are never rewritten), so a re-run converges.
+  {
+    schedule: "30 22 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300, memory: "512MiB",
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
   async () => {
     const db = admin.firestore();
 
@@ -2269,6 +2577,42 @@ exports.onPunchWritten = onDocumentCreated(
     const receivedAt = Date.now();
 
     const patch = assessPunch(punch, receivedAt);
+
+    // Sequence check — is this punch possible given the rest of its day? assessPunch judges
+    // the punch ALONE (clock, date, mock GPS) and cannot see that an `office_out` arrived
+    // with nothing open, which is exactly how a stale client wrote one as the first event of
+    // a day. That needs the day, so it costs two reads and lives here rather than in the
+    // pure module.
+    //
+    // Read the day against the date assessPunch SETTLED ON, not the one the client sent: a
+    // corrected `date` means the client named the wrong day, and querying the original would
+    // assess this punch against a day it does not belong to.
+    const day = patch.date || punch.date;
+    try {
+      const userRef = admin.firestore().collection("users").doc(event.params.userId);
+      const [userDoc, daySnap] = await Promise.all([
+        userRef.get(),
+        userRef.collection("attendance").where("date", "==", day).get(),
+      ]);
+      const dayPunches = daySnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const { flags } = assessSequence(
+        { id: snap.id, ...punch },
+        dayPunches,
+        userDoc.data() && userDoc.data().role
+      );
+      if (flags.length > 0) {
+        patch.integrity.flags = patch.integrity.flags.concat(flags);
+        // `trusted` was decided by assessPunch before these flags existed — restate it over
+        // the full set, or a sequence-flagged punch would still claim to be trusted.
+        patch.integrity.trusted = false;
+      }
+    } catch (e) {
+      // A sequence check that cannot read the day must not cost the punch its annotation:
+      // the clock/date/mock verdict is independently useful and is already computed. Degrade
+      // to that rather than losing both.
+      console.error(`onPunchWritten: sequence check failed for ${snap.ref.path}: ${e.message}`);
+    }
+
     try {
       await snap.ref.update(patch);
     } catch (e) {

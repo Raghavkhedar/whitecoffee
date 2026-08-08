@@ -8,14 +8,19 @@ import com.raghav.whitecoffee.data.location.LocationState
 import com.raghav.whitecoffee.data.model.AttendanceRecord
 import com.raghav.whitecoffee.data.model.AttendanceState
 import com.raghav.whitecoffee.data.model.AttendanceType
+import com.raghav.whitecoffee.data.model.eventsAreStale
 import com.raghav.whitecoffee.data.model.isEventAllowed
 import com.raghav.whitecoffee.data.network.NetworkMonitor
+import com.raghav.whitecoffee.data.notification.AttendanceEntry
+import com.raghav.whitecoffee.data.notification.AttendanceNotifier
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.session.SessionManager
+import com.raghav.whitecoffee.data.time.Clock
 import com.raghav.whitecoffee.domain.RecordAttendanceEventUseCase
 import com.raghav.whitecoffee.domain.RecordEventOutcome
 import com.raghav.whitecoffee.domain.toUserMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +42,8 @@ class AttendanceViewModel @Inject constructor(
     private val locationProvider: LocationProvider,
     private val sessionManager: SessionManager,
     private val recordAttendanceEvent: RecordAttendanceEventUseCase,
+    private val clock: Clock,
+    private val notifier: AttendanceNotifier,
     networkMonitor: NetworkMonitor
 ) : ViewModel() {
 
@@ -75,7 +82,12 @@ class AttendanceViewModel @Inject constructor(
     // Write-time guard against the button-visibility gate being stale (e.g. a check-in button
     // still on screen for a moment after home_out landed). Checked right before every event write
     // so an out-of-order tap can never reach Firestore, not just fail to render afterwards.
-    private fun guardEvent(type: String): Boolean {
+    //
+    // Freshness comes first and matters more: the phase rules below are correct code, and reading
+    // them against yesterday's events is exactly how a punch gets authorised for a day that ended.
+    private suspend fun guardEvent(type: String): Boolean {
+        if (refuseStaleDay()) return false
+
         val state = currentAttendanceState()
         if (isEventAllowed(state, type)) return true
         setError(
@@ -83,6 +95,27 @@ class AttendanceViewModel @Inject constructor(
             else "That action isn't available right now. Pull down to refresh."
         )
         return false
+    }
+
+    /**
+     * Refuses the punch when the events on screen belong to a different day, re-subscribes, and
+     * says so.
+     *
+     * The day-rollover fix on the operations side. `observeTodayData()` used to bake
+     * `LocalDate.now()` into its Firestore query outside the flow builder, so an app left open
+     * overnight kept receiving yesterday's documents; the phase derived from them still looked
+     * like an open site visit, and the `site_out` it authorised was stamped with the real today —
+     * leaving yesterday with an unclosed `site_in`, which the nightly compute scores LNF = half pay.
+     *
+     * The message lands in [ActionState], which is a separate field from `day`, so the reload
+     * kicked off here cannot wipe the explanation off the screen the way it would on the office
+     * side.
+     */
+    private fun refuseStaleDay(): Boolean {
+        if (!eventsAreStale(_uiState.value.events, clock.today())) return false
+        loadTodayData()
+        setError(ROLLOVER_MESSAGE)
+        return true
     }
 
     sealed interface ActionState {
@@ -99,8 +132,19 @@ class AttendanceViewModel @Inject constructor(
         loadTodayData()
     }
 
+    private var todayJob: Job? = null
+
+    /**
+     * Subscribes to today's punches. Called from `init` **and from the fragment's `onResume`** —
+     * an app brought back to the foreground the next morning must not keep yesterday's day on
+     * screen while it waits for the rollover poll.
+     *
+     * The previous subscription is cancelled first. Without that, every resume would stack another
+     * collector on the same flow and each emission would be applied N times.
+     */
     fun loadTodayData() {
-        viewModelScope.launch {
+        todayJob?.cancel()
+        todayJob = viewModelScope.launch {
             _uiState.update { it.copy(day = UiState.Loading()) }
             attendanceRepository.observeTodayData()
                 .catch { e ->
@@ -113,6 +157,7 @@ class AttendanceViewModel @Inject constructor(
                     // `events`; as separate flows the screen could render a site check-in whose
                     // event had not appeared in the timeline yet.
                     _uiState.update { it.copy(day = UiState.Success(state), events = events) }
+                    syncSessionReminder(state)
                 }
         }
     }
@@ -127,9 +172,13 @@ class AttendanceViewModel @Inject constructor(
 
     // ── Site Check In — Step 1: Show dialog for user to type Site Name + Site ID ──
 
+    // Launched rather than run inline because the guard is now suspending (a stale day awaits
+    // nothing, but the freshness check lives on the same path as the write guards).
     fun initiateSiteCheckIn() {
-        if (!guardEvent(AttendanceType.SITE_IN)) return
-        setAction(ActionState.SiteInputRequired)
+        viewModelScope.launch {
+            if (!guardEvent(AttendanceType.SITE_IN)) return@launch
+            setAction(ActionState.SiteInputRequired)
+        }
     }
 
     // ── Site Check In — Step 2: User typed site name + ID, record event ───
@@ -222,6 +271,11 @@ class AttendanceViewModel @Inject constructor(
         siteName: String = "",
         marketName: String = "",
     ) {
+        // Freshness only — the legality check stays inside the use case, immediately before the
+        // write. The use case is handed `currentAttendanceState()`, so if the events behind it
+        // belong to another day it would authorise from the wrong one and never know.
+        if (refuseStaleDay()) return
+
         setAction(ActionState.Loading)
         val outcome = recordAttendanceEvent(
             state = currentAttendanceState(),
@@ -252,7 +306,32 @@ class AttendanceViewModel @Inject constructor(
         )
     }
 
+    /**
+     * Keeps the ongoing "still checked in" reminder in step with the day.
+     *
+     * Driven off the live derived state, so it is posted the moment a `site_in`/`market_in` lands
+     * and cleared by the matching check-out, by `home_out`, and by the day never having opened.
+     * The open **field** session is the one that costs money: a `site_in` with no `site_out`
+     * leaves the day with a single punch, which the nightly compute scores LNF = half pay.
+     * `home_in` is a commute marker and is never scored, so it gets no reminder.
+     */
+    private fun syncSessionReminder(state: AttendanceState) {
+        when (state) {
+            is AttendanceState.SiteCheckedIn ->
+                notifier.showCheckedIn(state.record.displayTime(), AttendanceEntry.OPERATIONS)
+            is AttendanceState.MarketCheckedIn ->
+                notifier.showCheckedIn(state.record.displayTime(), AttendanceEntry.OPERATIONS)
+            else -> notifier.clear()
+        }
+    }
+
     fun resetActionState() = setAction(ActionState.Idle)
+
+    private companion object {
+        const val ROLLOVER_MESSAGE =
+            "The date changed while this screen was open, so today's attendance has been " +
+                "reloaded. Nothing was recorded — check the day above and tap again."
+    }
 }
 
 /**

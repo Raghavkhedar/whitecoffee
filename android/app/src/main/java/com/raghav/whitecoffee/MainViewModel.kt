@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.raghav.whitecoffee.data.model.AccountStatus
 import com.raghav.whitecoffee.data.model.isSessionSuperseded
+import com.raghav.whitecoffee.data.notification.AttendanceNotifier
 import com.raghav.whitecoffee.data.repository.AuthRepository
 import com.raghav.whitecoffee.data.repository.UserRepository
 import com.raghav.whitecoffee.data.session.SessionManager
@@ -25,6 +26,7 @@ class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val userRepository: UserRepository,
     private val closeOpenDay: CloseOpenDayUseCase,
+    private val attendanceNotifier: AttendanceNotifier,
 ) : ViewModel() {
 
     private val _sessionInvalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -90,6 +92,11 @@ class MainViewModel @Inject constructor(
         monitorJob?.cancel()
         monitorJob = null
         _accountStatus.value = AccountStatus.Active
+        // The attendance ViewModels clear the "still checked in" reminder when they see the day
+        // close, but neither is alive during a logout — and logout closes the day (auto-checkout
+        // writes a terminal HOME_OUT). Without this, a signed-out device keeps an ongoing,
+        // undismissable notification telling the next person they are checked in.
+        attendanceNotifier.clear()
         authRepository.logout()
     }
 

@@ -3,6 +3,7 @@ package com.raghav.whitecoffee
 import com.raghav.whitecoffee.data.model.AccountStatus
 import com.raghav.whitecoffee.data.model.isSessionSuperseded
 import com.raghav.whitecoffee.domain.CloseOpenDayUseCase
+import com.raghav.whitecoffee.fake.FakeAttendanceNotifier
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
 import com.raghav.whitecoffee.fake.FakeAuthRepository
 import com.raghav.whitecoffee.fake.FakeLocationProvider
@@ -42,6 +43,7 @@ class MainViewModelTest {
     private lateinit var users: FakeUserRepository
     private lateinit var attendance: FakeAttendanceRepository
     private lateinit var location: FakeLocationProvider
+    private lateinit var notifier: FakeAttendanceNotifier
 
     @Before
     fun setUp() {
@@ -51,6 +53,7 @@ class MainViewModelTest {
         users = FakeUserRepository()
         attendance = FakeAttendanceRepository()
         location = FakeLocationProvider()
+        notifier = FakeAttendanceNotifier()
     }
 
     @After
@@ -61,6 +64,7 @@ class MainViewModelTest {
         authRepository = auth,
         userRepository = users,
         closeOpenDay = CloseOpenDayUseCase(attendance, location, session),
+        attendanceNotifier = notifier,
     )
 
     // ── The session-supersede decision, in isolation ──────────────────────
@@ -182,5 +186,20 @@ class MainViewModelTest {
         users.emitSuspended(reason = "Should not arrive", token = "token-1")
         advanceUntilIdle()
         assertEquals(AccountStatus.Active, vm.accountStatus.value)
+    }
+
+    /**
+     * Logging out closes the day (auto-checkout writes a terminal HOME_OUT), and neither
+     * attendance ViewModel is alive to see it. An ongoing notification is undismissable, so a
+     * missed clear leaves a signed-out phone permanently claiming someone is checked in.
+     */
+    @Test
+    fun `logout clears the ongoing checked-in reminder`() = runTest(dispatcher) {
+        val vm = viewModel()
+
+        vm.logout()
+        advanceUntilIdle()
+
+        assertEquals(1, notifier.clearCount)
     }
 }
