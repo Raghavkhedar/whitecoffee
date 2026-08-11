@@ -1274,12 +1274,13 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
+        const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos]));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_3, TABS.REQUESTS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_3, TABS.REQUESTS, [header, ...rows.map((r) => r.row)]);
       console.log(`MT Requests: ${rows.length} rows`);
     }
 
@@ -1297,12 +1298,13 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
+        const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos]));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows.map((r) => r.row)]);
       console.log(`MT Purchases: ${rows.length} rows`);
     }
 
@@ -1320,12 +1322,15 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
+        // The business date leads; submittedAt only breaks ties between two
+        // transfers dated the same day.
+        const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos]));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
       console.log(`Material Transfers: ${rows.length} rows`);
     }
 
@@ -1342,12 +1347,15 @@ exports.exportToSheets = onSchedule(
         const d    = doc.data();
         const items = Array.isArray(d.items) ? d.items : [];
         const uid   = uidOf(doc);
+        // The business date leads; submittedAt only breaks ties between two
+        // transfers dated the same day.
+        const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
         const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || ""]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""]));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || ""] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
       console.log(`Tool Transfers: ${rows.length} rows`);
     }
 
@@ -1378,10 +1386,13 @@ exports.exportToSheets = onSchedule(
         const uid = uidOf(doc);
         const granted     = explicitGrantedDates(d);
         const grantedDays = grantedDayCount(d) ?? (d.totalDays || "");
-        return [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", grantedDays, granted.join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
+        return {
+          sortKey: [millisOf(d.submittedAt)],
+          row: [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", grantedDays, granted.join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)],
+        };
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_1, TABS.LEAVE_REQUESTS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_1, TABS.LEAVE_REQUESTS, [header, ...rows.map((r) => r.row)]);
       console.log(`Leave Requests: ${rows.length} rows`);
     }
 
