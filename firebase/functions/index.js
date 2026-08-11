@@ -1362,14 +1362,21 @@ exports.exportToSheets = onSchedule(
     // ── 6. Work Progress ──────────────────────────────────────────────
     {
       const snap   = await db.collectionGroup("work_progress").get();
-      const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Hours Worked", "Work Description", "Submitted At", "Photo URLs"];
+      // Hours Worked and Work Description were dropped on 2026-08-11 by request.
+      // Site ID and Site Name are BOTH kept deliberately: employees type the site
+      // into whichever free-text box they notice, so each column is populated on a
+      // different subset of rows and neither is redundant. The half-blank Site ID
+      // is an Android form problem, not an export one — see the design doc.
+      const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Submitted At", "Photo URLs"];
       const rows   = snap.docs.map((doc) => {
         const d   = doc.data();
         const uid = uidOf(doc);
-        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
+        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_7, TABS.WORK_PROGRESS, [header, ...rows]);
+      // Date formatted after the sort — see the Attendance block for why.
+      await writeTab(sheets, SHEET_ID_7, TABS.WORK_PROGRESS,
+        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
       console.log(`Work Progress: ${rows.length} rows`);
     }
 
