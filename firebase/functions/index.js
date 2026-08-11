@@ -60,6 +60,10 @@ const { needsAutoRegularization, buildAutoRegularization } = require("./unclosed
 // Before/after audit entry for every write — see auditLog.js on why the actor is
 // best-effort and why there is no IP.
 const { buildEntry } = require("./auditLog");
+// One date format across every exported tab, plus a comparator that sorts on the
+// underlying value instead of the formatted cell — sorting a "10/08/2026" string
+// orders by day-of-month. See dateFormat.js.
+const { dmy, tsIST, millisOf, byKeys } = require("./dateFormat");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -213,6 +217,38 @@ async function writeTab(sheets, spreadsheetId, tabName, rows) {
     range: `${tabName}!A1`,
     valueInputOption: "RAW",
     requestBody: { values: rows },
+  });
+}
+
+// Set column A of a tab to DISPLAY dd/mm/yyyy, without touching its values.
+//
+// Used ONLY by exportForecastSpend. Its tabs are written USER_ENTERED, so column
+// A holds real date VALUES, and the Charts tab compares them numerically
+// (forecastDashboard.js:111 → `'Daily Snapshot'!$A:$A,"<="&$A43`). Rewriting them
+// as "10/08/2026" TEXT would make every one of those comparisons compare text to
+// a number and silently blank the dashboard. So the values stay as dates and only
+// the number format changes.
+//
+// The exportToSheets tabs need none of this — they are RAW text, formatted by dmy().
+async function setDateColumnFormat(sheets, spreadsheetId, tabName) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const tab = meta.data.sheets.find((s) => s.properties.title === tabName);
+  if (!tab) {
+    console.warn(`forecast: tab '${tabName}' not found — date format not applied`);
+    return;
+  }
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        repeatCell: {
+          // startRowIndex 1 skips the header so the "Date" label stays a label.
+          range: { sheetId: tab.properties.sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+          cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+          fields: "userEnteredFormat.numberFormat",
+        },
+      }],
+    },
   });
 }
 
@@ -667,6 +703,7 @@ exports.exportForecastSpend = onSchedule(
       spreadsheetId: FORECAST_SHEET_ID, range: "SpendData!A1",
       valueInputOption: "USER_ENTERED", requestBody: { values: [header, ...flat] },
     });
+    await setDateColumnFormat(sheets, FORECAST_SHEET_ID, "SpendData");
 
     // 6) Daily Snapshot — computed materialized table (dense standalone categories +
     // sparse per-employee×component Manpower, with month-to-date + all-time running totals).
@@ -679,6 +716,7 @@ exports.exportForecastSpend = onSchedule(
       spreadsheetId: FORECAST_SHEET_ID, range: "Daily Snapshot!A1",
       valueInputOption: "USER_ENTERED", requestBody: { values: [snapHeader, ...snapshot] },
     });
+    await setDateColumnFormat(sheets, FORECAST_SHEET_ID, "Daily Snapshot");
     console.log(`forecast: wrote ${flat.length} SpendData rows + ${snapshot.length} Daily Snapshot rows`);
 
     // 7) Forecast entry tab — the manager types his forecast here: a per-employee Manpower grid
