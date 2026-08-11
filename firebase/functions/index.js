@@ -1218,7 +1218,7 @@ exports.exportToSheets = onSchedule(
     {
       const snap   = await db.collectionGroup("material_requests").get();
       const header = [
-        "Submitted At", "Status", "Employee Name", "Employee ID",
+        "Submitted At", "Employee Name", "Employee ID",
         "Site ID", "Site Name", "Item Name", "Quantity", "Unit", "Item Notes", "Overall Notes", "Photo URLs",
       ];
       const rows = [];
@@ -1227,7 +1227,7 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
-        const base   = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
+        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos]));
       });
@@ -1240,7 +1240,7 @@ exports.exportToSheets = onSchedule(
     {
       const snap   = await db.collectionGroup("material_purchases").get();
       const header = [
-        "Submitted At", "Status", "Employee Name", "Employee ID",
+        "Submitted At", "Employee Name", "Employee ID",
         "Site ID", "Site Name", "Item Name", "Quantity", "Unit",
         "Price Per Unit", "Total Price", "Grand Total", "Notes", "Photo URLs",
       ];
@@ -1250,7 +1250,7 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
-        const base   = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
+        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos]));
       });
@@ -1263,7 +1263,7 @@ exports.exportToSheets = onSchedule(
     {
       const snap   = await db.collectionGroup("material_transfers").get();
       const header = [
-        "Submitted At", "Status", "Employee Name", "Employee ID", "Transfer Date",
+        "Submitted At", "Employee Name", "Employee ID", "Transfer Date",
         "From", "To", "Transferred By", "Received By",
         "Item Name", "Quantity", "Unit", "Condition", "Notes", "Photo URLs",
       ];
@@ -1273,7 +1273,7 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
-        const base   = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos]));
       });
@@ -1286,7 +1286,7 @@ exports.exportToSheets = onSchedule(
     {
       const snap   = await db.collectionGroup("tool_transfers").get();
       const header = [
-        "Submitted At", "Status", "Employee Name", "Employee ID", "Transfer Date",
+        "Submitted At", "Employee Name", "Employee ID", "Transfer Date",
         "From", "To", "Transferred By", "Received By",
         "Item Name", "Quantity", "Unit", "Condition", "Notes",
       ];
@@ -1295,7 +1295,7 @@ exports.exportToSheets = onSchedule(
         const d    = doc.data();
         const items = Array.isArray(d.items) ? d.items : [];
         const uid   = uidOf(doc);
-        const base  = [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
         if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || ""]);
         else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""]));
       });
@@ -1307,11 +1307,11 @@ exports.exportToSheets = onSchedule(
     // ── 6. Work Progress ──────────────────────────────────────────────
     {
       const snap   = await db.collectionGroup("work_progress").get();
-      const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Hours Worked", "Work Description", "Status", "Submitted At", "Photo URLs"];
+      const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Hours Worked", "Work Description", "Submitted At", "Photo URLs"];
       const rows   = snap.docs.map((doc) => {
         const d   = doc.data();
         const uid = uidOf(doc);
-        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", d.status || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
+        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
       await writeTab(sheets, SHEET_ID_7, TABS.WORK_PROGRESS, [header, ...rows]);
