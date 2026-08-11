@@ -251,4 +251,25 @@ class LeaveCoverageTest {
         assertEquals("", formatGrantedDates(emptyList()))
         assertEquals("", formatGrantedDates(listOf("not-a-date")))
     }
+
+    /**
+     * The exact document behind the 2026-08-11 report that the app "shows approved for 5 days"
+     * when only 3 were granted (Sachin Kumar, `leave_requests/ytnA8KUANiBXRSCSus5e`). Pinned
+     * from live Firestore so a regression here is caught against the real payload, not a
+     * hand-made one — the reported bug turned out to be a stale APK, and this is the assertion
+     * that proves which side is at fault next time.
+     */
+    @Test
+    fun `real partial approval from Firestore reads as 3 of 5`() {
+        val c = leave(
+            from = "2026-08-27",
+            to = "2026-08-31",
+            approvedDates = listOf("2026-08-28", "2026-08-29", "2026-08-30"),
+        ).approvalCoverage()
+        assertTrue(c.isPartial)
+        assertEquals(5, c.requestedDays)
+        assertEquals(3, c.grantedDays)
+        assertEquals(3, c.effectiveGrantedDays)
+        assertEquals("28, 29, 30 Aug", formatGrantedDates(c.effectiveGrantedDates))
+    }
 }
