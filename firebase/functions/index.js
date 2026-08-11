@@ -143,10 +143,11 @@ async function getRoadKm(lat1, lon1, lat2, lon2, apiKey) {
   }
 }
 
-function ts(timestamp) {
-  if (!timestamp) return "";
-  return timestamp.toDate().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-}
+// Every "Submitted At" / "Reviewed At" cell. Kept as a short name because there
+// are seven call sites; the implementation lives in dateFormat.js, which explains
+// why this is no longer toLocaleString("en-IN") — that padded nothing, appended
+// seconds nobody reads, and produced "10/8/2026, 9:13:46 am".
+const ts = tsIST;
 
 function timeIST(timestamp) {
   if (!timestamp) return "";
@@ -1022,7 +1023,11 @@ exports.exportToSheets = onSchedule(
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
       // Fill every blank cell in the data rows with θ so no attendance cell is
       // left empty in the sheet (header row is left as-is).
-      const filledRows = rows.map((r) => r.map((cell) => (cell === "" || cell == null) ? "θ" : cell));
+      // Date is formatted only AFTER the sort above: that comparator relies on ISO
+      // being chronological as text, which "10/08/2026" is not. Formatting earlier
+      // would silently order this tab by day-of-month.
+      const filledRows = rows.map((r) => [dmy(r[0]), ...r.slice(1)]
+        .map((cell) => (cell === "" || cell == null) ? "θ" : cell));
       await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...filledRows]);
       console.log(`Attendance: ${rows.length} rows`);
     }
@@ -1149,7 +1154,9 @@ exports.exportToSheets = onSchedule(
         ]);
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION, [header, ...rows]);
+      // Date formatted after the sort — see the Attendance block for why.
+      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION,
+        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
       console.log(`OT Exception Report: ${rows.length} rows`);
     }
 
@@ -1248,7 +1255,9 @@ exports.exportToSheets = onSchedule(
       });
 
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      await writeTab(sheets, SHEET_ID_MANPOWER, TABS.MANPOWER, [header, ...rows]);
+      // Date formatted after the sort — see the Attendance block for why.
+      await writeTab(sheets, SHEET_ID_MANPOWER, TABS.MANPOWER,
+        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
       console.log(`Manpower Utilisation: ${rows.length} rows`);
     }
 
@@ -1482,7 +1491,12 @@ exports.exportToSheets = onSchedule(
       }
 
       const header = ["Date", "Employee Name", "Employee ID", "Route", "Total KM", "Conveyance (₹)", "Rate"];
-      await writeTab(sheets, SHEET_ID_1, TABS.CONVEYANCE, [header, ...allRows.map(r => r.slice(0, 7))]);
+      // dmy() is applied HERE and nowhere else. allRows is destructured above into
+      // the conveyance doc ID `${odUserId}__${date}` and its stored `date` field,
+      // so formatting element 0 in place would fork every record onto a new
+      // document (uid__10/08/2026) and duplicate a month of conveyance.
+      await writeTab(sheets, SHEET_ID_1, TABS.CONVEYANCE,
+        [header, ...allRows.map((r) => [dmy(r[0]), ...r.slice(1, 7)])]);
       console.log(`Conveyance: ${allRows.length} rows`);
     }
 
