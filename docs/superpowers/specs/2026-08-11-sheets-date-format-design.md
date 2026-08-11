@@ -39,9 +39,17 @@ of the day-of-month:
 2/8/2026, ...     ← August 2nd sorts after August 10th
 ```
 
-Attendance, Work Progress, OT and Manpower escape this only by accident — they sort ISO strings,
-which happen to be chronological as text. Reformatting to `DD/MM/YYYY` does not fix the five broken
-tabs; it makes their sort key differently wrong. The sort must move off the formatted string.
+Attendance (`:984`), OT Exception (`:1113`), Manpower (`:1212`) and Work Progress (`:1316`) escape
+this only by accident — they sort `a[0]` too, but `a[0]` is an ISO date, and ISO text happens to be
+chronological.
+
+**That accident is load-bearing, and change 1 destroys it.** Reformatting the Date column to
+`10/08/2026` turns those four working sorts into the same day-of-month sort as the broken five. So
+the sort fix is not optional cleanup that happens to ride along — it is required to avoid
+regressing four tabs.
+
+Nine sorts in total must move off the formatted cell. Conveyance (`:1417`) is the exception: it
+sorts `allRows`, which keeps ISO because of the Firestore trap below, so it stays correct as-is.
 
 ### 3. Work Progress carries columns that are not wanted
 
@@ -157,16 +165,35 @@ DD/MM/YYYY; the stored values and every formula are untouched. This needs the ta
 
 ### Sorting
 
-Sort on the underlying value, never on the formatted string. Each of the five blocks builds
-`{ sortKey, row }` pairs, sorts, then maps to rows:
+Sort on the underlying value, never on the formatted string. Two strategies, because the two groups
+have different problems.
 
-| Tab | Sort key | Direction |
+**Group A — sort is correct today, formatting would break it.** These already sort a chronological
+ISO string. The fix is ordering, not rewriting: **sort first, format the Date cell afterwards.**
+The existing comparator is untouched, which makes the row order provably identical to today's.
+
+| Tab | Line | Existing comparator | Formatting moves to |
+|---|---|---|---|
+| Attendance | `:984` | ISO `date`, then employee name | the existing `filledRows` map at `:986` |
+| Overtime Exception Report | `:1113` | ISO `date`, then employee name | a new map at the `writeTab` call |
+| Manpower Utilisation | `:1212` | ISO `date`, then **site name** | a new map at the `writeTab` call |
+| Work Progress | `:1316` | ISO `date` | a new map at the `writeTab` call |
+
+**Group B — sort is broken today.** These sort a `ts()` string, which is never chronological. They
+build `{ sortKey, row }` pairs, sort on the key array, then map to rows:
+
+| Tab | Line | Sort key |
 |---|---|---|
-| Material Transfers | `d.transferDate` (ISO), tie-broken by `submittedAt` millis | ascending |
-| Tool Transfers | `d.transferDate` (ISO), tie-broken by `submittedAt` millis | ascending |
-| MT Requests | `submittedAt` millis | ascending |
-| MT Purchases | `submittedAt` millis | ascending |
-| Leave Requests | `submittedAt` millis | ascending |
+| MT Requests | `:1234` | `[submittedAt millis]` |
+| MT Purchases | `:1257` | `[submittedAt millis]` |
+| Material Transfers | `:1280` | `[ISO transferDate, submittedAt millis]` |
+| Tool Transfers | `:1302` | `[ISO transferDate, submittedAt millis]` |
+| Leave Requests | `:1336` | `[submittedAt millis]` |
+
+All ascending, missing keys last — `transferDate` is `""` on docs written before the field existed,
+and `submittedAt` is null while a server timestamp is unresolved.
+
+Conveyance (`:1417`) is left alone — it sorts `allRows`, which keeps ISO for the Firestore write.
 
 Missing/null keys sort last rather than throwing — `transferDate` is `""` on any doc written before
 the field existed, and `submittedAt` can be null on a doc whose server timestamp has not resolved.
