@@ -1325,7 +1325,7 @@ exports.exportToSheets = onSchedule(
         // The business date leads; submittedAt only breaks ties between two
         // transfers dated the same day.
         const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
-        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
         if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
         else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos] }));
       });
@@ -1350,7 +1350,7 @@ exports.exportToSheets = onSchedule(
         // The business date leads; submittedAt only breaks ties between two
         // transfers dated the same day.
         const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
-        const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
         if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || ""] });
         else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""] }));
       });
@@ -1388,7 +1388,7 @@ exports.exportToSheets = onSchedule(
         const grantedDays = grantedDayCount(d) ?? (d.totalDays || "");
         return {
           sortKey: [millisOf(d.submittedAt)],
-          row: [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", grantedDays, granted.join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)],
+          row: [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", dmy(d.fromDate), dmy(d.toDate), grantedDays, granted.map(dmy).join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)],
         };
       });
       rows.sort(byKeys);
