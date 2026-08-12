@@ -60,6 +60,10 @@ const { needsAutoRegularization, buildAutoRegularization } = require("./unclosed
 // Before/after audit entry for every write — see auditLog.js on why the actor is
 // best-effort and why there is no IP.
 const { buildEntry } = require("./auditLog");
+// One date format across every exported tab, plus a comparator that sorts on the
+// underlying value instead of the formatted cell — sorting a "10/08/2026" string
+// orders by day-of-month. See dateFormat.js.
+const { dmy, tsIST, millisOf, byKeys } = require("./dateFormat");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -139,10 +143,11 @@ async function getRoadKm(lat1, lon1, lat2, lon2, apiKey) {
   }
 }
 
-function ts(timestamp) {
-  if (!timestamp) return "";
-  return timestamp.toDate().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-}
+// Every "Submitted At" / "Reviewed At" cell. Kept as a short name because there
+// are seven call sites; the implementation lives in dateFormat.js, which explains
+// why this is no longer toLocaleString("en-IN") — that padded nothing, appended
+// seconds nobody reads, and produced "10/8/2026, 9:13:46 am".
+const ts = tsIST;
 
 function timeIST(timestamp) {
   if (!timestamp) return "";
@@ -213,6 +218,38 @@ async function writeTab(sheets, spreadsheetId, tabName, rows) {
     range: `${tabName}!A1`,
     valueInputOption: "RAW",
     requestBody: { values: rows },
+  });
+}
+
+// Set column A of a tab to DISPLAY dd/mm/yyyy, without touching its values.
+//
+// Used ONLY by exportForecastSpend. Its tabs are written USER_ENTERED, so column
+// A holds real date VALUES, and the Charts tab compares them numerically
+// (forecastDashboard.js:111 → `'Daily Snapshot'!$A:$A,"<="&$A43`). Rewriting them
+// as "10/08/2026" TEXT would make every one of those comparisons compare text to
+// a number and silently blank the dashboard. So the values stay as dates and only
+// the number format changes.
+//
+// The exportToSheets tabs need none of this — they are RAW text, formatted by dmy().
+async function setDateColumnFormat(sheets, spreadsheetId, tabName) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  const tab = meta.data.sheets.find((s) => s.properties.title === tabName);
+  if (!tab) {
+    console.warn(`forecast: tab '${tabName}' not found — date format not applied`);
+    return;
+  }
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        repeatCell: {
+          // startRowIndex 1 skips the header so the "Date" label stays a label.
+          range: { sheetId: tab.properties.sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+          cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+          fields: "userEnteredFormat.numberFormat",
+        },
+      }],
+    },
   });
 }
 
@@ -667,6 +704,7 @@ exports.exportForecastSpend = onSchedule(
       spreadsheetId: FORECAST_SHEET_ID, range: "SpendData!A1",
       valueInputOption: "USER_ENTERED", requestBody: { values: [header, ...flat] },
     });
+    await setDateColumnFormat(sheets, FORECAST_SHEET_ID, "SpendData");
 
     // 6) Daily Snapshot — computed materialized table (dense standalone categories +
     // sparse per-employee×component Manpower, with month-to-date + all-time running totals).
@@ -679,6 +717,7 @@ exports.exportForecastSpend = onSchedule(
       spreadsheetId: FORECAST_SHEET_ID, range: "Daily Snapshot!A1",
       valueInputOption: "USER_ENTERED", requestBody: { values: [snapHeader, ...snapshot] },
     });
+    await setDateColumnFormat(sheets, FORECAST_SHEET_ID, "Daily Snapshot");
     console.log(`forecast: wrote ${flat.length} SpendData rows + ${snapshot.length} Daily Snapshot rows`);
 
     // 7) Forecast entry tab — the manager types his forecast here: a per-employee Manpower grid
@@ -984,7 +1023,11 @@ exports.exportToSheets = onSchedule(
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
       // Fill every blank cell in the data rows with θ so no attendance cell is
       // left empty in the sheet (header row is left as-is).
-      const filledRows = rows.map((r) => r.map((cell) => (cell === "" || cell == null) ? "θ" : cell));
+      // Date is formatted only AFTER the sort above: that comparator relies on ISO
+      // being chronological as text, which "10/08/2026" is not. Formatting earlier
+      // would silently order this tab by day-of-month.
+      const filledRows = rows.map((r) => [dmy(r[0]), ...r.slice(1)]
+        .map((cell) => (cell === "" || cell == null) ? "θ" : cell));
       await writeTab(sheets, SHEET_ID_2, TABS.ATTENDANCE, [header, ...filledRows]);
       console.log(`Attendance: ${rows.length} rows`);
     }
@@ -1111,7 +1154,9 @@ exports.exportToSheets = onSchedule(
         ]);
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION, [header, ...rows]);
+      // Date formatted after the sort — see the Attendance block for why.
+      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION,
+        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
       console.log(`OT Exception Report: ${rows.length} rows`);
     }
 
@@ -1210,7 +1255,9 @@ exports.exportToSheets = onSchedule(
       });
 
       rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      await writeTab(sheets, SHEET_ID_MANPOWER, TABS.MANPOWER, [header, ...rows]);
+      // Date formatted after the sort — see the Attendance block for why.
+      await writeTab(sheets, SHEET_ID_MANPOWER, TABS.MANPOWER,
+        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
       console.log(`Manpower Utilisation: ${rows.length} rows`);
     }
 
@@ -1227,12 +1274,13 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
+        const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos]));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_3, TABS.REQUESTS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_3, TABS.REQUESTS, [header, ...rows.map((r) => r.row)]);
       console.log(`MT Requests: ${rows.length} rows`);
     }
 
@@ -1250,12 +1298,13 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
+        const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos]));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows.map((r) => r.row)]);
       console.log(`MT Purchases: ${rows.length} rows`);
     }
 
@@ -1273,12 +1322,15 @@ exports.exportToSheets = onSchedule(
         const items  = Array.isArray(d.items) ? d.items : [];
         const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid    = uidOf(doc);
-        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || "", photos]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos]));
+        // The business date leads; submittedAt only breaks ties between two
+        // transfers dated the same day.
+        const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
+        const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
       console.log(`Material Transfers: ${rows.length} rows`);
     }
 
@@ -1295,26 +1347,36 @@ exports.exportToSheets = onSchedule(
         const d    = doc.data();
         const items = Array.isArray(d.items) ? d.items : [];
         const uid   = uidOf(doc);
-        const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.transferDate || "", d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push([...base, "", "", "", "", d.notes || ""]);
-        else items.forEach((item) => rows.push([...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""]));
+        // The business date leads; submittedAt only breaks ties between two
+        // transfers dated the same day.
+        const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
+        const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || ""] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""] }));
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
       console.log(`Tool Transfers: ${rows.length} rows`);
     }
 
     // ── 6. Work Progress ──────────────────────────────────────────────
     {
       const snap   = await db.collectionGroup("work_progress").get();
-      const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Hours Worked", "Work Description", "Submitted At", "Photo URLs"];
+      // Hours Worked and Work Description were dropped on 2026-08-11 by request.
+      // Site ID and Site Name are BOTH kept deliberately: employees type the site
+      // into whichever free-text box they notice, so each column is populated on a
+      // different subset of rows and neither is redundant. The half-blank Site ID
+      // is an Android form problem, not an export one — see the design doc.
+      const header = ["Date", "Employee Name", "Employee ID", "Site ID", "Site Name", "Submitted At", "Photo URLs"];
       const rows   = snap.docs.map((doc) => {
         const d   = doc.data();
         const uid = uidOf(doc);
-        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", d.hoursWorked || "", d.workDescription || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
+        return [d.date || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || "", ts(d.submittedAt), Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : ""];
       });
       rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_7, TABS.WORK_PROGRESS, [header, ...rows]);
+      // Date formatted after the sort — see the Attendance block for why.
+      await writeTab(sheets, SHEET_ID_7, TABS.WORK_PROGRESS,
+        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
       console.log(`Work Progress: ${rows.length} rows`);
     }
 
@@ -1331,10 +1393,13 @@ exports.exportToSheets = onSchedule(
         const uid = uidOf(doc);
         const granted     = explicitGrantedDates(d);
         const grantedDays = grantedDayCount(d) ?? (d.totalDays || "");
-        return [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", d.fromDate || "", d.toDate || "", grantedDays, granted.join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)];
+        return {
+          sortKey: [millisOf(d.submittedAt)],
+          row: [ts(d.submittedAt), d.status || "", userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.leaveType || "", dmy(d.fromDate), dmy(d.toDate), grantedDays, granted.map(dmy).join(", "), d.reason || "", d.approvedBy || "", d.approverComment || "", ts(d.reviewedAt)],
+        };
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]));
-      await writeTab(sheets, SHEET_ID_1, TABS.LEAVE_REQUESTS, [header, ...rows]);
+      rows.sort(byKeys);
+      await writeTab(sheets, SHEET_ID_1, TABS.LEAVE_REQUESTS, [header, ...rows.map((r) => r.row)]);
       console.log(`Leave Requests: ${rows.length} rows`);
     }
 
@@ -1444,7 +1509,12 @@ exports.exportToSheets = onSchedule(
       }
 
       const header = ["Date", "Employee Name", "Employee ID", "Route", "Total KM", "Conveyance (₹)", "Rate"];
-      await writeTab(sheets, SHEET_ID_1, TABS.CONVEYANCE, [header, ...allRows.map(r => r.slice(0, 7))]);
+      // dmy() is applied HERE and nowhere else. allRows is destructured above into
+      // the conveyance doc ID `${odUserId}__${date}` and its stored `date` field,
+      // so formatting element 0 in place would fork every record onto a new
+      // document (uid__10/08/2026) and duplicate a month of conveyance.
+      await writeTab(sheets, SHEET_ID_1, TABS.CONVEYANCE,
+        [header, ...allRows.map((r) => [dmy(r[0]), ...r.slice(1, 7)])]);
       console.log(`Conveyance: ${allRows.length} rows`);
     }
 
