@@ -7,6 +7,7 @@ import { getAllRegularizationRequests, approveRegularization, rejectRegularizati
 import type { RegularizationRequest } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 type Filter = 'pending' | 'approved' | 'rejected' | 'all';
 
@@ -52,6 +53,7 @@ function offsetMonth(ym: string, offset: number) {
 }
 
 export default function RegularizationPage() {
+  const isMobile = useIsMobile();
   const [requests, setRequests]       = useState<RegularizationRequest[]>([]);
   const [filter, setFilter]           = useState<Filter>('pending');
   const [month, setMonth]             = useState(currentYearMonth());
@@ -197,7 +199,51 @@ export default function RegularizationPage() {
           <div className="p-8 text-center text-text-secondary">
             No {filter === 'all' ? '' : filter} regularization requests for {formatMonthLabel(month)}.
           </div>
+        ) : isMobile ? (
+          <div className="divide-y divide-border">
+            {filteredRequests.map(r => (
+              <div key={r.id} className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-text-primary truncate">{r.userName}</div>
+                    <div className="text-xs text-text-secondary">{r.employeeId} · {r.date}</div>
+                  </div>
+                  <StatusBadge status={r.status} />
+                </div>
+                <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                  <OriginalBadge status={r.originalStatus} />
+                  <span className="text-text-secondary text-xs">&rarr;</span>
+                  {r.status === 'approved' && r.approvedStatus
+                    ? <ApprovedStatusBadge status={r.approvedStatus} />
+                    : <span className="text-text-secondary text-xs">—</span>}
+                </div>
+                <p className="text-text-secondary text-sm mt-2">{r.reason}</p>
+                {r.approverComment && (
+                  <p className={`text-xs mt-1 italic ${r.status === 'rejected' ? 'text-red-500' : 'text-green-600'}`}>
+                    &ldquo;{r.approverComment}&rdquo;
+                  </p>
+                )}
+                {r.status === 'pending' ? (
+                  <div className="flex gap-2 mt-3">
+                    <button className="btn-success text-xs py-1.5 px-3 flex-1"
+                      disabled={actioning === r.id}
+                      onClick={() => openModal(r, 'approve')}>
+                      Approve
+                    </button>
+                    <button className="btn-danger text-xs py-1.5 px-3 flex-1"
+                      disabled={actioning === r.id}
+                      onClick={() => openModal(r, 'reject')}>
+                      Reject
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-text-secondary mt-2">{r.approvedBy}</p>
+                )}
+              </div>
+            ))}
+          </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-background border-b border-border">
               <tr>
@@ -251,6 +297,7 @@ export default function RegularizationPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

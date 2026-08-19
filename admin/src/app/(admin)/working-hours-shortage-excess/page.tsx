@@ -12,6 +12,7 @@ import { istTodayStr, istDaysAgoStr } from '@/lib/date';
 import { computeDayLedger, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
 import { LAUNCH_DATE } from '@/lib/config';
 import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger, tracksShortage } from '@/lib/roleCapabilities';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // ── Date range helpers ────────────────────────────────────────────────────────
 
@@ -338,9 +339,9 @@ function OtModal({ row, adminName, onClose, onApproved }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-border">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:px-4" onClick={onClose}>
+      <div className="bg-white md:rounded-2xl shadow-xl w-full h-full md:h-auto md:max-w-2xl md:max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold text-text-primary">Overtime — {row.user.name}</h2>
             <p className="text-xs text-text-secondary mt-0.5 font-mono">{row.user.employeeId}</p>
@@ -366,7 +367,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
                   <span className="text-[#9A5B1E] font-semibold"> +{minutesToDisplay(day.pendingExtraMins)} to review</span>
                 </div>
               </div>
-              <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-3 items-start">
                 <div>
                   <label className="label">Grant (min)</label>
                   <input type="number" min="0" max={day.pendingExtraMins} value={drafts[day.date]?.mins ?? ''}
@@ -414,7 +415,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
           )}
         </div>
 
-        <div className="p-4 border-t border-border flex justify-end">
+        <div className="p-4 border-t border-border flex justify-end flex-shrink-0">
           <button onClick={onClose} className="btn-outline px-4 py-2 text-sm">Done</button>
         </div>
       </div>
@@ -425,6 +426,7 @@ function OtModal({ row, adminName, onClose, onApproved }: {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EmployeeDashboardPage() {
+  const isMobile = useIsMobile();
   const [preset, setPreset]           = useState<Preset>('1d');
   const [customStart, setCustomStart] = useState(todayStr());
   const [customEnd, setCustomEnd]     = useState(todayStr());
@@ -603,6 +605,45 @@ export default function EmployeeDashboardPage() {
               <div key={i} className="h-10 bg-background rounded animate-pulse" />
             ))}
           </div>
+        ) : isMobile ? (
+          rows.length === 0 ? (
+            <div className="py-10 text-center text-text-secondary text-sm">No employees match the current filters.</div>
+          ) : (
+            <div className="divide-y divide-[#F4F2EF]">
+              {rows.map(r => {
+                const { user, actualMins, shortageMins, rawExcessMins, pendingOtMins } = r;
+                const showsShort = tracksShortage(user.role);
+                return (
+                  <div key={user.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium text-text-primary truncate">{user.name}</span>
+                        <RoleBadge role={user.role} />
+                      </div>
+                      <span className="text-[11px] text-text-secondary flex-shrink-0">{actualMins !== null ? minutesToDisplay(actualMins) : '—'}</span>
+                    </div>
+                    {showsShort && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2 text-xs">
+                        {shortageMins > 0 ? (
+                          <span className="bg-[#FBEAEA] text-[#C42B2B] px-2 py-0.5 rounded font-mono">-{minutesToDisplay(shortageMins)}</span>
+                        ) : actualMins !== null ? (
+                          <span className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded">On time</span>
+                        ) : null}
+                        {rawExcessMins > 0 && (
+                          <button onClick={() => setOtModalUserId(user.id)}
+                            className={`px-2 py-0.5 rounded font-mono transition-colors ${
+                              pendingOtMins > 0 ? 'bg-[#FDF3E4] text-[#B26B07] font-semibold' : 'bg-[#EAF7F0] text-[#0A7A50]'
+                            }`}>
+                            +{minutesToDisplay(rawExcessMins)}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">

@@ -20,6 +20,7 @@ import { downloadSheet } from '@/lib/excel';
 import { TABS } from '@/lib/portalAccess';
 import { EMPLOYEE_CATEGORIES, EMPLOYEE_CATEGORY_SET } from '@/lib/categories';
 import { getsCategories } from '@/lib/roleCapabilities';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const ROLES = ['operations', 'office', 'sales', 'admin'] as const;
 type Role = typeof ROLES[number];
@@ -91,6 +92,7 @@ function fmtTs(t?: { toDate?: () => Date } | null) {
 }
 
 export default function UsersPage() {
+  const isMobile = useIsMobile();
   const [users, setUsers]       = useState<User[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -509,6 +511,30 @@ export default function UsersPage() {
           <div className="p-8 text-center text-text-secondary">Loading…</div>
         ) : users.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No employees yet.</div>
+        ) : isMobile ? (
+          <div className="divide-y divide-[#F4F2EF]">
+            {shown.map(u => (
+              <div key={u.id} className={`flex items-center gap-3 px-4 py-3 ${u.active === false ? 'opacity-55' : ''}`} onClick={() => openEdit(u)}>
+                <Avatar name={u.name} size={34} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-[#2A241F] flex items-center gap-2 flex-wrap">
+                    {u.name}
+                    {u.active === false && <span className="bg-[#F3E9E7] text-[#B4463A] px-1.5 py-0.5 rounded-[6px] text-[11px] font-normal">Suspended</span>}
+                  </div>
+                  <div className="text-[12px] text-[#9A938C] truncate">{u.employeeId || '—'} · {u.contactEmail || u.email}</div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <RoleBadge role={u.role} />
+                    {u.salaryRate ? <span className="font-mono text-[11.5px] text-[#6B635C]">₹{u.salaryRate}</span> : null}
+                    {u.plBalance !== undefined && <span className="bg-[#EDF2FD] text-[#2456C7] px-1.5 py-0.5 rounded-[6px] text-[11px]">{u.plBalance} PL</span>}
+                  </div>
+                </div>
+                <button className="inline-flex items-center justify-center w-8 h-8 rounded-[8px] text-[#6B635C] flex-shrink-0" onClick={e => { e.stopPropagation(); openEdit(u); }}><Icon name="more" size={16} /></button>
+              </div>
+            ))}
+            {shown.length === 0 && (
+              <div className="p-[34px] text-center text-[13px] text-[#9A938C]">No employees match &ldquo;{query}&rdquo;.</div>
+            )}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -575,8 +601,8 @@ export default function UsersPage() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:px-4">
+          <div className="bg-white md:rounded-2xl shadow-xl w-full h-full md:h-auto md:max-w-2xl md:max-h-[90vh] overflow-y-auto p-6">
             <h2 className="text-lg font-bold text-text-primary mb-5">{editing ? 'Edit Employee' : 'Add Employee'}</h2>
             <div className="space-y-4">
               <div><label className="label">Full Name</label><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ravi Kumar" /></div>
@@ -659,7 +685,7 @@ export default function UsersPage() {
                   <p className="text-[12px] text-text-secondary">Admins always see the entire portal — tab access doesn’t apply.</p>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
                       {GRANTABLE_TABS.map(tab => {
                         const checked = form.tabAccess.includes(tab.path);
                         return (
@@ -698,7 +724,7 @@ export default function UsersPage() {
                     <p className="text-[12px] text-text-secondary">Save the employee first, then reopen this form to set their allowance.</p>
                   ) : (
                     <>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                           <label className="label">Month</label>
                           {/* max = this month: a future month has no lock, no snapshot run and

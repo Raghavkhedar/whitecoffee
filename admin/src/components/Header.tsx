@@ -24,7 +24,7 @@ function initials(name: string) {
   return name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-export default function Header() {
+export default function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const pathname = usePathname();
   const { user } = useAccess();
   const name = user?.name || 'Admin';
@@ -39,13 +39,21 @@ export default function Header() {
   const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
-    <header className="flex items-center justify-between h-16 flex-shrink-0 px-[30px] border-b border-[#ECE9E5] bg-[rgba(250,249,247,0.82)] backdrop-blur-md sticky top-0 z-30">
-      <div>
-        <div className="text-[18px] font-semibold tracking-tight text-text-primary leading-[1.15]">{meta.title}</div>
-        <div className="text-[12.5px] text-[#9A938C] mt-px">{meta.subtitle}</div>
+    <header className="flex items-center justify-between h-16 flex-shrink-0 px-4 md:px-[30px] border-b border-[#ECE9E5] bg-[rgba(250,249,247,0.82)] backdrop-blur-md sticky top-0 z-20">
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          onClick={onMenuClick}
+          className="md:hidden flex-shrink-0 w-9 h-9 flex items-center justify-center border border-border rounded-[9px] bg-white text-[#6B635C] hover:bg-[#F5F2EE] transition-colors"
+        >
+          <Icon name="menu" size={17} />
+        </button>
+        <div className="min-w-0">
+          <div className="text-[18px] font-semibold tracking-tight text-text-primary leading-[1.15] truncate">{meta.title}</div>
+          <div className="text-[12.5px] text-[#9A938C] mt-px truncate hidden sm:block">{meta.subtitle}</div>
+        </div>
       </div>
-      <div className="flex items-center gap-[14px]">
-        <div className="flex items-center gap-2 h-9 px-[13px] border border-border rounded-[9px] bg-white text-[12.5px] text-[#6B635C] font-medium">
+      <div className="flex items-center gap-[14px] flex-shrink-0">
+        <div className="hidden sm:flex items-center gap-2 h-9 px-[13px] border border-border rounded-[9px] bg-white text-[12.5px] text-[#6B635C] font-medium">
           <span className="text-[#B4ADA5] flex"><Icon name="calendar" size={15} /></span>{today}
         </div>
         <button className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[9px] bg-white text-[#6B635C] hover:bg-[#F5F2EE] transition-colors">

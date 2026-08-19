@@ -12,6 +12,7 @@ import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
 import { attendanceInTypes, attendanceOutTypes } from '@/lib/roleCapabilities';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Stats { totalUsers: number; totalSites: number; pendingLeaves: number; pendingActions: number; earliestPendingSeconds: number | null; todayCheckIns: number; }
 
@@ -24,6 +25,7 @@ interface LiveStatus {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [stats, setStats]     = useState<Stats | null>(null);
   const [error, setError]     = useState('');
 
@@ -174,6 +176,27 @@ export default function DashboardPage() {
           </div>
           {liveLoading ? (
             <div className="p-8 text-center text-text-secondary text-sm">Loading…</div>
+          ) : isMobile ? (
+            <div className="divide-y divide-[#F4F2EF]">
+              {sortedLive.map(s => (
+                <div key={s.user.id} className="flex items-center gap-2.5 px-[18px] py-3">
+                  <Avatar name={s.user.name} size={32} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-[#2A241F] truncate">{s.user.name}</span>
+                      <RoleBadge role={s.user.role} />
+                    </div>
+                    <div className="flex items-center gap-[6px] text-[12px] mt-0.5" style={{ color: s.checkedIn ? '#0A7A50' : '#A8A29E' }}>
+                      <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: s.checkedIn ? '#16A06A' : '#CFC9C1' }} />
+                      <span className="truncate">{s.checkedIn ? `Checked in${s.location ? ` · ${s.location}` : ''}` : 'Not in'}</span>
+                    </div>
+                  </div>
+                  <div className="text-[11.5px] font-mono text-[#9A938C] text-right flex-shrink-0">
+                    {s.checkedIn && s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
@@ -351,9 +374,9 @@ function LeavesModal({ leaves, adminName, onClose, onChanged }: {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center justify-between p-5 border-b border-border">
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:px-4" onClick={onClose}>
+        <div className="bg-white md:rounded-2xl shadow-xl w-full h-full md:h-auto md:max-w-3xl md:max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
             <h2 className="text-lg font-bold text-text-primary">Leaves</h2>
             <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl leading-none">×</button>
           </div>

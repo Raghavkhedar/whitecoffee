@@ -16,6 +16,7 @@ import { computeRangeLedger, settlementCash, type RangeLedger } from '@/lib/otAg
 import { usesOtShortageLedger } from '@/lib/roleCapabilities';
 import ExportButton from '@/components/ExportButton';
 import { downloadExcel } from '@/lib/excel';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // IST, never the browser's local calendar: this page and the Users page (where SA amounts are
 // entered) must agree on "current month", or a non-IST browser between 00:00–05:30 IST on the
@@ -57,6 +58,7 @@ interface SaRow {
 }
 
 export default function SettlementsPage() {
+  const isMobile = useIsMobile();
   const [month, setMonth]       = useState(currentYearMonth());
   const [users, setUsers]       = useState<User[]>([]);
   const [events, setEvents]     = useState<AttendanceRecord[]>([]);
@@ -305,6 +307,44 @@ export default function SettlementsPage() {
       <div className="bg-white border border-[#E9E6E2] rounded-2xl overflow-hidden">
         {loading ? (
           <div className="space-y-2 p-4">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-10 bg-background rounded animate-pulse" />)}</div>
+        ) : isMobile ? (
+          rows.length === 0 ? (
+            <div className="py-10 text-center text-text-secondary text-sm">No operations employees.</div>
+          ) : (
+            <div className="divide-y divide-[#F4F2EF]">
+              {rows.map(r => {
+                const blocked = r.ledger.pendingDates.length > 0 || r.ledger.unauthorizedRestDates.length > 0;
+                return (
+                  <div key={r.user.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-text-primary truncate">{r.user.name}</div>
+                        <div className="text-[11px] text-text-secondary font-mono">{r.user.employeeId || '—'}</div>
+                      </div>
+                      {r.settlement?.locked ? (
+                        <span className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded font-semibold text-xs flex-shrink-0">Locked</span>
+                      ) : blocked ? (
+                        <span className="bg-[#FDF3E4] text-[#B26B07] px-2 py-0.5 rounded font-semibold text-xs flex-shrink-0">Blocked</span>
+                      ) : (
+                        <span className="text-text-secondary text-xs flex-shrink-0">Ready</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2 text-xs font-mono">
+                      {r.ledger.autoOtMins > 0 && <span className="text-[#0A7A50]">auto +{minutesToDisplay(r.ledger.autoOtMins)}</span>}
+                      {r.ledger.restDayOtMins > 0 && <span className="text-[#0A7A50]">rest +{minutesToDisplay(r.ledger.restDayOtMins)}</span>}
+                      {r.ledger.grantedOtMins > 0 && <span className="text-[#0A7A50]">granted +{minutesToDisplay(r.ledger.grantedOtMins)}</span>}
+                      {r.ledger.shortageMins > 0 && <span className="text-[#C42B2B]">-{minutesToDisplay(r.ledger.shortageMins)}</span>}
+                      {r.ledger.woDates.length > 0 && <span className="text-[#1A5FAF]">{r.ledger.woDates.length}d WO</span>}
+                      <span className={`font-semibold ${r.ledger.netMins < 0 ? 'text-[#C42B2B]' : r.ledger.netMins > 0 ? 'text-[#0A7A50]' : 'text-text-secondary'}`}>
+                        Net {r.ledger.netMins < 0 ? '-' : '+'}{minutesToDisplay(r.ledger.netMins)}
+                      </span>
+                      <span className={`font-semibold ${r.cash < 0 ? 'text-[#C42B2B]' : 'text-text-primary'}`}>{r.cash < 0 ? `-${inr(-r.cash)}` : inr(r.cash)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
@@ -385,6 +425,33 @@ export default function SettlementsPage() {
         <div className="bg-white border border-[#E9E6E2] rounded-2xl overflow-hidden">
           {loading ? (
             <div className="space-y-2 p-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 bg-background rounded animate-pulse" />)}</div>
+          ) : isMobile ? (
+            saRows.length === 0 ? (
+              <div className="py-10 text-center text-text-secondary text-sm">No active employees.</div>
+            ) : (
+              <div className="divide-y divide-[#F4F2EF]">
+                {saRows.map(r => (
+                  <div key={r.user.id} className="px-4 py-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-text-primary truncate">{r.user.name}</div>
+                      <div className="text-[11px] text-text-secondary font-mono">{r.user.employeeId || '—'} {r.sa?.date ? `· ${r.sa.date}` : ''}</div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs font-mono font-semibold text-text-primary">
+                        {r.sa ? inr(Number(r.sa.amount) || 0) : <span className="text-text-secondary font-normal">—</span>}
+                      </span>
+                      {r.sa?.locked ? (
+                        <span className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded font-semibold text-xs">Locked</span>
+                      ) : r.sa ? (
+                        <span className="bg-[#EDF2FD] text-[#2456C7] px-2 py-0.5 rounded font-semibold text-xs">Entered</span>
+                      ) : (
+                        <span className="text-text-secondary text-xs">Not entered</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">

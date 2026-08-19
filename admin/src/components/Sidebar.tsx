@@ -9,7 +9,7 @@ import { TABS, allowedPaths, type TabDef } from '@/lib/portalAccess';
 import { useAccess } from './AccessContext';
 import Icon from './Icon';
 
-export default function Sidebar() {
+export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const router   = useRouter();
   const { user } = useAccess();
@@ -46,7 +46,18 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-[248px] flex-shrink-0 bg-sidebar flex flex-col h-screen">
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 bg-black/40 z-30 md:hidden"
+          onClick={onClose}
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-[248px] max-w-[80vw] flex-shrink-0 bg-sidebar flex flex-col h-screen transform transition-transform duration-200 md:static md:translate-x-0 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 h-16 border-b border-white/[0.07]">
         <div className="w-9 h-9 rounded-[10px] bg-primary text-white flex items-center justify-center font-semibold text-[13px] font-mono">WC</div>
@@ -71,6 +82,7 @@ export default function Sidebar() {
                 <Link
                   key={item.path}
                   href={item.path}
+                  onClick={onClose}
                   className={`flex items-center gap-3 px-3 py-[8.5px] rounded-[9px] text-[13.5px] mb-0.5 transition-colors ${
                     active
                       ? 'bg-white/[0.08] text-white font-semibold'
@@ -101,6 +113,7 @@ export default function Sidebar() {
           Sign out
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

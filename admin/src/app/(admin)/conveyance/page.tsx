@@ -4,8 +4,10 @@ import { getConveyanceForMonth, getConveyanceConfig, setConveyanceConfig } from 
 import type { ConveyanceRecord } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadExcel } from '@/lib/excel';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 export default function ConveyancePage() {
+  const isMobile = useIsMobile();
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -164,6 +166,22 @@ export default function ConveyancePage() {
           <div className="text-text-secondary text-sm py-4 text-center">Loading…</div>
         ) : summary.length === 0 ? (
           <div className="text-text-secondary text-sm py-4 text-center">No conveyance data for {monthLabel}.</div>
+        ) : isMobile ? (
+          <div className="divide-y divide-border">
+            {summary.map(s => (
+              <div key={s.employeeId} className="py-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-text-primary truncate">{s.userName}</div>
+                  <div className="text-xs text-text-secondary">{s.employeeId || '—'} · {s.days}d · {s.totalKm.toFixed(2)} km</div>
+                </div>
+                <div className="font-medium text-text-primary flex-shrink-0">₹{s.totalConveyance.toFixed(2)}</div>
+              </div>
+            ))}
+            <div className="py-3 flex items-center justify-between gap-2 font-bold">
+              <div>Grand Total · {summary.reduce((s, e) => s + e.days, 0)}d · {grandKm.toFixed(2)} km</div>
+              <div className="text-text-primary">₹{grandTotal.toFixed(2)}</div>
+            </div>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -205,6 +223,22 @@ export default function ConveyancePage() {
           <div className="text-text-secondary text-sm py-4 text-center">Loading…</div>
         ) : sorted.length === 0 ? (
           <div className="text-text-secondary text-sm py-4 text-center">No records.</div>
+        ) : isMobile ? (
+          <div className="divide-y divide-border">
+            {sorted.map(r => (
+              <div key={r.id} className="py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium text-text-primary">{r.userName}</div>
+                  <div className="text-xs text-text-secondary font-mono">{r.date}</div>
+                </div>
+                <div className="text-xs text-text-secondary mt-1 truncate" title={r.route}>{r.route}</div>
+                <div className="flex items-center justify-between mt-1.5 text-xs">
+                  <span className="text-text-secondary">{r.totalKm.toFixed(2)} km · ₹{r.ratePerKm}/km</span>
+                  <span className="font-medium text-text-primary">₹{r.conveyance.toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

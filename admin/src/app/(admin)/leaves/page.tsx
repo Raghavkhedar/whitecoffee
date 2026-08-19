@@ -247,7 +247,8 @@ export default function LeavesPage() {
         ) : filteredLeaves.length === 0 ? (
           <div className="bg-white border border-[#E9E6E2] rounded-2xl p-10 text-center text-[13px] text-[#9A938C]">No {filter === 'all' ? '' : filter} requests.</div>
         ) : filteredLeaves.map(l => (
-          <div key={l.id} className="bg-white border border-[#E9E6E2] rounded-2xl px-5 py-[18px] flex items-start gap-4">
+          <div key={l.id} className="bg-white border border-[#E9E6E2] rounded-2xl px-5 py-[18px] flex flex-col sm:flex-row sm:items-start gap-4">
+            <div className="flex items-start gap-4 flex-1 min-w-0">
             <Avatar name={l.userName} size={44} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
@@ -262,11 +263,12 @@ export default function LeavesPage() {
                 {l.approverComment && <span className={`block text-[12px] mt-0.5 ${l.status === 'rejected' ? 'text-red-500' : 'text-[#8A817A]'}`}>“{l.approverComment}”</span>}</div></div>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2.5 flex-shrink-0">
+            </div>
+            <div className="flex sm:flex-col items-stretch sm:items-end gap-2.5 flex-shrink-0">
               {l.status === 'pending' ? (
-                <div className="flex gap-2">
-                  <button className="btn-outline !py-1.5 !px-3 text-[13px] !text-[#C42B2B] !border-[#F0D3D3] hover:!bg-[#FBEAEA]" disabled={actioning === l.id} onClick={() => { setRejectModal(l); setRejectComment(''); }}>Decline</button>
-                  <button className="btn-success !py-1.5 !px-3 text-[13px]" disabled={actioning === l.id} onClick={() => openApprove(l)}>Approve</button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button className="btn-outline !py-1.5 !px-3 text-[13px] !text-[#C42B2B] !border-[#F0D3D3] hover:!bg-[#FBEAEA] flex-1 sm:flex-none" disabled={actioning === l.id} onClick={() => { setRejectModal(l); setRejectComment(''); }}>Decline</button>
+                  <button className="btn-success !py-1.5 !px-3 text-[13px] flex-1 sm:flex-none" disabled={actioning === l.id} onClick={() => openApprove(l)}>Approve</button>
                 </div>
               ) : (
                 <>

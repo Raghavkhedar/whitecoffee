@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 export type IconName =
   | 'grid' | 'users' | 'userCircle' | 'leave' | 'clock' | 'calendar'
   | 'pin' | 'car' | 'doc' | 'bell' | 'logout' | 'search' | 'plus'
-  | 'chevron' | 'chevronLeft' | 'chevronRight' | 'more' | 'download' | 'list';
+  | 'chevron' | 'chevronLeft' | 'chevronRight' | 'more' | 'download' | 'list' | 'menu';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   grid: <><rect x="3" y="3" width="7" height="7" rx="1.6" /><rect x="14" y="3" width="7" height="7" rx="1.6" /><rect x="14" y="14" width="7" height="7" rx="1.6" /><rect x="3" y="14" width="7" height="7" rx="1.6" /></>,
@@ -26,6 +26,7 @@ const PATHS: Record<IconName, React.ReactNode> = {
   more: <><circle cx="12" cy="5" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="12" cy="19" r="1.4" /></>,
   download: <><path d="M12 4v12" /><path d="M6.5 11l5.5 5 5.5-5" /><path d="M4 20h16" /></>,
   list: <><path d="M8 6h12" /><path d="M8 12h12" /><path d="M8 18h12" /><path d="M3.5 6h.01" /><path d="M3.5 12h.01" /><path d="M3.5 18h.01" /></>,
+  menu: <><path d="M3.5 6.5h17" /><path d="M3.5 12h17" /><path d="M3.5 17.5h17" /></>,
 };
 
 export default function Icon({ name, size = 18, style }: { name: IconName; size?: number; style?: CSSProperties }) {

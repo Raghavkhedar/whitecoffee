@@ -12,6 +12,7 @@ import { istTodayStr, istDaysAgoStr } from '@/lib/date';
 import { computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
 import { LAUNCH_DATE } from '@/lib/config';
 import { tracksShortage } from '@/lib/roleCapabilities';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // ── Date range helpers ────────────────────────────────────────────────────────
 
@@ -403,9 +404,9 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-border">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:px-4" onClick={onClose}>
+      <div className="bg-white md:rounded-2xl shadow-xl w-full h-full md:h-auto md:max-w-2xl md:max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-text-primary">{row.user.name}</h2>
@@ -472,7 +473,7 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
                         <div className="flex justify-between"><span className="text-text-secondary">Pending review</span><span className="font-mono text-[#9A5B1E] font-semibold">+{minutesToDisplay(day.pendingExtraMins)}</span></div>
                       </div>
 
-                      <div className="grid grid-cols-[120px_1fr] gap-3 items-start">
+                      <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-3 items-start">
                         <div>
                           <label className="label">Grant (min)</label>
                           <input type="number" min="0" max={day.pendingExtraMins} value={drafts[day.date]?.mins ?? ''}
@@ -505,7 +506,7 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
             <div className="border border-dashed border-[#D8D2CB] rounded-xl p-4 bg-[#FCFBFA]">
               <div className="label mb-1">Add manual OT</div>
               <p className="text-xs text-text-secondary mb-3">For anomalies/missed punches the auto-detection can’t see. Logged with your reason and counted as granted OT.</p>
-              <div className="grid grid-cols-[150px_120px_1fr] gap-3 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-[150px_120px_1fr] gap-3 items-start">
                 <div>
                   <label className="label">Date</label>
                   <input type="date" min={start} max={end} value={manual.date}
@@ -645,7 +646,7 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
           </div>
         </div>
 
-        <div className="p-4 border-t border-border flex justify-end">
+        <div className="p-4 border-t border-border flex justify-end flex-shrink-0">
           <button onClick={onClose} className="btn-outline px-4 py-2 text-sm">Done</button>
         </div>
       </div>
@@ -656,6 +657,7 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OtShortagePage() {
+  const isMobile = useIsMobile();
   const [preset, setPreset]           = useState<Preset>('30d');
   const [customStart, setCustomStart] = useState(nDaysAgo(30));
   const [customEnd, setCustomEnd]     = useState(todayStr());
@@ -873,6 +875,44 @@ export default function OtShortagePage() {
               <div key={i} className="h-10 bg-background rounded animate-pulse" />
             ))}
           </div>
+        ) : isMobile ? (
+          rows.length === 0 ? (
+            <div className="py-10 text-center text-text-secondary text-sm">No employees match the current filters.</div>
+          ) : (
+            <div className="divide-y divide-[#F4F2EF]">
+              {rows.map(r => {
+                const { user, isOps, actualMins, shortageRangeMins, pendingOt, pendingOtMins, approvedOtRangeMins, autoOtRangeMins, restDayOtRangeMins, woDates, netLedgerMins } = r;
+                const totalApprovedOt = approvedOtRangeMins + autoOtRangeMins + restDayOtRangeMins;
+                return (
+                  <div key={user.id} className="px-4 py-3 cursor-pointer active:bg-[#FBFAF8]" onClick={() => setModalUserId(user.id)}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium text-text-primary truncate">{user.name}</span>
+                        <RoleBadge role={user.role} />
+                      </div>
+                      <span className="text-xs text-primary font-medium flex-shrink-0">View →</span>
+                    </div>
+                    {isOps ? (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2 text-xs">
+                        <span className="text-text-secondary">Actual {actualMins !== null ? minutesToDisplay(actualMins) : '—'}</span>
+                        {shortageRangeMins > 0 && <span className="bg-[#FBEAEA] text-[#C42B2B] px-2 py-0.5 rounded font-mono">-{minutesToDisplay(shortageRangeMins)}</span>}
+                        {pendingOtMins > 0 && (
+                          <span className="bg-[#FDF3E4] text-[#B26B07] px-2 py-0.5 rounded font-semibold">Review +{minutesToDisplay(pendingOtMins)} · {pendingOt.length}d</span>
+                        )}
+                        {totalApprovedOt > 0 && <span className="bg-[#EAF7F0] text-[#0A7A50] px-2 py-0.5 rounded font-mono">+{minutesToDisplay(totalApprovedOt)}</span>}
+                        {woDates.length > 0 && <span className="bg-[#E7F0FA] text-[#1A5FAF] px-2 py-0.5 rounded font-mono">WO -{minutesToDisplay(woDates.length * 480)}</span>}
+                        <span className={`px-2 py-0.5 rounded font-mono font-semibold ${netLedgerMins < 0 ? 'bg-[#FBEAEA] text-[#C42B2B]' : netLedgerMins > 0 ? 'bg-[#EAF7F0] text-[#0A7A50]' : 'text-text-secondary/60'}`}>
+                          Net {netLedgerMins < 0 ? '-' : '+'}{minutesToDisplay(netLedgerMins)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-text-secondary mt-2">Actual {actualMins !== null ? minutesToDisplay(actualMins) : '—'} · n/a for shortage/OT</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">

@@ -7,6 +7,7 @@ import { stamped } from '@/lib/firestore';
 import Icon from '@/components/Icon';
 import { Avatar, TH, TD } from '@/components/ui';
 import { downloadSheet } from '@/lib/excel';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 type CollectionKey = 'material_requests' | 'material_purchases' | 'material_transfers' | 'tool_transfers' | 'work_progress';
 
@@ -126,15 +127,15 @@ function DetailModal({ row, label, onClose }: { row: Row; label: string; onClose
   const entries = Object.entries(row).filter(([k]) => !SKIP.has(k));
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-6 border-b border-border">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:px-4" onClick={onClose}>
+      <div className="bg-white md:rounded-2xl shadow-xl w-full h-full md:h-auto md:max-w-2xl md:max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-6 border-b border-border flex-shrink-0">
           <h2 className="text-lg font-bold text-text-primary">{label} — Full Details</h2>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl leading-none">×</button>
         </div>
         <div className="overflow-y-auto p-6 space-y-3">
           {entries.map(([key, val]) => (
-            <div key={key} className="grid grid-cols-[180px_1fr] gap-3 text-sm">
+            <div key={key} className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-3 text-sm">
               <span className="font-medium text-text-secondary capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
               <span className="text-text-primary break-words">
                 {key === 'photoUrls' && Array.isArray(val) ? (
@@ -288,6 +289,7 @@ function EditModal({
 }
 
 export default function SubmissionsPage() {
+  const isMobile = useIsMobile();
   const [active, setActive]   = useState<CollectionKey>('material_requests');
   const [rows, setRows]       = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -382,7 +384,36 @@ export default function SubmissionsPage() {
           <div className="p-8 text-center text-text-secondary">Loading…</div>
         ) : filteredRows.length === 0 ? (
           <div className="p-8 text-center text-text-secondary">No submissions found.</div>
+        ) : isMobile ? (
+          <div className="divide-y divide-[#F4F2EF]">
+            {filteredRows.map(row => (
+              <div key={row.id} className="px-4 py-3">
+                <div className="flex items-center gap-2.5">
+                  <Avatar name={String(row.userName ?? '?')} size={32} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-[#2A241F] truncate">{String(row.userName ?? '—')}</div>
+                    <div className="text-[12px] text-[#9A938C] font-mono">{String(row.employeeId ?? '')}</div>
+                  </div>
+                  <div className="text-[11px] text-[#9A938C] font-mono whitespace-nowrap flex-shrink-0">{fmtDate(row.submittedAt)}</div>
+                </div>
+                <div className="text-[13px] text-[#4A433D] mt-2">
+                  <span className="text-[#9A938C]">{String(row.siteName ?? row.fromLocation ?? '—')}</span>
+                  {' · '}
+                  {Array.isArray(row.items) ? (
+                    <span>{(row.items as unknown[]).length} item{(row.items as unknown[]).length !== 1 ? 's' : ''}</span>
+                  ) : row.workDescription ? (
+                    <span>{String(row.workDescription)}</span>
+                  ) : '—'}
+                </div>
+                <div className="flex items-center gap-4 mt-2">
+                  <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline">View</button>
+                  <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline">Edit</button>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse min-w-[700px]">
             <thead>
               <tr>
@@ -424,6 +455,7 @@ export default function SubmissionsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
