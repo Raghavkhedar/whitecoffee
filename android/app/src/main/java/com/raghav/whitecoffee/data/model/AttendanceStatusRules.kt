@@ -4,14 +4,15 @@ package com.raghav.whitecoffee.data.model
  * Single source of truth for the client-side daily-status preview shown to
  * employees (home screen + regularization). Mirrors the authoritative cloud
  * function `computeDailyAttendanceStatus`, whose scoring rule lives in
- * firebase/functions/attendanceRules.js — keep the thresholds, off-minutes
- * formula, and planned-window fallback in sync across both files (and both test
- * suites: AttendanceStatusRulesTest.kt here, attendanceRules.test.js there):
+ * firebase/functions/attendanceRules.js — keep the rule and planned-window
+ * fallback in sync across both files (and both test suites:
+ * AttendanceStatusRulesTest.kt here, attendanceRules.test.js there):
  *
- *   offMinutes = late-in + early-out
- *     off == 0   -> Present
- *     off <= 120 -> Short Leave (SL)
- *     else       -> Half Day
+ *   late-in > 0                 -> Half Day (any lateness at all, however small)
+ *   early-out > 0 (no late-in)  -> Short Leave (SL)
+ *   neither                     -> Present
+ *
+ * When both are present, Half Day wins — it's graded first and short-circuits.
  *
  * The on-time cutoff is INCLUSIVE of [startMin]: checking in at exactly 10:00
  * (600) is on time. (The old code compared only the hour with `< 10`, so the
@@ -34,7 +35,6 @@ package com.raghav.whitecoffee.data.model
 object AttendanceStatusRules {
     const val OFFICE_START_MIN = 10 * 60 // 10:00
     const val OFFICE_END_MIN   = 18 * 60 // 18:00
-    const val SL_THRESHOLD_MIN = 120     // off-minutes at or below this are SL, above is Half Day
 
     enum class DayStatus { PRESENT, SHORT_LEAVE, HALF_DAY }
 
@@ -79,11 +79,11 @@ object AttendanceStatusRules {
         endMin: Int = OFFICE_END_MIN,
     ): DayStatus {
         val late = maxOf(0, inMin - startMin)
-        val off = if (outMin == null) late else late + maxOf(0, endMin - outMin)
+        val earlyOut = if (outMin == null) 0 else maxOf(0, endMin - outMin)
         return when {
-            off == 0 -> DayStatus.PRESENT
-            off <= SL_THRESHOLD_MIN -> DayStatus.SHORT_LEAVE
-            else -> DayStatus.HALF_DAY
+            late > 0 -> DayStatus.HALF_DAY
+            earlyOut > 0 -> DayStatus.SHORT_LEAVE
+            else -> DayStatus.PRESENT
         }
     }
 

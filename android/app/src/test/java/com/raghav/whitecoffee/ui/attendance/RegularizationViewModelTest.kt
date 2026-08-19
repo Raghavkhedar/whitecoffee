@@ -154,7 +154,12 @@ class RegularizationViewModelTest {
 
     @Test
     fun `an office day scored Short Leave surfaces as SL`() = runTest(dispatcher) {
-        attendance = FakeAttendanceRepository(listOf(at(12, 0, AttendanceType.OFFICE_IN)))
+        // On-time check-in, early check-out only (no late-in) -> SL under the zero-grace rule.
+        // An in-progress day (no checkout) can no longer produce SL at all, since any late-in
+        // forces Half Day and early-out can't be known without a completed checkout.
+        attendance = FakeAttendanceRepository(
+            listOf(at(10, 0, AttendanceType.OFFICE_IN), at(17, 30, AttendanceType.OFFICE_OUT))
+        )
         val vm = subject(session = FakeSessionManager(role = SessionManager.ROLE_OFFICE))
         advanceUntilIdle()
 
@@ -184,8 +189,8 @@ class RegularizationViewModelTest {
         val vm = subject(session = FakeSessionManager(role = SessionManager.ROLE_OPERATIONS))
         advanceUntilIdle()
 
-        // 1 hour late, day still open (no out) -> off = 60 <= 120 -> SL.
-        assertEquals("SL", singleItem(vm).originalStatus)
+        // 1 hour late, day still open (no out) -> any late-in is zero-grace Half Day.
+        assertEquals("HalfDay", singleItem(vm).originalStatus)
     }
 
     /**
@@ -195,8 +200,8 @@ class RegularizationViewModelTest {
      * work events, falling back to 10:00–18:00 when the plan is missing, and the home screen
      * mirrors that via ResolveTodayStatusUseCase. This screen used to return "nothing to
      * regularize" for the same day, so an employee saw Half Day on the home screen and had no way
-     * to dispute it. Checking in at 13:00 is 180 minutes late against the default window — past
-     * the 120-minute short-leave threshold, so Half Day.
+     * to dispute it. Checking in at 13:00 is any-amount late against the default window — zero
+     * grace, so Half Day.
      */
     @Test
     fun `an operations day worked with no planned shift is still regularizable`() =

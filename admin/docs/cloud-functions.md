@@ -85,15 +85,17 @@ Check-in/out events: ops use `site_in`/`site_out`; office uses `office_in`/`offi
 
 | Condition | Status | Salary weight |
 |-----------|--------|---------------|
-| Both punches present, in by window start **and** out by window end (off-minutes = 0) | **Present** | ×1 |
-| Both punches, total off-minutes ≤ 120 | **SL** (Short Leave) | ×0.75 |
-| Both punches, off-minutes > 120 | **HalfDay** | ×0.5 |
+| Both punches present, in by window start **and** out by window end (no late-in, no early-out) | **Present** | ×1 |
+| Both punches, early-out only (on-time in), any amount — zero grace | **SL** (Short Leave) | ×0.75 |
+| Any late-in at all, however small — zero grace; wins over an early-out the same day | **HalfDay** | ×0.5 |
 | Exactly one punch (in OR out missing) | **LNF** (Log Not Found) | ×0.5 |
 | No punches + approved leave + `plBalance > 0` | **PL** (queues −1 PL) | ×1 |
 | No punches + approved leave + no balance | **LWP** (Leave Without Pay) | ×0 |
 | No punches + no leave | **Absent** | ×−2 |
 
-> "Off-minutes" = `max(0, lateMinutes) + max(0, earlyMinutes)` against the working window.
+> Late-in and early-out are graded **independently**, not summed: `lateMinutes = max(0, checkIn − windowStart)`,
+> `earlyMinutes = max(0, windowEnd − checkOut)` against the working window. Any `lateMinutes > 0` → HalfDay;
+> otherwise any `earlyMinutes > 0` → SL. No magnitude threshold on either side.
 
 ### Per-day hours, shortage & overtime
 On **fully-worked days only** (both a check-in and check-out exist):

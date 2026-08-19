@@ -83,40 +83,40 @@ class AttendanceStatusRulesTest {
         assertEquals(DayStatus.PRESENT, AttendanceStatusRules.classify(m(9, 45), m(18, 0)))
     }
 
-    // --- Late-in grades into SL, then Half Day at >120 min ---
-    @Test fun `one minute late is Short Leave not Half Day`() {
-        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(10, 1), m(18, 0)))
+    // --- Late-in is zero-grace: any lateness at all is Half Day, no magnitude threshold ---
+    @Test fun `one minute late is Half Day, not Short Leave`() {
+        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(10, 1), m(18, 0)))
     }
 
-    @Test fun `checkin at 10 45 is Short Leave`() {
-        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(10, 45), m(18, 0)))
+    @Test fun `checkin at 10 45 is Half Day`() {
+        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(10, 45), m(18, 0)))
     }
 
-    @Test fun `exactly 120 off-minutes is Short Leave`() {
-        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(12, 0), m(18, 0)))
+    @Test fun `120 min late is still just Half Day, no escalation`() {
+        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(12, 0), m(18, 0)))
     }
 
-    @Test fun `121 off-minutes is Half Day`() {
-        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(12, 1), m(18, 0)))
+    @Test fun `three hours late is still just Half Day, no escalation`() {
+        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(13, 0), m(18, 0)))
     }
 
-    // --- Early-out is scored too (only when a checkout exists) ---
+    // --- Early-out is zero-grace too, but its own edge never escalates past Short Leave ---
     @Test fun `early out by 30 min is Short Leave`() {
         assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(10, 0), m(17, 30)))
     }
 
-    @Test fun `early out by 3 hours is Half Day`() {
-        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(10, 0), m(15, 0)))
+    @Test fun `early out by 3 hours is still only Short Leave, no escalation`() {
+        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(10, 0), m(15, 0)))
     }
 
-    @Test fun `late in plus early out combine past threshold`() {
-        // 60 late + 61 early = 121 off -> Half Day
+    @Test fun `late in and early out both present, Half Day wins`() {
+        // Any late-in forces Half Day regardless of the early-out edge.
         assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(11, 0), m(16, 59)))
     }
 
-    @Test fun `in progress ignores unknown checkout`() {
-        // 15 min late, no checkout yet -> SL from late-in alone
-        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(10, 15), null))
+    @Test fun `in progress with any late-in is Half Day preview`() {
+        // 15 min late, no checkout yet -> Half Day from late-in alone (zero grace)
+        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(10, 15), null))
     }
 
     // --- Operations planned window scoring (custom start/end) ---
@@ -125,8 +125,8 @@ class AttendanceStatusRulesTest {
         assertEquals(DayStatus.PRESENT, AttendanceStatusRules.classify(m(12, 0), m(20, 0), m(12, 0), m(20, 0)))
     }
 
-    @Test fun `ops late against planned shift grades to SL`() {
-        assertEquals(DayStatus.SHORT_LEAVE, AttendanceStatusRules.classify(m(12, 30), m(20, 0), m(12, 0), m(20, 0)))
+    @Test fun `ops late against planned shift grades to Half Day`() {
+        assertEquals(DayStatus.HALF_DAY, AttendanceStatusRules.classify(m(12, 30), m(20, 0), m(12, 0), m(20, 0)))
     }
 
     // --- hhmmToMinutes ---

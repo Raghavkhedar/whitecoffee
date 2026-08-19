@@ -99,19 +99,20 @@ class HomeViewModelTest {
         }
 
     /**
-     * Matches payroll's off-minutes rule (CLAUDE.md): 2 hours late is still Short Leave, not Half
-     * Day — the boundary that the old hour-granular check used to get wrong.
+     * Matches payroll's zero-grace rule (CLAUDE.md): any late-in at all is Half Day, however
+     * small — the boundary that the old hour-granular check used to get wrong (it scored the
+     * whole 10:00 hour as Half Day; this asserts a genuinely late arrival still grades correctly).
      */
     @Test
-    fun `an office day two hours late is Short Leave, not Half Day`() = runTest(dispatcher) {
+    fun `an office day two hours late is Half Day`() = runTest(dispatcher) {
         val session = FakeSessionManager(role = SessionManager.ROLE_OFFICE)
         val attendance = FakeAttendanceRepository(listOf(at(12, 0, AttendanceType.OFFICE_IN)))
         val vm = subject(session = session, attendance = attendance)
         advanceUntilIdle()
 
         val status = vm.uiState.value.todayStatus
-        assertTrue(status is TodayAttendanceStatus.ShortLeave)
-        assertEquals("In Office", (status as TodayAttendanceStatus.ShortLeave).location)
+        assertTrue(status is TodayAttendanceStatus.HalfDay)
+        assertEquals("In Office", (status as TodayAttendanceStatus.HalfDay).location)
     }
 
     @Test

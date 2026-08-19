@@ -15,16 +15,16 @@
 // deriveStatus, which is exactly how it drifted: it kept the old "no plan → unmarked" skip after
 // the function and app moved on, and left the tab blank for days people had actually worked.
 //
-// Rule: offMinutes = late-in + early-out (each clamped at 0), scored against a working window.
-//   off === 0            → Present
-//   off <= SL_THRESHOLD  → SL (Short Leave)
-//   else                 → HalfDay
+// Rule: late-in and early-out are graded independently, zero grace on both sides.
+//   late-in > 0                 → HalfDay (any lateness at all, however small)
+//   early-out > 0 (no late-in)  → SL (Short Leave)
+//   neither                     → Present
+// When both are present, HalfDay wins — it's graded first and short-circuits.
 // Window: office/admin/sales use the fixed 10:00–18:00; operations use the day's planned shift,
 // falling back to 10:00–18:00 when it is missing or unusable.
 
 export const OFFICE_START_MIN = 10 * 60; // 10:00
 export const OFFICE_END_MIN = 18 * 60; // 18:00
-export const SL_THRESHOLD_MIN = 120; // off-minutes at or below this are SL, above is Half Day
 
 export type DayStatus = 'Present' | 'SL' | 'HalfDay';
 
@@ -36,15 +36,9 @@ export function toMinutes(hhmm: string | undefined | null, fallback: number): nu
   return h * 60 + m;
 }
 
-/** off-minutes (late-in + early-out) → status. */
-export function classifyOffMinutes(offMinutes: number): DayStatus {
-  if (offMinutes === 0) return 'Present';
-  if (offMinutes <= SL_THRESHOLD_MIN) return 'SL';
-  return 'HalfDay';
-}
-
 /**
- * Score a day against a working window.
+ * Score a day against a working window: late-in and early-out are graded independently,
+ * with zero grace on either side — HalfDay wins when both are present.
  *
  * @param inMin  check-in minutes-of-day.
  * @param outMin check-out minutes-of-day, or null when the day is still in progress (no completed
@@ -57,8 +51,10 @@ export function classify(
   endMin: number = OFFICE_END_MIN,
 ): DayStatus {
   const late = Math.max(0, inMin - startMin);
-  const off = outMin == null ? late : late + Math.max(0, endMin - outMin);
-  return classifyOffMinutes(off);
+  const earlyOut = outMin == null ? 0 : Math.max(0, endMin - outMin);
+  if (late > 0) return 'HalfDay';
+  if (earlyOut > 0) return 'SL';
+  return 'Present';
 }
 
 /**

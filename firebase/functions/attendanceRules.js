@@ -6,21 +6,21 @@
  * ⚠️ MIRRORED in the Android app at
  *   android/app/src/main/java/com/raghav/whitecoffee/data/model/AttendanceStatusRules.kt
  * The app shows employees a client-side preview of the status THIS function will assign
- * nightly. Any change to the thresholds, the off-minutes formula, or the planned-window
- * fallback MUST be made in both files (and both test suites: attendanceRules.test.js here
- * and AttendanceStatusRulesTest.kt there) or the preview will drift from payroll — which is
- * exactly the class of bug this shared module exists to prevent.
+ * nightly. Any change to the rule or the planned-window fallback MUST be made in both
+ * files (and both test suites: attendanceRules.test.js here and AttendanceStatusRulesTest.kt
+ * there) or the preview will drift from payroll — which is exactly the class of bug this
+ * shared module exists to prevent.
  *
- * Rule: offMinutes = late-in + early-out (both clamped at 0), scored against a working window.
- *   off === 0            → Present
- *   off <= SL_THRESHOLD  → SL (Short Leave)
- *   else                 → HalfDay
- * Window: office/admin is fixed 10:00–18:00; operations use the day's planned shift.
+ * Rule: late-in and early-out are graded independently, zero grace on both sides.
+ *   late-in > 0                 → HalfDay (any lateness at all, however small)
+ *   early-out > 0 (no late-in)  → SL (Short Leave)
+ *   neither                     → Present
+ * When both are present, HalfDay wins — it's graded first and short-circuits.
+ * Window: office/admin/sales is fixed 10:00–18:00; operations use the day's planned shift.
  */
 
 const OFFICE_START_MIN = 10 * 60; // 10:00
 const OFFICE_END_MIN = 18 * 60;   // 18:00
-const SL_THRESHOLD_MIN = 120;     // off-minutes at or below this are SL, above is Half Day
 
 /** Parse a "HH:MM" 24h string into minutes-from-midnight; fallback if null/blank/malformed. */
 function toMinutes(hhmm, fallback) {
@@ -30,21 +30,15 @@ function toMinutes(hhmm, fallback) {
   return h * 60 + m;
 }
 
-/** off-minutes (late-in + early-out) → status string. */
-function classifyOffMinutes(offMinutes) {
-  if (offMinutes === 0) return "Present";
-  if (offMinutes <= SL_THRESHOLD_MIN) return "SL";
-  return "HalfDay";
-}
-
 /**
- * Score a day against a working window: off-minutes (late-in + early-out) → status.
+ * Score a day against a working window: late-in and early-out are graded independently,
+ * with zero grace on either side — HalfDay wins when both are present.
  *
  * This is the whole rule, and it lives here rather than inline in the caller for a reason.
- * The off-minutes formula used to sit in computeDailyAttendanceStatus while this module
- * exported only the thresholds — so the arithmetic that decides everybody's pay had NO test
- * covering it, because attendanceRules.test.js defined its own local copy of the formula and
- * graded that instead. A wrong edit to the real one kept `npm test` green.
+ * The formula used to sit in computeDailyAttendanceStatus while this module exported only
+ * the thresholds — so the arithmetic that decides everybody's pay had NO test covering it,
+ * because attendanceRules.test.js defined its own local copy of the formula and graded that
+ * instead. A wrong edit to the real one kept `npm test` green.
  *
  * MIRRORS AttendanceStatusRules.classify in the Android app — same signature, same defaults,
  * same null-outMin semantics. Keep them in lockstep.
@@ -59,8 +53,10 @@ function classifyOffMinutes(offMinutes) {
  */
 function classify(inMin, outMin, startMin = OFFICE_START_MIN, endMin = OFFICE_END_MIN) {
   const late = Math.max(0, inMin - startMin);
-  const off = outMin == null ? late : late + Math.max(0, endMin - outMin);
-  return classifyOffMinutes(off);
+  const earlyOut = outMin == null ? 0 : Math.max(0, endMin - outMin);
+  if (late > 0) return "HalfDay";
+  if (earlyOut > 0) return "SL";
+  return "Present";
 }
 
 /**
@@ -83,9 +79,7 @@ function resolveOpsWindow(startTime, endTime) {
 module.exports = {
   OFFICE_START_MIN,
   OFFICE_END_MIN,
-  SL_THRESHOLD_MIN,
   toMinutes,
-  classifyOffMinutes,
   classify,
   resolveOpsWindow,
 };

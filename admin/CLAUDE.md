@@ -61,8 +61,8 @@ Required composite indexes (Firebase Console):
 | Status | Condition | Salary (days) |
 |--------|-----------|---------------|
 | Present | In by window start AND out after window end | 1 |
-| Short Leave (SL) | Both punches present, off-minutes (late-in + early-out) ≤ 120 | 0.75 |
-| Half Day | Both punches present, off-minutes > 120 | 0.5 |
+| Short Leave (SL) | Both punches present, early-out only (checked in on time, no late-in) — any amount, zero grace | 0.75 |
+| Half Day | Any late-in at all, however small — zero grace; wins over an early-out on the same day | 0.5 |
 | LNF (Log Not Found) | Exactly one punch (missing check-in OR check-out); formerly SLNF | 0.5 |
 | PL (Paid Leave) | Approved leave + PL balance | 1 |
 | LWP (Leave Without Pay) | Approved leave, no balance | 0 |

@@ -50,9 +50,9 @@ class ResolveTodayStatusUseCaseTest {
     }
 
     @Test
-    fun `office two hours late is Short Leave, not Half Day`() {
+    fun `office two hours late is Half Day`() {
         val events = listOf(at(12, 0, AttendanceType.OFFICE_IN), at(18, 0, AttendanceType.OFFICE_OUT))
-        assertEquals(DayStatusPreview.SHORT_LEAVE, resolve(SessionManager.ROLE_OFFICE, events))
+        assertEquals(DayStatusPreview.HALF_DAY, resolve(SessionManager.ROLE_OFFICE, events))
     }
 
     @Test
