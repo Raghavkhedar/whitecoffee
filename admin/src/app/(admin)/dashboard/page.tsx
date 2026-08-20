@@ -5,22 +5,31 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { getDashboardStats, getAllUsers, getAttendanceForDate, getAllLeaveRequests, approveLeave, rejectLeave } from '@/lib/firestore';
-import type { User, AttendanceRecord, LeaveRequest } from '@/types';
+import type { User, LeaveRequest } from '@/types';
 import Icon, { type IconName } from '@/components/Icon';
 import { Avatar, RoleBadge, TH, TD } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr } from '@/lib/date';
-import { attendanceInTypes, attendanceOutTypes } from '@/lib/roleCapabilities';
+import { deriveState, type DerivedStateKind } from '@/lib/attendanceState';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Stats { totalUsers: number; totalSites: number; pendingLeaves: number; pendingActions: number; earliestPendingSeconds: number | null; todayCheckIns: number; }
 
 interface LiveStatus {
   user: User;
-  checkedIn: boolean;
+  kind: DerivedStateKind;
+  label: string;
   location: string;
+  active: boolean;
   inTime: Date | null;
+}
+
+// Same green/amber/grey scale used across the page's other status pills.
+function statusColors(kind: DerivedStateKind): { text: string; dot: string } {
+  if (kind === 'HomeCheckedIn') return { text: '#B26B07', dot: '#E8A23D' }; // Traveling
+  if (kind === 'SiteCheckedIn' || kind === 'MarketCheckedIn' || kind === 'AtOffice') return { text: '#0A7A50', dot: '#16A06A' };
+  return { text: '#A8A29E', dot: '#CFC9C1' };
 }
 
 export default function DashboardPage() {
@@ -60,23 +69,29 @@ export default function DashboardPage() {
     const todayDate = istTodayStr();
     Promise.all([getAllUsers(), getAttendanceForDate(todayDate)])
       .then(([users, events]) => {
-        const ts = (e: AttendanceRecord) => (e.timestamp as unknown as { seconds: number })?.seconds ?? 0;
         const statuses: LiveStatus[] = users.map(user => {
-          const userEvents = events.filter(e => e.userId === user.id).sort((a, b) => ts(a) - ts(b));
-          // Ops are "in the field" across both site and market visits; office uses
-          // office_in/out; sales (hybrid) counts either, so a site day still reads as in.
-          const inTypes  = new Set<string>(attendanceInTypes(user.role));
-          const outTypes = new Set<string>(attendanceOutTypes(user.role));
-          const ins  = userEvents.filter(e => inTypes.has(e.type));
-          const outs = userEvents.filter(e => outTypes.has(e.type));
-          const lastIn  = ins.length > 0 ? ins[ins.length - 1] : null;
-          const lastOut = outs.length > 0 ? outs[outs.length - 1] : null;
-          const checkedIn = lastIn != null && (lastOut == null || ts(lastIn) > ts(lastOut));
+          const userEvents = events.filter(e => e.userId === user.id);
+          // Same last-punch derivation the Daily Activity page uses, ported from the
+          // Android app's own live-state logic — one source of truth for "where are they now".
+          const state = deriveState(userEvents);
+          const active = state.kind === 'SiteCheckedIn' || state.kind === 'MarketCheckedIn'
+            || state.kind === 'AtOffice' || state.kind === 'HomeCheckedIn';
+          const label = state.kind === 'HomeCheckedIn' ? 'Traveling'
+            : state.kind === 'SiteCheckedIn' ? 'At Site'
+            : state.kind === 'MarketCheckedIn' ? 'At Market'
+            : state.kind === 'AtOffice' ? 'At Office'
+            : 'Not in';
+          const location = state.kind === 'SiteCheckedIn' ? (state.lastEvent?.siteName || '—')
+            : state.kind === 'MarketCheckedIn' ? (state.lastEvent?.marketName || '—')
+            : state.kind === 'AtOffice' ? 'Office'
+            : '';
           return {
             user,
-            checkedIn,
-            location: checkedIn && lastIn ? (lastIn.siteName || lastIn.marketName || 'Office') : '',
-            inTime: checkedIn && lastIn?.timestamp ? lastIn.timestamp.toDate() : null,
+            kind: state.kind,
+            label,
+            location,
+            active,
+            inTime: active && state.lastEvent?.timestamp ? state.lastEvent.timestamp.toDate() : null,
           };
         });
         setLiveStatuses(statuses);
@@ -98,7 +113,7 @@ export default function DashboardPage() {
     setActioning('');
   }
 
-  const activeCount = liveStatuses.filter(s => s.checkedIn).length;
+  const activeCount = liveStatuses.filter(s => s.active).length;
 
   // Leaves whose date range overlaps the current calendar month (any status).
   const leavesThisMonth = useMemo(() => {
@@ -125,7 +140,7 @@ export default function DashboardPage() {
   ];
 
   const sortedLive = [...liveStatuses].sort((a, b) => {
-    if (a.checkedIn !== b.checkedIn) return a.checkedIn ? -1 : 1;
+    if (a.active !== b.active) return a.active ? -1 : 1;
     return a.user.name.localeCompare(b.user.name);
   });
 
@@ -133,9 +148,9 @@ export default function DashboardPage() {
     downloadSheet('live_attendance', 'Live', sortedLive.map(s => ({
       Name: s.user.name,
       Role: s.user.role,
-      Status: s.checkedIn ? 'Checked in' : 'Not in',
-      Location: s.checkedIn ? s.location : '',
-      Since: s.checkedIn && s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '',
+      Status: s.label,
+      Location: s.location,
+      Since: s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '',
     })));
   }
 
@@ -186,13 +201,13 @@ export default function DashboardPage() {
                       <span className="font-medium text-[#2A241F] truncate">{s.user.name}</span>
                       <RoleBadge role={s.user.role} />
                     </div>
-                    <div className="flex items-center gap-[6px] text-[12px] mt-0.5" style={{ color: s.checkedIn ? '#0A7A50' : '#A8A29E' }}>
-                      <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: s.checkedIn ? '#16A06A' : '#CFC9C1' }} />
-                      <span className="truncate">{s.checkedIn ? `Checked in${s.location ? ` · ${s.location}` : ''}` : 'Not in'}</span>
+                    <div className="flex items-center gap-[6px] text-[12px] mt-0.5" style={{ color: statusColors(s.kind).text }}>
+                      <span className="w-[6px] h-[6px] rounded-full flex-shrink-0" style={{ background: statusColors(s.kind).dot }} />
+                      <span className="truncate">{s.label}{s.location ? ` · ${s.location}` : ''}</span>
                     </div>
                   </div>
                   <div className="text-[11.5px] font-mono text-[#9A938C] text-right flex-shrink-0">
-                    {s.checkedIn && s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                    {s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                   </div>
                 </div>
               ))}
@@ -220,14 +235,14 @@ export default function DashboardPage() {
                       </td>
                       <td className={TD}><RoleBadge role={s.user.role} /></td>
                       <td className={TD}>
-                        <span className="inline-flex items-center gap-[7px] text-[12.5px] font-medium" style={{ color: s.checkedIn ? '#0A7A50' : '#A8A29E' }}>
-                          <span className="w-[7px] h-[7px] rounded-full" style={{ background: s.checkedIn ? '#16A06A' : '#CFC9C1' }} />
-                          {s.checkedIn ? 'Checked in' : 'Not in'}
+                        <span className="inline-flex items-center gap-[7px] text-[12.5px] font-medium" style={{ color: statusColors(s.kind).text }}>
+                          <span className="w-[7px] h-[7px] rounded-full" style={{ background: statusColors(s.kind).dot }} />
+                          {s.label}
                         </span>
                       </td>
-                      <td className={`${TD} text-[#6B635C]`}>{s.checkedIn ? s.location : '—'}</td>
+                      <td className={`${TD} text-[#6B635C]`}>{s.location || '—'}</td>
                       <td className={`${TD} pr-[18px] text-right font-mono text-[#6B635C]`}>
-                        {s.checkedIn && s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
+                        {s.inTime ? s.inTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'}
                       </td>
                     </tr>
                   ))}
