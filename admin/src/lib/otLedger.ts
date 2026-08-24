@@ -40,11 +40,22 @@ const ZERO: DayLedger = {
 
 // Per-day ledger for one operations worked day (both check-in and check-out present).
 //
-// Each shift edge is scored against the plain window and edges never cancel each other:
-//   • checking in  before shift start → nothing (arriving early NEVER earns OT); after → shortage (late-in)
-//   • checking out after  shift end   → OT (late-out);  before → shortage (early-out)
-// So the ONLY source of OT on a normal day is staying past shift end. Declared OT is a pre-approval
-// CEILING on that OT (auto up to declared, beyond is pending) — it never changes shortage.
+// Each shift edge is scored against the plain window:
+//   • checking in  before shift start → nothing (arriving early NEVER earns OT); after → late-in
+//   • checking out after  shift end   → late-out;  before → shortage (early-out)
+//
+// ⚠️ Late-out PAYS OFF late-in before any OT is credited. Staying past shift end first
+// makes up the minutes missed by arriving late; only the SURPLUS beyond break-even is OT,
+// and only the REMAINDER of the lateness is shortage. So a day is never both at once:
+// in 11:00 / out 18:30 on a 10–18 shift is 30 shortage and 0 OT, not "30 OT + 60 shortage".
+// (This deliberately supersedes the earlier independent-edge rule, which credited OT to
+// someone who had not yet worked their own shift — see docs/ot-shortage-design.md.)
+//
+// Early-out is NOT part of that netting and can never be cancelled: leaving before shift
+// end and after it are mutually exclusive, so an early-out day has no late-out to offset it.
+//
+// Declared OT is a pre-approval CEILING applied to the NET OT (auto up to declared, beyond
+// is pending) — it never changes shortage.
 export function computeDayLedger(i: DayLedgerInput): DayLedger {
   const worked = Math.max(0, i.outMin - i.inMin);
 
@@ -55,13 +66,16 @@ export function computeDayLedger(i: DayLedgerInput): DayLedger {
   }
 
   if (i.shiftEndMin > i.shiftStartMin) {
-    const lateIn   = Math.max(0, i.inMin - i.shiftStartMin);   // came late → shortage
-    const earlyOut = Math.max(0, i.shiftEndMin - i.outMin);    // left early → shortage
-    const otEarned = Math.max(0, i.outMin - i.shiftEndMin);    // left late → OT (early-in earns nothing)
+    const lateIn   = Math.max(0, i.inMin - i.shiftStartMin);   // came late
+    const earlyOut = Math.max(0, i.shiftEndMin - i.outMin);    // left early → shortage (never offset)
+    const lateOut  = Math.max(0, i.outMin - i.shiftEndMin);    // left late (early-in earns nothing)
+    // Net the two late edges against each other: whichever is larger survives, the other is 0.
+    const otEarned  = Math.max(0, lateOut - lateIn);           // surplus past break-even → OT
+    const netLateIn = Math.max(0, lateIn - lateOut);           // lateness not yet made up → shortage
     const declared = Math.max(0, i.declaredOtMins);
     return {
       ...ZERO,
-      shortageMins: lateIn + earlyOut,
+      shortageMins: netLateIn + earlyOut,
       autoOtMins: Math.min(otEarned, declared),
       pendingExtraMins: Math.max(0, otEarned - declared),
     };
