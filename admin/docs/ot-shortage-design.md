@@ -73,6 +73,33 @@ Worked example — planned 10:00–18:00 (480), declared +30:
 > treating declared OT as an obligation. That breaks the offset example (pre-existing shortage
 > wouldn't reduce) and double-penalizes early departure. Do not use it.
 
+### Late-out nets against late-in (2026-08-22)
+
+Between 2026-07 and 2026-08-22 the implementation scored each shift edge **independently** —
+late-in became shortage and late-out became OT on the *same day*, neither cancelling the other.
+That credited OT to someone who had not yet worked their own shift: arriving 11:00 and leaving
+18:30 on a 10–18 shift reported **30 min OT and 60 min shortage at once**, which reads as
+overtime earned by a person who was short that day. Reverted to netting:
+
+```
+lateIn    = max(0, in  − shiftStart)
+lateOut   = max(0, out − shiftEnd)
+earlyOut  = max(0, shiftEnd − out)       # never netted — a day cannot end both early and late
+surplus   = max(0, lateOut − lateIn)     # only the excess past break-even is OT
+shortage  = max(0, lateIn − lateOut) + earlyOut
+OT(auto)  = min(surplus, declaredOT)     # the ceiling applies to the NET OT, not raw late-out
+OT(pending) = max(0, surplus − declaredOT)
+```
+
+This makes the code agree with the `surplus`/`shortage` duration framing above in every case
+**except early arrival**, which is still deliberately worth nothing (`lateIn` floors at 0, so an
+early check-in neither earns OT nor offsets an early departure).
+
+Monthly impact is small and favours the employee: when `declaredOT ≥ lateOut` the settlement
+figure is unchanged (identical arithmetic, netted earlier); when nothing was declared the old
+rule debited the full shortage while the late-out sat uncredited in the pending queue, so those
+days now net better by the overlapping minutes. **Locked settlements are not recomputed.**
+
 ## Decisions (LOCKED 2026-06-29)
 
 1. **WO semantics → paid day + debit.** A WO day is a **new paid status** counting **+1 in

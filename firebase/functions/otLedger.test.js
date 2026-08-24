@@ -41,6 +41,46 @@ test("late-in and early-out both accrue shortage", () => {
   assert.equal(led.autoOtMins, 0);
 });
 
+test("late-out pays off late-in before any OT is credited", () => {
+  // in 11:00 (660) = 60 late; out 18:30 (1110) = 30 late-out. The 30 covers 30 of the
+  // 60 → 30 shortage left, NO OT. The reported bug showed 30 OT + 60 shortage here.
+  const led = computeDayLedger({ ...shift, inMin: 660, outMin: 1110, declaredOtMins: 30 });
+  assert.equal(led.shortageMins, 30);
+  assert.equal(led.autoOtMins, 0);
+  assert.equal(led.pendingExtraMins, 0);
+});
+
+test("late-in made up exactly: neither shortage nor OT", () => {
+  // in 10:30 (630) = 30 late; out 18:30 (1110) = 30 late-out → square.
+  const led = computeDayLedger({ ...shift, inMin: 630, outMin: 1110, declaredOtMins: 30 });
+  assert.equal(led.shortageMins, 0);
+  assert.equal(led.autoOtMins, 0);
+  assert.equal(led.pendingExtraMins, 0);
+});
+
+test("only the surplus past break-even is OT", () => {
+  // in 10:20 (620) = 20 late; out 18:30 (1110) = 30 late-out → 10 net OT, 0 shortage.
+  const led = computeDayLedger({ ...shift, inMin: 620, outMin: 1110 });
+  assert.equal(led.shortageMins, 0);
+  assert.equal(led.pendingExtraMins, 10);
+});
+
+test("declared ceiling applies to the NET OT, not raw late-out", () => {
+  // in 10:30 (630) = 30 late; out 19:00 (1140) = 60 late-out → 30 net, all within declared 30.
+  const led = computeDayLedger({ ...shift, inMin: 630, outMin: 1140, declaredOtMins: 30 });
+  assert.equal(led.autoOtMins, 30);
+  assert.equal(led.pendingExtraMins, 0);
+  assert.equal(led.shortageMins, 0);
+});
+
+test("net OT beyond the declared ceiling still splits auto/pending", () => {
+  // in 10:15 (615) = 15 late; out 19:00 (1140) = 60 late-out → 45 net → 30 auto + 15 pending.
+  const led = computeDayLedger({ ...shift, inMin: 615, outMin: 1140, declaredOtMins: 30 });
+  assert.equal(led.autoOtMins, 30);
+  assert.equal(led.pendingExtraMins, 15);
+  assert.equal(led.shortageMins, 0);
+});
+
 test("authorized rest day: all worked minutes are OT", () => {
   const led = computeDayLedger({ ...shift, inMin: 600, outMin: 900, isRestDay: true, otAuthorized: true });
   assert.equal(led.restDayOtMins, 300);

@@ -54,12 +54,33 @@ check('in 09:50 out 17:56 → 0 OT + 4 shortage', day(START - 10, END - 4, 0),
 // Came an hour early, left exactly on time → nothing at all.
 check('in 09:00 out 18:00 → 0 OT, 0 shortage', day(START - 60, END, 0),
   { pendingExtraMins: 0, autoOtMins: 0, shortageMins: 0 });
-// Came 20 late AND left 30 late → 20 shortage (late-in) AND 30 OT (late-out), independent.
-check('in 10:20 out 18:30 → 20 shortage + 30 OT', day(START + 20, END + 30, 0),
-  { shortageMins: 20, pendingExtraMins: 30 });
-// Came 15 early AND left 15 late → early-in ignored, only 15 late-out OT.
+// Came 15 early AND left 15 late → early-in ignored (it offsets nothing), 15 late-out OT.
 check('in 09:45 out 18:15 → 15 OT (late-out only), 0 shortage', day(START - 15, END + 15, 0),
   { pendingExtraMins: 15, shortageMins: 0 });
+
+console.log('\nLate-out PAYS OFF late-in before any OT is credited:');
+// The reported bug: in an hour late, out 30 late. Staying 30 covers 30 of the 60
+// late minutes → 30 shortage left and NO OT. Was "30 OT + 60 shortage" on one day.
+check('in 11:00 out 18:30 → 30 shortage, 0 OT (late-out absorbed)', day(START + 60, END + 30, DECLARED),
+  { shortageMins: 30, autoOtMins: 0, pendingExtraMins: 0 });
+// Made the lateness up exactly → the day is square: no shortage, no OT.
+check('in 10:30 out 18:30 → 0 shortage, 0 OT (exactly made up)', day(START + 30, END + 30, DECLARED),
+  { shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0 });
+// Stayed longer than they were late → only the SURPLUS past break-even is OT.
+check('in 10:20 out 18:30 → 0 shortage, 10 OT (surplus only)', day(START + 20, END + 30, 0),
+  { shortageMins: 0, autoOtMins: 0, pendingExtraMins: 10 });
+// The declared ceiling applies to the NET OT, not the raw late-out minutes:
+// raw late-out 60 − 30 late-in = 30 net, which the 30 declared fully covers.
+check('in 10:30 out 19:00 declared 30 → 30 net OT all auto-approved', day(START + 30, END + 60, DECLARED),
+  { shortageMins: 0, autoOtMins: 30, pendingExtraMins: 0 });
+// Net OT beyond the declared ceiling still splits auto/pending as before:
+// raw 60 − 15 late-in = 45 net → 30 auto (declared) + 15 pending.
+check('in 10:15 out 19:00 declared 30 → 30 auto + 15 pending', day(START + 15, END + 60, DECLARED),
+  { shortageMins: 0, autoOtMins: 30, pendingExtraMins: 15 });
+// Early-out is NEVER cancelled — you cannot leave early and late on the same day,
+// so a late-in day that also ends early stays pure shortage (both edges added).
+check('in 10:20 out 17:45 → 35 shortage, 0 OT', day(START + 20, END - 15, DECLARED),
+  { shortageMins: 35, autoOtMins: 0, pendingExtraMins: 0 });
 
 console.log('\nRest day (Sunday/holiday):');
 // Authorized → every worked minute is auto-approved OT (out − in), no shortage.
