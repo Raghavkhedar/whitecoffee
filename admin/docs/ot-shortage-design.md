@@ -1,10 +1,9 @@
 # OT, Shortage & WO — System Redesign
 
-> **Status:** ✅ fully built (steps 1–7 complete, 2026-06-30). Model decided & all 5 questions
-> answered 2026-06-29. Pure math in `src/lib/otLedger.ts` + `src/lib/otAggregate.ts` (44 unit
-> tests). **Outstanding:** `firebase deploy --only functions` to make the step-6b payroll-arrears
-> + step-7 counter-retirement changes live (portal is already deployed-on-build).
-> Drafted 2026-06-29; decisions locked 2026-06-29.
+> **Status:** ✅ fully built (steps 1–7 complete, 2026-06-30) and deployed. Model decided & all 5
+> questions answered 2026-06-29. Pure math in `src/lib/otLedger.ts` + `src/lib/otAggregate.ts`
+> (62 unit tests across both). Drafted 2026-06-29; decisions locked 2026-06-29. Latest change:
+> late-out-nets-against-late-in fix, deployed 2026-08-24 (see below).
 
 ## Why we're redesigning
 
@@ -73,7 +72,7 @@ Worked example — planned 10:00–18:00 (480), declared +30:
 > treating declared OT as an obligation. That breaks the offset example (pre-existing shortage
 > wouldn't reduce) and double-penalizes early departure. Do not use it.
 
-### Late-out nets against late-in (2026-08-22)
+### Late-out nets against late-in (2026-08-22, deployed 2026-08-24)
 
 Between 2026-07 and 2026-08-22 the implementation scored each shift edge **independently** —
 late-in became shortage and late-out became OT on the *same day*, neither cancelling the other.
