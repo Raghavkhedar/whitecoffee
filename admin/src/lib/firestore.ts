@@ -942,6 +942,20 @@ export async function setConveyanceConfig(rate1: number, rate2: number): Promise
   await setDoc(doc(db, 'config', 'conveyance'), stamped({ rate1, rate2 }));
 }
 
+// ── Regularization Window ────────────────────────────────────────────────
+// Global admin-only toggle: while open, employees may file a regularization for a past
+// date (normally only today is allowed) — see firebase/firestore.rules, which is what
+// actually enforces this, not this function.
+
+export async function getRegularizationWindow(): Promise<{ open: boolean }> {
+  const snap = await getDoc(doc(db, 'config', 'regularizationWindow'));
+  return { open: snap.exists() ? snap.data().open === true : false };
+}
+
+export async function setRegularizationWindowOpen(open: boolean): Promise<void> {
+  await setDoc(doc(db, 'config', 'regularizationWindow'), stamped({ open }));
+}
+
 // ── Site ID entry ────────────────────────────────────────────────────────
 // Ops type the site name at check-in but leave Site ID + Visit Type + Work Done
 // blank. Admin fills all three directly onto each individual attendance entry from

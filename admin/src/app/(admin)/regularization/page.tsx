@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { getAllRegularizationRequests, approveRegularization, rejectRegularization } from '@/lib/firestore';
+import { useAccess } from '@/components/AccessContext';
+import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen } from '@/lib/firestore';
 import type { RegularizationRequest } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
@@ -54,6 +55,8 @@ function offsetMonth(ym: string, offset: number) {
 
 export default function RegularizationPage() {
   const isMobile = useIsMobile();
+  const { user: portalUser } = useAccess();
+  const isAdmin = portalUser?.role === 'admin';
   const [requests, setRequests]       = useState<RegularizationRequest[]>([]);
   const [filter, setFilter]           = useState<Filter>('pending');
   const [month, setMonth]             = useState(currentYearMonth());
@@ -67,6 +70,8 @@ export default function RegularizationPage() {
   const [effOut, setEffOut]           = useState('');
   const [actioning, setActioning]     = useState('');
   const [employeeFilter, setEmployeeFilter]   = useState('');
+  const [windowOpen, setWindowOpen]     = useState(false);
+  const [togglingWindow, setToggling]   = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -76,6 +81,10 @@ export default function RegularizationPage() {
       }
     });
     return unsub;
+  }, []);
+
+  useEffect(() => {
+    getRegularizationWindow().then(w => setWindowOpen(w.open)).catch(() => setWindowOpen(false));
   }, []);
 
   async function load() {
@@ -129,6 +138,21 @@ export default function RegularizationPage() {
     setActioning('');
   }
 
+  async function handleToggleWindow() {
+    const next = !windowOpen;
+    if (!next && !window.confirm(
+      'Close the regularization window? Employees will only be able to request today\'s date again.'
+    )) return;
+    setToggling(true);
+    try {
+      await setRegularizationWindowOpen(next);
+      setWindowOpen(next);
+    } catch {
+      setError('Failed to update the regularization window.');
+    }
+    setToggling(false);
+  }
+
   const isApproveDisabled = !!actioning || actionComment.trim() === '';
   const isRejectDisabled  = !!actioning || actionComment.trim() === '';
 
@@ -151,6 +175,23 @@ export default function RegularizationPage() {
 
   return (
     <div>
+
+      {isAdmin && (
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-sm text-text-secondary">
+            Past-date window: <span className={windowOpen ? 'text-green-600 font-semibold' : 'text-text-secondary font-semibold'}>
+              {windowOpen ? 'Open' : 'Closed'}
+            </span>
+          </span>
+          <button
+            onClick={handleToggleWindow}
+            disabled={togglingWindow}
+            className={windowOpen ? 'btn-danger text-sm py-1.5 px-3' : 'btn-success text-sm py-1.5 px-3'}
+          >
+            {windowOpen ? 'Close Window' : 'Open Window'}
+          </button>
+        </div>
+      )}
 
       {/* Month selector */}
       <div className="flex items-center gap-4 mb-6">
