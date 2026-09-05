@@ -482,11 +482,18 @@ service cloud.firestore {
         // Must be created pending — only an admin (or Regularization manager) approval may
         // flip the linked attendance_status to Present (done via writeBatch in the portal).
         //
+        // userId pin: the document's OWN userId field must match the path, not just the
+        // caller's uid. Without this, an employee could create a doc under their own path
+        // carrying a colleague's userId; an admin approving it would rewrite the COLLEAGUE's
+        // attendance_status (bypassing that colleague's own settlement-lock check below, which
+        // is keyed on the path's userId).
+        //
         // Date gating: today is always allowed. A PAST date additionally needs the admin-only
         // window (config/regularizationWindow) open AND this employee's own month not already
         // Settle & Locked. A FUTURE date is never allowed. See
         // docs/superpowers/specs/2026-09-05-regularization-window-design.md.
         allow create: if isLoggedIn() && isOwner(userId)
+                      && request.resource.data.userId == userId
                       && request.resource.data.status == 'pending'
                       && request.resource.data.date <= todayIST()
                       && (request.resource.data.date == todayIST()

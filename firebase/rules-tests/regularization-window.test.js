@@ -122,3 +122,36 @@ test("only admin can write the window config doc", async () => {
   await assertFails(asUser(env, "emp").doc("config/regularizationWindow").set({ open: true }));
   await assertSucceeds(asUser(env, "admin").doc("config/regularizationWindow").set({ open: true }));
 });
+
+// The beforeEach above always seeds the config doc, even when closed — so the state a fresh
+// `firebase deploy --only firestore:rules` actually lands in (no doc at all) would otherwise
+// never be exercised. These two prove the rule's `.get('open', false)` default and the `||`
+// short-circuit both behave with the document entirely absent, not merely `open: false`.
+
+test("today's date is creatable even when the config doc does not exist at all", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc("config/regularizationWindow").delete();
+  });
+  const db = asUser(env, "emp");
+  await assertSucceeds(db.doc("users/emp/regularization_requests/r-no-config-today").set(req("emp", TODAY)));
+});
+
+test("a past date is denied when the config doc does not exist at all", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc("config/regularizationWindow").delete();
+  });
+  const db = asUser(env, "emp");
+  await assertFails(db.doc("users/emp/regularization_requests/r-no-config-past").set(req("emp", YESTERDAY)));
+});
+
+// The userId FIELD must match the path, not just the caller's uid. Without the pin an employee
+// could file under their own path carrying a colleague's userId; the portal resolves the
+// approval target from that field, so approving it would rewrite the COLLEAGUE's
+// attendance_status — bypassing the colleague's own settlement-lock check, which is keyed on
+// the path's userId.
+test("a request cannot be created under one user's path carrying a different userId", async () => {
+  const db = asUser(env, "emp");
+  await assertFails(
+    db.doc("users/emp/regularization_requests/r-spoofed-userid").set(req("other", TODAY))
+  );
+});
