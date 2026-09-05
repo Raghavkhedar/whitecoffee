@@ -20,6 +20,7 @@ class FirestoreRegularizationRepository @Inject constructor(
 ) : RegularizationRepository {
     private val userDoc get() = firestore.collection("users").document(sessionManager.userId)
     private val regCol  get() = userDoc.collection("regularization_requests")
+    private val statusCol get() = userDoc.collection("attendance_status")
 
     override fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         regCol.whereEqualTo("date", date)
@@ -27,6 +28,14 @@ class FirestoreRegularizationRepository @Inject constructor(
             .map { snap ->
                 snap.documents.mapNotNull { RegularizationRequest.fromDocument(it) }.firstOrNull()
             }
+
+    override fun observeWindowOpen(): Flow<Boolean> =
+        firestore.collection("config").document("regularizationWindow")
+            .snapshotsAsFlow()
+            .map { it.getBoolean("open") ?: false }
+
+    override suspend fun getStatusForDate(date: String): String? =
+        statusCol.document(date).get().await().getString("status")
 
     override suspend fun submitRequest(
         date: String,

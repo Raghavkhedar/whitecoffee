@@ -15,13 +15,19 @@ import kotlinx.coroutines.flow.map
  * result — so a test asserting the refusal is exercising real state, not stubbing.
  */
 class FakeRegularizationRepository(
-    initialRequests: Map<String, RegularizationRequest> = emptyMap()
+    initialRequests: Map<String, RegularizationRequest> = emptyMap(),
+    windowOpen: Boolean = false,
 ) : RegularizationRepository {
 
     private val requests = MutableStateFlow(initialRequests)
+    private val windowOpenFlow = MutableStateFlow(windowOpen)
+    private val statusByDate = mutableMapOf<String, String>()
 
     /** When set, every call fails with this error instead of running the normal logic. */
     var failWith: Exception? = null
+
+    /** When set, [getStatusForDate] throws this instead of returning normally. */
+    var failStatusLookup: Exception? = null
 
     /** Every request the subject successfully submitted, in order. */
     val submitted = mutableListOf<RegularizationRequest>()
@@ -33,8 +39,23 @@ class FakeRegularizationRepository(
         requests.value = if (request == null) requests.value - date else requests.value + (date to request)
     }
 
+    /** Flips the fake window state; [observeWindowOpen] reflects it immediately. */
+    fun setWindowOpen(open: Boolean) { windowOpenFlow.value = open }
+
+    /** Seeds (or clears, with null) the historical status [getStatusForDate] returns for [date]. */
+    fun setStatusForDate(date: String, status: String?) {
+        if (status == null) statusByDate.remove(date) else statusByDate[date] = status
+    }
+
     override fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         requests.map { it[date] }
+
+    override fun observeWindowOpen(): Flow<Boolean> = windowOpenFlow
+
+    override suspend fun getStatusForDate(date: String): String? {
+        failStatusLookup?.let { throw it }
+        return statusByDate[date]
+    }
 
     override suspend fun submitRequest(
         date: String,

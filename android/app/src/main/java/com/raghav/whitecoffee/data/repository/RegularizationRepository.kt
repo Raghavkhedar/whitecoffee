@@ -22,4 +22,14 @@ interface RegularizationRepository {
         originalStatus: String,
         reason: String
     ): Result<String>
+
+    /** Live read of the admin-controlled past-date window (`config/regularizationWindow`). */
+    fun observeWindowOpen(): Flow<Boolean>
+
+    /**
+     * The stored daily status for [date] (`users/{uid}/attendance_status/{date}.status`), or
+     * null if no such doc exists yet (a Sunday/holiday/unscored day, or a date before the app's
+     * status backfill).
+     */
+    suspend fun getStatusForDate(date: String): String?
 }
