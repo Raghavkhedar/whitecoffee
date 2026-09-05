@@ -491,7 +491,36 @@ Expected: BUILD SUCCESSFUL. (This will currently fail until `FakeRegularizationR
 
 - [ ] **Step 4: Extend `FakeRegularizationRepository` with the same surface**
 
-Replace the class declaration and constructor:
+This file has, in order: the constructor + `requests`/`failWith`/`submitted`/`nextId` fields
++ `setRequestForDate`, then `override fun observeRequestForDate`, then
+`override suspend fun submitRequest`. Only the first part is touched — do not restate or
+otherwise modify `observeRequestForDate` or `submitRequest`; leave both exactly as they are.
+
+Replace exactly this block — everything from `class FakeRegularizationRepository(` up to but
+NOT including the `override fun observeRequestForDate` line:
+
+```kotlin
+class FakeRegularizationRepository(
+    initialRequests: Map<String, RegularizationRequest> = emptyMap()
+) : RegularizationRepository {
+
+    private val requests = MutableStateFlow(initialRequests)
+
+    /** When set, every call fails with this error instead of running the normal logic. */
+    var failWith: Exception? = null
+
+    /** Every request the subject successfully submitted, in order. */
+    val submitted = mutableListOf<RegularizationRequest>()
+
+    private var nextId = 1
+
+    /** Seeds (or clears, with null) the request on file for [date]. */
+    fun setRequestForDate(date: String, request: RegularizationRequest?) {
+        requests.value = if (request == null) requests.value - date else requests.value + (date to request)
+    }
+```
+
+with:
 
 ```kotlin
 class FakeRegularizationRepository(
@@ -528,7 +557,9 @@ class FakeRegularizationRepository(
     }
 ```
 
-Add the two overrides after `observeRequestForDate`:
+This leaves `override fun observeRequestForDate` immediately following, unmodified. Then
+insert the two new overrides right after `observeRequestForDate`'s closing line, before the
+`override suspend fun submitRequest` line:
 
 ```kotlin
     override fun observeWindowOpen(): Flow<Boolean> = windowOpenFlow
@@ -539,7 +570,7 @@ Add the two overrides after `observeRequestForDate`:
     }
 ```
 
-(Leave `submitRequest` exactly as it is — it's unaffected by this task.)
+`submitRequest` itself is not touched at all.
 
 - [ ] **Step 5: Compile**
 
