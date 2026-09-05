@@ -276,4 +276,75 @@ class RegularizationViewModelTest {
 
         assertTrue(vm.submitState.value is UiState.Empty)
     }
+
+    // ── past-date window ─────────────────────────────────────────────────
+
+    @Test
+    fun `isWindowOpen mirrors the repository`() = runTest(dispatcher) {
+        repo = FakeRegularizationRepository(windowOpen = true)
+        val vm = subject()
+        advanceUntilIdle()
+
+        assertTrue(vm.isWindowOpen.value)
+    }
+
+    @Test
+    fun `loadForDate reports Unmarked when there is no stored status`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.loadForDate("2026-07-01")
+        advanceUntilIdle()
+
+        val state = vm.pickedDateState.value
+        assertTrue(state is UiState.Success)
+        val item = (state as UiState.Success).data
+        assertEquals("2026-07-01", item.date)
+        assertEquals("Unmarked", item.originalStatus)
+        assertEquals(null, item.request)
+    }
+
+    @Test
+    fun `loadForDate surfaces the stored status and any existing request`() = runTest(dispatcher) {
+        repo.setStatusForDate("2026-07-01", "Absent")
+        val existing = RegularizationRequest(
+            id = "r1", date = "2026-07-01", originalStatus = "Absent", reason = "Sick", status = "pending"
+        )
+        repo.setRequestForDate("2026-07-01", existing)
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.loadForDate("2026-07-01")
+        advanceUntilIdle()
+
+        val item = (vm.pickedDateState.value as UiState.Success).data
+        assertEquals("Absent", item.originalStatus)
+        assertEquals(existing, item.request)
+    }
+
+    @Test
+    fun `loadForDate surfaces an error when the lookup fails`() = runTest(dispatcher) {
+        repo.failStatusLookup = IllegalStateException("offline")
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.loadForDate("2026-07-01")
+        advanceUntilIdle()
+
+        assertTrue(vm.pickedDateState.value is UiState.Error)
+    }
+
+    @Test
+    fun `resetPickedDateState clears a previous result`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.loadForDate("2026-07-01")
+        advanceUntilIdle()
+        assertTrue(vm.pickedDateState.value is UiState.Success)
+
+        vm.resetPickedDateState()
+
+        assertTrue(vm.pickedDateState.value is UiState.Empty)
+    }
 }

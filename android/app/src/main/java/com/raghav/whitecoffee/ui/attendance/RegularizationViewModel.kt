@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -54,6 +55,17 @@ class RegularizationViewModel @Inject constructor(
 
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
+
+    // Eagerly (not WhileSubscribed): the flag must reflect the repository as soon as this
+    // ViewModel is created, not only once some UI collector shows up — a screen that reads
+    // `.value` before subscribing must never see a stale "closed" default when the window is
+    // actually open, and must never fail OPEN when the repository errors.
+    val isWindowOpen: StateFlow<Boolean> = repository.observeWindowOpen()
+        .catch { emit(false) } // never fail open — a load error must not unlock past dates
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    private val _pickedDateState = MutableStateFlow<UiState<RegularizationDayItem>>(UiState.Empty)
+    val pickedDateState: StateFlow<UiState<RegularizationDayItem>> = _pickedDateState.asStateFlow()
 
     /**
      * The date shown in the header, re-derived when the day rolls over.
@@ -189,6 +201,32 @@ class RegularizationViewModel @Inject constructor(
 
     fun resetSubmitState() {
         _submitState.value = UiState.Empty
+    }
+
+    /** Loads the flaggable item for an arbitrary past [date] picked by the user, for the same
+     * request dialog `loadToday()`'s items already use. */
+    fun loadForDate(date: String) {
+        viewModelScope.launch {
+            _pickedDateState.value = UiState.Loading()
+            try {
+                val status = repository.getStatusForDate(date) ?: "Unmarked"
+                val existing = repository.observeRequestForDate(date).first()
+                _pickedDateState.value = UiState.Success(
+                    RegularizationDayItem(
+                        date = date,
+                        dayOfWeek = getDayOfWeek(date),
+                        originalStatus = status,
+                        request = existing
+                    )
+                )
+            } catch (e: Exception) {
+                _pickedDateState.value = UiState.Error("Couldn't load that date.")
+            }
+        }
+    }
+
+    fun resetPickedDateState() {
+        _pickedDateState.value = UiState.Empty
     }
 
     companion object {
