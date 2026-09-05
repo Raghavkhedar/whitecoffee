@@ -43,6 +43,7 @@ function currentYearMonth() {
 }
 
 function formatMonthLabel(ym: string) {
+  if (ym === 'all') return 'All Months';
   const [y, m] = ym.split('-').map(Number);
   return new Date(y, m - 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
 }
@@ -92,7 +93,7 @@ export default function RegularizationPage() {
     setError('');
     try {
       const data = await getAllRegularizationRequests(filter === 'all' ? undefined : filter);
-      setRequests(data.filter(r => r.date.startsWith(month)));
+      setRequests(month === 'all' ? data : data.filter(r => r.date.startsWith(month)));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -195,11 +196,17 @@ export default function RegularizationPage() {
 
       {/* Month selector */}
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => setMonth(offsetMonth(month, -1))} className="btn-outline text-sm py-1 px-3">&larr;</button>
+        <button onClick={() => setMonth(offsetMonth(month, -1))} disabled={month === 'all'} className="btn-outline text-sm py-1 px-3">&larr;</button>
         <span className="text-lg font-semibold text-text-primary min-w-[160px] text-center">
           {formatMonthLabel(month)}
         </span>
-        <button onClick={() => setMonth(offsetMonth(month, 1))} className="btn-outline text-sm py-1 px-3">&rarr;</button>
+        <button onClick={() => setMonth(offsetMonth(month, 1))} disabled={month === 'all'} className="btn-outline text-sm py-1 px-3">&rarr;</button>
+        <button
+          onClick={() => setMonth(month === 'all' ? currentYearMonth() : 'all')}
+          className={month === 'all' ? 'text-sm py-1.5 px-3 rounded-lg font-medium bg-primary text-white' : 'btn-outline text-sm py-1.5 px-3'}
+        >
+          All Months
+        </button>
       </div>
 
       {/* Filters */}
