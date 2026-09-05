@@ -58,6 +58,24 @@ class OfflineWritePolicyTest {
 
     private val writeCalls = listOf(".set(", ".add(", ".update(", ".commit(", ".delete(")
 
+    /**
+     * Per-call-site opt-out, for the case the [protected] allowlist cannot express: a protected
+     * function where only ONE branch may await.
+     *
+     * `FirestoreRegularizationRepository.submitRequest` is the reason it exists. Submitting for
+     * **today** is the everyday field case and must never await — that is the hang this whole
+     * policy guards. Submitting for a **past** date only became possible with the admin-controlled
+     * regularization window, and it is genuinely rules-refusable (window closed, or that month
+     * already Settle & Locked), so it is the same situation as `approveLeave`/`rejectLeave`: the
+     * denial only ever surfaces from the server, and reporting success for a request that silently
+     * never lands is worse than a spinner. The exemption is therefore attached to the one awaited
+     * line, so the today branch stays protected by this test.
+     *
+     * Marking a line is a deliberate act that has to be justified in a comment on that line — it
+     * is not a way to silence this test. Never mark a write an offline field user triggers.
+     */
+    private val exemptMarker = "offline-write-policy-exempt"
+
     @Test
     fun `no field-critical write awaits a server acknowledgement`() {
         val violations = mutableListOf<String>()
@@ -110,6 +128,30 @@ class OfflineWritePolicyTest {
         assertTrue(awaitedWritesIn(body).contains(".add("))
     }
 
+    /** A call site marked as a deliberate exception is not reported. */
+    @Test
+    fun `the exemption marker suppresses the write it is attached to`() {
+        val body = """
+            ref.set(payload).await() // offline-write-policy-exempt: rules-refusable past date
+        """.trimIndent()
+
+        assertTrue(awaitedWritesIn(body).isEmpty())
+    }
+
+    /**
+     * The marker is scoped to its own line, so an exempt branch cannot quietly cover an
+     * unmarked awaited write elsewhere in the same function.
+     */
+    @Test
+    fun `the exemption marker does not exempt the rest of the function`() {
+        val body = """
+            ref.set(payload).await() // offline-write-policy-exempt: rules-refusable past date
+            other.add(payload).await()
+        """.trimIndent()
+
+        assertTrue(awaitedWritesIn(body).contains(".add("))
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────
 
     /** Extracts a function body by brace-matching from its signature. */
@@ -135,9 +177,15 @@ class OfflineWritePolicyTest {
      *
      * For each `.await()`, whichever call verb appears closest before it decides whether this is
      * a read-await (fine) or a write-await (a hang offline).
+     *
+     * Lines carrying [exemptMarker] are dropped before the scan — see that field for when a
+     * call site may legitimately be marked.
      */
     private fun awaitedWritesIn(body: String): List<String> {
-        val flat = body.replace(Regex("\\s+"), " ")
+        val flat = body.lineSequence()
+            .filterNot { it.contains(exemptMarker) }
+            .joinToString(" ")
+            .replace(Regex("\\s+"), " ")
         val found = mutableListOf<String>()
         Regex("\\.await\\(\\)").findAll(flat).forEach { m ->
             val preceding = flat.substring(0, m.range.first)

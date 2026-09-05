@@ -116,7 +116,7 @@ class RegularizationFragment : Fragment() {
         val cal = java.util.Calendar.getInstance()
         val dialog = android.app.DatePickerDialog(
             requireContext(),
-            { _, year, month, day -> onDate(String.format("%04d-%02d-%02d", year, month + 1, day)) },
+            { _, year, month, day -> onDate(String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, day)) },
             cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH),
         )
         cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
