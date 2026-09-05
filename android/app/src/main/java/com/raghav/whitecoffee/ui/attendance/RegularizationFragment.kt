@@ -41,6 +41,8 @@ class RegularizationFragment : Fragment() {
             val submit by viewModel.submitState.collectAsStateWithLifecycle()
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val todayLabel by viewModel.todayLabel.collectAsStateWithLifecycle()
+            val isWindowOpen by viewModel.isWindowOpen.collectAsStateWithLifecycle()
+            val pickedDate by viewModel.pickedDateState.collectAsStateWithLifecycle()
 
             // Inline Compose regularize dialog (replaces the old View AlertDialog).
             var dialogItem by remember { mutableStateOf<RegularizationDayItem?>(null) }
@@ -54,13 +56,30 @@ class RegularizationFragment : Fragment() {
                 }
             }
 
+            LaunchedEffect(pickedDate) {
+                when (val p = pickedDate) {
+                    is UiState.Success -> {
+                        dialogItem = p.data
+                        reason = ""
+                        viewModel.resetPickedDateState()
+                    }
+                    is UiState.Error -> {
+                        Toast.makeText(requireContext(), p.message, Toast.LENGTH_LONG).show()
+                        viewModel.resetPickedDateState()
+                    }
+                    else -> {}
+                }
+            }
+
             RegularizationScreen(
                 state = state,
                 todayLabel = todayLabel,
                 isOnline = isOnline,
+                isWindowOpen = isWindowOpen,
                 onBack = { findNavController().navigateUp() },
                 onRequest = { dialogItem = it; reason = "" },
                 onRetry = { viewModel.loadToday() },
+                onPickPastDate = { showPastDatePicker { date -> viewModel.loadForDate(date) } },
             )
 
             dialogItem?.let { item ->
@@ -91,6 +110,18 @@ class RegularizationFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun showPastDatePicker(onDate: (String) -> Unit) {
+        val cal = java.util.Calendar.getInstance()
+        val dialog = android.app.DatePickerDialog(
+            requireContext(),
+            { _, year, month, day -> onDate(String.format("%04d-%02d-%02d", year, month + 1, day)) },
+            cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH),
+        )
+        cal.add(java.util.Calendar.DAY_OF_MONTH, -1)
+        dialog.datePicker.maxDate = cal.timeInMillis
+        dialog.show()
     }
 
     companion object {

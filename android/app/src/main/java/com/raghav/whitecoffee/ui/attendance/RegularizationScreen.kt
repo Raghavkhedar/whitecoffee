@@ -43,9 +43,11 @@ fun RegularizationScreen(
     state: UiState<List<RegularizationDayItem>>,
     todayLabel: String,
     isOnline: Boolean,
+    isWindowOpen: Boolean,
     onBack: () -> Unit,
     onRequest: (RegularizationDayItem) -> Unit,
     onRetry: () -> Unit,
+    onPickPastDate: () -> Unit,
 ) = WhiteCoffeeTheme {
     Column(Modifier.fillMaxSize().background(WcTheme.colors.ScreenBg)) {
         OfflineBanner(isOnline)
@@ -82,6 +84,14 @@ fun RegularizationScreen(
                     Spacer(Modifier.height(40.dp))
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { Text("Loading…", color = WcTheme.colors.TextMuted, fontSize = 13.sp) }
                 }
+            }
+            if (isWindowOpen) {
+                Spacer(Modifier.height(20.dp))
+                WcPrimaryButton(
+                    text = "Request for another date",
+                    icon = Ms.event_available,
+                    onClick = onPickPastDate,
+                )
             }
         }
     }
