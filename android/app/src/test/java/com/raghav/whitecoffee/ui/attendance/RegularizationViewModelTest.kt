@@ -283,9 +283,11 @@ class RegularizationViewModelTest {
     fun `isWindowOpen mirrors the repository`() = runTest(dispatcher) {
         repo = FakeRegularizationRepository(windowOpen = true)
         val vm = subject()
+        val collect = launch { vm.isWindowOpen.collect { } }   // stateIn is WhileSubscribed
         advanceUntilIdle()
 
         assertTrue(vm.isWindowOpen.value)
+        collect.cancel()
     }
 
     @Test

@@ -56,13 +56,9 @@ class RegularizationViewModel @Inject constructor(
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
-    // Eagerly (not WhileSubscribed): the flag must reflect the repository as soon as this
-    // ViewModel is created, not only once some UI collector shows up — a screen that reads
-    // `.value` before subscribing must never see a stale "closed" default when the window is
-    // actually open, and must never fail OPEN when the repository errors.
     val isWindowOpen: StateFlow<Boolean> = repository.observeWindowOpen()
         .catch { emit(false) } // never fail open — a load error must not unlock past dates
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     private val _pickedDateState = MutableStateFlow<UiState<RegularizationDayItem>>(UiState.Empty)
     val pickedDateState: StateFlow<UiState<RegularizationDayItem>> = _pickedDateState.asStateFlow()
