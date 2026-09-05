@@ -30,6 +30,35 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tabAccess', []);
     }
 
+    // Timestamps in rules are zone-less instants. Adding a Duration then reading
+    // .year()/.month()/.day() reads the components as if that instant were UTC — the same
+    // trick firebase/functions/index.js uses (shift +05:30, read via getUTC*()) to fake an
+    // IST calendar date off a UTC clock.
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    function todayIST() {
+      let ist = request.time + duration.value(19800, 's');
+      return string(ist.year()) + '-' + pad2(ist.month()) + '-' + pad2(ist.day());
+    }
+
+    // config/regularizationWindow — global admin-controlled toggle (see regularization_requests
+    // create rule below). Missing doc == closed, matching the pre-feature default.
+    function isRegularizationWindowOpen() {
+      return get(/databases/$(database)/documents/config/regularizationWindow)
+               .data.get('open', false);
+    }
+
+    // True only when userId's OWN settlement for `date`'s month is locked. Office/admin/sales
+    // never have a settlements doc (non-ledger roles) and so are never blocked by this.
+    function isSettledMonth(userId, date) {
+      let month = date[0:7];
+      return exists(/databases/$(database)/documents/users/$(userId)/settlements/$(month))
+        && get(/databases/$(database)/documents/users/$(userId)/settlements/$(month))
+             .data.get('locked', false);
+    }
+
     // Attendance events: read for the tabs that surface attendance; update (siteId/
     // visitType/workDoneCategories patch) only for Attendance + Manpower Utilisation Input.
     function canReadAttendance() {
@@ -452,8 +481,17 @@ service cloud.firestore {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessRegularization());
         // Must be created pending — only an admin (or Regularization manager) approval may
         // flip the linked attendance_status to Present (done via writeBatch in the portal).
+        //
+        // Date gating: today is always allowed. A PAST date additionally needs the admin-only
+        // window (config/regularizationWindow) open AND this employee's own month not already
+        // Settle & Locked. A FUTURE date is never allowed. See
+        // docs/superpowers/specs/2026-09-05-regularization-window-design.md.
         allow create: if isLoggedIn() && isOwner(userId)
-                      && request.resource.data.status == 'pending';
+                      && request.resource.data.status == 'pending'
+                      && request.resource.data.date <= todayIST()
+                      && (request.resource.data.date == todayIST()
+                          || (isRegularizationWindowOpen()
+                              && !isSettledMonth(userId, request.resource.data.date)));
         // notSelf: approving your own regularization flips your own day to Present.
         allow update: if isLoggedIn() && (isAdmin() || (canAccessRegularization() && notSelf(userId)));
         allow delete: if false;
@@ -584,6 +622,15 @@ service cloud.firestore {
     // decision should not ride on a per-tab grant. Reads stay open to all signed-in users
     // (employees see holidays in the app).
     match /holidays/{date} {
+      allow read:  if isLoggedIn();
+      allow write: if isLoggedIn() && isAdmin();
+    }
+
+    // ── /config/regularizationWindow — admin-only past-date window toggle ─
+    // Read by every logged-in user: the Android app needs this to decide whether to offer a
+    // past-date picker at all. Write stays admin-only (see regularization_requests below for
+    // the actual enforcement this doc gates).
+    match /config/regularizationWindow {
       allow read:  if isLoggedIn();
       allow write: if isLoggedIn() && isAdmin();
     }
