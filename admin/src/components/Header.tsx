@@ -56,10 +56,6 @@ export default function Header({ onMenuClick }: { onMenuClick: () => void }) {
         <div className="hidden sm:flex items-center gap-2 h-9 px-[13px] border border-border rounded-[9px] bg-white text-[12.5px] text-[#6B635C] font-medium">
           <span className="text-[#B4ADA5] flex"><Icon name="calendar" size={15} /></span>{today}
         </div>
-        <button className="relative w-9 h-9 flex items-center justify-center border border-border rounded-[9px] bg-white text-[#6B635C] hover:bg-[#F5F2EE] transition-colors">
-          <Icon name="bell" size={17} />
-          <span className="absolute top-2 right-[9px] w-[7px] h-[7px] rounded-full bg-[#E0602E] border-[1.5px] border-white" />
-        </button>
         <div className="w-px h-[26px] bg-border" />
         <div className="flex items-center gap-2.5">
           <div className="w-[34px] h-[34px] rounded-full bg-primary text-white flex items-center justify-center text-[12.5px] font-semibold font-mono">{initials(name)}</div>
