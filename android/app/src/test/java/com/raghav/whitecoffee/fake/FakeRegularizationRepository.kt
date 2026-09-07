@@ -1,9 +1,12 @@
 package com.raghav.whitecoffee.fake
 
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.raghav.whitecoffee.data.model.RegularizationRequest
 import com.raghav.whitecoffee.data.repository.RegularizationRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 
 /**
@@ -42,6 +45,21 @@ class FakeRegularizationRepository(
     /** Flips the fake window state; [observeWindowOpen] reflects it immediately. */
     fun setWindowOpen(open: Boolean) { windowOpenFlow.value = open }
 
+    /**
+     * How many times [observeWindowOpen] has been subscribed to. A retry shows up here as a
+     * second subscription, which is what distinguishes "retried" from "gave up".
+     */
+    var windowSubscriptions = 0
+        private set
+
+    /**
+     * Number of leading [observeWindowOpen] subscriptions that should fail before one succeeds,
+     * mimicking a Firestore listener that errors (denied, offline, token not yet attached).
+     * The real listener terminates the flow on error — the fake must too, or it cannot
+     * reproduce the latch this exists to catch.
+     */
+    var windowFailuresBeforeSuccess = 0
+
     /** Seeds (or clears, with null) the historical status [getStatusForDate] returns for [date]. */
     fun setStatusForDate(date: String, status: String?) {
         if (status == null) statusByDate.remove(date) else statusByDate[date] = status
@@ -50,7 +68,16 @@ class FakeRegularizationRepository(
     override fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         requests.map { it[date] }
 
-    override fun observeWindowOpen(): Flow<Boolean> = windowOpenFlow
+    override fun observeWindowOpen(): Flow<Boolean> = flow {
+        val attempt = windowSubscriptions++
+        if (attempt < windowFailuresBeforeSuccess) {
+            throw FirebaseFirestoreException(
+                "PERMISSION_DENIED",
+                FirebaseFirestoreException.Code.PERMISSION_DENIED,
+            )
+        }
+        emitAll(windowOpenFlow)
+    }
 
     override suspend fun getStatusForDate(date: String): String? {
         failStatusLookup?.let { throw it }

@@ -44,6 +44,7 @@ fun RegularizationScreen(
     todayLabel: String,
     isOnline: Boolean,
     isWindowOpen: Boolean,
+    windowCheckFailed: Boolean,
     onBack: () -> Unit,
     onRequest: (RegularizationDayItem) -> Unit,
     onRetry: () -> Unit,
@@ -91,6 +92,15 @@ fun RegularizationScreen(
                     text = "Request for another date",
                     icon = Ms.event_available,
                     onClick = onPickPastDate,
+                )
+            } else if (windowCheckFailed) {
+                // Without this the read failing and the window being shut look identical, and
+                // an employee (or whoever is testing) has no way to tell the difference.
+                Spacer(Modifier.height(20.dp))
+                InfoBanner(
+                    text = "Couldn't check whether past-date regularization is open. " +
+                        "Check your connection and reopen this screen.",
+                    bg = Color(0xFFFFE6D6), fg = Color(0xFF8A3A00),
                 )
             }
         }

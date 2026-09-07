@@ -42,6 +42,7 @@ class RegularizationFragment : Fragment() {
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val todayLabel by viewModel.todayLabel.collectAsStateWithLifecycle()
             val isWindowOpen by viewModel.isWindowOpen.collectAsStateWithLifecycle()
+            val windowCheckFailed by viewModel.windowCheckFailed.collectAsStateWithLifecycle()
             val pickedDate by viewModel.pickedDateState.collectAsStateWithLifecycle()
 
             // Inline Compose regularize dialog (replaces the old View AlertDialog).
@@ -76,6 +77,7 @@ class RegularizationFragment : Fragment() {
                 todayLabel = todayLabel,
                 isOnline = isOnline,
                 isWindowOpen = isWindowOpen,
+                windowCheckFailed = windowCheckFailed,
                 onBack = { findNavController().navigateUp() },
                 onRequest = { dialogItem = it; reason = "" },
                 onRetry = { viewModel.loadToday() },

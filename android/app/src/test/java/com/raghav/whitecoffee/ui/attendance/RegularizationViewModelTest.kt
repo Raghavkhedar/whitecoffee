@@ -290,6 +290,41 @@ class RegularizationViewModelTest {
         collect.cancel()
     }
 
+    /**
+     * A Firestore listener error (denied, offline, auth token not yet attached) must not
+     * permanently hide the past-date button. The real listener TERMINATES the flow on error,
+     * so without a retry the screen latches "closed" for the life of the ViewModel even after
+     * the condition clears — a silent failure indistinguishable from a genuinely closed window,
+     * and the reason this feature looked unshipped in production.
+     */
+    @Test
+    fun `isWindowOpen recovers after a transient listener failure`() = runTest(dispatcher) {
+        repo = FakeRegularizationRepository(windowOpen = true)
+        repo.windowFailuresBeforeSuccess = 2
+        val vm = subject()
+        val collect = launch { vm.isWindowOpen.collect { } }
+        advanceUntilIdle()
+
+        assertTrue(
+            "expected a retry to reach the open window, but it latched closed",
+            vm.isWindowOpen.value,
+        )
+        collect.cancel()
+    }
+
+    /** Never fail open: while the read keeps failing the button stays hidden. */
+    @Test
+    fun `isWindowOpen stays closed while the read keeps failing`() = runTest(dispatcher) {
+        repo = FakeRegularizationRepository(windowOpen = true)
+        repo.windowFailuresBeforeSuccess = Int.MAX_VALUE
+        val vm = subject()
+        val collect = launch { vm.isWindowOpen.collect { } }
+        advanceUntilIdle()
+
+        assertEquals(false, vm.isWindowOpen.value)
+        collect.cancel()
+    }
+
     @Test
     fun `loadForDate reports Unmarked when there is no stored status`() = runTest(dispatcher) {
         val vm = subject()

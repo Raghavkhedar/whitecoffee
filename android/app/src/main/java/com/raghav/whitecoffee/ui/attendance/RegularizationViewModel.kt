@@ -23,7 +23,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.time.LocalDate
@@ -56,7 +59,35 @@ class RegularizationViewModel @Inject constructor(
     private val _submitState = MutableStateFlow<UiState<String>>(UiState.Empty)
     val submitState: StateFlow<UiState<String>> = _submitState.asStateFlow()
 
+    private val _windowCheckFailed = MutableStateFlow(false)
+
+    /** True once the window read has exhausted its retries — the UI says so instead of
+     *  silently looking identical to a closed window. */
+    val windowCheckFailed: StateFlow<Boolean> = _windowCheckFailed.asStateFlow()
+
+    /**
+     * The admin-controlled past-date window.
+     *
+     * A Firestore snapshot listener TERMINATES its flow on error (see [listenerFlow]), so a
+     * single transient failure — offline at screen open, an auth token not yet attached on a
+     * cold start, a denial from rules that are about to be deployed — used to latch this
+     * `false` for the life of the ViewModel with no message. That is indistinguishable from a
+     * genuinely closed window, which is what made this feature look unshipped in production.
+     *
+     * So: resubscribe with exponential backoff before giving up, and when we do give up, say so
+     * via [windowCheckFailed]. Still never fails OPEN — every failure path ends at `false`.
+     */
     val isWindowOpen: StateFlow<Boolean> = repository.observeWindowOpen()
+        .onEach { _windowCheckFailed.value = false }
+        .retryWhen { _, attempt ->
+            if (attempt < WINDOW_READ_RETRIES) {
+                delay(WINDOW_RETRY_BASE_MS shl attempt.toInt().coerceAtMost(4))
+                true
+            } else {
+                _windowCheckFailed.value = true
+                false
+            }
+        }
         .catch { emit(false) } // never fail open — a load error must not unlock past dates
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -226,6 +257,11 @@ class RegularizationViewModel @Inject constructor(
     }
 
     companion object {
+        /** Resubscribes to the window listener before giving up; 1s doubling ≈ 31s of cover,
+         *  enough for a cold-start token race or a short connectivity blip. */
+        private const val WINDOW_READ_RETRIES = 5L
+        private const val WINDOW_RETRY_BASE_MS = 1_000L
+
         private val LABEL_FORMAT = DateTimeFormatter.ofPattern("d MMM yyyy, EEE", Locale.getDefault())
         private val DAY_FORMAT = SimpleDateFormat("EEE", Locale.getDefault())
         private val DATE_PARSE = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
