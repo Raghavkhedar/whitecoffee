@@ -102,6 +102,17 @@ fun RegularizationScreen(
                         "Check your connection and reopen this screen.",
                     bg = Color(0xFFFFE6D6), fg = Color(0xFF8A3A00),
                 )
+            } else {
+                // A shut window used to render NOTHING, so "the admin hasn't opened it",
+                // "this build predates the feature" and "the read failed" were one blank
+                // space on screen — which is why the feature read as broken rather than
+                // closed. Say which one it is; an absent control explains nothing.
+                Spacer(Modifier.height(20.dp))
+                InfoBanner(
+                    text = "Requests for past dates are closed right now. An admin opens " +
+                        "this window when corrections for earlier dates are being accepted.",
+                    bg = WcTheme.colors.FieldFill, fg = WcTheme.colors.TextMuted,
+                )
             }
         }
     }
