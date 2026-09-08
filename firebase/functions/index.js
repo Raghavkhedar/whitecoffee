@@ -16,7 +16,7 @@ const {
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
-const { bannerFor, parseBlocks, monthLabelToKey, assembleTab } = require("./dashboardHistory");
+const { bannerFor, parseBlocks, monthLabelToKey, assembleTab, selectRebuildKeys } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
 const { computeDeductions } = require("./payrollDeductions");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
@@ -102,7 +102,7 @@ const SHEET_ID_5 = "1Hy4GJ57Cn-uln7k3xXtJxI6Ka_VofDbJz1XYGqs2qGY";
 const SHEET_ID_6 = "1Ar1d7kNwgOB5w6MSGX40MAXorR9dpzr3oN72Wa-JQE4";
 // Sheet7: Work Progress
 const SHEET_ID_7 = "1c2JtarmbteClXaADF666WYEGNmx4CozM7EKo7bcteKE";
-// Sheet8: Overtime Exception Report (ops OT days, current month)
+// Sheet8: Overtime Exception Report (ops OT days, all months as frozen blocks)
 const SHEET_ID_OT = "1DNJKQfvm238ZmULF7ScJAXRtxzzjYjk87jV4QMR2VjA";
 // Sheet9: Site Manpower Time Utilisation (ops per-site visits, current month)
 const SHEET_ID_MANPOWER = "1U66-ldSNMm01f3rnJabJe0BxTUFvDglSX5rAFqXDJZ4";
@@ -893,11 +893,15 @@ exports.exportToSheets = onSchedule(
       }
     });
 
+    // Every attendance event ever recorded. Read ONCE and shared by the Attendance
+    // tab and the OT Exception tab — both span all history, and a second full
+    // collection-group read would double the cost of the nightly run for nothing.
+    const allAttendanceDocs = (await db.collectionGroup("attendance").get()).docs;
+
     // ── 1. Attendance — one row per employee per day ──────────────────
     // In/Out times: office uses office_in/office_out; operations uses the
     // first site reached (site_in) and the last site left (site_out).
     {
-      const snap   = await db.collectionGroup("attendance").get();
       const header = [
         "Date", "Employee Name", "Employee ID", "Role",
         "In Time", "In Location", "Out Time", "Out Location",
@@ -906,7 +910,7 @@ exports.exportToSheets = onSchedule(
 
       // Group all events by employee + date.
       const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
-      snap.docs.forEach((doc) => {
+      allAttendanceDocs.forEach((doc) => {
         const d   = doc.data();
         const uid = uidOf(doc);
         const key = `${uid}__${d.date || ""}`;
@@ -1032,23 +1036,33 @@ exports.exportToSheets = onSchedule(
       console.log(`Attendance: ${rows.length} rows`);
     }
 
-    // ── 1b. Overtime Exception Report — ops OT days, current month ─────
+    // ── 1b. Overtime Exception Report — ops OT days, every month ───────
     // One row per ops employee per day they worked past shift end (or worked a
-    // rest day, or have an admin OT decision) this month. Mirrors the manual
+    // rest day, or have an admin OT decision). Mirrors the manual
     // "OVERTIME EXCEPTION REPORT" sheet. OVER TIME = credited OT as H:MM (0 when
     // not approved), from the same ledger the admin portal Employee Dashboard uses.
+    //
+    // The tab keeps EVERY month, newest on top, in the month-block format the
+    // Employee Dashboard tab already uses (dashboardHistory.js): the current month
+    // is rebuilt nightly; a past month is computed ONCE and then re-emitted
+    // verbatim forever. Freezing is the point — writeTab() clears the whole tab on
+    // every run, so without it a month vanishes the day after it ends, and any
+    // Remarks typed into a past month by hand would be wiped nightly.
     {
       const header = [
         "DATE", "NAME", "ESN NO", "PRE-LOGIN TIME", "PRE-LOGIN SITE",
         "POST-LOGOUT TIME", "POST-LOGOUT SITE", "OVER TIME", "TIME APPROVED",
         "APPROVED/NOT APPROVED/Pending", "Reasons", "APPROVED/REJECTED BY", "Remarks",
       ];
+      const otCurrentKey = `${istYear}-${pad2(istMonth + 1)}`;
+      // "2026-08" → "August 2026", matching monthLabel's format for the current month.
+      const labelForKey = (key) => new Date(Date.UTC(+key.slice(0, 4), +key.slice(5, 7) - 1, 1))
+        .toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
-      // Ops attendance events for the current month, grouped by employee + day.
-      const snap = await db.collectionGroup("attendance")
-        .where("date", ">=", monthStart).where("date", "<=", today).get();
+      // Ops attendance events for ALL history, grouped by employee + day. The
+      // per-month split happens below — a frozen month is simply never costed.
       const groups = new Map(); // `${uid}__${date}` → { uid, date, events[] }
-      snap.docs.forEach((doc) => {
+      allAttendanceDocs.forEach((doc) => {
         const uid = uidOf(doc);
         if (!usesOtShortageLedger(userRoleMap.get(uid))) return; // OT is a ledger-role (operations) concept
         const d = doc.data();
@@ -1057,18 +1071,19 @@ exports.exportToSheets = onSchedule(
         groups.get(key).events.push(d);
       });
 
-      // Also surface ops days that only carry an admin OT decision this month
-      // (e.g. a manual OT grant for a missed-punch day — no post-shift event).
+      // Also surface ops days that only carry an admin OT decision (e.g. a manual
+      // OT grant for a missed-punch day — no post-shift event).
       otDecisionMap.forEach((_v, key) => {
         const sep = key.lastIndexOf("__");
         const uid = key.slice(0, sep), date = key.slice(sep + 2);
         if (!usesOtShortageLedger(userRoleMap.get(uid))) return;
-        if (date < monthStart || date > today) return;
+        if (!date || date > today) return; // a future-dated decision is not reportable yet
         if (!groups.has(key)) groups.set(key, { uid, date, events: [] });
       });
 
-      const rows = [];
-      groups.forEach((group, key) => {
+      // One employee-day → its sheet row, or null when the day is not an OT
+      // exception (no time past shift end, no rest-day work, no admin decision).
+      const otRowFor = (group, key) => {
         const { uid, date } = group;
 
         // Effective worked window: a regularized-to-Present override wins;
@@ -1122,7 +1137,7 @@ exports.exportToSheets = onSchedule(
         const decision = otDecisionMap.get(key);
         // Is this day an OT "exception"? Left after shift end, worked a rest day,
         // or an admin recorded an OT decision for it.
-        if (rawOtMins <= 0 && !decision) return;
+        if (rawOtMins <= 0 && !decision) return null;
 
         // Status: an explicit admin decision wins; else auto-approved when credited
         // > 0 (declared/authorized), otherwise still awaiting review.
@@ -1139,7 +1154,7 @@ exports.exportToSheets = onSchedule(
           : (outMin != null ? minToHHMM(outMin) : "");
         const postLogoutSite = outEv ? (outEv.siteName || "") : "";
 
-        rows.push([
+        return [
           date,
           userNameMap.get(uid) ?? "",
           userEmpIdMap.get(uid) ?? "",
@@ -1151,13 +1166,73 @@ exports.exportToSheets = onSchedule(
           decision ? decision.reason : "",
           decision ? decision.approvedBy : "",
           "",                              // Remarks
-        ]);
+        ];
+      };
+
+      // What the tab already holds, split into month-blocks. Rows before the first
+      // banner (`legacy`) are the pre-history single-block format: they are always
+      // the current month (the old code rewrote the whole tab from monthStart every
+      // night), so the rebuilt current block replaces them.
+      let otExistingRows = [], otReadFailed = false;
+      try {
+        const existing = await sheets.spreadsheets.values.get({
+          spreadsheetId: SHEET_ID_OT, range: `${TABS.OT_EXCEPTION}!A:Z`,
+        });
+        otExistingRows = existing.data.values || [];
+      } catch (e) {
+        // 400 = the tab does not exist yet (first run) — writeTab() creates it, and
+        // there is no history to lose. Anything else (transient 5xx, auth) means we
+        // CANNOT see the frozen months: writing now would clear the tab and destroy
+        // them. Skip this tab for tonight instead — tomorrow's run rewrites it.
+        if (e?.code === 400) otExistingRows = [];
+        else { otReadFailed = true; console.error("OT Exception Report: tab read failed, skipping write to preserve frozen history", e); }
+      }
+      const { blocks: otBlocks } = parseBlocks(otExistingRows);
+
+      // Months to compute: the current one always, plus any month with data that the
+      // tab has no block for (first-ever run, or a month a run never got to write).
+      const otDataMonthKeys = [...groups.values()]
+        .map((g) => (g.date || "").slice(0, 7))
+        .filter((k) => /^\d{4}-\d{2}$/.test(k));
+      const rebuildKeys = selectRebuildKeys(otBlocks, otCurrentKey, otDataMonthKeys);
+
+      const rowsByMonth = new Map(rebuildKeys.map((k) => [k, []]));
+      groups.forEach((group, key) => {
+        const bucket = rowsByMonth.get((group.date || "").slice(0, 7));
+        if (!bucket) return; // month is frozen — never recomputed
+        const row = otRowFor(group, key);
+        if (row) bucket.push(row);
       });
-      rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
-      // Date formatted after the sort — see the Attendance block for why.
-      await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION,
-        [header, ...rows.map((r) => [dmy(r[0]), ...r.slice(1)])]);
-      console.log(`OT Exception Report: ${rows.length} rows`);
+
+      // banner + header + rows + spacer, matching the Employee Dashboard block shape.
+      const otBlockFor = (key) => {
+        const rows = rowsByMonth.get(key) || [];
+        rows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+        // Date formatted after the sort — see the Attendance block for why.
+        return [
+          [bannerFor(key, labelForKey(key))],
+          header,
+          ...rows.map((r) => [dmy(r[0]), ...r.slice(1)]),
+          [""],
+        ];
+      };
+
+      // Frozen = every past block already in the tab (verbatim) plus the past months
+      // computed for the first time on this run. assembleTab orders them newest-first
+      // under the current month.
+      const otFrozenBlocks = [
+        ...otBlocks.filter((b) => b.key !== otCurrentKey && !rowsByMonth.has(b.key)),
+        ...rebuildKeys.filter((k) => k !== otCurrentKey).map((k) => ({ key: k, rows: otBlockFor(k) })),
+      ];
+      if (otReadFailed) {
+        console.warn("OT Exception Report: not written this run (see read failure above)");
+      } else {
+        const otOutRows = assembleTab(otBlockFor(otCurrentKey), otCurrentKey, otFrozenBlocks);
+        await writeTab(sheets, SHEET_ID_OT, TABS.OT_EXCEPTION, otOutRows);
+        console.log(`OT Exception Report: ${(rowsByMonth.get(otCurrentKey) || []).length} rows ` +
+          `(current ${otCurrentKey}), ${otFrozenBlocks.length} frozen month(s), ` +
+          `backfilled [${rebuildKeys.filter((k) => k !== otCurrentKey).join(", ")}]`);
+      }
     }
 
     // ── 1c. Site Manpower Time Utilisation — ops per-site visits, current month ──

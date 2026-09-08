@@ -1,11 +1,14 @@
 "use strict";
 
-// Pure helpers for the month-history Employee Dashboard tab (spec:
+// Pure helpers for month-history Sheet tabs — tabs that keep every month instead
+// of being rebuilt from scratch each night (spec:
 // docs/superpowers/specs/2026-07-13-employee-dashboard-month-history-design.md).
-// Firestore-free so it can be unit-tested with node --test. index.js does the
-// Firestore reads and builds the current-month block's rows; these helpers parse
-// the existing tab into month-blocks, carry manual Imprest forward, and assemble
-// the tab with the current month on top and frozen months (verbatim) below.
+// Two consumers, both in index.js: the Employee Dashboard tab and the Overtime
+// Exception Report tab. Firestore-free so it can be unit-tested with node --test.
+// index.js does the Firestore reads and builds the current-month block's rows;
+// these helpers parse the existing tab into month-blocks, decide which months to
+// recompute vs freeze, and assemble the tab with the current month on top and
+// frozen months (verbatim) below.
 
 // Banner cell that heads each month-block. key = "YYYY-MM", label = "July 2026".
 function bannerFor(key, label) {
@@ -74,4 +77,20 @@ function assembleTab(currentBlockRows, currentKey, frozenBlocks) {
   return out;
 }
 
-module.exports = { bannerFor, keyOfBanner, parseBlocks, monthLabelToKey, assembleTab };
+// Which months a run must COMPUTE from Firestore, newest first. The current
+// month always (it is rebuilt nightly); a past month only when the tab holds no
+// block for it — a first-ever run, or a month the export never got to write.
+// Every other past month already in the tab is frozen and re-emitted verbatim.
+// Data months after `currentKey` are ignored: a future-dated record must not
+// open a block for a month that has not happened.
+function selectRebuildKeys(existingBlocks, currentKey, dataMonthKeys) {
+  const have = new Set((existingBlocks || []).map((b) => b.key));
+  const keys = new Set([currentKey]);
+  for (const k of dataMonthKeys || []) {
+    if (k > currentKey) continue;
+    if (!have.has(k)) keys.add(k);
+  }
+  return [...keys].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+}
+
+module.exports = { bannerFor, keyOfBanner, parseBlocks, monthLabelToKey, assembleTab, selectRebuildKeys };

@@ -1,12 +1,13 @@
 "use strict";
 
-// Unit suite for the month-history Employee Dashboard helpers. Pure logic, no
-// Firestore. Run: `npm test` (node --test, no extra deps).
+// Unit suite for the month-history tab helpers (Employee Dashboard + Overtime
+// Exception Report). Pure logic, no Firestore. Run: `npm test` (node --test, no
+// extra deps).
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  bannerFor, keyOfBanner, parseBlocks, monthLabelToKey, assembleTab,
+  bannerFor, keyOfBanner, parseBlocks, monthLabelToKey, assembleTab, selectRebuildKeys,
 } = require("./dashboardHistory");
 
 // A minimal block's rows for month `key`/`label` with one employee carrying an imprest.
@@ -95,4 +96,48 @@ test("end-to-end: freeze past block verbatim, replace current, order current-on-
   // current July imprest is the new value, on top
   assert.equal(keyOfBanner(out[0][0]), "2026-07");
   assert.equal(out[2][3], 77);
+});
+
+// ── selectRebuildKeys ────────────────────────────────────────────────
+// Decides which months a run must COMPUTE from Firestore. The current month
+// always; a past month only when the sheet holds no block for it (first-ever
+// run, or a month that was never written). Every other past month is frozen.
+
+test("selectRebuildKeys rebuilds every data month on a first-ever run", () => {
+  const keys = selectRebuildKeys([], "2026-09", ["2026-06", "2026-07", "2026-08", "2026-09"]);
+  assert.deepEqual(keys, ["2026-09", "2026-08", "2026-07", "2026-06"]);
+});
+
+test("selectRebuildKeys rebuilds only the current month when the sheet is complete", () => {
+  const existing = [{ key: "2026-09" }, { key: "2026-08" }, { key: "2026-07" }];
+  const keys = selectRebuildKeys(existing, "2026-09", ["2026-07", "2026-08", "2026-09"]);
+  assert.deepEqual(keys, ["2026-09"]);
+});
+
+test("selectRebuildKeys rebuilds a past month missing from the sheet", () => {
+  const existing = [{ key: "2026-09" }, { key: "2026-07" }]; // August never written
+  const keys = selectRebuildKeys(existing, "2026-09", ["2026-07", "2026-08", "2026-09"]);
+  assert.deepEqual(keys, ["2026-09", "2026-08"]);
+});
+
+test("selectRebuildKeys rebuilds the current month even when the sheet already has it", () => {
+  const keys = selectRebuildKeys([{ key: "2026-09" }], "2026-09", ["2026-09"]);
+  assert.deepEqual(keys, ["2026-09"]);
+});
+
+test("selectRebuildKeys includes the current month when the data holds no rows for it", () => {
+  // Nobody has worked OT yet this month — the current block is still rebuilt (empty).
+  const keys = selectRebuildKeys([{ key: "2026-08" }], "2026-09", ["2026-07", "2026-08"]);
+  assert.deepEqual(keys, ["2026-09", "2026-07"]);
+});
+
+test("selectRebuildKeys ignores data months after the current month", () => {
+  // A future-dated attendance record must not open a block for a month that hasn't happened.
+  const keys = selectRebuildKeys([], "2026-09", ["2026-09", "2026-11"]);
+  assert.deepEqual(keys, ["2026-09"]);
+});
+
+test("selectRebuildKeys de-duplicates repeated data months", () => {
+  const keys = selectRebuildKeys([], "2026-09", ["2026-08", "2026-08", "2026-09"]);
+  assert.deepEqual(keys, ["2026-09", "2026-08"]);
 });
