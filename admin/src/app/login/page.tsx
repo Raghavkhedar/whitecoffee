@@ -6,6 +6,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { hasPortalAccess, landingPath } from '@/lib/portalAccess';
 import { resolveLoginEmail } from '@/lib/constants';
+import AppLogo from '@/components/AppLogo';
 import type { User } from '@/types';
 
 // ⚠️ There is deliberately NO "Forgot password?" here, and adding one is not a small
@@ -51,7 +52,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="text-4xl mb-3">☕</div>
+          <AppLogo className="w-16 h-16 rounded-2xl mx-auto mb-3" />
           <h1 className="text-2xl font-bold text-text-primary">WhiteCoffee Admin</h1>
           <p className="text-text-secondary text-sm mt-1">Senken Engineering — Operations Portal</p>
         </div>

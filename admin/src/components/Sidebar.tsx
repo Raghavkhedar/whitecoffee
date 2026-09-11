@@ -8,6 +8,7 @@ import { getAllLeaveRequests } from '@/lib/firestore';
 import { TABS, allowedPaths, type TabDef } from '@/lib/portalAccess';
 import { useAccess } from './AccessContext';
 import Icon from './Icon';
+import AppLogo from './AppLogo';
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
@@ -60,7 +61,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
       >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 h-16 border-b border-white/[0.07]">
-        <div className="w-9 h-9 rounded-[10px] bg-primary text-white flex items-center justify-center font-semibold text-[13px] font-mono">WC</div>
+        <AppLogo className="w-9 h-9 rounded-[10px] flex-shrink-0" />
         <div className="leading-tight">
           <div className="text-[14.5px] font-semibold text-white tracking-tight">WhiteCoffee</div>
           <div className="text-[11px] text-[#8A93A0] mt-0.5">Admin Portal</div>
