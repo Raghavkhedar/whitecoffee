@@ -320,7 +320,14 @@ export interface AuditEntry {
   changedKeys: string[];
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
-  actor: string;              // lastModifiedBy uid, a business field, or 'unknown'
+  actor: string;              // uid, a business field, 'system:<job>', or 'unknown'
+  /** Who wrote it: a person, or a Cloud Function. OPTIONAL — entries predating the
+   *  classifier carry neither field; `src/lib/auditEntry.ts` recomputes both so the
+   *  existing history reads correctly too. */
+  origin?: 'user' | 'system';
+  systemJob?: string | null;  // 'punch-integrity', 'nightly-attendance-status', …
+  /** How `actor` was determined. 'owner' is an INFERENCE and is shown as one. */
+  actorSource?: 'lastModifiedBy' | 'businessField' | 'owner' | 'system' | 'none';
   at: string;                 // ISO
   atMillis: number;
 }

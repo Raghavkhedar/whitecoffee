@@ -6,6 +6,14 @@
  * meant opening the Firebase Console or running a script, which in practice meant nobody
  * looked. This page is what makes it usable.
  *
+ * ⚠️ WHY THIS PAGE DOES SO MUCH WORK ON THE WAY IN. A stored entry is two complete
+ * document snapshots, and rendering them raw produced the two problems this page was
+ * rebuilt to fix: a one-field patch printed sixteen fields twice, and most rows named no
+ * author. Neither is fixed by styling. `src/lib/auditEntry.ts` reconstructs the missing
+ * verdict on every entry as it is read — including entries already in Firestore, which a
+ * writer-side fix alone could never reach — and reduces the snapshots to the fields that
+ * actually moved. Read that module before changing anything here.
+ *
  * It also surfaces FLAGGED PUNCHES from the onPunchWritten server verdict — mock location,
  * a corrected date, or a large client/server clock gap. Those flags were being recorded
  * and shown to no one.
@@ -14,6 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getAuditLog, getAllUsers, getAttendanceForDateRange } from '@/lib/firestore';
 import type { AuditEntry, User } from '@/types';
 import { istTodayStr } from '@/lib/date';
+import { classifyEntry, diffFields, actorLabel, describeEntry, isSystemEntry } from '@/lib/auditEntry';
 
 type Tab = 'log' | 'flagged';
 
@@ -65,6 +74,16 @@ const CHANGE_TONE: Record<string, string> = {
   delete: 'bg-[#FBEAEA] text-[#C42B2B]',
 };
 
+/** A changed value, coloured by whether it is the old or the new one. */
+function Value({ text, tone }: { text: string; tone: 'before' | 'after' }) {
+  const muted = text === '—' || text === '(none)' || text === '(empty)';
+  return (
+    <span className={`font-mono text-[12px] ${muted ? 'text-[#A8A29E] italic' : tone === 'before' ? 'text-[#8A817A] line-through decoration-[#D6D0C9]' : 'text-[#1E7A46]'}`}>
+      {text}
+    </span>
+  );
+}
+
 export default function AuditPage() {
   const [tab, setTab] = useState<Tab>('log');
   const [from, setFrom] = useState(daysAgoStr(7));
@@ -76,7 +95,12 @@ export default function AuditPage() {
   const [error, setError] = useState('');
   const [employee, setEmployee] = useState('');
   const [coll, setColl] = useState('');
+  const [who, setWho] = useState('');
+  // Off by default: every punch produces a server integrity patch, so machine writes
+  // outnumber human ones and burying the human edits is what made the log unreadable.
+  const [showSystem, setShowSystem] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [raw, setRaw] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -101,6 +125,8 @@ export default function AuditPage() {
 
   const nameOf = useMemo(() => {
     const m = new Map(users.map(u => [u.id, u.name || u.employeeId || u.id]));
+    // Falls back to the raw uid: an employee who has since been deleted still has to
+    // render as *something*, and a blank cell in an audit trail is a lie.
     return (uid: string | null | undefined) => (uid ? (m.get(uid) ?? uid) : '—');
   }, [users]);
 
@@ -109,9 +135,23 @@ export default function AuditPage() {
     [entries],
   );
 
-  const shown = useMemo(() => entries.filter(e =>
-    (!employee || e.userId === employee) && (!coll || e.collection === coll)
-  ), [entries, employee, coll]);
+  /** Every human who wrote something in this range — the "what did X change" filter. */
+  const actors = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) {
+      if (!isSystemEntry(e) && e.actor && e.actor !== 'unknown') seen.add(e.actor);
+    }
+    return Array.from(seen).sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+  }, [entries, nameOf]);
+
+  const humanOnly = useMemo(() => entries.filter(e => !isSystemEntry(e)), [entries]);
+  const systemCount = entries.length - humanOnly.length;
+
+  const shown = useMemo(() => (showSystem ? entries : humanOnly).filter(e =>
+    (!employee || e.userId === employee)
+    && (!coll || e.collection === coll)
+    && (!who || e.actor === who)
+  ), [entries, humanOnly, showSystem, employee, coll, who]);
 
   const label = 'text-[11px] uppercase tracking-[0.05em] font-semibold text-[#A8A29E]';
 
@@ -137,9 +177,13 @@ export default function AuditPage() {
       </div>
 
       {tab === 'log' && (
-        <div className="flex flex-wrap gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <select value={who} onChange={e => setWho(e.target.value)} className="input text-sm !py-2 !w-auto min-w-[180px]">
+            <option value="">Anyone made the change</option>
+            {actors.map(a => <option key={a} value={a}>{nameOf(a)}</option>)}
+          </select>
           <select value={employee} onChange={e => setEmployee(e.target.value)} className="input text-sm !py-2 !w-auto min-w-[180px]">
-            <option value="">All employees</option>
+            <option value="">About any employee</option>
             {users.slice().sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
               .map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
@@ -147,6 +191,13 @@ export default function AuditPage() {
             <option value="">All collections</option>
             {collections.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          <label className="flex items-center gap-2 text-[12.5px] text-[#6B625A] cursor-pointer select-none ml-auto"
+            title="Integrity checks, the nightly status job, auto-logout and auto-filed regularizations. Recorded like any other write, hidden by default because they outnumber the human ones.">
+            <input type="checkbox" checked={showSystem} onChange={e => setShowSystem(e.target.checked)}
+              className="accent-[#2456C7] w-[14px] h-[14px]" />
+            Show system writes
+            {systemCount > 0 && <span className="font-mono text-[11px] text-[#9A938C]">{systemCount}</span>}
+          </label>
         </div>
       )}
 
@@ -158,55 +209,118 @@ export default function AuditPage() {
         shown.length === 0 ? (
           <div className="bg-white border border-[#E9E6E2] rounded-2xl p-10 text-center text-[13px] text-[#9A938C]">
             No changes recorded in this range.
+            {!showSystem && systemCount > 0 && (
+              <div className="mt-1 text-[12px]">
+                {systemCount} system write{systemCount === 1 ? '' : 's'} {systemCount === 1 ? 'is' : 'are'} hidden — tick “Show system writes” to include {systemCount === 1 ? 'it' : 'them'}.
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {shown.map(e => (
-              <div key={e.id} className="bg-white border border-[#E9E6E2] rounded-xl px-4 py-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${CHANGE_TONE[e.changeType] ?? ''}`}>
-                    {e.changeType}
-                  </span>
-                  <span className="text-[13.5px] font-semibold text-text-primary">{e.collection}</span>
-                  <span className="text-[12px] text-[#8A817A]">{nameOf(e.userId)}</span>
-                  <span className="text-[12px] text-[#A8A29E] ml-auto font-mono">
-                    {new Date(e.atMillis).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 mt-2 flex-wrap">
-                  <div><div className={label}>By</div>
-                    <div className="text-[13px] text-[#2A241F] mt-[2px]">
-                      {e.actor === 'unknown'
-                        ? <span className="text-[#A8A29E] italic" title="Written by a server script or an app build that predates write attribution">unknown</span>
-                        : nameOf(e.actor) === e.actor ? e.actor : nameOf(e.actor)}
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-[220px]">
-                    <div className={label}>Changed</div>
-                    <div className="text-[13px] text-[#4A433D] mt-[2px] font-mono break-all">
-                      {e.changedKeys.length ? e.changedKeys.join(', ') : <span className="text-[#A8A29E]">no field changed</span>}
-                    </div>
-                  </div>
-                  <button className="btn-outline !py-1 !px-2.5 text-[12px]"
-                    onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
-                    {expanded === e.id ? 'Hide' : 'Before / after'}
-                  </button>
-                </div>
-                {expanded === e.id && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                    {(['before', 'after'] as const).map(side => (
-                      <div key={side}>
-                        <div className={label}>{side}</div>
-                        <pre className="mt-1 text-[11.5px] bg-[#FAF9F7] border border-[#E9E6E2] rounded-lg p-2.5 overflow-x-auto max-h-[300px]">
-{e[side] ? JSON.stringify(e[side], null, 2) : '—'}
-                        </pre>
+            {shown.map(e => {
+              const actor = actorLabel(e, nameOf);
+              const changes = diffFields(e);
+              const { systemJob } = classifyEntry(e);
+              const open = expanded === e.id;
+              return (
+                <div key={e.id}
+                  className={`bg-white border rounded-xl px-4 py-3 ${actor.system ? 'border-[#EFECE8] bg-[#FCFBFA]' : 'border-[#E9E6E2]'}`}>
+                  <div className="flex items-start gap-3 flex-wrap">
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md mt-[2px] ${CHANGE_TONE[e.changeType] ?? ''}`}>
+                      {e.changeType}
+                    </span>
+                    <div className="flex-1 min-w-[260px]">
+                      <div className={`text-[13.5px] leading-[1.45] ${actor.system ? 'text-[#6B625A]' : 'text-text-primary'}`}>
+                        {describeEntry(e, nameOf)}
                       </div>
-                    ))}
-                    <div className="md:col-span-2 text-[11.5px] text-[#A8A29E] font-mono break-all">{e.path}</div>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap text-[11.5px] text-[#A8A29E]">
+                        <span className="font-mono">{e.collection}</span>
+                        {actor.inferred && (
+                          <span className="italic px-1.5 py-[1px] rounded border border-[#EDE8E1] bg-[#FAF9F7]" title={actor.note}>
+                            author inferred
+                          </span>
+                        )}
+                        {actor.text === 'unknown' && (
+                          <span className="italic" title="Written by a server script or an app build that predates write attribution">
+                            no author recorded
+                          </span>
+                        )}
+                        {actor.system && systemJob && (
+                          <span className="px-1.5 py-[1px] rounded border border-[#EDE8E1] bg-[#F5F3F0]" title={actor.note}>
+                            automatic
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[12px] text-[#A8A29E] font-mono mt-[3px]">
+                      {new Date(e.atMillis).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                    </span>
+                    <button className="btn-outline !py-1 !px-2.5 text-[12px] mt-[1px]"
+                      onClick={() => { setExpanded(open ? null : e.id); setRaw(null); }}>
+                      {open ? 'Hide'
+                        : !changes.length ? 'Details'
+                          : e.changeType === 'update' ? `${changes.length} change${changes.length === 1 ? '' : 's'}`
+                            : `${changes.length} field${changes.length === 1 ? '' : 's'}`}
+                    </button>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {open && (
+                    <div className="mt-3 border-t border-[#F1EEEA] pt-3">
+                      {changes.length === 0 ? (
+                        <div className="text-[12.5px] text-[#A8A29E] italic">
+                          No field changed. The write is recorded anyway — knowing one happened is itself evidence.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr>
+                                <th className={`${label} pb-1.5 pr-4 font-semibold`}>Field</th>
+                                <th className={`${label} pb-1.5 pr-4 font-semibold`}>Before</th>
+                                <th className={`${label} pb-1.5 font-semibold`}>After</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {changes.map(c => (
+                                <tr key={c.field} className="border-t border-[#F5F3F0] align-top">
+                                  <td className="py-1.5 pr-4 text-[12.5px] text-[#4A433D] whitespace-nowrap">{c.label}</td>
+                                  <td className="py-1.5 pr-4 break-all"><Value text={c.before} tone="before" /></td>
+                                  <td className="py-1.5 break-all"><Value text={c.after} tone="after" /></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-3 mt-3 flex-wrap">
+                        <span className="text-[11.5px] text-[#A8A29E] font-mono break-all">{e.path}</span>
+                        <span className="text-[11.5px] text-[#A8A29E]" title={actor.note}>· author {actor.note}</span>
+                        <button className="text-[11.5px] text-[#8A817A] underline underline-offset-2 ml-auto"
+                          onClick={() => setRaw(raw === e.id ? null : e.id)}>
+                          {raw === e.id ? 'Hide raw record' : 'Raw record'}
+                        </button>
+                      </div>
+
+                      {/* The untouched snapshots. A summary is for reading; a forensic
+                          question needs the document exactly as it was stored. */}
+                      {raw === e.id && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                          {(['before', 'after'] as const).map(side => (
+                            <div key={side}>
+                              <div className={label}>{side}</div>
+                              <pre className="mt-1 text-[11.5px] bg-[#FAF9F7] border border-[#E9E6E2] rounded-lg p-2.5 overflow-x-auto max-h-[300px]">
+{e[side] ? JSON.stringify(e[side], null, 2) : '—'}
+                              </pre>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )
       ) : punches.length === 0 ? (

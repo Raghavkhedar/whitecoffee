@@ -2779,7 +2779,12 @@ exports.onPunchWritten = onDocumentCreated(
 // ── Audit log — before/after record of every write ───────────────────────────
 // Firestore triggers do NOT carry auth context, so the actor is recovered from the
 // document's own `lastModifiedBy` (stamped by both clients on every write) and falls back
-// to business fields like approvedBy/markedBy. There is NO client IP and there cannot be:
+// to business fields like approvedBy/markedBy. Each entry also records `origin` — whether
+// a person or a Cloud Function wrote it — and `actorSource`, which says whether the actor
+// was recorded on the write, taken from a business field, or inferred. That distinction is
+// load-bearing: the `integrity` patch these very triggers add to a punch used to inherit
+// the EMPLOYEE's stamp and be logged as the employee's own act. See auditLog.js.
+// There is NO client IP and there cannot be:
 // rules have no `request.ip` and neither do triggers. IPs for client-SDK writes are only
 // available via GCP Cloud Audit Logs (Data Access), which is console configuration.
 //
