@@ -253,7 +253,7 @@ async function setDateColumnFormat(sheets, spreadsheetId, tabName) {
   });
 }
 
-// ── Monthly PL Accrual — midnight IST on 1st of each month ──────────────────
+// ── Monthly PL Accrual — midnight IST on the 15th of each month ─────────────
 // ⚠️ IDEMPOTENCY IS LOAD-BEARING HERE. This function does a blind
 // `increment(1)` on every user's plBalance, so running it twice for the same month
 // silently grants everyone a free paid leave day — real money, and invisible until
@@ -265,15 +265,15 @@ async function setDateColumnFormat(sheets, spreadsheetId, tabName) {
 // and re-opens the double-accrual hole.
 exports.accrueMonthlyLeave = onSchedule(
   {
-    schedule: "0 0 1 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120,
+    schedule: "0 0 15 * *", timeZone: "Asia/Kolkata", timeoutSeconds: 120,
     retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
   },
   async () => {
     const db = admin.firestore();
 
-    // IST month key. The run fires at 00:00 IST on the 1st, which is 18:30 UTC on the
-    // *previous* day — a bare `new Date()` here would name the wrong month. Shift +05:30
-    // and read UTC parts, per the monorepo's IST rule.
+    // IST month key. The run fires at 00:00 IST on the 15th, which is 18:30 UTC on the
+    // 14th — a bare `new Date()` here would name the wrong month near a month boundary.
+    // Shift +05:30 and read UTC parts, per the monorepo's IST rule.
     const nowIST   = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
     const monthKey = nowIST.toISOString().slice(0, 7); // YYYY-MM
 
