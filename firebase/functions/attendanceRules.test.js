@@ -17,6 +17,7 @@ const {
   toMinutes,
   classify,
   resolveOpsWindow,
+  resolveRestDayType,
 } = require("./attendanceRules");
 
 const m = (h, min = 0) => h * 60 + min;
@@ -77,3 +78,19 @@ test("resolveOpsWindow: parsed window, with 10–18 fallback for an inverted shi
 // computeDailyAttendanceStatus and are NOT covered here (this suite is pure functions only):
 // the Sunday skip, the holidays/{date} skip, the `active !== false` filter, and the
 // markedBy === "admin" override. All four are function-level guards, unchanged by the flip.
+
+test("resolveRestDayType: a plain Tuesday is not a rest day", () => {
+  assert.strictEqual(resolveRestDayType("2026-09-15", false), null); // Tuesday
+});
+
+test("resolveRestDayType: Sunday with no holiday is Sunday", () => {
+  assert.strictEqual(resolveRestDayType("2026-09-13", false), "Sunday"); // Sunday
+});
+
+test("resolveRestDayType: a weekday marked as a holiday is Holiday", () => {
+  assert.strictEqual(resolveRestDayType("2026-09-15", true), "Holiday"); // Tuesday, marked holiday
+});
+
+test("resolveRestDayType: Sunday marked as a holiday is Holiday, not Sunday", () => {
+  assert.strictEqual(resolveRestDayType("2026-09-13", true), "Holiday"); // Sunday + holiday
+});

@@ -76,10 +76,23 @@ function resolveOpsWindow(startTime, endTime) {
   return { startMin, endMin };
 }
 
+/**
+ * Which auto rest-day status (if any) applies to a date. `isHoliday` is whether
+ * `holidays/{dateStr}` exists — the caller looks that up, since this module has
+ * no Firestore access. Holiday wins over Sunday when both apply (more
+ * informative — the caller can still surface the holiday's title separately).
+ */
+function resolveRestDayType(dateStr, isHoliday) {
+  if (isHoliday) return "Holiday";
+  const dayOfWeek = new Date(dateStr + "T00:00:00Z").getUTCDay();
+  return dayOfWeek === 0 ? "Sunday" : null;
+}
+
 module.exports = {
   OFFICE_START_MIN,
   OFFICE_END_MIN,
   toMinutes,
   classify,
   resolveOpsWindow,
+  resolveRestDayType,
 };
