@@ -35,7 +35,7 @@ export default function Header({ onMenuClick }: { onMenuClick: () => void }) {
     : (grantedCount > 0 ? `Scoped access · ${grantedCount} tab${grantedCount === 1 ? '' : 's'}` : 'Staff');
 
   const match = Object.keys(TITLES).find(k => pathname === k || pathname.startsWith(k + '/'));
-  const meta  = match ? TITLES[match] : { title: 'WhiteCoffee', subtitle: 'Admin Portal' };
+  const meta  = match ? TITLES[match] : { title: 'WhiteCoffee', subtitle: '' };
   const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (

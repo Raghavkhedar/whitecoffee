@@ -64,7 +64,6 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         <AppLogo className="w-9 h-9 rounded-[10px] flex-shrink-0" />
         <div className="leading-tight">
           <div className="text-[14.5px] font-semibold text-white tracking-tight">WhiteCoffee</div>
-          <div className="text-[11px] text-[#8A93A0] mt-0.5">Admin Portal</div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6B7480] mt-0.5">S.A.O</div>
         </div>
       </div>

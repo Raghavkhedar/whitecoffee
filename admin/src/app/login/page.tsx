@@ -53,7 +53,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <AppLogo className="w-16 h-16 rounded-2xl mx-auto mb-3" />
-          <h1 className="text-2xl font-bold text-text-primary">WhiteCoffee Admin</h1>
+          <h1 className="text-2xl font-bold text-text-primary">WhiteCoffee</h1>
           <p className="text-text-secondary text-sm mt-1">Senken Engineering — Operations Portal</p>
         </div>
 

@@ -4,7 +4,7 @@ import { GeistMono } from 'geist/font/mono';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'WhiteCoffee Admin',
+  title: 'WhiteCoffee',
   description: 'Senken Engineering — Field Operations Admin Portal',
 };
 
