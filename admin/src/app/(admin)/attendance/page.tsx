@@ -90,10 +90,12 @@ function deriveStatus(
   userEvents: AttendanceRecord[],
   date: string,
   planned?: PlannedHours,
+  isHoliday?: boolean,
 ): AttendanceStatus['status'] | null {
   if (date < LAUNCH_DATE) return null; // pre-launch (test data wiped) — never render a status
+  if (isHoliday) return 'Holiday'; // holiday wins over Sunday when both apply
   const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-  if (dayOfWeek === 0) return null; // Sunday — no status
+  if (dayOfWeek === 0) return 'Sunday';
 
   const fixedWindow = usesFixedWindow(role);
 
@@ -429,7 +431,8 @@ export default function AttendancePage() {
   const selectedIsRestDay = selectedIsSunday || !!selectedHoliday;
 
   // Merge stored (Cloud Function) statuses with client-side derived statuses for the summary chips.
-  // Holidays are skipped like Sundays — no live status is derived for them.
+  // Sunday/holiday now derive a real status ('Sunday'/'Holiday') via deriveStatus, same as
+  // every other day — no special-casing needed here beyond passing the holiday flag through.
   const effectiveStatuses = useMemo(() => {
     const map = new Map<string, AttendanceStatus['status']>();
     users.forEach(user => {
@@ -437,12 +440,13 @@ export default function AttendancePage() {
       const stored = selectedDate < LAUNCH_DATE ? undefined : selectedDayMap.get(user.id)?.status;
       if (stored) {
         map.set(user.id, stored);
-      } else if (!eventsLoading && !selectedHoliday) {
+      } else if (!eventsLoading) {
         const derived = deriveStatus(
           user.role,
           selectedEvents.filter(e => e.userId === user.id),
           selectedDate,
           selectedPlanMap.get(user.id),
+          !!selectedHoliday,
         );
         if (derived) map.set(user.id, derived);
       }
@@ -799,9 +803,9 @@ export default function AttendancePage() {
                     const planned      = selectedPlanMap.get(user.id);
                     const hasPlan      = !!(planned?.startTime && planned?.endTime);
                     // Derive status live from events (+ planned window for ops) until the Cloud
-                    // Function runs. Holidays are skipped like Sundays — no live status.
-                    const derivedStatus = !status && !eventsLoading && !selectedHoliday
-                      ? deriveStatus(user.role, userEvents, selectedDate, planned)
+                    // Function runs — Sunday/holiday now derive 'Sunday'/'Holiday' the same way.
+                    const derivedStatus = !status && !eventsLoading
+                      ? deriveStatus(user.role, userEvents, selectedDate, planned, !!selectedHoliday)
                       : null;
                     const displayStatus = status ?? derivedStatus;
 
