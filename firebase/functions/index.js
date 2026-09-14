@@ -2626,7 +2626,10 @@ exports.setUserActive = onCall(async (request) => {
 // ⚠️ TEMPORARY — one-time backfill for the Sunday/Holiday attendance_status rollout
 // (2026-09-12). Deploy, dry-run, review, run for real, then DELETE this export and
 // redeploy. Matches the 2026-07-17 backfill precedent (see admin/CLAUDE.md).
-exports.backfillSundayHolidayStatuses = onCall(async (request) => {
+// Serial per-user, per-date existence checks over a ~2.5-month range easily exceed the
+// default 60s onCall timeout (confirmed: the first deploy without this timed out mid-dry-run).
+// Not a hot path, so a long timeout here is fine — this function is deleted after one use.
+exports.backfillSundayHolidayStatuses = onCall({ timeoutSeconds: 540 }, async (request) => {
   await assertAdmin(request);
   const dryRun = request.data?.dryRun !== false; // default true — must opt OUT explicitly
   const startDate = request.data?.startDate || "2026-07-01"; // LAUNCH_DATE
