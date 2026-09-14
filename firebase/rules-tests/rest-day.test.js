@@ -122,3 +122,26 @@ test("reading a rest-day status doc is unaffected by the write guard", async () 
   await assertSucceeds(asUser(env, "admin").doc(`users/emp/attendance_status/${SUNDAY}`).get());
   await assertSucceeds(asUser(env, "attMgr").doc(`users/emp/attendance_status/${SUNDAY}`).get());
 });
+
+// ── cancelLeave's write shape (review finding, fixed in firestore.ts) ─────
+//
+// cancelLeave (admin/src/lib/firestore.ts) reverts an already-scored PL/LWP day to Absent
+// via `batch.set(statusRef, {status:'Absent', markedBy:'admin', ...}, {merge:true})` when a
+// leave day is cancelled. Firestore batches are atomic, so if that write ever reached a rest
+// date it would deny the WHOLE batch — including the plBalance refund and the cancellation
+// record for every other, perfectly legal date in the same cancelled range. cancelLeave now
+// skips any date `isRestDay` claims BEFORE adding it to the batch (checked by date, not by
+// the existing doc's `status` field, so a legacy PL/LWP doc sitting on a rest date can't
+// sneak through). This test proves the boundary this client-side skip exists to route
+// around actually holds at the rules layer: cancelling leave across a range that includes a
+// Sunday must never be able to write that Sunday's doc, with or without a pre-existing
+// (legacy) PL doc there.
+test("a cancelLeave-shaped revert-to-Absent write is denied on a Sunday, even over an existing legacy PL doc", async () => {
+  await seedDocs(env, {
+    [`users/emp/attendance_status/${SUNDAY}`]: { date: SUNDAY, userId: "emp", status: "PL", markedBy: "auto" },
+  });
+  await assertFails(
+    asUser(env, "admin").doc(`users/emp/attendance_status/${SUNDAY}`)
+      .set({ status: "Absent", markedBy: "admin" }, { merge: true })
+  );
+});

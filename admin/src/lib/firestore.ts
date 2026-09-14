@@ -332,6 +332,28 @@ export async function rejectLeave(
  * Re-cancelling an already-cancelled date is a safe no-op: the UI only offers days
  * that are still granted, and even if one slipped through, the revert wrote
  * `markedBy: 'admin'`, so the guard above rejects it and no second refund happens.
+ *
+ * ⚠️ **Rest days (Protocol 1) are skipped by DATE, not by the doc's `status` field** — added
+ * after a review caught that this function wrote `attendance_status` directly via
+ * `batch.set`, bypassing `setAttendanceStatus`/`assertNotRestDay` exactly like
+ * `approveRegularization` does. Firestore batches are atomic: under the current
+ * `firestore.rules` (`!isRestDate(date)`), a batch that touches even one Sunday/holiday date
+ * is denied WHOLESALE — taking down the cancellation AND the `plBalance` refund for every
+ * *other*, perfectly legal date in the same range. Nightly scoring skips Sundays/holidays
+ * entirely (no PL/LWP doc is ever written there going forward), so a real collision needs a
+ * stale/legacy doc — but a cancellation spanning a Sunday is completely ordinary (leave
+ * ranges are calendar-day spans), so the *reachability* of that legacy doc is not the point;
+ * the blast radius if it exists is. The status-field check two lines below (`'Sunday' ||
+ * 'Holiday'`) is NOT a guard against this — it tests what the doc SAYS, not what the DATE
+ * IS, so a legacy PL/LWP doc sitting on a rest date sails straight past it into the batch.
+ * The fix here checks the date itself, mirroring `isRestDay`'s Sunday+holiday precedence, and
+ * SKIPS silently (like the "no doc" branch above) rather than reporting it in `skippedDates`
+ * or throwing: throwing would revive the exact all-or-nothing failure this fix exists to
+ * remove, and `skippedDates` means "something else already claimed this day" (an admin
+ * decision), which a rest day is not — nothing was ever legitimately scored there under
+ * Protocol 1, so there is nothing to flag, exactly like an unscored future date. Only the
+ * per-date write (and any refund tied to it) is skipped; every other date in the same call
+ * still cancels, writes, and refunds normally.
  */
 export async function cancelLeave(
   userId: string, requestId: string, cancellerName: string,
@@ -363,21 +385,32 @@ export async function cancelLeave(
   // Every read resolves BEFORE the batch opens — a Firestore batch cannot read.
   const statusRefs  = cancelling.map(d => doc(db, 'users', userId, 'attendance_status', d));
   const statusSnaps = await Promise.all(statusRefs.map(r => getDoc(r)));
+  // Holidays across the whole cancelled range (cancelling is sorted), so isRestDay can be
+  // checked by DATE for every date in the loop below — see the doc comment above.
+  const holidaysInRange = await getHolidaysForDateRange(cancelling[0], cancelling[cancelling.length - 1]);
+  const holidaySet = new Set(holidaysInRange.map(h => h.id));
 
   const batch = writeBatch(db);
   const skippedDates: string[] = [];
   let refundedDays = 0;
 
   statusSnaps.forEach((snap, i) => {
+    const date = cancelling[i];
+    // Rest days (Protocol 1) are immutable at the attendance_status layer regardless of
+    // what a (legacy) doc there says — see the doc comment above for why this is a silent
+    // skip, not a thrown error and not a reported skippedDate.
+    if (isRestDay(date, holidaySet)) return;
     // No doc = never scored (a future date, or a Sunday/holiday before this feature's
     // deploy date). Nothing to undo, and NOT a skip — the cancellation lands cleanly.
     if (!snap.exists()) return;
     const data = snap.data() as AttendanceStatus;
     // A Sunday/Holiday doc is never a leave day either — same "nothing to undo" case as
-    // no doc at all, just now backed by a real record instead of an absent one.
+    // no doc at all, just now backed by a real record instead of an absent one. (Catches a
+    // doc scored on a date that WAS a rest day but no longer resolves as one above — e.g.
+    // the holiday was later unmarked — which the date-based check can't see.)
     if (data.status === 'Sunday' || data.status === 'Holiday') return;
     const scoredAsLeave = data.status === 'PL' || data.status === 'LWP';
-    if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(cancelling[i]); return; }
+    if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(date); return; }
 
     batch.set(
       statusRefs[i],
@@ -597,17 +630,20 @@ export async function getSentNotifications(count = 20): Promise<SentNotification
 // `holidays` is an OPTIONAL set of "yyyy-mm-dd" dates, defaulting to empty, per controller
 // ruling: this unconditionally blocks Sundays the moment this guard lands, without requiring
 // every existing call site to be updated to pass the real holiday set — that wiring is
-// Task 4's job. This function does NOT read Firestore itself; the caller looks up holidays
-// and passes them in.
+// Task 4's job. Neither this nor isRestDay reads Firestore itself; the caller looks up
+// holidays and passes them in.
+//
+// Split into a pure boolean (isRestDay) and a throwing wrapper (assertNotRestDay) because
+// cancelLeave (below) needs the boolean form: a rest-day date reached while cancelling a
+// leave range must be silently SKIPPED, not thrown on — see cancelLeave's doc comment.
+function isRestDay(date: string, holidays: Set<string> = new Set()): boolean {
+  return holidays.has(date) || new Date(date + 'T00:00:00Z').getUTCDay() === 0;
+}
+
 function assertNotRestDay(date: string, holidays: Set<string> = new Set()): void {
-  const isHoliday = holidays.has(date);
-  const isSunday = new Date(date + 'T00:00:00Z').getUTCDay() === 0;
-  if (isHoliday) {
-    throw new Error(`Cannot write attendance status for ${date}: it is a holiday, an immutable rest day.`);
-  }
-  if (isSunday) {
-    throw new Error(`Cannot write attendance status for ${date}: it is a Sunday, an immutable rest day.`);
-  }
+  if (!isRestDay(date, holidays)) return;
+  const kind = holidays.has(date) ? 'a holiday' : 'a Sunday';
+  throw new Error(`Cannot write attendance status for ${date}: it is ${kind}, an immutable rest day.`);
 }
 
 // month is 1-indexed (1 = January)
