@@ -102,6 +102,14 @@ test("rest day: declared-OT ceiling does not apply — all worked mins are pendi
   assert.equal(led.shortageMins, 0);
 });
 
+test("rest day ignores shift window, even when out extends past what would be late-out", () => {
+  // out 20:00 (1200) is 2h past shiftEndMin (1080) — on a normal day that would be late-out
+  // OT capped/split by declaredOtMins; on a rest day it is just more of the same pending window.
+  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 1200, isRestDay: true });
+  assert.equal(led.pendingExtraMins, 600);
+  assert.equal(led.shortageMins, 0);
+});
+
 test("no valid shift (end <= start) and not rest day: nothing accrues", () => {
   const led = computeDayLedger({ ...shift, shiftStartMin: 600, shiftEndMin: 600, inMin: 600, outMin: 1140 });
   assert.equal(led.autoOtMins, 0);
