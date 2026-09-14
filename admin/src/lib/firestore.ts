@@ -310,9 +310,10 @@ export async function rejectLeave(
  *
  * Two things happen per cancelled date, and only one of them is automatic:
  *
- *  - **Future / never-scored dates** need no attendance write at all. No
- *    `attendance_status` doc exists yet, and the nightly scorer will simply stop
- *    seeing leave for that day. This is why there is no past-vs-future branch here.
+ *  - **Future / never-scored dates** need no attendance write at all. A future date has
+ *    no `attendance_status` doc (except a Sunday/Holiday, which does — see the guard a
+ *    few lines below), and the nightly scorer will simply stop seeing leave for that day.
+ *    This is why there is no past-vs-future branch here.
  *  - **Already-scored dates** are reverted to `Absent` — a PL/LWP day has zero
  *    punches by construction, so with the leave gone it is exactly the scorer's own
  *    `no leave → Absent` fallback.
@@ -893,8 +894,9 @@ export async function unlockSpecialAllowance(userId: string, month: string): Pro
 }
 
 // ── Holidays (company-wide) ───────────────────────────────────────────────
-// Stored at holidays/{date}; a marked day is skipped like a Sunday everywhere
-// attendance is evaluated (no status, no penalty, excluded from working days).
+// Stored at holidays/{date}; a marked day is payroll-neutral everywhere attendance
+// is evaluated (no penalty, excluded from working days) — it now gets an explicit
+// "Holiday" attendance_status doc (see computeDailyAttendanceStatus) instead of no doc at all.
 
 // month is 1-indexed (1 = January)
 export async function getHolidaysForMonth(year: number, month: number): Promise<Holiday[]> {

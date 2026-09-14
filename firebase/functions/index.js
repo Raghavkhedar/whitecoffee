@@ -889,8 +889,8 @@ exports.exportToSheets = onSchedule(
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
       if (d.date < monthStart || d.date > today) return;
-      // Skip Sundays — they are not working days (read weekday in UTC; see note
-      // at the Sunday-skip in computeDailyAttendanceStatus for why).
+      // Skip Sundays — they are not working days (read weekday in UTC to avoid the
+      // runtime's UTC timezone shifting a "+05:30 midnight" back to the prior day).
       const dayOfWeek = new Date(d.date + "T00:00:00Z").getUTCDay();
       if (dayOfWeek === 0) return;
       if (!userAttendanceMTD.has(d.userId))

@@ -75,9 +75,10 @@ test("resolveOpsWindow: parsed window, with 10–18 fallback for an inverted shi
 // was always true and the unit disappeared with the decision it modelled.
 //
 // The remaining "is this day scored at all?" rules now live inline in
-// computeDailyAttendanceStatus and are NOT covered here (this suite is pure functions only):
-// the Sunday skip, the holidays/{date} skip, the `active !== false` filter, and the
-// markedBy === "admin" override. All four are function-level guards, unchanged by the flip.
+// computeDailyAttendanceStatus and are NOT covered here (this suite is pure functions only,
+// except resolveRestDayType below, which IS covered): the `active !== false` filter and the
+// markedBy === "admin" override remain function-level guards, unchanged by the flip. Sundays
+// and holidays/{date} are no longer skipped — resolveRestDayType decides their status instead.
 
 test("resolveRestDayType: a plain Tuesday is not a rest day", () => {
   assert.strictEqual(resolveRestDayType("2026-09-15", false), null); // Tuesday
