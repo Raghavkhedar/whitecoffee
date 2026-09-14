@@ -17,7 +17,7 @@ function istMinuteOfDay(epochSecs) {
 }
 
 const ZERO = {
-  shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false,
+  shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0,
 };
 
 // Per-day ledger for one operations worked day (both check-in and check-out present).
@@ -31,14 +31,15 @@ const ZERO = {
 // in 11:00 / out 18:30 on a 10–18 shift is 30 shortage and 0 OT, not "30 OT + 60 shortage".
 // Early-out is NOT netted and can never be cancelled (a day cannot end both early and late).
 // Declared OT is a pre-approval CEILING on the NET OT (auto up to declared, beyond is pending).
-function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, otAuthorized }) {
+//
+// Rest days (Sunday / company holiday) are immutable: nothing is pre-authorized. Any worked
+// window on a rest day raises a PENDING overtime request for the WHOLE window — never
+// auto-credited, never shortage, and the declared-OT ceiling does not apply. It is credited
+// only when an admin later approves some or all of it via the separate approval flow.
+function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay }) {
   const worked = Math.max(0, outMin - inMin);
 
-  if (isRestDay) {
-    // Sunday/holiday: every worked minute is OT, but only when admin-authorized.
-    if (otAuthorized) return { ...ZERO, restDayOtMins: worked };
-    return { ...ZERO, unauthorizedRestDay: true };
-  }
+  if (isRestDay) return { ...ZERO, pendingExtraMins: worked };
 
   if (shiftEndMin > shiftStartMin) {
     const lateIn   = Math.max(0, inMin - shiftStartMin);   // came late
@@ -60,10 +61,10 @@ function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredO
   return { ...ZERO };
 }
 
-// Monthly/range net: approved OT (auto + rest-day + granted) minus shortage minus WO debit.
+// Monthly/range net: approved OT (auto + granted) minus shortage minus WO debit.
 // Pending (un-approved) OT is intentionally excluded — not credited until approved.
 function netLedgerMins(p) {
-  return (p.autoOtMins + p.restDayOtMins + p.approvedGrantedMins) - p.shortageMins - p.woDebitMins;
+  return (p.autoOtMins + p.approvedGrantedMins) - p.shortageMins - p.woDebitMins;
 }
 
 module.exports = {

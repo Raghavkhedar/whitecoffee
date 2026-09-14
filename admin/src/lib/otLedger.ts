@@ -23,19 +23,16 @@ export interface DayLedgerInput {
   outMin: number;         // actual last-out, IST minute-of-day
   declaredOtMins: number; // admin pre-declared OT for the day (auto-approval ceiling)
   isRestDay: boolean;     // Sunday or company holiday
-  otAuthorized: boolean;  // admin authorized rest-day work (only meaningful on a rest day)
 }
 
 export interface DayLedger {
   shortageMins: number;       // late-in + early-out (each edge scored on its own); never on a rest day
   autoOtMins: number;         // declared OT actually worked (auto-approved) = min(otEarned, declared)
-  pendingExtraMins: number;   // OT beyond declared → needs admin review
-  restDayOtMins: number;      // all worked minutes on an authorized rest day (auto-approved)
-  unauthorizedRestDay: boolean; // worked a rest day with no authorization → 0 OT credited
+  pendingExtraMins: number;   // OT beyond declared (or, on a rest day, the whole worked window) → needs admin review
 }
 
 const ZERO: DayLedger = {
-  shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false,
+  shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0,
 };
 
 // Per-day ledger for one operations worked day (both check-in and check-out present).
@@ -56,14 +53,16 @@ const ZERO: DayLedger = {
 //
 // Declared OT is a pre-approval CEILING applied to the NET OT (auto up to declared, beyond
 // is pending) — it never changes shortage.
+//
+// Rest days (Sunday / company holiday) are immutable: nothing is pre-authorized. Any worked
+// window on a rest day raises a PENDING overtime request for the WHOLE window — never
+// auto-credited, never shortage, and the declared-OT ceiling does not apply (there is nothing
+// to be a ceiling on, since none of it is auto-approved). It is credited only when an admin
+// later approves some or all of it via the separate approval flow.
 export function computeDayLedger(i: DayLedgerInput): DayLedger {
   const worked = Math.max(0, i.outMin - i.inMin);
 
-  if (i.isRestDay) {
-    // Sunday/holiday: every worked minute is OT, but only when admin-authorized.
-    if (i.otAuthorized) return { ...ZERO, restDayOtMins: worked };
-    return { ...ZERO, unauthorizedRestDay: true };
-  }
+  if (i.isRestDay) return { ...ZERO, pendingExtraMins: worked };
 
   if (i.shiftEndMin > i.shiftStartMin) {
     const lateIn   = Math.max(0, i.inMin - i.shiftStartMin);   // came late
@@ -87,14 +86,13 @@ export function computeDayLedger(i: DayLedgerInput): DayLedger {
 
 export interface NetLedgerParts {
   autoOtMins: number;        // declared, auto-approved
-  restDayOtMins: number;     // authorized rest-day OT, auto-approved
-  approvedGrantedMins: number; // admin-granted OT (beyond-declared) via ot_approvals
+  approvedGrantedMins: number; // admin-granted OT (beyond-declared, or rest-day) via ot_approvals
   shortageMins: number;
   woDebitMins: number;       // (number of WO days) × WO_DEBIT_MINS
 }
 
-// Monthly/range net: approved OT (auto + rest-day + granted) minus shortage minus WO debit.
+// Monthly/range net: approved OT (auto + granted) minus shortage minus WO debit.
 // Pending (un-approved) OT is intentionally excluded — it isn't credited until approved.
 export function netLedgerMins(p: NetLedgerParts): number {
-  return (p.autoOtMins + p.restDayOtMins + p.approvedGrantedMins) - p.shortageMins - p.woDebitMins;
+  return (p.autoOtMins + p.approvedGrantedMins) - p.shortageMins - p.woDebitMins;
 }
