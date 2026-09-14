@@ -47,6 +47,11 @@ class RegularizationViewModelTest {
 
     private val today: String = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
+    /** A fixed, deliberately ordinary Wednesday — for tests where the exact date doesn't
+     *  matter but must NOT be `today` (submitRequest refuses a real Sunday from the date
+     *  alone, so a `today`-based test would fail whenever the suite happened to run on one). */
+    private val WEEKDAY_DATE = "2026-09-16"
+
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -240,7 +245,12 @@ class RegularizationViewModelTest {
         val vm = subject()
         advanceUntilIdle()
 
-        vm.submitRequest(today, "HalfDay", "Doctor visit")
+        // A fixed weekday, not `today`: the date is incidental to what this test checks, and
+        // `today` is whatever real calendar date the suite happens to run on — since
+        // submitRequest now refuses a Sunday from the date alone, pinning to `today` would make
+        // this test fail every time it ran on an actual Sunday. WEEKDAY_DATE is deliberately a
+        // plain Wednesday with no other significance.
+        vm.submitRequest(WEEKDAY_DATE, "HalfDay", "Doctor visit")
         advanceUntilIdle()
 
         assertEquals(1, repo.submitted.size)
@@ -250,13 +260,14 @@ class RegularizationViewModelTest {
 
     @Test
     fun `a duplicate request for the same date is refused`() = runTest(dispatcher) {
+        // See WEEKDAY_DATE's comment above — the date is incidental here too.
         repo.setRequestForDate(
-            today, RegularizationRequest(id = "r1", date = today, status = "pending")
+            WEEKDAY_DATE, RegularizationRequest(id = "r1", date = WEEKDAY_DATE, status = "pending")
         )
         val vm = subject()
         advanceUntilIdle()
 
-        vm.submitRequest(today, "HalfDay", "Doctor visit")
+        vm.submitRequest(WEEKDAY_DATE, "HalfDay", "Doctor visit")
         advanceUntilIdle()
 
         assertTrue(vm.submitState.value is UiState.Error)
@@ -264,18 +275,55 @@ class RegularizationViewModelTest {
     }
 
     @Test
-    fun `a rest-day request is refused with a clear message`() = runTest(dispatcher) {
-        repo.setStatusForDate(today, "Sunday")
+    fun `a Sunday request is refused even with no attendance_status doc on file`() = runTest(dispatcher) {
+        // 2026-09-13 is a real Sunday (the exact date firebase/rules-tests uses for its own
+        // Sunday case). Deliberately NO repo.setStatusForDate call — this is the actual
+        // production state for a rest day still in progress: attendance_status/{date} is
+        // written only by the nightly 23:59 IST run, so it does not exist yet for today's own
+        // Sunday. A guard keyed on that doc's status would pass this date straight through;
+        // the guard must be able to refuse it from the date alone.
         val vm = subject()
         advanceUntilIdle()
 
-        vm.submitRequest(today, "Absent", "Worked the site anyway")
+        vm.submitRequest("2026-09-13", "Absent", "Worked the site anyway")
         advanceUntilIdle()
 
         val state = vm.submitState.value
         assertTrue(state is UiState.Error)
         assertTrue((state as UiState.Error).message.contains("rest day"))
         assertTrue(repo.submitted.isEmpty())
+    }
+
+    @Test
+    fun `a weekday company holiday is also refused, via the holidays lookup`() = runTest(dispatcher) {
+        // 2026-08-19 is a Wednesday (also reused from firebase/rules-tests' holiday case) —
+        // proves the holiday half of the rest-day check, independent of the Sunday check.
+        repo.setHoliday("2026-08-19", true)
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.submitRequest("2026-08-19", "Absent", "Worked the site anyway")
+        advanceUntilIdle()
+
+        val state = vm.submitState.value
+        assertTrue(state is UiState.Error)
+        assertTrue((state as UiState.Error).message.contains("rest day"))
+        assertTrue(repo.submitted.isEmpty())
+    }
+
+    @Test
+    fun `an ordinary weekday with no attendance_status doc is not treated as a rest day`() = runTest(dispatcher) {
+        // WEEKDAY_DATE (2026-09-16, a Wednesday — also the control date from
+        // firebase/rules-tests) guards against the fix over-firing and refusing every date
+        // with no status doc.
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.submitRequest(WEEKDAY_DATE, "HalfDay", "Missed the in-punch")
+        advanceUntilIdle()
+
+        assertTrue(vm.submitState.value is UiState.Success)
+        assertEquals(1, repo.submitted.size)
     }
 
     @Test

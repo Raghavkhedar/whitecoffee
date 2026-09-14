@@ -11,6 +11,7 @@ import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import java.time.DayOfWeek
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -23,6 +24,8 @@ class FirestoreRegularizationRepository @Inject constructor(
     private val userDoc get() = firestore.collection("users").document(sessionManager.userId)
     private val regCol  get() = userDoc.collection("regularization_requests")
     private val statusCol get() = userDoc.collection("attendance_status")
+    // Top-level, not per-user: holidays/{date} is company-wide (see admin/src/lib/firestore.ts).
+    private val holidaysCol get() = firestore.collection("holidays")
 
     override fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         regCol.whereEqualTo("date", date)
@@ -38,6 +41,9 @@ class FirestoreRegularizationRepository @Inject constructor(
 
     override suspend fun getStatusForDate(date: String): String? =
         statusCol.document(date).get().await().getString("status")
+
+    override suspend fun isHoliday(date: String): Boolean =
+        holidaysCol.document(date).get().await().exists()
 
     override suspend fun submitRequest(
         date: String,
@@ -62,16 +68,30 @@ class FirestoreRegularizationRepository @Inject constructor(
             // Protocol 1 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): Sundays and
             // company holidays are immutable rest days — no attendance_status doc may ever be
             // approved to anything but the system's own Sunday/Holiday write, so a regularization
-            // filed for one is a dead end nothing can ever grant. The nightly Cloud Function
-            // already stamps every user's attendance_status/{date} as "Sunday"/"Holiday" for a
-            // rest day (see the Sunday/Holiday status feature), so that stored status IS the
-            // rest-day signal — no separate holidays lookup needed here. Checked by DATE via the
-            // stored status rather than a local day-of-week guess, since only the server-computed
-            // doc also knows about company holidays (a weekday can be a rest day too).
-            val storedStatus = getStatusForDate(date)
-            if (storedStatus == "Sunday" || storedStatus == "Holiday") {
+            // filed for one is a dead end nothing can ever grant.
+            //
+            // ⚠️ Derived from the DATE, NOT from the stored attendance_status doc. That doc is
+            // written ONLY by the nightly computeDailyAttendanceStatus run at 23:59 IST
+            // (firebase/functions/index.js) — for the ENTIRE SPAN of the rest day itself (00:00
+            // through 23:58) no such doc exists, getStatusForDate would return null, and a
+            // status-keyed guard would let the request straight through. This is the live path,
+            // not a corner case: RegularizationViewModel.deriveLiveStatus flags TODAY purely from
+            // punches against the shift window with no rest-day awareness, so someone working a
+            // Sunday with imperfect punches gets auto-flagged the same day and would otherwise
+            // file straight through. (This is the second time this exact defect has appeared on
+            // this branch — Task 3's cancelLeave made the identical mistake, keying a rest-day
+            // guard on a doc's status field instead of the date; see firestore.ts's cancelLeave.)
+            //
+            // Holiday-then-Sunday precedence mirrors resolveRestDayType
+            // (firebase/functions/attendanceRules.js) and isRestDay (admin/src/lib/firestore.ts).
+            val restDayKind = when {
+                isHoliday(date) -> "Holiday"
+                LocalDate.parse(date).dayOfWeek == DayOfWeek.SUNDAY -> "Sunday"
+                else -> null
+            }
+            if (restDayKind != null) {
                 return Result.failure(Exception(
-                    "$date is a $storedStatus — a rest day. Work done on a rest day is handled " +
+                    "$date is a $restDayKind — a rest day. Work done on a rest day is handled " +
                         "through OT approval, not regularization."
                 ))
             }

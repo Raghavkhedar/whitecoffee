@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import java.time.DayOfWeek
+import java.time.LocalDate
 
 /**
  * In-memory [RegularizationRepository] for unit tests.
@@ -25,6 +27,7 @@ class FakeRegularizationRepository(
     private val requests = MutableStateFlow(initialRequests)
     private val windowOpenFlow = MutableStateFlow(windowOpen)
     private val statusByDate = mutableMapOf<String, String>()
+    private val holidayDates = mutableSetOf<String>()
 
     /** When set, every call fails with this error instead of running the normal logic. */
     var failWith: Exception? = null
@@ -65,6 +68,13 @@ class FakeRegularizationRepository(
         if (status == null) statusByDate.remove(date) else statusByDate[date] = status
     }
 
+    /** Marks (or unmarks) [date] as a company holiday for [isHoliday] — independent of
+     *  [setStatusForDate], since production derives rest-day-ness from the date, never the
+     *  status doc (see [submitRequest]). */
+    fun setHoliday(date: String, isHoliday: Boolean) {
+        if (isHoliday) holidayDates.add(date) else holidayDates.remove(date)
+    }
+
     override fun observeRequestForDate(date: String): Flow<RegularizationRequest?> =
         requests.map { it[date] }
 
@@ -84,6 +94,8 @@ class FakeRegularizationRepository(
         return statusByDate[date]
     }
 
+    override suspend fun isHoliday(date: String): Boolean = date in holidayDates
+
     override suspend fun submitRequest(
         date: String,
         originalStatus: String,
@@ -97,10 +109,16 @@ class FakeRegularizationRepository(
         if (existing != null && existing.status != "rejected") {
             return Result.failure(IllegalStateException("A request for this date already exists."))
         }
-        val storedStatus = statusByDate[date]
-        if (storedStatus == "Sunday" || storedStatus == "Holiday") {
+        // Mirrors production: derived from the DATE (holiday lookup + pure Sunday check,
+        // holiday-first), never from statusByDate — a rest day in progress has no status doc yet.
+        val restDayKind = when {
+            date in holidayDates -> "Holiday"
+            LocalDate.parse(date).dayOfWeek == DayOfWeek.SUNDAY -> "Sunday"
+            else -> null
+        }
+        if (restDayKind != null) {
             return Result.failure(IllegalStateException(
-                "$date is a $storedStatus — a rest day. Work done on a rest day is handled " +
+                "$date is a $restDayKind — a rest day. Work done on a rest day is handled " +
                     "through OT approval, not regularization."
             ))
         }

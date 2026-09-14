@@ -16,9 +16,12 @@ interface RegularizationRepository {
     /**
      * Submits a request for [date]. Fails if the reason is blank, if a pending or already
      * approved request exists for that date (duplicate prevention lives here, not in the UI),
-     * or if [date]'s stored attendance status is "Sunday"/"Holiday" — Protocol 1 rest days are
-     * immutable, so a regularization there could never be approved to anything; rest-day work
-     * goes through OT approval instead (see FirestoreRegularizationRepository for detail).
+     * or if [date] is a Protocol 1 rest day (a Sunday, or a company holiday per [isHoliday]) —
+     * rest days are immutable, so a regularization there could never be approved to anything;
+     * rest-day work goes through OT approval instead (see FirestoreRegularizationRepository for
+     * detail). Rest-day-ness is derived from the DATE itself, never from the stored
+     * attendance_status doc — that doc is written only by the nightly 23:59 IST run, so it does
+     * not exist yet for any rest day still in progress.
      */
     suspend fun submitRequest(
         date: String,
@@ -35,4 +38,12 @@ interface RegularizationRepository {
      * status backfill).
      */
     suspend fun getStatusForDate(date: String): String?
+
+    /**
+     * True if [date] ("yyyy-MM-dd") has a company holiday doc at `holidays/{date}`. Combined
+     * with a pure Sunday-of-date check (holiday wins, mirroring `resolveRestDayType` in
+     * `firebase/functions/attendanceRules.js` and `isRestDay` in `admin/src/lib/firestore.ts`)
+     * to decide whether [date] is a Protocol 1 rest day — see [submitRequest].
+     */
+    suspend fun isHoliday(date: String): Boolean
 }

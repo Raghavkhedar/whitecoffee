@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus } from '@/lib/firestore';
+import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus, isRestDay } from '@/lib/firestore';
 import type { User, AttendanceRecord, AttendanceStatus, PlannedHours, Holiday } from '@/types';
 import { RoleBadge, StatusBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -412,8 +412,9 @@ export default function AttendancePage() {
   const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
   const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
   const selectedHoliday  = holidaysByDate.get(selectedDate);
-  const selectedIsSunday = selectedDate ? new Date(selectedDate + 'T12:00:00').getDay() === 0 : false;
-  const selectedIsRestDay = selectedIsSunday || !!selectedHoliday;
+  // The canonical predicate (same one setAttendanceStatus/markWo enforce server-adjacent),
+  // reused rather than re-deriving "is this a rest day" a fourth time in this codebase.
+  const selectedIsRestDay = isRestDay(selectedDate, holidaySet);
 
   // Merge stored (Cloud Function) statuses with client-side derived statuses for the summary chips.
   // Sunday/holiday now derive a real status ('Sunday'/'Holiday') via deriveStatus, same as
