@@ -12,6 +12,7 @@ const {
   OFFICE_END_MIN,
   classify,
   resolveOpsWindow,
+  resolveRestDayType,
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
@@ -380,20 +381,34 @@ exports.computeDailyAttendanceStatus = onSchedule(
 
     await Promise.all([...statusChecks, ...planChecks]);
 
-    // Skip Sundays — no status written, no penalty.
-    // `today` is the IST date string; read the weekday in UTC to avoid the
-    // runtime's UTC timezone shifting a "+05:30 midnight" back to the prior day
-    // (which made Mondays read as Sundays and vice-versa).
-    const todayDate = new Date(today + "T00:00:00Z");
-    if (todayDate.getUTCDay() === 0) {
-      console.log(`computeDailyAttendanceStatus: skipping Sunday ${today}`);
-      return;
-    }
-
-    // Skip company-wide holidays the same way — no status, no Absent penalty.
+    // Sundays and company-wide holidays get a payroll-neutral Sunday/Holiday status
+    // instead of being left doc-less: same zero salary effect, but now visible in the
+    // portal and Sheets export instead of a blank cell. `today` is the IST date string;
+    // resolveRestDayType reads the weekday in UTC to avoid the runtime's UTC timezone
+    // shifting a "+05:30 midnight" back to the prior day (which made Mondays read as
+    // Sundays and vice-versa).
     const holidayDoc = await db.doc(`holidays/${today}`).get();
-    if (holidayDoc.exists) {
-      console.log(`computeDailyAttendanceStatus: skipping holiday ${today} (${holidayDoc.data().title || ""})`);
+    const restDayType = resolveRestDayType(today, holidayDoc.exists);
+
+    if (restDayType) {
+      const restDayBatch = db.batch();
+      let restDayCount = 0;
+      for (const user of allUsers) {
+        if (priorStatus.has(user.id)) continue; // any existing doc (auto or admin) wins
+        restDayBatch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
+          status: restDayType,
+          markedBy: "auto",
+          date: today,
+          userId: user.id,
+          userName: user.name || "",
+          employeeId: user.employeeId || "",
+          role: user.role || "",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        restDayCount++;
+      }
+      await restDayBatch.commit();
+      console.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc)`);
       return;
     }
 
