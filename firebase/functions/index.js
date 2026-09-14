@@ -860,7 +860,6 @@ exports.exportToSheets = onSchedule(
     // All holidays (not just this month) — the Attendance tab spans all history.
     const allHolidaySet = new Set((await db.collection("holidays").get()).docs.map((h) => h.id));
     const plannedMap = new Map(); // `${uid}__${date}` → { startMin, endMin, declared } (valid windows only)
-    const otAuthSet  = new Set(); // `${uid}__${date}` where admin authorized rest-day OT
     const plannedSnap = await db.collectionGroup("planned_hours").get();
     plannedSnap.docs.forEach((doc) => {
       const d = doc.data();
@@ -871,7 +870,6 @@ exports.exportToSheets = onSchedule(
       if (startMin != null && endMin != null && endMin > startMin) {
         plannedMap.set(key, { startMin, endMin, declared: Math.max(0, d.declaredOtMins || 0) });
       }
-      if (d.otAuthorized) otAuthSet.add(key);
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
     const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy } (for the OT Exception Report)
@@ -985,9 +983,10 @@ exports.exportToSheets = onSchedule(
         }
 
         // OT (mins) — credited overtime, replicating the admin portal's Employee
-        // Dashboard number: declared auto-approved + authorized rest-day + admin-
-        // granted (incl. manual). Pending (un-reviewed) OT is excluded, exactly as
-        // the portal shows it. Ops only; office/admin have no OT in the model.
+        // Dashboard number: auto-approved (declared ceiling) + admin-granted rest-day
+        // OT (via ot_approvals) + admin-granted (incl. manual). Pending (un-reviewed)
+        // OT is excluded, exactly as the portal shows it. Ops only; office/admin have
+        // no OT in the model.
         let otMins = 0;
         if (isOps) {
           // Effective worked window: a regularized-to-Present override wins; otherwise
@@ -1009,19 +1008,22 @@ exports.exportToSheets = onSchedule(
           }
           if (inMin != null && outMin != null) {
             const plan = plannedMap.get(key);
-            const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+            const restDay = resolveRestDayType(date, allHolidaySet.has(date)) !== null;
             const led = computeDayLedger({
               shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
               shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
               inMin, outMin,
               declaredOtMins: plan ? plan.declared : 0,
               isRestDay: restDay,
-              otAuthorized: otAuthSet.has(key),
             });
-            otMins += led.autoOtMins + led.restDayOtMins;
+            // A rest day's auto-approved slice is always 0 (nothing is pre-authorized on
+            // a rest day) — its whole worked window is pendingExtraMins, credited only via
+            // an ot_approvals doc, which the approvalMap add below already accounts for.
+            otMins += led.autoOtMins;
           }
-          // Admin-granted OT (approvals, incl. manual for missed-punch days) is
-          // credited regardless of punches — matches the portal's granted total.
+          // Admin-granted OT (approvals, incl. manual for missed-punch days, and any
+          // rest-day OT an admin approved) is credited regardless of punches — matches
+          // the portal's granted total.
           otMins += approvalMap.get(key) || 0;
         }
 
@@ -1119,8 +1121,8 @@ exports.exportToSheets = onSchedule(
           }
         }
 
-        const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
-        let led = { autoOtMins: 0, pendingExtraMins: 0, restDayOtMins: 0, unauthorizedRestDay: false };
+        const restDay = resolveRestDayType(date, allHolidaySet.has(date)) !== null;
+        let led = { autoOtMins: 0, pendingExtraMins: 0 };
         if (inMin != null && outMin != null) {
           const plan = plannedMap.get(key);
           led = computeDayLedger({
@@ -1129,19 +1131,19 @@ exports.exportToSheets = onSchedule(
             inMin, outMin,
             declaredOtMins: plan ? plan.declared : 0,
             isRestDay: restDay,
-            otAuthorized: otAuthSet.has(key),
           });
         }
 
         // OVER TIME = actual overtime the portal detects (raw, before approval):
         //   normal day → minutes past shift end; rest day → every worked minute.
-        // TIME APPROVED = the credited slice: auto-approved (declared) + authorized
-        //   rest-day + whatever the admin granted (approvalMap / manual).
+        // TIME APPROVED = the credited slice: auto-approved (declared ceiling, never
+        //   applies on a rest day) + whatever the admin granted via ot_approvals
+        //   (a rest day's whole worked window is PENDING until an admin approves it).
         let rawOtMins = 0, approvedOtMins = 0;
         if (inMin != null && outMin != null) {
           if (restDay) {
             rawOtMins = Math.max(0, outMin - inMin);
-            approvedOtMins = led.restDayOtMins;
+            approvedOtMins = 0; // never auto-credited on a rest day; approvalMap adds any grant below
           } else {
             rawOtMins = led.autoOtMins + led.pendingExtraMins;
             approvedOtMins = led.autoOtMins;
@@ -1155,7 +1157,9 @@ exports.exportToSheets = onSchedule(
         if (rawOtMins <= 0 && !decision) return null;
 
         // Status: an explicit admin decision wins; else auto-approved when credited
-        // > 0 (declared/authorized), otherwise still awaiting review.
+        // > 0 (declared ceiling, or an admin's ot_approvals grant), otherwise still
+        // pending review — this is also how a rest-day exception with no ot_approvals
+        // doc yet reports as "Pending" rather than any credited amount.
         let statusLabel;
         if (decision && decision.status === "approved") statusLabel = "APPROVED";
         else if (decision && decision.status === "rejected") statusLabel = "NOT APPROVED";
@@ -1315,16 +1319,16 @@ exports.exportToSheets = onSchedule(
         let creditedOt = 0;
         if (inMin != null && outMin != null) {
           const plan = plannedMap.get(key);
-          const restDay = new Date(date + "T00:00:00Z").getUTCDay() === 0 || allHolidaySet.has(date);
+          const restDay = resolveRestDayType(date, allHolidaySet.has(date)) !== null;
           const led = computeDayLedger({
             shiftStartMin: plan ? plan.startMin : DEFAULT_SHIFT_START_MIN,
             shiftEndMin:   plan ? plan.endMin   : DEFAULT_SHIFT_END_MIN,
             inMin, outMin,
             declaredOtMins: plan ? plan.declared : 0,
             isRestDay: restDay,
-            otAuthorized: otAuthSet.has(key),
           });
-          creditedOt = led.autoOtMins + led.restDayOtMins;
+          // Rest-day auto-approved slice is always 0 — credit comes only via approvalMap below.
+          creditedOt = led.autoOtMins;
         }
         creditedOt += approvalMap.get(key) || 0;
 
@@ -1609,10 +1613,12 @@ exports.exportToSheets = onSchedule(
     }
 
     // ── 8b. Live OT/WO amount per ops employee (for the Employee Dashboard) ──
-    // Authorized OT − shortage − WO, netted for the current month, converted to
-    // rupees via settlementCash — the SAME math the OT Settlements page locks, but
-    // computed live each night instead of waiting for Settle & Lock. Pending and
-    // unauthorized-rest-day OT are excluded (not yet authorized). Non-ledger roles
+    // Credited OT (auto + admin-approved, incl. rest-day grants via ot_approvals)
+    // − shortage − WO, netted for the current month, converted to rupees via
+    // settlementCash — the SAME math the OT Settlements page locks, but computed
+    // live each night instead of waiting for Settle & Lock. Pending (not yet
+    // approved) OT is excluded — a rest day's whole worked window starts pending
+    // and is excluded until an admin approves some or all of it. Non-ledger roles
     // (office/admin/sales) are skipped → 0.
     const monthStatuses = statusSnap.docs
       .map((doc) => ({ ...doc.data(), userId: doc.data().userId }))
@@ -2316,9 +2322,10 @@ exports.snapshotDailySpend = onSchedule(
     const isSunday = (dateStr) => new Date(dateStr + "T00:00:00Z").getUTCDay() === 0;
 
     // Existing dailySpend row ids in the UNLOCKED window months, so we can drop-to-zero any
-    // row we no longer write this run (an orphan: e.g. an authorized rest-day OT day whose OT
-    // was later de-authorized before lock — its date leaves candidateDates, so a pure upsert
-    // would leave the stale row behind and the month would over-count with no self-heal).
+    // row we no longer write this run (an orphan: e.g. an approved rest-day OT day whose
+    // ot_approvals grant was later reduced or removed before lock — its date leaves
+    // candidateDates, so a pure upsert would leave the stale row behind and the month would
+    // over-count with no self-heal).
     // windowMonths has ≤4 entries (all unlocked — locked months are excluded), safe for `in`.
     const existingSnap = await db.collection("dailySpend").where("month", "in", windowMonths).get();
     const existingIds = new Set(existingSnap.docs.map((d) => d.id));
