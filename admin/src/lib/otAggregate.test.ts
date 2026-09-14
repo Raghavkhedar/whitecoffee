@@ -35,19 +35,22 @@ eq('granted = 30', r.grantedOtMins, 30);
 eq('pending now 0', r.pendingDates.length, 0);
 eq('net = 60 (auto 30 + granted 30)', r.netMins, 60);
 
-console.log('\nSunday rest-day work (2026-06-07 is a Sunday), authorized, worked 300:');
-const planSun = [{ id: '2026-06-07', userId: U, date: '2026-06-07', startTime: '', endTime: '', otAuthorized: true } as never];
+console.log('\nSunday rest-day work (2026-06-07 is a Sunday), no approval, worked 300:');
+// Protocol 1: rest-day work is never auto-credited. The whole worked window becomes a
+// pending OT request; net stays 0 and the date shows up in pendingDates until an admin acts.
 const evSun = [ev(U, '2026-06-07', 'site_in', '10:00'), ev(U, '2026-06-07', 'site_out', '15:00')];
-r = computeRangeLedger(U, evSun, planSun, [], [], noHol);
-eq('restDayOt = 300', r.restDayOtMins, 300);
-eq('net = 300', r.netMins, 300);
-eq('unauthorized = 0', r.unauthorizedRestDates.length, 0);
-
-console.log('\nSame Sunday but NOT authorized:');
 r = computeRangeLedger(U, evSun, [], [], [], noHol);
-eq('restDayOt = 0', r.restDayOtMins, 0);
-eq('unauthorized = 1', r.unauthorizedRestDates.length, 1);
-eq('net = 0', r.netMins, 0);
+eq('net = 0 (nothing auto-credited)', r.netMins, 0);
+eq('pending = 300 (whole worked window)', r.pendingOtMins, 300);
+eq('pending dates = 1', r.pendingDates.length, 1);
+eq('pending dates includes the Sunday', r.pendingDates[0], '2026-06-07');
+
+console.log('\nSame Sunday, admin partially approves 120 of the 300 pending minutes:');
+const apprSun = [{ id: '2026-06-07', userId: U, date: '2026-06-07', approvedMins: 120, status: 'approved' } as never];
+r = computeRangeLedger(U, evSun, [], apprSun, [], noHol);
+eq('granted = 120 (exactly the approved minutes)', r.grantedOtMins, 120);
+eq('net = 120 (exactly the approved minutes)', r.netMins, 120);
+eq('no longer pending (has an ot_approvals doc)', r.pendingDates.length, 0);
 
 console.log('\nWO day status counted:');
 const woStatus = [{ id: '2026-06-02', userId: U, date: '2026-06-02', status: 'WO' } as never];

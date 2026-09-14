@@ -35,21 +35,24 @@ test("beyond-declared +30 approved via ot_approvals → net 60", () => {
   assert.equal(r.netMins, 60);
 });
 
-test("authorized Sunday rest-day work (2026-06-07) 300 min → net 300", () => {
-  const planSun = [{ id: "2026-06-07", userId: U, date: "2026-06-07", startTime: "", endTime: "", otAuthorized: true }];
-  const evSun = [ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "15:00")];
-  const r = computeRangeLedger(U, evSun, planSun, [], [], noHol);
-  assert.equal(r.restDayOtMins, 300);
-  assert.equal(r.netMins, 300);
-  assert.equal(r.unauthorizedRestDates.length, 0);
-});
-
-test("unauthorized Sunday work → net 0, flagged", () => {
+test("Sunday rest-day work (2026-06-07) with no approval → net 0, pending 300", () => {
+  // Protocol 1: rest-day work is never auto-credited. The whole worked window becomes a
+  // pending OT request; net stays 0 and the date shows up in pendingDates until an admin acts.
   const evSun = [ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "15:00")];
   const r = computeRangeLedger(U, evSun, [], [], [], noHol);
-  assert.equal(r.restDayOtMins, 0);
-  assert.equal(r.unauthorizedRestDates.length, 1);
   assert.equal(r.netMins, 0);
+  assert.equal(r.pendingOtMins, 300);
+  assert.equal(r.pendingDates.length, 1);
+  assert.equal(r.pendingDates[0], "2026-06-07");
+});
+
+test("Sunday rest-day work, admin partially approves 120 of 300 pending → net 120", () => {
+  const evSun = [ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "15:00")];
+  const apprSun = [{ id: "2026-06-07", userId: U, date: "2026-06-07", approvedMins: 120, status: "approved" }];
+  const r = computeRangeLedger(U, evSun, [], apprSun, [], noHol);
+  assert.equal(r.grantedOtMins, 120);
+  assert.equal(r.netMins, 120);
+  assert.equal(r.pendingDates.length, 0);
 });
 
 test("WO status counted: woDates 1, woDebit 480, net -480", () => {
@@ -83,6 +86,16 @@ test("manual OT grant on a day with no events counts as granted (net 120)", () =
   assert.equal(r.netMins, 120);
 });
 
+test("early-in earns nothing (2026-06-08 Mon, shift 10:00–18:00, in 09:50 out 17:56)", () => {
+  // Early-in 10m → ignored (no OT); early-out 4m → shortage.
+  const evDev = [ev(U, "2026-06-08", "site_in", "09:50"), ev(U, "2026-06-08", "site_out", "17:56")];
+  const planDev = [{ id: "2026-06-08", userId: U, date: "2026-06-08", startTime: "10:00", endTime: "18:00", declaredOtMins: 0 }];
+  const r = computeRangeLedger(U, evDev, planDev, [], [], noHol);
+  assert.equal(r.pendingOtMins, 0);
+  assert.equal(r.shortageMins, 4);
+  assert.equal(r.netMins, -4);
+});
+
 test("ops with no plan falls back to default 10:00–18:00", () => {
   const evNoPlan = [ev(U, "2026-06-09", "site_in", "10:00"), ev(U, "2026-06-09", "site_out", "19:00")];
   const r = computeRangeLedger(U, evNoPlan, [], [], [], noHol);
@@ -112,12 +125,11 @@ test("dailyOtWoCash: per-date values sum to the monthly settlementCash exactly",
   const rate = 1000; // ₹/day → ₹/min = 1000/480
   // Day 1 (Mon): shift 10–18, worked 10–19 with declared 60 → 60 auto OT.
   // Day 2 (Tue): worked 10–17 → 60 shortage (left early).
-  // Day 3 (Sun): rest day, otAuthorized, worked 10–14 → 240 rest-day OT.
+  // Day 3 (Sun): rest day, worked 10–14 → 240 min pending OT, admin approves 100 of it.
   // Day 4 (Wed): WO status, unworked → nets to 0.
   const planned = [
     { userId: U, date: "2026-06-01", startTime: "10:00", endTime: "18:00", declaredOtMins: 60 },
     { userId: U, date: "2026-06-02", startTime: "10:00", endTime: "18:00", declaredOtMins: 0 },
-    { userId: U, date: "2026-06-07", startTime: "10:00", endTime: "18:00", declaredOtMins: 0, otAuthorized: true },
   ];
   const events = [
     ev(U, "2026-06-01", "site_in", "10:00"), ev(U, "2026-06-01", "site_out", "19:00"),
@@ -125,11 +137,12 @@ test("dailyOtWoCash: per-date values sum to the monthly settlementCash exactly",
     ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "14:00"),
   ];
   const statuses = [{ userId: U, date: "2026-06-04", status: "WO" }];
+  const approvals = [{ userId: U, date: "2026-06-07", approvedMins: 100, status: "approved" }];
 
-  const cash = dailyOtWoCash(U, rate, events, planned, [], statuses, noHol);
+  const cash = dailyOtWoCash(U, rate, events, planned, approvals, statuses, noHol);
   const sum = [...cash.values()].reduce((s, v) => s + v, 0);
 
-  const led = computeRangeLedger(U, events, planned, [], statuses, noHol);
+  const led = computeRangeLedger(U, events, planned, approvals, statuses, noHol);
   const monthly = settlementCash(rate, led.woDates.length, led.netMins);
 
   assert.equal(Math.round(sum * 100) / 100, monthly);
@@ -140,4 +153,17 @@ test("dailyOtWoCash: a shortage-only day is negative", () => {
   const events = [ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "17:00")];
   const cash = dailyOtWoCash(U, 480, events, planned, [], [], noHol); // rate 480 → ₹1/min
   assert.equal(cash.get("2026-06-02"), -60); // 60 min shortage × ₹1/min
+});
+
+test("dailyOtWoCash: rest-day date is 0 when unapproved, equals approved minutes' cash when approved", () => {
+  // 2026-06-07 is a Sunday. Worked 10:00–14:00 → 240 min pending; nothing auto-credited.
+  const events = [ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "14:00")];
+  const rate = 480; // ₹1/min
+
+  const unapproved = dailyOtWoCash(U, rate, events, [], [], [], noHol);
+  assert.equal(unapproved.get("2026-06-07"), 0);
+
+  const approvals = [{ userId: U, date: "2026-06-07", approvedMins: 90, status: "approved" }];
+  const approved = dailyOtWoCash(U, rate, events, [], approvals, [], noHol);
+  assert.equal(approved.get("2026-06-07"), 90); // 90 approved mins × ₹1/min
 });

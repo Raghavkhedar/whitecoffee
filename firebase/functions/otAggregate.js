@@ -29,11 +29,9 @@ function isSunday(date) {
 function computeRangeLedger(userId, events, planned, approvals, statuses, holidays) {
   // Only windows with end > start are valid; an inverted/zero window falls back to default.
   const plannedByDate = new Map();
-  const otAuthByDate = new Set();
   planned.filter((p) => p.userId === userId).forEach((p) => {
     const startMin = hhmmToMin(p.startTime), endMin = hhmmToMin(p.endTime);
     if (endMin > startMin) plannedByDate.set(p.date, { startMin, endMin, declared: Math.max(0, p.declaredOtMins || 0) });
-    if (p.otAuthorized) otAuthByDate.add(p.date);
   });
 
   const eventsByDate = new Map();
@@ -52,9 +50,8 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
     if (outMin > inMin) overrideByDate.set(s.date, { inMin, outMin });
   });
 
-  let autoOtMins = 0, restDayOtMins = 0, shortageMins = 0, pendingOtMins = 0;
+  let autoOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates = [];
-  const unauthorizedRestDates = [];
 
   const accrueDay = (date, inMin, outMin) => {
     const info = plannedByDate.get(date);
@@ -64,13 +61,10 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
       inMin, outMin,
       declaredOtMins: info ? info.declared : 0,
       isRestDay: isSunday(date) || holidays.has(date),
-      otAuthorized: otAuthByDate.has(date),
     });
     shortageMins  += led.shortageMins;
     autoOtMins    += led.autoOtMins;
-    restDayOtMins += led.restDayOtMins;
     if (led.pendingExtraMins > 0 && !apprByDate.has(date)) { pendingOtMins += led.pendingExtraMins; pendingDates.push(date); }
-    if (led.unauthorizedRestDay) unauthorizedRestDates.push(date);
   };
 
   eventsByDate.forEach((dayEvents, date) => {
@@ -89,13 +83,12 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
   const grantedOtMins = Array.from(apprByDate.values()).reduce((s, a) => s + (Number(a.approvedMins) || 0), 0);
   const woDates = statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date).sort();
   const woDebitMins = woDates.length * WO_DEBIT_MINS;
-  const netMins = netLedgerMins({ autoOtMins, restDayOtMins, approvedGrantedMins: grantedOtMins, shortageMins, woDebitMins });
+  const netMins = netLedgerMins({ autoOtMins, approvedGrantedMins: grantedOtMins, shortageMins, woDebitMins });
 
   return {
-    autoOtMins, restDayOtMins, grantedOtMins, shortageMins,
+    autoOtMins, grantedOtMins, shortageMins,
     woDates, woDebitMins, netMins,
     pendingDates: pendingDates.sort(), pendingOtMins,
-    unauthorizedRestDates: unauthorizedRestDates.sort(),
   };
 }
 
@@ -113,11 +106,9 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
   const rate = Number(salaryRate) || 0;
 
   const plannedByDate = new Map();
-  const otAuthByDate = new Set();
   planned.filter((p) => p.userId === userId).forEach((p) => {
     const startMin = hhmmToMin(p.startTime), endMin = hhmmToMin(p.endTime);
     if (endMin > startMin) plannedByDate.set(p.date, { startMin, endMin, declared: Math.max(0, p.declaredOtMins || 0) });
-    if (p.otAuthorized) otAuthByDate.add(p.date);
   });
 
   const eventsByDate = new Map();
@@ -139,9 +130,9 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
     statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date),
   );
 
-  const perDate = new Map(); // date → { autoOtMins, restDayOtMins, shortageMins }
+  const perDate = new Map(); // date → { autoOtMins, shortageMins }
   const ensure = (d) => {
-    if (!perDate.has(d)) perDate.set(d, { autoOtMins: 0, restDayOtMins: 0, shortageMins: 0 });
+    if (!perDate.has(d)) perDate.set(d, { autoOtMins: 0, shortageMins: 0 });
     return perDate.get(d);
   };
   const accrueDay = (date, inMin, outMin) => {
@@ -152,12 +143,10 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
       inMin, outMin,
       declaredOtMins: info ? info.declared : 0,
       isRestDay: isSunday(date) || holidays.has(date),
-      otAuthorized: otAuthByDate.has(date),
     });
     const acc = ensure(date);
     acc.shortageMins  += led.shortageMins;
     acc.autoOtMins    += led.autoOtMins;
-    acc.restDayOtMins += led.restDayOtMins;
   };
 
   eventsByDate.forEach((dayEvents, date) => {
@@ -176,11 +165,11 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
   const dates = new Set([...perDate.keys(), ...apprByDate.keys(), ...woByDate]);
   const cash = new Map();
   dates.forEach((date) => {
-    const p = perDate.get(date) || { autoOtMins: 0, restDayOtMins: 0, shortageMins: 0 };
+    const p = perDate.get(date) || { autoOtMins: 0, shortageMins: 0 };
     const granted = Number((apprByDate.get(date) || {}).approvedMins) || 0;
     const isWO = woByDate.has(date);
     const woDebit = isWO ? WO_DEBIT_MINS : 0;
-    const netMins = p.autoOtMins + p.restDayOtMins + granted - p.shortageMins - woDebit;
+    const netMins = p.autoOtMins + granted - p.shortageMins - woDebit;
     cash.set(date, (isWO ? rate : 0) + (netMins / WO_DEBIT_MINS) * rate);
   });
   return cash;
