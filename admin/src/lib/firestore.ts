@@ -588,6 +588,28 @@ export async function getSentNotifications(count = 20): Promise<SentNotification
 
 // ── Attendance Status ─────────────────────────────────────────────────────
 
+// Rest-day write guard (Protocol 1 — docs/superpowers/specs/2026-09-14-ot-redesign-design.md).
+// Sundays and company holidays are immutable rest days: no attendance_status doc may be
+// written on them by anyone. Mirrors resolveRestDayType's precedence (holiday wins over
+// Sunday) in firebase/functions/attendanceRules.js — the canonical definition of "is this
+// date a rest day" — without importing that CommonJS module into a browser bundle.
+//
+// `holidays` is an OPTIONAL set of "yyyy-mm-dd" dates, defaulting to empty, per controller
+// ruling: this unconditionally blocks Sundays the moment this guard lands, without requiring
+// every existing call site to be updated to pass the real holiday set — that wiring is
+// Task 4's job. This function does NOT read Firestore itself; the caller looks up holidays
+// and passes them in.
+function assertNotRestDay(date: string, holidays: Set<string> = new Set()): void {
+  const isHoliday = holidays.has(date);
+  const isSunday = new Date(date + 'T00:00:00Z').getUTCDay() === 0;
+  if (isHoliday) {
+    throw new Error(`Cannot write attendance status for ${date}: it is a holiday, an immutable rest day.`);
+  }
+  if (isSunday) {
+    throw new Error(`Cannot write attendance status for ${date}: it is a Sunday, an immutable rest day.`);
+  }
+}
+
 // month is 1-indexed (1 = January)
 export async function getAttendanceStatusForMonth(year: number, month: number): Promise<AttendanceStatus[]> {
   const monthStr  = `${year}-${String(month).padStart(2, '0')}`;
@@ -605,13 +627,27 @@ export async function getAttendanceStatusForMonth(year: number, month: number): 
 export async function setAttendanceStatus(
   userId: string,
   date: string,
-  data: Omit<AttendanceStatus, 'id' | 'updatedAt'>
+  data: Omit<AttendanceStatus, 'id' | 'updatedAt'>,
+  holidays: Set<string> = new Set(),
 ): Promise<void> {
+  assertNotRestDay(date, holidays);
   await setDoc(
     doc(db, 'users', userId, 'attendance_status', date),
     stamped({ ...data, updatedAt: Timestamp.now() }),
     { merge: true }
   );
+}
+
+// Mark a paid WO (no-work day off) for an employee. Writes a markedBy:'admin' status doc the
+// nightly function won't overwrite. WO is illegal on a rest day (Protocol 1) — a rest day
+// already carries no obligation, so a WO there is meaningless; setAttendanceStatus's guard
+// throws before any such write reaches Firestore. `holidays` is optional (see
+// assertNotRestDay) — Task 4 wires the real holiday set in from the Attendance page.
+export async function markWo(user: User, date: string, holidays: Set<string> = new Set()): Promise<void> {
+  await setAttendanceStatus(user.id, date, {
+    date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
+    role: user.role || '', status: 'WO', markedBy: 'admin',
+  }, holidays);
 }
 
 // Remove an admin-set status doc (e.g. clearing a WO) so the nightly function can recompute.
@@ -677,17 +713,6 @@ export async function setPlannedHours(
   await setDoc(
     doc(db, 'users', userId, 'planned_hours', date),
     stamped({ userId, date, startTime, endTime, declaredOtMins, updatedAt: Timestamp.now() }),
-    { merge: true }
-  );
-}
-
-// Authorize (or revoke) all-hours OT for an ops employee on a Sunday/holiday. Merges a flag
-// into planned_hours/{date} without requiring a shift window. When true, the OT/shortage
-// ledger counts every worked minute that day as auto-approved OT.
-export async function setOtAuthorization(userId: string, date: string, authorized: boolean): Promise<void> {
-  await setDoc(
-    doc(db, 'users', userId, 'planned_hours', date),
-    stamped({ userId, date, otAuthorized: authorized, updatedAt: Timestamp.now() }),
     { merge: true }
   );
 }
