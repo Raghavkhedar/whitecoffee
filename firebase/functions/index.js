@@ -2623,66 +2623,6 @@ exports.setUserActive = onCall(async (request) => {
   return { success: true };
 });
 
-// ⚠️ TEMPORARY — one-time backfill for the Sunday/Holiday attendance_status rollout
-// (2026-09-12). Deploy, dry-run, review, run for real, then DELETE this export and
-// redeploy. Matches the 2026-07-17 backfill precedent (see admin/CLAUDE.md).
-// Serial per-user, per-date existence checks over a ~2.5-month range easily exceed the
-// default 60s onCall timeout (confirmed: the first deploy without this timed out mid-dry-run).
-// Not a hot path, so a long timeout here is fine — this function is deleted after one use.
-exports.backfillSundayHolidayStatuses = onCall({ timeoutSeconds: 540 }, async (request) => {
-  await assertAdmin(request);
-  const dryRun = request.data?.dryRun !== false; // default true — must opt OUT explicitly
-  const startDate = request.data?.startDate || "2026-07-01"; // LAUNCH_DATE
-
-  const todayIST = (() => {
-    const ist = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-    return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
-  })();
-
-  const usersSnap = await admin.firestore().collection("users").get();
-  const allUsers = usersSnap.docs.map((d) => ({ id: d.id, ...d.data() })); // inactive INCLUDED, per the 2026-07-17 precedent
-
-  const holidaysSnap = await admin.firestore().collection("holidays")
-    .where("date", ">=", startDate).where("date", "<=", todayIST).get();
-  const holidaySet = new Set(holidaysSnap.docs.map((h) => h.id));
-
-  let wouldWrite = 0, written = 0, alreadyHadDoc = 0;
-  const batch = admin.firestore().batch();
-  let batchOps = 0;
-
-  for (const user of allUsers) {
-    let d = new Date(startDate + "T00:00:00Z");
-    const end = new Date(todayIST + "T00:00:00Z");
-    while (d < end) { // strictly before today — today is computeDailyAttendanceStatus's job
-      const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-      const restDayType = resolveRestDayType(dateStr, holidaySet.has(dateStr));
-      if (restDayType) {
-        const ref = admin.firestore().doc(`users/${user.id}/attendance_status/${dateStr}`);
-        const existing = await ref.get();
-        if (existing.exists) {
-          alreadyHadDoc++;
-        } else {
-          wouldWrite++;
-          if (!dryRun) {
-            batch.set(ref, {
-              status: restDayType, markedBy: "backfill", date: dateStr,
-              userId: user.id, userName: user.name || "", employeeId: user.employeeId || "",
-              role: user.role || "", updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            batchOps++;
-            written++;
-            if (batchOps >= 400) { await batch.commit(); batchOps = 0; } // stay under the 500-op batch limit
-          }
-        }
-      }
-      d.setUTCDate(d.getUTCDate() + 1);
-    }
-  }
-  if (!dryRun && batchOps > 0) await batch.commit();
-
-  return { dryRun, startDate, endDate: todayIST, usersScanned: allUsers.length, wouldWrite, written, alreadyHadDoc };
-});
-
 // ── Admin password reset (Admin SDK) — THE ONLY WAY A PASSWORD IS EVER SET ────
 // Staff sign in as `<empId>@whitecoffee.internal`, a login key with no mailbox, so no
 // emailed reset can reach them. An admin sets the password on /users and hands it over.
