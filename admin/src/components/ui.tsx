@@ -45,6 +45,8 @@ const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> =
   LWP:       { label: 'LWP',           bg: '#F2EFEC', color: '#6B5E54' },
   Absent:    { label: 'Absent',        bg: '#FBEAEA', color: '#C42B2B' },
   WO:        { label: 'WO',            bg: '#E7F0FA', color: '#1A5FAF' },
+  Sunday:    { label: 'Sunday',        bg: '#F2F0ED', color: '#8A817A' },
+  Holiday:   { label: 'Holiday',       bg: '#F2F0ED', color: '#8A817A' },
 };
 
 export function StatusBadge({ status }: { status: string }) {
