@@ -368,10 +368,13 @@ export async function cancelLeave(
   let refundedDays = 0;
 
   statusSnaps.forEach((snap, i) => {
-    // No doc = never scored (a future date, a Sunday, a holiday). Nothing to undo,
-    // and NOT a skip — the cancellation lands cleanly.
+    // No doc = never scored (a future date, or a Sunday/holiday before this feature's
+    // deploy date). Nothing to undo, and NOT a skip — the cancellation lands cleanly.
     if (!snap.exists()) return;
     const data = snap.data() as AttendanceStatus;
+    // A Sunday/Holiday doc is never a leave day either — same "nothing to undo" case as
+    // no doc at all, just now backed by a real record instead of an absent one.
+    if (data.status === 'Sunday' || data.status === 'Holiday') return;
     const scoredAsLeave = data.status === 'PL' || data.status === 'LWP';
     if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(cancelling[i]); return; }
 
