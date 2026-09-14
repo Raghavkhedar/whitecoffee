@@ -124,8 +124,7 @@ interface EmployeeRow {
   pendingOt: DayOt[];          // OT days in range not yet approved
   pendingOtMins: number;
   autoOtRangeMins: number;     // pre-authorized (declared) OT worked in range — counts as approved
-  restDayOtRangeMins: number;  // all worked minutes on authorized Sun/holiday rest days — auto-approved
-  approvedOtRangeMins: number; // approved OT minutes within the selected range (granted via docs)
+  approvedOtRangeMins: number; // approved OT minutes within the selected range (granted via docs; includes rest-day grants)
   approvedInRange: OtApproval[];
   // Single-day extras
   firstInSecs: number | null;
@@ -153,11 +152,9 @@ function aggregateForEmployee(
 
   // Planned shift + declared-OT minutes per date (ops use admin-set windows; office/admin fixed 8h)
   const plannedByDate = new Map<string, { planned: number; declared: number; startTime: string; endTime: string }>();
-  const otAuthByDate = new Set<string>(); // dates with admin-authorized rest-day OT
   plannedItems.filter(p => p.userId === user.id).forEach(p => {
     const dur = hhmmToMinutes(p.endTime) - hhmmToMinutes(p.startTime);
     if (dur > 0) plannedByDate.set(p.date, { planned: dur, declared: Math.max(0, p.declaredOtMins ?? 0), startTime: p.startTime, endTime: p.endTime });
-    if (p.otAuthorized) otAuthByDate.add(p.date);
   });
 
   // ── Working minutes (range expected) ───────────────────────────────────
@@ -184,7 +181,6 @@ function aggregateForEmployee(
   let shortageMins = 0;
   let rawExcessMins = 0;
   let autoOtRangeMins = 0;
-  let restDayOtRangeMins = 0;
   const otDays: DayOt[] = [];
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
@@ -211,11 +207,10 @@ function aggregateForEmployee(
     if (usesLedger) {
       const led = computeDayLedger({
         shiftStartMin, shiftEndMin, inMin, outMin,
-        declaredOtMins: declaredDay, isRestDay: restDay, otAuthorized: otAuthByDate.has(date),
+        declaredOtMins: declaredDay, isRestDay: restDay,
       });
       shortageMins    += led.shortageMins;
       autoOtRangeMins += led.autoOtMins;
-      restDayOtRangeMins += led.restDayOtMins;
       // Raw excess = actual time worked past the decided shift end, regardless of approval status.
       // On a rest day there's no decided shift, so any time worked at all counts as excess.
       rawExcessMins += restDay ? Math.max(0, outMin - inMin) : Math.max(0, outMin - shiftEndMin);
@@ -279,7 +274,6 @@ function aggregateForEmployee(
     pendingOt,
     pendingOtMins,
     autoOtRangeMins,
-    restDayOtRangeMins,
     approvedOtRangeMins,
     approvedInRange,
     firstInSecs: isSingleDay ? globalFirstIn : null,
@@ -516,9 +510,8 @@ export default function EmployeeDashboardPage() {
         'Shortage (mins)': showsShort ? r.shortageMins : '',
         'Pending OT (mins)': showsShort ? r.pendingOtMins : '',
         'Auto-approved OT (mins)': showsShort ? r.autoOtRangeMins : '',
-        'Rest-day OT (mins)': showsShort ? r.restDayOtRangeMins : '',
         'Granted OT (mins)': showsShort ? r.approvedOtRangeMins : '',
-        'Total Approved OT (mins)': showsShort ? r.autoOtRangeMins + r.restDayOtRangeMins + r.approvedOtRangeMins : '',
+        'Total Approved OT (mins)': showsShort ? r.autoOtRangeMins + r.approvedOtRangeMins : '',
       };
     }));
   }

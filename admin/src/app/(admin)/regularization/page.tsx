@@ -4,7 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useAccess } from '@/components/AccessContext';
-import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen } from '@/lib/firestore';
+import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen, getHolidaysForDateRange, isRestDay } from '@/lib/firestore';
 import type { RegularizationRequest } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
@@ -73,6 +73,11 @@ export default function RegularizationPage() {
   const [employeeFilter, setEmployeeFilter]   = useState('');
   const [windowOpen, setWindowOpen]     = useState(false);
   const [togglingWindow, setToggling]   = useState(false);
+  // Whether the request currently open in the action modal falls on a rest day (Protocol 1) —
+  // WO is illegal there, so it's excluded from the outcome dropdown. Resolved async (a holiday
+  // lookup) when the modal opens; defaults to false so a Sunday still renders correctly the
+  // instant openModal's synchronous isRestDay(date) check (no holidays) resolves below.
+  const [modalIsRestDay, setModalIsRestDay] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -108,6 +113,14 @@ export default function RegularizationPage() {
     setApprovedStatus('Present');
     setEffIn('');
     setEffOut('');
+    // Synchronous first pass (Sunday only, no holiday lookup yet) so the WO option is already
+    // gone for the common case the instant the modal renders; refined below once holidays load.
+    setModalIsRestDay(isRestDay(req.date));
+    if (type === 'approve') {
+      getHolidaysForDateRange(req.date, req.date)
+        .then(holidays => setModalIsRestDay(isRestDay(req.date, new Set(holidays.map(h => h.id)))))
+        .catch(() => {}); // leave the Sunday-only verdict in place; the server-side rules are the real guard either way
+    }
   }
 
   async function handleAction() {
@@ -133,8 +146,12 @@ export default function RegularizationPage() {
       setActionModal(null);
       setActionComment('');
       await load();
-    } catch {
-      setError(`${type === 'approve' ? 'Approval' : 'Rejection'} failed.`);
+    } catch (err) {
+      // Surface the real message when there is one — e.g. approveRegularization's rest-day
+      // re-check ("Cannot write attendance status for ... it is a Sunday/holiday, an immutable
+      // rest day.") — rather than always the generic fallback, so this reads as a clear error
+      // instead of a raw permission-denied.
+      setError(err instanceof Error ? err.message : `${type === 'approve' ? 'Approval' : 'Rejection'} failed.`);
     }
     setActioning('');
   }
@@ -369,10 +386,19 @@ export default function RegularizationPage() {
                   value={approvedStatus}
                   onChange={e => setApprovedStatus(e.target.value)}
                 >
-                  {ATTENDANCE_STATUSES.map(s => (
+                  {/* WO is illegal on a rest day (Protocol 1) — a Sunday/holiday already carries
+                      no obligation, so a WO there is meaningless and the write is rejected
+                      server-side regardless; simplest not to offer it here. */}
+                  {ATTENDANCE_STATUSES.filter(s => s !== 'WO' || !modalIsRestDay).map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+                {modalIsRestDay && (
+                  <p className="text-xs text-text-secondary mt-1.5">
+                    {actionModal.req.date} is a rest day (Sunday/holiday) — WO isn&apos;t offered here.
+                    Work performed on a rest day is handled through OT approval, not regularization.
+                  </p>
+                )}
               </div>
             )}
 

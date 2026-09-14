@@ -264,6 +264,21 @@ class RegularizationViewModelTest {
     }
 
     @Test
+    fun `a rest-day request is refused with a clear message`() = runTest(dispatcher) {
+        repo.setStatusForDate(today, "Sunday")
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.submitRequest(today, "Absent", "Worked the site anyway")
+        advanceUntilIdle()
+
+        val state = vm.submitState.value
+        assertTrue(state is UiState.Error)
+        assertTrue((state as UiState.Error).message.contains("rest day"))
+        assertTrue(repo.submitted.isEmpty())
+    }
+
+    @Test
     fun `resetSubmitState clears a previous result`() = runTest(dispatcher) {
         val vm = subject()
         advanceUntilIdle()

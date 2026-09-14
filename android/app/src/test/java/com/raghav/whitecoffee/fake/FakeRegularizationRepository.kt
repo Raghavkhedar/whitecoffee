@@ -97,6 +97,13 @@ class FakeRegularizationRepository(
         if (existing != null && existing.status != "rejected") {
             return Result.failure(IllegalStateException("A request for this date already exists."))
         }
+        val storedStatus = statusByDate[date]
+        if (storedStatus == "Sunday" || storedStatus == "Holiday") {
+            return Result.failure(IllegalStateException(
+                "$date is a $storedStatus — a rest day. Work done on a rest day is handled " +
+                    "through OT approval, not regularization."
+            ))
+        }
         val id = "reg-${nextId++}"
         val request = RegularizationRequest(
             id = id,

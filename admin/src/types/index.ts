@@ -180,7 +180,10 @@ export interface PlannedHours {
   startTime: string;  // "HH:MM" 24h
   endTime: string;    // "HH:MM" 24h
   declaredOtMins?: number; // admin pre-declared overtime for the day (minutes); worked OT up to this is auto-approved
-  otAuthorized?: boolean;  // Sunday/holiday only: admin authorized this person's rest-day work → all worked minutes count as auto-approved OT
+  /** @deprecated Retired by the OT redesign, Protocol 1 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md)
+   *  — rest-day work is always pending OT, never pre-authorized. No longer read or written;
+   *  kept only so historical planned_hours docs still deserialize. */
+  otAuthorized?: boolean;
   updatedAt?: Timestamp;
 }
 
@@ -195,8 +198,12 @@ export interface Settlement {
   employeeId: string;
   role: string;
   autoOtMins: number;    // pre-declared OT worked (auto-approved)
-  restDayOtMins: number; // authorized Sunday/holiday OT
-  grantedOtMins: number; // admin-granted OT (beyond-declared)
+  /** @deprecated Retired by the OT redesign, Protocol 1 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md)
+   *  — rest-day OT is no longer pre-authorized; once approved it is indistinguishable from any
+   *  other granted OT and folds into grantedOtMins. No longer read; new settlements write 0.
+   *  Kept only so historical settlement docs still deserialize. */
+  restDayOtMins: number;
+  grantedOtMins: number; // admin-granted OT (beyond-declared, including any rest-day grant)
   shortageMins: number;
   woDays: number;        // count of WO days that month
   woDebitMins: number;   // woDays × 480

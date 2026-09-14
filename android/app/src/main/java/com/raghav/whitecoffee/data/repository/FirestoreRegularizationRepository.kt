@@ -59,6 +59,23 @@ class FirestoreRegularizationRepository @Inject constructor(
                 return Result.failure(Exception("A request already exists for this date."))
             }
 
+            // Protocol 1 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): Sundays and
+            // company holidays are immutable rest days — no attendance_status doc may ever be
+            // approved to anything but the system's own Sunday/Holiday write, so a regularization
+            // filed for one is a dead end nothing can ever grant. The nightly Cloud Function
+            // already stamps every user's attendance_status/{date} as "Sunday"/"Holiday" for a
+            // rest day (see the Sunday/Holiday status feature), so that stored status IS the
+            // rest-day signal — no separate holidays lookup needed here. Checked by DATE via the
+            // stored status rather than a local day-of-week guess, since only the server-computed
+            // doc also knows about company holidays (a weekday can be a rest day too).
+            val storedStatus = getStatusForDate(date)
+            if (storedStatus == "Sunday" || storedStatus == "Holiday") {
+                return Result.failure(Exception(
+                    "$date is a $storedStatus — a rest day. Work done on a rest day is handled " +
+                        "through OT approval, not regularization."
+                ))
+            }
+
             val request = RegularizationRequest(
                 userId         = sessionManager.userId,
                 userName       = sessionManager.name,

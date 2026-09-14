@@ -14,8 +14,11 @@ interface RegularizationRepository {
     fun observeRequestForDate(date: String): Flow<RegularizationRequest?>
 
     /**
-     * Submits a request for [date]. Fails if the reason is blank, or if a pending or already
-     * approved request exists for that date — duplicate prevention lives here, not in the UI.
+     * Submits a request for [date]. Fails if the reason is blank, if a pending or already
+     * approved request exists for that date (duplicate prevention lives here, not in the UI),
+     * or if [date]'s stored attendance status is "Sunday"/"Holiday" — Protocol 1 rest days are
+     * immutable, so a regularization there could never be approved to anything; rest-day work
+     * goes through OT approval instead (see FirestoreRegularizationRepository for detail).
      */
     suspend fun submitRequest(
         date: String,

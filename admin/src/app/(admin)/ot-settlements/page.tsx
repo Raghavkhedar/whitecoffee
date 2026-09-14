@@ -153,7 +153,7 @@ export default function SettlementsPage() {
   const saMissing = saRows.length - saEntered.length;
 
   const blockers = useMemo(
-    () => rows.filter(r => r.ledger.pendingDates.length > 0 || r.ledger.unauthorizedRestDates.length > 0),
+    () => rows.filter(r => r.ledger.pendingDates.length > 0),
     [rows],
   );
   const isLocked = rows.some(r => r.settlement?.locked) || saEntered.some(r => r.sa?.locked);
@@ -172,7 +172,9 @@ export default function SettlementsPage() {
         employeeId: r.user.employeeId || '',
         role: r.user.role || '',
         autoOtMins: r.ledger.autoOtMins,
-        restDayOtMins: r.ledger.restDayOtMins,
+        // @deprecated field, kept only so historical settlement docs still type — Protocol 1
+        // folds rest-day OT into grantedOtMins (see Settlement.restDayOtMins in @/types).
+        restDayOtMins: 0,
         grantedOtMins: r.ledger.grantedOtMins,
         shortageMins: r.ledger.shortageMins,
         woDays: r.ledger.woDates.length,
@@ -220,14 +222,13 @@ export default function SettlementsPage() {
           Name: r.user.name,
           'Emp ID': r.user.employeeId ?? '',
           'Auto OT (mins)': r.ledger.autoOtMins,
-          'Rest-day OT (mins)': r.ledger.restDayOtMins,
           'Granted OT (mins)': r.ledger.grantedOtMins,
           'Shortage (mins)': r.ledger.shortageMins,
           'WO days': r.ledger.woDates.length,
           'Net (mins)': r.ledger.netMins,
           'Salary Rate': r.user.salaryRate ?? 0,
           'Settlement (₹)': r.cash,
-          Status: r.settlement?.locked ? 'Locked' : (r.ledger.pendingDates.length || r.ledger.unauthorizedRestDates.length ? 'Blocked' : 'Ready'),
+          Status: r.settlement?.locked ? 'Locked' : (r.ledger.pendingDates.length ? 'Blocked' : 'Ready'),
         })),
       },
       {
@@ -292,7 +293,6 @@ export default function SettlementsPage() {
                   <li key={b.user.id}>
                     <span className="font-medium text-text-primary">{b.user.name}</span>
                     {b.ledger.pendingDates.length > 0 && <> · {b.ledger.pendingDates.length} pending OT day(s) (approve/reject on OT &amp; Shortage)</>}
-                    {b.ledger.unauthorizedRestDates.length > 0 && <> · {b.ledger.unauthorizedRestDates.length} unauthorized rest-day(s) (authorize on Attendance)</>}
                   </li>
                 ))}
               </ul>
@@ -313,7 +313,7 @@ export default function SettlementsPage() {
           ) : (
             <div className="divide-y divide-[#F4F2EF]">
               {rows.map(r => {
-                const blocked = r.ledger.pendingDates.length > 0 || r.ledger.unauthorizedRestDates.length > 0;
+                const blocked = r.ledger.pendingDates.length > 0;
                 return (
                   <div key={r.user.id} className="px-4 py-3">
                     <div className="flex items-center justify-between gap-2">
@@ -331,7 +331,6 @@ export default function SettlementsPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 text-xs font-mono">
                       {r.ledger.autoOtMins > 0 && <span className="text-[#0A7A50]">auto +{minutesToDisplay(r.ledger.autoOtMins)}</span>}
-                      {r.ledger.restDayOtMins > 0 && <span className="text-[#0A7A50]">rest +{minutesToDisplay(r.ledger.restDayOtMins)}</span>}
                       {r.ledger.grantedOtMins > 0 && <span className="text-[#0A7A50]">granted +{minutesToDisplay(r.ledger.grantedOtMins)}</span>}
                       {r.ledger.shortageMins > 0 && <span className="text-[#C42B2B]">-{minutesToDisplay(r.ledger.shortageMins)}</span>}
                       {r.ledger.woDates.length > 0 && <span className="text-[#1A5FAF]">{r.ledger.woDates.length}d WO</span>}
@@ -352,7 +351,6 @@ export default function SettlementsPage() {
                 <tr>
                   <th className={`${TH} pl-[18px]`}>Name</th>
                   <th className={TH}>Auto OT</th>
-                  <th className={TH}>Rest-day OT</th>
                   <th className={TH}>Granted OT</th>
                   <th className={TH}>Shortage</th>
                   <th className={TH}>WO</th>
@@ -363,14 +361,13 @@ export default function SettlementsPage() {
               </thead>
               <tbody>
                 {rows.map(r => {
-                  const blocked = r.ledger.pendingDates.length > 0 || r.ledger.unauthorizedRestDates.length > 0;
+                  const blocked = r.ledger.pendingDates.length > 0;
                   return (
                     <tr key={r.user.id} className="border-t border-[#F4F2EF]">
                       <td className="px-[14px] py-3 pl-[18px] font-medium text-text-primary whitespace-nowrap">
                         {r.user.name}<span className="block text-[11px] text-text-secondary font-mono">{r.user.employeeId || '—'}</span>
                       </td>
                       <td className="px-[14px] py-3 text-xs font-mono text-[#0A7A50]">{r.ledger.autoOtMins ? `+${minutesToDisplay(r.ledger.autoOtMins)}` : '—'}</td>
-                      <td className="px-[14px] py-3 text-xs font-mono text-[#0A7A50]">{r.ledger.restDayOtMins ? `+${minutesToDisplay(r.ledger.restDayOtMins)}` : '—'}</td>
                       <td className="px-[14px] py-3 text-xs font-mono text-[#0A7A50]">{r.ledger.grantedOtMins ? `+${minutesToDisplay(r.ledger.grantedOtMins)}` : '—'}</td>
                       <td className="px-[14px] py-3 text-xs font-mono text-[#C42B2B]">{r.ledger.shortageMins ? `-${minutesToDisplay(r.ledger.shortageMins)}` : '—'}</td>
                       <td className="px-[14px] py-3 text-xs font-mono text-[#1A5FAF]">{r.ledger.woDates.length ? `${r.ledger.woDates.length}d · -${minutesToDisplay(r.ledger.woDebitMins)}` : '—'}</td>
@@ -395,7 +392,7 @@ export default function SettlementsPage() {
                   );
                 })}
                 {rows.length === 0 && (
-                  <tr><td colSpan={9} className="py-10 text-center text-text-secondary text-sm">No operations employees.</td></tr>
+                  <tr><td colSpan={8} className="py-10 text-center text-text-secondary text-sm">No operations employees.</td></tr>
                 )}
               </tbody>
             </table>
@@ -404,7 +401,7 @@ export default function SettlementsPage() {
       </div>
 
       <p className="text-[11px] text-text-secondary mt-3">
-        Net = approved OT (auto + rest-day + granted) − shortage − WO debit. Settlement ₹ = WO days × rate + net ÷ 8h × rate.
+        Net = approved OT (auto + granted, rest-day work included once approved) − shortage − WO debit. Settlement ₹ = WO days × rate + net ÷ 8h × rate.
         Locked months feed payroll TOTAL DUE (paid in the following month&apos;s export).
       </p>
 

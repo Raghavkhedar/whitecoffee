@@ -458,6 +458,16 @@ export async function approveRegularization(
   comment: string, approvedStatus: string, userName = '', employeeId = '',
   inTime?: string, outTime?: string,
 ) {
+  // Re-check rather than trust the submitted form: the regularization page already excludes WO
+  // from the outcome list for a rest-day request and refuses to file a request for one at all
+  // (Android), but neither of those is load-bearing here — this write bypasses
+  // setAttendanceStatus's assertNotRestDay (it goes straight to batch.set, per Protocol 1's
+  // "no admin, manager, regularization, or backfill may write... on those dates"), so a stale
+  // form, a race with a holiday just added, or a direct call must still be caught, with a clear
+  // Error instead of a raw permission-denied from firestore.rules' `!isRestDate(date)`.
+  const holidaysOnDate = await getHolidaysForDateRange(date, date);
+  assertNotRestDay(date, new Set(holidaysOnDate.map(h => h.id)));
+
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
@@ -636,7 +646,10 @@ export async function getSentNotifications(count = 20): Promise<SentNotification
 // Split into a pure boolean (isRestDay) and a throwing wrapper (assertNotRestDay) because
 // cancelLeave (below) needs the boolean form: a rest-day date reached while cancelling a
 // leave range must be silently SKIPPED, not thrown on — see cancelLeave's doc comment.
-function isRestDay(date: string, holidays: Set<string> = new Set()): boolean {
+// Exported so callers outside this file (e.g. the Regularization page, which needs to know
+// whether a request's date is a rest day to exclude WO as an outcome) can reuse this exact
+// check rather than re-deriving "is this a rest day" — see the module comment above.
+export function isRestDay(date: string, holidays: Set<string> = new Set()): boolean {
   return holidays.has(date) || new Date(date + 'T00:00:00Z').getUTCDay() === 0;
 }
 

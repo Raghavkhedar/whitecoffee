@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus, setOtAuthorization } from '@/lib/firestore';
+import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus } from '@/lib/firestore';
 import type { User, AttendanceRecord, AttendanceStatus, PlannedHours, Holiday } from '@/types';
 import { RoleBadge, StatusBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -323,6 +323,8 @@ export default function AttendancePage() {
 
   // Mark / clear a paid WO (no-work day off) for an ops employee. Writes a markedBy:'admin'
   // status doc the nightly function won't overwrite; clearing removes it so it recomputes.
+  // Passes the loaded month's holiday set so setAttendanceStatus's rest-day guard
+  // (Protocol 1) also catches a weekday holiday client-side, not just a Sunday.
   async function markWo(user: User, date: string) {
     const key = `${user.id}__${date}`;
     setSaving(prev => ({ ...prev, [key]: true }));
@@ -331,7 +333,7 @@ export default function AttendancePage() {
       await setAttendanceStatus(user.id, date, {
         date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
         role: user.role || '', status: 'WO', markedBy: 'admin',
-      });
+      }, holidaySet);
       setStatusByDate(prev => {
         const next = new Map(prev);
         const dayMap = new Map(next.get(date) || new Map<string, AttendanceStatus>());
@@ -361,28 +363,6 @@ export default function AttendancePage() {
       });
     } catch (err) {
       setSaveError('Failed to clear WO. Please try again.');
-      console.error(err);
-    }
-    setSaving(prev => ({ ...prev, [key]: false }));
-  }
-
-  // Authorize / revoke all-hours OT for an ops employee on a Sunday or holiday.
-  async function toggleOtAuth(user: User, date: string, authorized: boolean) {
-    const key = `${user.id}__${date}`;
-    setSaving(prev => ({ ...prev, [key]: true }));
-    setSaveError('');
-    try {
-      await setOtAuthorization(user.id, date, authorized);
-      setPlannedByDate(prev => {
-        const next = new Map(prev);
-        const dayMap = new Map(next.get(date) || new Map<string, PlannedHours>());
-        const current = dayMap.get(user.id);
-        dayMap.set(user.id, { ...(current || { id: date, userId: user.id, date, startTime: '', endTime: '' }), otAuthorized: authorized });
-        next.set(date, dayMap);
-        return next;
-      });
-    } catch (err) {
-      setSaveError('Failed to update OT authorization. Please try again.');
       console.error(err);
     }
     setSaving(prev => ({ ...prev, [key]: false }));
@@ -423,6 +403,11 @@ export default function AttendancePage() {
     }
     setHolidaySaving(false);
   }
+
+  // Every holiday date in the loaded month, passed to setAttendanceStatus/markWo so the
+  // client-side rest-day guard (Protocol 1) also blocks a weekday holiday, not just a Sunday
+  // (the server-side firestore.rules check covers the gap for any date outside this month).
+  const holidaySet = useMemo(() => new Set(holidaysByDate.keys()), [holidaysByDate]);
 
   const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
   const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
@@ -816,19 +801,9 @@ export default function AttendancePage() {
                         <td className="py-3 pr-4"><RoleBadge role={user.role} /></td>
                         <td className="py-3 pr-4">
                           {hasShift ? (selectedIsRestDay ? (
-                            <label className="flex items-center gap-2 text-xs cursor-pointer" title="Sunday/holiday: authorize this person's work so all hours count as OT">
-                              <input
-                                type="checkbox"
-                                checked={!!planned?.otAuthorized}
-                                onChange={e => toggleOtAuth(user, selectedDate, e.target.checked)}
-                                disabled={isSaving}
-                                className="accent-primary w-4 h-4"
-                              />
-                              <span className={planned?.otAuthorized ? 'text-[#1A5FAF] font-semibold' : 'text-text-secondary'}>
-                                {planned?.otAuthorized ? 'OT authorized (all hours)' : 'Authorize OT'}
-                              </span>
-                              {isSaving && <span className="text-text-secondary">…</span>}
-                            </label>
+                            <span className="text-xs text-text-secondary italic" title="Rest day — immutable. Work performed is raised as a pending OT request, reviewed on OT & Shortage.">
+                              Rest day — no shift
+                            </span>
                           ) : (
                             <div className="flex items-center gap-1.5">
                               <input
@@ -887,7 +862,9 @@ export default function AttendancePage() {
                             ) : (
                               <span className="text-xs text-text-secondary italic">No data</span>
                             )}
-                            {hasWo && (status === 'WO' ? (
+                            {/* WO is illegal on a rest day (Protocol 1) — no control offered there,
+                                matching the server-side guard in setAttendanceStatus/markWo. */}
+                            {hasWo && !selectedIsRestDay && (status === 'WO' ? (
                               <button onClick={() => clearWo(user.id, selectedDate)} disabled={isSaving}
                                 className="text-[11px] text-text-secondary underline hover:text-primary disabled:opacity-50">clear</button>
                             ) : (
