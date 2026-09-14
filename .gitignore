@@ -37,6 +37,7 @@ firebase/functions/node_modules/
 .firebase/
 firebase-debug.log
 firebase-debug.*.log
+firestore-debug.log
 
 # Graphify (regenerated at root)
 graphify-out/
