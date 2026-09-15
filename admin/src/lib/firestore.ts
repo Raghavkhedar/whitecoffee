@@ -10,6 +10,7 @@ import { auth, db, functions } from './firebase';
 import { istTodayStr } from './date';
 import { effectiveGrantedDates } from './leaveDates';
 import { PAY_FIELDS, type Pay } from './compensation';
+import { usesConveyance } from './roleCapabilities';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
 import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry } from '@/types';
@@ -456,7 +457,7 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
 export async function approveRegularization(
   userId: string, requestId: string, date: string, approverName: string,
   comment: string, approvedStatus: string, userName = '', employeeId = '',
-  inTime?: string, outTime?: string,
+  inTime?: string, outTime?: string, km?: number,
 ) {
   // Re-check rather than trust the submitted form: the regularization page already excludes WO
   // from the outcome list for a rest-day request and refuses to file a request for one at all
@@ -486,6 +487,34 @@ export async function approveRegularization(
     }),
     { merge: true }
   );
+
+  // Protocol 2 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a claimed KM figure
+  // fixes conveyance for a missed-punch day the same way inTime/outTime already fixes OT.
+  // Independent of carryHours — an admin may want to correct conveyance without also touching
+  // the ledger override. Scoped to usesConveyance(role): office/admin never earn conveyance,
+  // so a stray km value on their request must never mint a conveyance doc for them.
+  if (km !== undefined && km >= 0) {
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    const targetRole = userSnap.exists() ? (userSnap.data().role as string) : '';
+    if (usesConveyance(targetRole)) {
+      const rateType = userSnap.data()?.conveyanceRateType;
+      const { rate1, rate2 } = await getConveyanceConfig();
+      // Mirrors firebase/functions/index.js's CONVEYANCE_RATE_FALLBACK (2.5) — the two
+      // codebases have no shared build graph, so the fallback is duplicated deliberately
+      // rather than left silently absent on this side.
+      const ratePerKm = (rateType === 2 ? rate2 : rate1) || rate1 || 2.5;
+      batch.set(
+        doc(db, 'conveyance', `${userId}__${date}`),
+        {
+          userId, userName, employeeId, date, month: date.slice(0, 7),
+          route: 'Regularized (manual entry)', totalKm: km, ratePerKm,
+          conveyance: km * ratePerKm, markedBy: 'admin', computedAt: Timestamp.now(),
+        },
+        { merge: true },
+      );
+    }
+  }
+
   await batch.commit();
 }
 
