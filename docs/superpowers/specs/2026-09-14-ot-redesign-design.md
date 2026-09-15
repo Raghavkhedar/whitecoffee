@@ -228,3 +228,134 @@ before. It only surfaces a gap when a decision's `requestedMins` under-covers th
 Applies to `admin/src/lib/otAggregate.ts`, `firebase/functions/otAggregate.js`, and
 `firebase/functions/index.js`'s inline OT Exception tab derivation (all three currently gate on
 doc presence, not covered amount).
+
+## Protocol 3 — WO becomes an explicit, expiring debt settled by admin action, not implicit same-month netting
+
+**Approved 2026-09-15.**
+
+### The problem
+
+A WO (paid no-work day off) owes a flat 480-minute debit. Today that debit is never tracked on
+its own — `computeRangeLedger` just counts `attendance_status` docs with `status: 'WO'` in
+whatever date range it's given and folds `-480/WO` straight into that range's `netLedgerMins`
+alongside auto/granted OT and shortage. The OT Settlements page calls this **per calendar
+month** and freezes the result. Consequently a WO only ever nets to zero against OT that
+happens to fall in the **same calendar month** — a WO on 28 Aug worked off by OT on 3 Sep nets
+to ₹0 in August (documented today as intentional: "advance credit... employee expected to make
+it up") and the September OT pays out as ordinary unrelated cash, with no code path connecting
+the two. There is no record of which WO is outstanding, no way for an admin to explicitly pay
+one off with OT from a different month, and no expiry — a WO's debt is just silently absorbed
+(free to the employee) the moment its month locks, however long ago it was issued.
+
+Additionally, marking a day WO does not currently suppress that date's raw attendance events
+for ledger purposes — only a Present-regularization override does that. A WO day with partial
+punches (e.g. told to leave at 2pm on a 10–6 shift) would independently accrue an early-out
+**shortage** from the raw punches *in addition to* the flat WO debit — a double penalty with no
+connection to the WO mechanism at all, since leaving early can never produce OT to net against
+anything.
+
+### The rule
+
+1. **Every WO becomes a standalone, persistent debt record** (`wo_ledger/{date}`, detailed
+   below), created in the same write as the existing `attendance_status: WO` doc. It starts at
+   480 minutes outstanding and is cleared only by explicit admin action or expiry — never by
+   incidental same-month OT.
+2. **The WO day's pay is unconditional.** It is no longer entangled with whether OT ever offsets
+   it — `settlementCash`'s `woDays × rate` term keeps paying every WO day regardless of
+   settlement progress. Only the OT side of the formula changes (below).
+3. **Admin may apply any OT source to reduce an outstanding WO's balance, in any amount, at any
+   time.** "Any OT source" means any date with an existing `ot_approvals/{date}` doc — rest-day
+   OT, beyond-declared OT, or auto-approved-within-ceiling OT that an admin has logged via the
+   existing manual-OT tool (`setManualOt`) precisely so it has a record to point at. Routine
+   auto-credited OT that was never logged has no record and is not settlement-eligible; it's
+   simply paid as ordinary OT cash, same as today.
+4. **Partial settlement is allowed and accumulates.** A WO's `remainingMins` decreases by
+   whatever amount is applied per action; it may take several settlement actions across several
+   months to fully clear one WO. Each application is logged (`wo_ledger/{date}/settlements`).
+5. **An OT source becomes ineligible once its home month is Settled & Locked** — that cash has
+   already been paid out and cannot be redirected retroactively.
+6. **A WO not fully settled within 2 months of being issued is written off automatically, with
+   zero pay impact.** A scheduled Cloud Function flips it from `outstanding` to `forgiven`; it
+   simply drops off the outstanding list. This is a hard stop on staleness, not a penalty — the
+   cost of never settling a WO is that the employee's OT from that period was never redirected
+   to offset it (so it was paid in full as ordinary cash instead), not a deduction.
+7. **Marking a day WO overrides that date's raw attendance for ledger purposes, mirroring the
+   existing Present-regularization override.** No shortage, no auto-OT is computed from that
+   day's punches. If the day has punches, the whole worked window is instead raised as
+   **pending OT** — identical treatment to rest-day work under Protocol 1 — so it enters the
+   normal admin approve/reject-with-reason queue rather than being silently discarded or
+   silently double-penalizing the employee. Once approved, it's an ordinary `ot_approvals`
+   record like any other and can be applied to settle this WO (or any other) through the normal
+   settlement flow — no special-casing beyond routing it into the same pending queue.
+8. **Clearing a WO deletes its ledger entry outright**, regardless of settlement progress. Any
+   OT minutes already consumed settling it are **not** refunded — this is a deliberate
+   simplification, not an oversight.
+9. **Scope: operations only**, matching `usesOtShortageLedger(role)` — unchanged from today's
+   WO/OT ledger, which already excludes sales/office/admin.
+
+### Schema changes
+
+- **New:** `users/{uid}/wo_ledger/{date}` — one doc per WO, created in the same batch as
+  `markWo`'s `attendance_status` write:
+  - `debitMins: 480` (mirrors `WO_DEBIT_MINS`, stored for clarity/audit)
+  - `remainingMins`: starts at 480, decremented by settlement applications, floored at 0
+  - `status: 'outstanding' | 'settled' | 'forgiven'`
+  - `issuedAt` (Timestamp, = WO creation time), `expiresAt` (Timestamp, `issuedAt` + 2 months —
+    computed once at creation so the expiry job is a single range query, not a recompute)
+  - `settledAt` / `forgivenAt` (Timestamp, set on resolution), `markedBy: 'admin'`
+  - `userId`/`userName`/`employeeId` (denormalized, matching every other collection's pattern)
+- **New subcollection:** `users/{uid}/wo_ledger/{date}/settlements/{autoId}` — one doc per
+  settlement application: `otDate`, `minsApplied`, `appliedBy`, `appliedAt`.
+- **`users/{uid}/ot_approvals/{date}` gains `settledMins`** (number, default 0) — running total
+  of that day's `approvedMins` already consumed settling some WO. `available = approvedMins -
+  settledMins` is what the settlement picker offers and what still counts as payable cash.
+
+### The math
+
+`computeDayLedger` (`otLedger.ts`/`.js`) gains a WO-day branch identical in shape to the
+existing rest-day branch — a WO date is not a rest day, but is treated the same way for this
+one date's computation:
+
+```
+if (isRestDay || isWoDay) return { ...ZERO, pendingExtraMins: worked };
+```
+
+`netLedgerMins` **drops the `woDebitMins` term entirely** — WO debt no longer participates in
+monthly netting at all:
+
+```
+netMins = autoOtMins + Σ(approvedMins − settledMins, per ot_approvals doc in range) − shortageMins
+```
+
+`settlementCash = woDays × rate + netMins/480 × rate` keeps its existing shape (`otAggregate.ts`
+`settlementCash`) — only what feeds `netMins` changes.
+
+### Enforcement
+
+- `computeRangeLedger` (`otAggregate.ts`/`.js`) needs the WO-dates set computed **before** the
+  per-day accrual loop (currently derived after), so each date's `accrueDay` call can pass
+  `isWoDay` — and needs to sum `approvedMins − settledMins` per `ot_approvals` doc instead of
+  raw `approvedMins`.
+- The Settle & Lock flow (`settleMonth`) reads the updated `netMins`/`settlementCash`; no rules
+  change needed there — it already writes admin-only.
+- **New scheduled Cloud Function** (same cron pattern as the existing nightly attendance job):
+  queries `collectionGroup('wo_ledger')` where `status == 'outstanding' && expiresAt <= now`,
+  batch-updates to `status: 'forgiven', forgivenAt: now`.
+- **New admin UI** (extends `/ot-settlements`): an "Outstanding WOs" view per employee —
+  remaining balance and days-until-expiry, sorted most-urgent-first — with a "Settle" action
+  that opens a picker over that employee's eligible `ot_approvals` docs (`available > 0`, home
+  month not yet locked) and an amount input capped to
+  `min(wo.remainingMins, source.available)`.
+- **`firestore.rules`**: `wo_ledger` and its `settlements` subcollection need write rules
+  matching the existing OT/Shortage tab access pattern (`canWriteOtApprovals`-equivalent) —
+  no new access concept, just a new collection under an existing tab's permission.
+- Existing rule `WO is illegal on a rest day` (Protocol 1) is untouched — `markWo` still throws
+  before any write on a rest date, so `wo_ledger` docs can never exist for rest dates either.
+
+### Out of scope for Protocol 3
+
+Pro-rating a WO's starting debt by hours actually worked that day is explicitly rejected — the
+debit is always the flat 480 regardless of partial punches; any credit for hours worked flows
+through the ordinary pending-OT → approval → settlement path, not an automatic adjustment at
+WO-creation time. Automatic/suggested settlement (the system proposing which OT should pay off
+which WO) is also out of scope — every settlement is an explicit admin action.
