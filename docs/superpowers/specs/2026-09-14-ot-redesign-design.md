@@ -122,6 +122,64 @@ them — and they become visible in the pending queue, which is the intended rem
 Weekday OT, shortage, WO on a weekday, the declared-OT ceiling, rates, and the settlement
 lock are all untouched. They are the subject of later protocols.
 
+## Protocol 2 — regularization can correct conveyance for a missed-punch day, not just OT/status
+
+**Approved 2026-09-15.**
+
+### The problem
+
+Regularization already lets an admin set an effective in/out override for a missed-punch
+day, and that override is authoritative for attendance status and (for operations) the
+OT/shortage ledger. But conveyance (`conveyance/{userId}__{date}`) is computed **exclusively**
+from raw GPS-bearing attendance events (`site_in`/`site_out`/`market_in`/`market_out`/
+`home_in`/`home_out`) by the nightly `exportToSheets` function, and never reads
+`attendance_status` at all. A missed punch that breaks the raw event chain leaves that day's
+conveyance silently wrong — regularizing the day fixes salary and (for ops) OT, but has never
+touched conveyance. This applies identically to **operations and sales**: both are selected
+into conveyance by the same `usesConveyance(role)` flag, with no role-specific branch anywhere
+in the conveyance calculation, so there is no basis to fix it for one and not the other.
+
+### The rule
+
+1. **The employee may claim a KM figure for a missed-punch day when filing a regularization
+   request** — an optional field alongside the existing reason. Meaningful only where
+   conveyance applies (operations, sales); harmless if filed by office/admin.
+2. **The admin may edit that KM figure before approving** — same spirit as the existing
+   editable `effIn`/`effOut` fields: the employee's claim is a starting point, not binding.
+3. **On approval, if a KM value is present, conveyance for that date is set directly:**
+   `conveyance = km × ratePerKm`, using that employee's own existing rate
+   (`conveyanceRateType` → `rate1`/`rate2`, exactly as the nightly job resolves it). This is a
+   full overwrite of the day's conveyance doc, consistent with how the OT/status override
+   already replaces (not supplements) raw-event-derived numbers for a regularized date.
+4. **The written doc is stamped `markedBy: 'admin'`.** The nightly conveyance loop must skip
+   any date already stamped this way — mirroring the existing `attendance_status` `markedBy`
+   skip — otherwise the fix is silently overwritten the same night it's approved.
+5. **Scope: operations and sales**, matching `usesConveyance(role)`. Office/admin may still
+   file/be regularized exactly as today, simply with no conveyance effect (they never had one).
+
+### Schema changes
+
+- `regularization_requests/{id}` (Android-created): new optional `claimedKm: number`.
+- The `attendance_status` approval path is unchanged.
+- `conveyance/{userId}__{date}` gains a `markedBy: 'admin'` field on an admin-approved write —
+  this field does not exist on this collection today; every doc so far is nightly-computed
+  with no marker at all.
+
+### Enforcement
+
+`firestore.rules` currently has **no rule permitting any client write to `conveyance/{docId}`
+at all** — every existing doc is written by the Cloud Function's Admin SDK, which bypasses
+rules entirely. This protocol requires a genuinely new rule, not a widened existing one:
+admin-only write on `conveyance/{docId}`, matching the shape of other admin-gated top-level
+collections in the file.
+
+### Out of scope for Protocol 2
+
+Per-visit reconstruction (patching one missed punch out of several site visits in a day while
+preserving the others) is not part of this protocol — the existing whole-day single
+`effIn`/`effOut` override stays as-is. Automatic GPS/route-based reconstruction of conveyance
+is also out of scope; the fix is a manual figure, by design, not an automated recomputation.
+
 ### Protocol 1 fix — pending must be tracked by remaining amount, not by date
 
 **Approved 2026-09-15**, found by the final whole-branch review.
