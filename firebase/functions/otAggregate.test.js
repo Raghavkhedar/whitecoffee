@@ -27,11 +27,11 @@ test("normal day: auto 30, pending 30, net 30 (pending not credited)", () => {
   assert.equal(r.netMins, 30);
 });
 
-test("beyond-declared +30 approved via ot_approvals → net 60", () => {
-  const appr = [{ id: "2026-06-01", userId: U, date: "2026-06-01", approvedMins: 30, status: "approved" }];
+test("beyond-declared +30 approved via ot_approvals (ordinary flow: requestedMins = pendingExtraMins = 30) → net 60", () => {
+  const appr = [{ id: "2026-06-01", userId: U, date: "2026-06-01", requestedMins: 30, approvedMins: 30, status: "approved" }];
   const r = computeRangeLedger(U, evNormal, planNormal, appr, [], noHol);
   assert.equal(r.grantedOtMins, 30);
-  assert.equal(r.pendingDates.length, 0);
+  assert.equal(r.pendingDates.length, 0); // remaining = 30 - 30 = 0
   assert.equal(r.netMins, 60);
 });
 
@@ -46,13 +46,55 @@ test("Sunday rest-day work (2026-06-07) with no approval → net 0, pending 300"
   assert.equal(r.pendingDates[0], "2026-06-07");
 });
 
-test("Sunday rest-day work, admin partially approves 120 of 300 pending → net 120", () => {
+test("Sunday rest-day work, admin partially approves 120 of 300 pending (ordinary flow: requestedMins = the full 300 asked) → net 120, not pending", () => {
   const evSun = [ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "15:00")];
-  const apprSun = [{ id: "2026-06-07", userId: U, date: "2026-06-07", approvedMins: 120, status: "approved" }];
+  const apprSun = [{ id: "2026-06-07", userId: U, date: "2026-06-07", requestedMins: 300, approvedMins: 120, status: "approved" }];
   const r = computeRangeLedger(U, evSun, [], apprSun, [], noHol);
   assert.equal(r.grantedOtMins, 120);
   assert.equal(r.netMins, 120);
+  assert.equal(r.pendingDates.length, 0); // remaining = 300 - 300 = 0; the full ask was decided
+});
+
+// ── Task 6 bug-fix suite: pending must be tracked by remaining amount, not by ──
+// ── ot_approvals doc presence. See docs/superpowers/specs/                    ──
+// ── 2026-09-14-ot-redesign-design.md "Protocol 1 fix" addendum.               ──
+
+test("[BUG FIX] unrelated manual grant (requestedMins=60) under-covers 300 pending → 240 still pending, not swallowed", () => {
+  const evSun = [ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "15:00")];
+  const manualUnrelated = [{ id: "2026-06-07", userId: U, date: "2026-06-07", requestedMins: 60, approvedMins: 60, status: "approved", manual: true }];
+  const r = computeRangeLedger(U, evSun, [], manualUnrelated, [], noHol);
+  assert.equal(r.grantedOtMins, 60);
+  assert.equal(r.pendingOtMins, 240); // remaining = 300 - 60
+  assert.equal(r.pendingDates.length, 1);
+  assert.equal(r.pendingDates[0], "2026-06-07");
+  assert.equal(r.netMins, 60); // auto 0 + granted 60; the pending 240 is not credited
+});
+
+test("[BUG FIX — exact brief scenario] Sunday (2026-06-28) worked 09:00–19:00 (600 min pending); unrelated 60-min manual grant leaves 540 pending", () => {
+  const evSun2 = [ev(U, "2026-06-28", "site_in", "09:00"), ev(U, "2026-06-28", "site_out", "19:00")];
+  const manualGrant60 = [{ id: "2026-06-28", userId: U, date: "2026-06-28", requestedMins: 60, approvedMins: 60, status: "approved", manual: true }];
+  const r = computeRangeLedger(U, evSun2, [], manualGrant60, [], noHol);
+  assert.equal(r.pendingOtMins, 540);
+  assert.equal(r.pendingDates.length, 1);
+  assert.equal(r.grantedOtMins, 60);
+});
+
+test("decision requestedMins EXCEEDS pendingExtraMins → remaining clamped to 0, not negative", () => {
+  const evSun3 = [ev(U, "2026-06-14", "site_in", "10:00"), ev(U, "2026-06-14", "site_out", "12:00")]; // 120 min pending
+  const overCover = [{ id: "2026-06-14", userId: U, date: "2026-06-14", requestedMins: 500, approvedMins: 120, status: "approved" }];
+  const r = computeRangeLedger(U, evSun3, [], overCover, [], noHol);
   assert.equal(r.pendingDates.length, 0);
+  assert.equal(r.pendingOtMins, 0);
+  assert.equal(r.grantedOtMins, 120);
+});
+
+test("rejected day: requestedMins covers the full original ask, approvedMins=0 → 0 granted OT, correctly NOT pending", () => {
+  const evSun4 = [ev(U, "2026-06-21", "site_in", "10:00"), ev(U, "2026-06-21", "site_out", "13:00")]; // 180 min pending
+  const rejected = [{ id: "2026-06-21", userId: U, date: "2026-06-21", requestedMins: 180, approvedMins: 0, status: "rejected" }];
+  const r = computeRangeLedger(U, evSun4, [], rejected, [], noHol);
+  assert.equal(r.grantedOtMins, 0);
+  assert.equal(r.netMins, 0);
+  assert.equal(r.pendingDates.length, 0); // remaining = 180 - 180 = 0; fully decided as rejected
 });
 
 test("WO status counted: woDates 1, woDebit 480, net -480", () => {
@@ -80,7 +122,7 @@ test("regularized in/out OVERRIDES raw events for the same date", () => {
 });
 
 test("manual OT grant on a day with no events counts as granted (net 120)", () => {
-  const manualAppr = [{ id: "2026-06-04", userId: U, date: "2026-06-04", approvedMins: 120, status: "approved", manual: true }];
+  const manualAppr = [{ id: "2026-06-04", userId: U, date: "2026-06-04", requestedMins: 120, approvedMins: 120, status: "approved", manual: true }];
   const r = computeRangeLedger(U, [], [], manualAppr, [], noHol);
   assert.equal(r.grantedOtMins, 120);
   assert.equal(r.netMins, 120);
@@ -153,6 +195,40 @@ test("dailyOtWoCash: a shortage-only day is negative", () => {
   const events = [ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "17:00")];
   const cash = dailyOtWoCash(U, 480, events, planned, [], [], noHol); // rate 480 → ₹1/min
   assert.equal(cash.get("2026-06-02"), -60); // 60 min shortage × ₹1/min
+});
+
+test("[BUG FIX] dailyOtWoCash invariant still holds with an under-covering decision doc present (pending derivation is unaffected)", () => {
+  // Same mix as above, but the Sunday's decision doc under-covers its pending window
+  // (requestedMins 100 of 240) — exactly the shape this task's fix changes the PENDING
+  // reporting for. dailyOtWoCash has no pending concept at all (confirmed: it only sums
+  // autoOtMins/shortageMins/approvedMins/woDebit into netMins), so its cash — and the
+  // sum(dailyOtWoCash) === settlementCash(...) invariant — must be byte-for-byte identical
+  // to before the fix.
+  const rate = 1000;
+  const planned = [
+    { userId: U, date: "2026-06-01", startTime: "10:00", endTime: "18:00", declaredOtMins: 60 },
+    { userId: U, date: "2026-06-02", startTime: "10:00", endTime: "18:00", declaredOtMins: 0 },
+  ];
+  const events = [
+    ev(U, "2026-06-01", "site_in", "10:00"), ev(U, "2026-06-01", "site_out", "19:00"),
+    ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "17:00"),
+    ev(U, "2026-06-07", "site_in", "10:00"), ev(U, "2026-06-07", "site_out", "14:00"),
+  ];
+  const statuses = [{ userId: U, date: "2026-06-04", status: "WO" }];
+  // requestedMins (100) under-covers the Sunday's 240-min pendingExtraMins — the bug scenario.
+  const approvals = [{ userId: U, date: "2026-06-07", requestedMins: 100, approvedMins: 100, status: "approved" }];
+
+  const cash = dailyOtWoCash(U, rate, events, planned, approvals, statuses, noHol);
+  const sum = [...cash.values()].reduce((s, v) => s + v, 0);
+
+  const led = computeRangeLedger(U, events, planned, approvals, statuses, noHol);
+  // The date is still pending (remaining = 240 - 100 = 140) but netMins/settlementCash must
+  // be untouched by that — grantedOtMins is still Σ approvedMins (100) regardless.
+  assert.equal(led.pendingDates.length, 1);
+  assert.equal(led.pendingOtMins, 140);
+  const monthly = settlementCash(rate, led.woDates.length, led.netMins);
+
+  assert.equal(Math.round(sum * 100) / 100, monthly);
 });
 
 test("dailyOtWoCash: rest-day date is 0 when unapproved, equals approved minutes' cash when approved", () => {

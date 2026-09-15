@@ -82,7 +82,11 @@ export function computeRangeLedger(
     });
     shortageMins   += led.shortageMins;
     autoOtMins     += led.autoOtMins;
-    if (led.pendingExtraMins > 0 && !apprByDate.has(date)) { pendingOtMins += led.pendingExtraMins; pendingDates.push(date); }
+    // A date is only "decided" up to what its ot_approvals doc's requestedMins actually covers —
+    // not merely by the doc's presence. An unrelated manual grant (e.g. setManualOt with
+    // requestedMins=60) must not swallow the rest of a rest day's 600-minute pendingExtraMins.
+    const remaining = Math.max(0, led.pendingExtraMins - (apprByDate.get(date)?.requestedMins ?? 0));
+    if (remaining > 0) { pendingOtMins += remaining; pendingDates.push(date); }
   };
 
   eventsByDate.forEach((dayEvents, date) => {

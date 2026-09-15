@@ -872,13 +872,19 @@ exports.exportToSheets = onSchedule(
       }
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
-    const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy } (for the OT Exception Report)
+    const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy, requestedMins } (for the OT Exception Report)
     const approvalSnap = await db.collectionGroup("ot_approvals").get();
     approvalSnap.docs.forEach((doc) => {
       const d = doc.data();
       const key = `${uidOf(doc)}__${d.date || ""}`;
       approvalMap.set(key, Number(d.approvedMins) || 0);
-      otDecisionMap.set(key, { status: d.status || "", reason: d.reason || "", approvedBy: d.approvedBy || "" });
+      // requestedMins is carried so "is this date fully decided" can be judged by how much
+      // of the day's pending OT the decision actually covers, not merely by doc presence —
+      // see the remaining-amount computation in otRowFor below.
+      otDecisionMap.set(key, {
+        status: d.status || "", reason: d.reason || "", approvedBy: d.approvedBy || "",
+        requestedMins: Number(d.requestedMins) || 0,
+      });
     });
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
@@ -1156,12 +1162,22 @@ exports.exportToSheets = onSchedule(
         // or an admin recorded an OT decision for it.
         if (rawOtMins <= 0 && !decision) return null;
 
-        // Status: an explicit admin decision wins; else auto-approved when credited
-        // > 0 (declared ceiling, or an admin's ot_approvals grant), otherwise still
-        // pending review — this is also how a rest-day exception with no ot_approvals
-        // doc yet reports as "Pending" rather than any credited amount.
+        // A date is only "decided" up to what its ot_approvals doc's requestedMins actually
+        // covers — not merely by the doc's presence (mirrors otAggregate.js's fix). The
+        // undecided portion is: rest day → the whole worked window (nothing is pre-approved
+        // there); normal day → led.pendingExtraMins (the surplus beyond the declared ceiling).
+        // An unrelated manual grant (setManualOt, requestedMins e.g. 60) must not mark a
+        // 600-minute rest-day window fully decided.
+        const pendingPortion = restDay ? rawOtMins : led.pendingExtraMins;
+        const remaining = Math.max(0, pendingPortion - (decision ? decision.requestedMins : 0));
+
+        // Status: while any remaining undecided amount exists, the date is still Pending
+        // regardless of a partial decision. Once fully covered (remaining === 0), an explicit
+        // admin decision wins; else auto-approved when credited > 0 (declared ceiling, or an
+        // admin's ot_approvals grant), otherwise still pending review.
         let statusLabel;
-        if (decision && decision.status === "approved") statusLabel = "APPROVED";
+        if (remaining > 0) statusLabel = "Pending";
+        else if (decision && decision.status === "approved") statusLabel = "APPROVED";
         else if (decision && decision.status === "rejected") statusLabel = "NOT APPROVED";
         else if (approvedOtMins > 0) statusLabel = "APPROVED";
         else statusLabel = "Pending";
