@@ -167,11 +167,18 @@ in the conveyance calculation, so there is no basis to fix it for one and not th
 
 ### Enforcement
 
-`firestore.rules` currently has **no rule permitting any client write to `conveyance/{docId}`
-at all** — every existing doc is written by the Cloud Function's Admin SDK, which bypasses
-rules entirely. This protocol requires a genuinely new rule, not a widened existing one:
-admin-only write on `conveyance/{docId}`, matching the shape of other admin-gated top-level
-collections in the file.
+`firestore.rules:677-683` already permits a client `create`/`update` on `conveyance/{docId}`
+for `isAdmin()` **or** a Conveyance-tab manager (with `notSelfDoc()` — a Conveyance manager may
+not write their own record) — built for the `/conveyance` page but never actually called from
+client code (`admin/src/lib/firestore.ts` only ever reads this collection today). No rules
+change is needed; this protocol is the rule's first real caller.
+
+This does mean the acting approver needs **both** Regularization and Conveyance access to
+include a km adjustment: `approveRegularization`'s batch would write `attendance_status` *and*
+`conveyance` together, and a Firestore batch fails atomically if any single document write
+fails its rule. A Regularization-only manager who lacks Conveyance access must never be
+offered the km field — the portal gates it on `isAdmin || tabAccess.includes('/conveyance')`,
+same check the `/conveyance` page itself uses, so this isn't a new access concept.
 
 ### Out of scope for Protocol 2
 
