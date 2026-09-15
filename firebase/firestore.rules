@@ -43,6 +43,20 @@ service cloud.firestore {
       return string(ist.year()) + '-' + pad2(ist.month()) + '-' + pad2(ist.day());
     }
 
+    // ── Rest days (Protocol 1) ───────────────────────────────────────────
+    // Sundays and company holidays are immutable rest days: no attendance_status doc may
+    // be written on them by anyone (docs/superpowers/specs/2026-09-14-ot-redesign-design.md).
+    // Holiday wins over Sunday when both apply — mirrors resolveRestDayType's precedence in
+    // firebase/functions/attendanceRules.js, the canonical definition, though for a plain
+    // boolean OR the precedence has no observable effect here.
+    function isSundayDate(date) {
+      let days = timestamp.date(int(date[0:4]), int(date[5:7]), int(date[8:10])).toMillis() / 86400000;
+      return (days + 4) % 7 == 0;   // 1970-01-01 was a Thursday
+    }
+    function isRestDate(date) {
+      return isSundayDate(date) || exists(/databases/$(database)/documents/holidays/$(date));
+    }
+
     // config/regularizationWindow — global admin-controlled toggle (see regularization_requests
     // create rule below). Missing doc == closed, matching the pre-feature default.
     function isRegularizationWindowOpen() {
@@ -421,7 +435,13 @@ service cloud.firestore {
       match /attendance_status/{date} {
         allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadAttendanceStatus());
         // notSelf: a manager marking their OWN day Present/WO is direct payroll fraud.
-        allow write: if isLoggedIn() && (isAdmin() || (canWriteAttendanceStatus() && notSelf(userId)));
+        // !isRestDate(date): Sundays and holidays are immutable rest days (Protocol 1) — no
+        // status may be written on them by ANYONE, admin included. The system's own nightly
+        // Sunday/Holiday write goes through the Admin SDK, which bypasses rules entirely, so
+        // it is unaffected by this clause. Costs one extra document read per status write
+        // (the holidays/$(date) exists() check), on writes only.
+        allow write: if isLoggedIn() && (isAdmin() || (canWriteAttendanceStatus() && notSelf(userId)))
+                     && !isRestDate(date);
       }
 
       // ── /planned_hours/{date} ─────────────────────────────────────────

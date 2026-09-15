@@ -114,6 +114,10 @@ class RegularizationViewModel @Inject constructor(
     /** Operations score against a planned shift; office/admin/sales use the fixed 10–18 window. */
     private val usesFixedWindow: Boolean get() = RoleCapabilities.usesFixedWindow(role)
 
+    /** Whether this employee's role earns conveyance (Protocol 2) — gates the optional KM field
+     *  on the regularize dialog. Mirrors admin's `usesConveyance` tab-access gate. */
+    val canClaimConveyance: Boolean get() = RoleCapabilities.usesConveyance(role)
+
     init {
         loadToday()
     }
@@ -212,10 +216,10 @@ class RegularizationViewModel @Inject constructor(
         }
     }
 
-    fun submitRequest(date: String, originalStatus: String, reason: String) {
+    fun submitRequest(date: String, originalStatus: String, reason: String, claimedKm: Double? = null) {
         viewModelScope.launch {
             _submitState.value = UiState.Loading()
-            val result = repository.submitRequest(date, originalStatus, reason)
+            val result = repository.submitRequest(date, originalStatus, reason, claimedKm)
             if (result.isSuccess) {
                 _submitState.value = UiState.Success(result.getOrThrow())
             } else {

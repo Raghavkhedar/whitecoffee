@@ -10,7 +10,7 @@ const {
   WO_DEBIT_MINS, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
 } = require("./otLedger");
 
-const shift = { shiftStartMin: 600, shiftEndMin: 1080, declaredOtMins: 0, isRestDay: false, otAuthorized: false };
+const shift = { shiftStartMin: 600, shiftEndMin: 1080, declaredOtMins: 0, isRestDay: false };
 
 test("constants", () => {
   assert.equal(WO_DEBIT_MINS, 480);
@@ -81,17 +81,33 @@ test("net OT beyond the declared ceiling still splits auto/pending", () => {
   assert.equal(led.shortageMins, 0);
 });
 
-test("authorized rest day: all worked minutes are OT", () => {
-  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 900, isRestDay: true, otAuthorized: true });
-  assert.equal(led.restDayOtMins, 300);
-  assert.equal(led.unauthorizedRestDay, false);
+test("rest day: whole worked window is pending, never auto-credited", () => {
+  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 900, isRestDay: true });
+  assert.equal(led.pendingExtraMins, 300);
+  assert.equal(led.autoOtMins, 0);
   assert.equal(led.shortageMins, 0);
 });
 
-test("unauthorized rest day: 0 OT, flagged", () => {
-  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 900, isRestDay: true, otAuthorized: false });
-  assert.equal(led.restDayOtMins, 0);
-  assert.equal(led.unauthorizedRestDay, true);
+test("rest day never yields shortage, whatever the in/out times", () => {
+  // "Early-in"/"early-out" relative to a normal shift window is meaningless on a rest day.
+  const led = computeDayLedger({ ...shift, inMin: 540, outMin: 570, isRestDay: true });
+  assert.equal(led.pendingExtraMins, 30);
+  assert.equal(led.shortageMins, 0);
+});
+
+test("rest day: declared-OT ceiling does not apply — all worked mins are pending regardless", () => {
+  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 900, isRestDay: true, declaredOtMins: 30 });
+  assert.equal(led.pendingExtraMins, 300);
+  assert.equal(led.autoOtMins, 0);
+  assert.equal(led.shortageMins, 0);
+});
+
+test("rest day ignores shift window, even when out extends past what would be late-out", () => {
+  // out 20:00 (1200) is 2h past shiftEndMin (1080) — on a normal day that would be late-out
+  // OT capped/split by declaredOtMins; on a rest day it is just more of the same pending window.
+  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 1200, isRestDay: true });
+  assert.equal(led.pendingExtraMins, 600);
+  assert.equal(led.shortageMins, 0);
 });
 
 test("no valid shift (end <= start) and not rest day: nothing accrues", () => {
@@ -101,10 +117,12 @@ test("no valid shift (end <= start) and not rest day: nothing accrues", () => {
   assert.equal(led.shortageMins, 0);
 });
 
-test("netLedgerMins nets approved OT minus shortage minus WO debit", () => {
-  assert.equal(netLedgerMins({ autoOtMins: 30, restDayOtMins: 0, approvedGrantedMins: 30, shortageMins: 0, woDebitMins: 0 }), 60);
-  assert.equal(netLedgerMins({ autoOtMins: 0, restDayOtMins: 0, approvedGrantedMins: 0, shortageMins: 0, woDebitMins: 480 }), -480);
-  assert.equal(netLedgerMins({ autoOtMins: 0, restDayOtMins: 300, approvedGrantedMins: 0, shortageMins: 0, woDebitMins: 480 }), -180);
+test("netLedgerMins nets approved OT minus shortage minus WO debit; pending is excluded entirely", () => {
+  assert.equal(netLedgerMins({ autoOtMins: 30, approvedGrantedMins: 30, shortageMins: 0, woDebitMins: 0 }), 60);
+  assert.equal(netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 0, shortageMins: 0, woDebitMins: 480 }), -480);
+  // 300 here stands in for a rest day's pendingExtraMins that an admin later approved into
+  // approvedGrantedMins — pendingExtraMins itself is never a NetLedgerParts input.
+  assert.equal(netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 300, shortageMins: 0, woDebitMins: 480 }), -180);
 });
 
 test("istMinuteOfDay converts epoch seconds to IST minute-of-day", () => {

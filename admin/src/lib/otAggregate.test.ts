@@ -28,26 +28,62 @@ eq('pending dates = 1', r.pendingDates.length, 1);
 eq('shortage = 0', r.shortageMins, 0);
 eq('net = 30 (auto only; pending not credited)', r.netMins, 30);
 
-console.log('\nSame day, the +30 beyond-declared approved via ot_approvals:');
-const appr = [{ id: '2026-06-01', userId: U, date: '2026-06-01', approvedMins: 30, status: 'approved' } as never];
+console.log('\nSame day, the +30 beyond-declared approved via ot_approvals (ordinary flow: requestedMins = pendingExtraMins = 30):');
+const appr = [{ id: '2026-06-01', userId: U, date: '2026-06-01', requestedMins: 30, approvedMins: 30, status: 'approved' } as never];
 r = computeRangeLedger(U, evNormal, planNormal, appr, [], noHol);
 eq('granted = 30', r.grantedOtMins, 30);
-eq('pending now 0', r.pendingDates.length, 0);
+eq('pending now 0 (remaining = 30 - 30 = 0)', r.pendingDates.length, 0);
 eq('net = 60 (auto 30 + granted 30)', r.netMins, 60);
 
-console.log('\nSunday rest-day work (2026-06-07 is a Sunday), authorized, worked 300:');
-const planSun = [{ id: '2026-06-07', userId: U, date: '2026-06-07', startTime: '', endTime: '', otAuthorized: true } as never];
+console.log('\nSunday rest-day work (2026-06-07 is a Sunday), no approval, worked 300:');
+// Protocol 1: rest-day work is never auto-credited. The whole worked window becomes a
+// pending OT request; net stays 0 and the date shows up in pendingDates until an admin acts.
 const evSun = [ev(U, '2026-06-07', 'site_in', '10:00'), ev(U, '2026-06-07', 'site_out', '15:00')];
-r = computeRangeLedger(U, evSun, planSun, [], [], noHol);
-eq('restDayOt = 300', r.restDayOtMins, 300);
-eq('net = 300', r.netMins, 300);
-eq('unauthorized = 0', r.unauthorizedRestDates.length, 0);
-
-console.log('\nSame Sunday but NOT authorized:');
 r = computeRangeLedger(U, evSun, [], [], [], noHol);
-eq('restDayOt = 0', r.restDayOtMins, 0);
-eq('unauthorized = 1', r.unauthorizedRestDates.length, 1);
+eq('net = 0 (nothing auto-credited)', r.netMins, 0);
+eq('pending = 300 (whole worked window)', r.pendingOtMins, 300);
+eq('pending dates = 1', r.pendingDates.length, 1);
+eq('pending dates includes the Sunday', r.pendingDates[0], '2026-06-07');
+
+console.log('\nSame Sunday, admin partially approves 120 of the 300 pending minutes (ordinary flow: requestedMins = the full 300 asked, per ot-shortage/page.tsx\'s approveOt call — the admin decided on the whole amount, granting only part of it):');
+const apprSun = [{ id: '2026-06-07', userId: U, date: '2026-06-07', requestedMins: 300, approvedMins: 120, status: 'approved' } as never];
+r = computeRangeLedger(U, evSun, [], apprSun, [], noHol);
+eq('granted = 120 (exactly the approved minutes)', r.grantedOtMins, 120);
+eq('net = 120 (exactly the approved minutes)', r.netMins, 120);
+eq('no longer pending (remaining = 300 - 300 = 0; the full ask was decided)', r.pendingDates.length, 0);
+
+console.log('\n[BUG FIX] Same Sunday, an UNRELATED manual grant only requests 60 of the 300 pending minutes (setManualOt-style: requestedMins = approvedMins = 60) — the other 240 must remain pending, not vanish:');
+const manualUnrelated = [{ id: '2026-06-07', userId: U, date: '2026-06-07', requestedMins: 60, approvedMins: 60, status: 'approved', manual: true } as never];
+r = computeRangeLedger(U, evSun, [], manualUnrelated, [], noHol);
+eq('granted = 60 (just the manual grant)', r.grantedOtMins, 60);
+eq('STILL pending: remaining = 300 - 60 = 240', r.pendingOtMins, 240);
+eq('pending dates = 1 (the doc did not fully decide the date)', r.pendingDates.length, 1);
+eq('pending dates includes the Sunday', r.pendingDates[0], '2026-06-07');
+eq('net = 60 (auto 0 + granted 60; the pending 240 is not credited)', r.netMins, 60);
+
+console.log('\n[BUG FIX — exact brief scenario] Sunday (2026-06-28) worked 09:00–19:00 (600 min pending); an unrelated 60-min manual grant must leave 540 pending:');
+const evSun2 = [ev(U, '2026-06-28', 'site_in', '09:00'), ev(U, '2026-06-28', 'site_out', '19:00')];
+const manualGrant60 = [{ id: '2026-06-28', userId: U, date: '2026-06-28', requestedMins: 60, approvedMins: 60, status: 'approved', manual: true } as never];
+r = computeRangeLedger(U, evSun2, [], manualGrant60, [], noHol);
+eq('pending remaining = 600 - 60 = 540', r.pendingOtMins, 540);
+eq('pending dates = 1', r.pendingDates.length, 1);
+eq('granted = 60', r.grantedOtMins, 60);
+
+console.log('\nDecision requestedMins EXCEEDS pendingExtraMins (over-covering) still reports 0 remaining, not negative:');
+const evSun3 = [ev(U, '2026-06-14', 'site_in', '10:00'), ev(U, '2026-06-14', 'site_out', '12:00')]; // 120 min pending
+const overCover = [{ id: '2026-06-14', userId: U, date: '2026-06-14', requestedMins: 500, approvedMins: 120, status: 'approved' } as never];
+r = computeRangeLedger(U, evSun3, [], overCover, [], noHol);
+eq('pending dates = 0 (over-covered, remaining clamped to 0)', r.pendingDates.length, 0);
+eq('pending mins = 0', r.pendingOtMins, 0);
+eq('granted = 120', r.grantedOtMins, 120);
+
+console.log('\nRejected day: requestedMins covers the full original ask, approvedMins = 0 → nets 0 granted OT and is correctly NOT pending:');
+const evSun4 = [ev(U, '2026-06-21', 'site_in', '10:00'), ev(U, '2026-06-21', 'site_out', '13:00')]; // 180 min pending
+const rejected = [{ id: '2026-06-21', userId: U, date: '2026-06-21', requestedMins: 180, approvedMins: 0, status: 'rejected' } as never];
+r = computeRangeLedger(U, evSun4, [], rejected, [], noHol);
+eq('granted = 0 (rejected)', r.grantedOtMins, 0);
 eq('net = 0', r.netMins, 0);
+eq('pending dates = 0 (remaining = 180 - 180 = 0; fully decided as rejected)', r.pendingDates.length, 0);
 
 console.log('\nWO day status counted:');
 const woStatus = [{ id: '2026-06-02', userId: U, date: '2026-06-02', status: 'WO' } as never];
@@ -74,7 +110,7 @@ eq('override pending = 0 (30 surplus all within declared)', r.pendingOtMins, 0);
 eq('override shortage = 0', r.shortageMins, 0);
 
 console.log('\nManual OT grant on a day with no events (counts as granted):');
-const manualAppr = [{ id: '2026-06-04', userId: U, date: '2026-06-04', approvedMins: 120, status: 'approved', manual: true } as never];
+const manualAppr = [{ id: '2026-06-04', userId: U, date: '2026-06-04', requestedMins: 120, approvedMins: 120, status: 'approved', manual: true } as never];
 r = computeRangeLedger(U, [], [], manualAppr, [], noHol);
 eq('granted = 120', r.grantedOtMins, 120);
 eq('net = 120', r.netMins, 120);

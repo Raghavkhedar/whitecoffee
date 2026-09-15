@@ -4,7 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useAccess } from '@/components/AccessContext';
-import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen } from '@/lib/firestore';
+import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen, getHolidaysForDateRange, isRestDay } from '@/lib/firestore';
 import type { RegularizationRequest } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
@@ -58,6 +58,10 @@ export default function RegularizationPage() {
   const isMobile = useIsMobile();
   const { user: portalUser } = useAccess();
   const isAdmin = portalUser?.role === 'admin';
+  // Same check /conveyance itself uses — a Regularization-only manager must never be offered
+  // this field, since a Firestore batch fails atomically if it includes a write they can't
+  // make (see firestore.rules:677-683 and the Protocol 2 spec's Enforcement section).
+  const canClaimConveyance = isAdmin || (portalUser?.tabAccess ?? []).includes('/conveyance');
   const [requests, setRequests]       = useState<RegularizationRequest[]>([]);
   const [filter, setFilter]           = useState<Filter>('pending');
   const [month, setMonth]             = useState(currentYearMonth());
@@ -69,10 +73,16 @@ export default function RegularizationPage() {
   const [approvedStatus, setApprovedStatus]   = useState<string>('Present');
   const [effIn, setEffIn]             = useState('');
   const [effOut, setEffOut]           = useState('');
+  const [km, setKm]                   = useState('');
   const [actioning, setActioning]     = useState('');
   const [employeeFilter, setEmployeeFilter]   = useState('');
   const [windowOpen, setWindowOpen]     = useState(false);
   const [togglingWindow, setToggling]   = useState(false);
+  // Whether the request currently open in the action modal falls on a rest day (Protocol 1) —
+  // WO is illegal there, so it's excluded from the outcome dropdown. Resolved async (a holiday
+  // lookup) when the modal opens; defaults to false so a Sunday still renders correctly the
+  // instant openModal's synchronous isRestDay(date) check (no holidays) resolves below.
+  const [modalIsRestDay, setModalIsRestDay] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -108,6 +118,15 @@ export default function RegularizationPage() {
     setApprovedStatus('Present');
     setEffIn('');
     setEffOut('');
+    setKm(req.claimedKm != null ? String(req.claimedKm) : '');
+    // Synchronous first pass (Sunday only, no holiday lookup yet) so the WO option is already
+    // gone for the common case the instant the modal renders; refined below once holidays load.
+    setModalIsRestDay(isRestDay(req.date));
+    if (type === 'approve') {
+      getHolidaysForDateRange(req.date, req.date)
+        .then(holidays => setModalIsRestDay(isRestDay(req.date, new Set(holidays.map(h => h.id)))))
+        .catch(() => {}); // leave the Sunday-only verdict in place; the server-side rules are the real guard either way
+    }
   }
 
   async function handleAction() {
@@ -117,6 +136,15 @@ export default function RegularizationPage() {
       if (!!effIn !== !!effOut) { setError('Enter both in and out times, or leave both blank.'); return; }
       if (effIn && effOut && effOut <= effIn) { setError('Out time must be after in time.'); return; }
     }
+    // Conveyance is only claimable on a worked-day outcome — crediting travel reimbursement on
+    // a day simultaneously approved as Absent/LWP/WO/PL (which docks salary or asserts no work
+    // happened) is internally contradictory. SL isn't an outcome this page offers at all.
+    const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
+    let kmValue: number | undefined;
+    if (type === 'approve' && canCreditKm && km.trim()) {
+      kmValue = parseFloat(km);
+      if (isNaN(kmValue) || kmValue < 0) { setError('KM must be a non-negative number.'); return; }
+    }
     setError('');
     setActioning(req.id);
     try {
@@ -125,7 +153,7 @@ export default function RegularizationPage() {
         const carry = approvedStatus === 'Present' && effIn && effOut;
         await approveRegularization(
           req.userId, req.id, req.date, adminName, actionComment, approvedStatus, req.userName, req.employeeId,
-          carry ? effIn : undefined, carry ? effOut : undefined,
+          carry ? effIn : undefined, carry ? effOut : undefined, kmValue,
         );
       } else {
         await rejectRegularization(req.userId, req.id, adminName, actionComment);
@@ -133,8 +161,12 @@ export default function RegularizationPage() {
       setActionModal(null);
       setActionComment('');
       await load();
-    } catch {
-      setError(`${type === 'approve' ? 'Approval' : 'Rejection'} failed.`);
+    } catch (err) {
+      // Surface the real message when there is one — e.g. approveRegularization's rest-day
+      // re-check ("Cannot write attendance status for ... it is a Sunday/holiday, an immutable
+      // rest day.") — rather than always the generic fallback, so this reads as a clear error
+      // instead of a raw permission-denied.
+      setError(err instanceof Error ? err.message : `${type === 'approve' ? 'Approval' : 'Rejection'} failed.`);
     }
     setActioning('');
   }
@@ -369,10 +401,19 @@ export default function RegularizationPage() {
                   value={approvedStatus}
                   onChange={e => setApprovedStatus(e.target.value)}
                 >
-                  {ATTENDANCE_STATUSES.map(s => (
+                  {/* WO is illegal on a rest day (Protocol 1) — a Sunday/holiday already carries
+                      no obligation, so a WO there is meaningless and the write is rejected
+                      server-side regardless; simplest not to offer it here. */}
+                  {ATTENDANCE_STATUSES.filter(s => s !== 'WO' || !modalIsRestDay).map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+                {modalIsRestDay && (
+                  <p className="text-xs text-text-secondary mt-1.5">
+                    {actionModal.req.date} is a rest day (Sunday/holiday) — WO isn&apos;t offered here.
+                    Work performed on a rest day is handled through OT approval, not regularization.
+                  </p>
+                )}
               </div>
             )}
 
@@ -386,6 +427,23 @@ export default function RegularizationPage() {
                 </div>
                 <p className="text-xs text-text-secondary mt-1.5">
                   Set the real in/out for a missed-punch day so it carries shortage/overtime in the OT ledger (operations). Leave blank for a full-day Present.
+                </p>
+              </div>
+            )}
+
+            {actionModal.type === 'approve' && canClaimConveyance
+              && (approvedStatus === 'Present' || approvedStatus === 'HalfDay') && (
+              <div className="mb-4">
+                <label className="label">KM traveled <span className="font-normal text-text-secondary">(optional)</span></label>
+                <input
+                  type="number" min="0" step="0.1"
+                  className="input mt-1"
+                  value={km}
+                  onChange={e => setKm(e.target.value)}
+                  placeholder={actionModal.req.claimedKm != null ? `Employee claimed ${actionModal.req.claimedKm} km` : 'e.g. 24.5'}
+                />
+                <p className="text-xs text-text-secondary mt-1.5">
+                  Sets conveyance for this date directly (km × the employee&apos;s own rate). Leave blank to leave conveyance untouched.
                 </p>
               </div>
             )}

@@ -25,15 +25,13 @@ function isSunday(date: string): boolean {
 
 export interface RangeLedger {
   autoOtMins: number;
-  restDayOtMins: number;
   grantedOtMins: number;          // sum of approvedMins across ot_approvals decisions
   shortageMins: number;
   woDates: string[];
   woDebitMins: number;
-  netMins: number;                // (auto + restDay + granted) − shortage − woDebit
-  pendingDates: string[];         // un-decided pending OT days (block settlement)
+  netMins: number;                // (auto + granted) − shortage − woDebit
+  pendingDates: string[];         // un-decided pending OT days (block settlement) — includes rest days
   pendingOtMins: number;
-  unauthorizedRestDates: string[];// rest days worked without authorization (block settlement)
 }
 
 // Aggregate one ops employee's ledger over already-fetched arrays for a date range/month.
@@ -48,11 +46,9 @@ export function computeRangeLedger(
   // Only windows with end > start are valid; an inverted/zero window (e.g. a mis-entered
   // "06:00" end) is treated as no plan → the worked day falls back to the default 10:00–18:00.
   const plannedByDate = new Map<string, { startMin: number; endMin: number; declared: number }>();
-  const otAuthByDate = new Set<string>();
   planned.filter(p => p.userId === userId).forEach(p => {
     const startMin = hhmmToMinutes(p.startTime), endMin = hhmmToMinutes(p.endTime);
     if (endMin > startMin) plannedByDate.set(p.date, { startMin, endMin, declared: Math.max(0, p.declaredOtMins ?? 0) });
-    if (p.otAuthorized) otAuthByDate.add(p.date);
   });
 
   const eventsByDate = new Map<string, AttendanceRecord[]>();
@@ -72,9 +68,8 @@ export function computeRangeLedger(
     if (outMin > inMin) overrideByDate.set(s.date, { inMin, outMin });
   });
 
-  let autoOtMins = 0, restDayOtMins = 0, shortageMins = 0, pendingOtMins = 0;
+  let autoOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates: string[] = [];
-  const unauthorizedRestDates: string[] = [];
 
   const accrueDay = (date: string, inMin: number, outMin: number) => {
     const info = plannedByDate.get(date);
@@ -84,13 +79,14 @@ export function computeRangeLedger(
       inMin, outMin,
       declaredOtMins: info?.declared ?? 0,
       isRestDay: isSunday(date) || holidays.has(date),
-      otAuthorized: otAuthByDate.has(date),
     });
     shortageMins   += led.shortageMins;
     autoOtMins     += led.autoOtMins;
-    restDayOtMins  += led.restDayOtMins;
-    if (led.pendingExtraMins > 0 && !apprByDate.has(date)) { pendingOtMins += led.pendingExtraMins; pendingDates.push(date); }
-    if (led.unauthorizedRestDay) unauthorizedRestDates.push(date);
+    // A date is only "decided" up to what its ot_approvals doc's requestedMins actually covers —
+    // not merely by the doc's presence. An unrelated manual grant (e.g. setManualOt with
+    // requestedMins=60) must not swallow the rest of a rest day's 600-minute pendingExtraMins.
+    const remaining = Math.max(0, led.pendingExtraMins - (apprByDate.get(date)?.requestedMins ?? 0));
+    if (remaining > 0) { pendingOtMins += remaining; pendingDates.push(date); }
   };
 
   eventsByDate.forEach((dayEvents, date) => {
@@ -110,13 +106,12 @@ export function computeRangeLedger(
   const grantedOtMins = Array.from(apprByDate.values()).reduce((s, a) => s + (Number(a.approvedMins) || 0), 0);
   const woDates = statuses.filter(s => s.userId === userId && s.status === 'WO').map(s => s.date).sort();
   const woDebitMins = woDates.length * WO_DEBIT_MINS;
-  const netMins = netLedgerMins({ autoOtMins, restDayOtMins, approvedGrantedMins: grantedOtMins, shortageMins, woDebitMins });
+  const netMins = netLedgerMins({ autoOtMins, approvedGrantedMins: grantedOtMins, shortageMins, woDebitMins });
 
   return {
-    autoOtMins, restDayOtMins, grantedOtMins, shortageMins,
+    autoOtMins, grantedOtMins, shortageMins,
     woDates, woDebitMins, netMins,
     pendingDates: pendingDates.sort(), pendingOtMins,
-    unauthorizedRestDates: unauthorizedRestDates.sort(),
   };
 }
 

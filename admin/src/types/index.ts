@@ -82,7 +82,7 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO';
+  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO' | 'Sunday' | 'Holiday';
   markedBy: 'auto' | 'admin';
   // Effective worked window captured when an admin regularizes a day to Present (missed-punch
   // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw
@@ -169,6 +169,7 @@ export interface RegularizationRequest {
   approvedBy: string;
   approverComment: string;
   approvedStatus?: string;
+  claimedKm?: number | null; // employee-claimed travel distance for a missed-punch day (Protocol 2); Android's toMap() always writes the key, explicit null when unset
   submittedAt?: Timestamp;
   reviewedAt?: Timestamp;
 }
@@ -180,7 +181,10 @@ export interface PlannedHours {
   startTime: string;  // "HH:MM" 24h
   endTime: string;    // "HH:MM" 24h
   declaredOtMins?: number; // admin pre-declared overtime for the day (minutes); worked OT up to this is auto-approved
-  otAuthorized?: boolean;  // Sunday/holiday only: admin authorized this person's rest-day work → all worked minutes count as auto-approved OT
+  /** @deprecated Retired by the OT redesign, Protocol 1 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md)
+   *  — rest-day work is always pending OT, never pre-authorized. No longer read or written;
+   *  kept only so historical planned_hours docs still deserialize. */
+  otAuthorized?: boolean;
   updatedAt?: Timestamp;
 }
 
@@ -195,12 +199,16 @@ export interface Settlement {
   employeeId: string;
   role: string;
   autoOtMins: number;    // pre-declared OT worked (auto-approved)
-  restDayOtMins: number; // authorized Sunday/holiday OT
-  grantedOtMins: number; // admin-granted OT (beyond-declared)
+  /** @deprecated Retired by the OT redesign, Protocol 1 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md)
+   *  — rest-day OT is no longer pre-authorized; once approved it is indistinguishable from any
+   *  other granted OT and folds into grantedOtMins. No longer read; new settlements write 0.
+   *  Kept only so historical settlement docs still deserialize. */
+  restDayOtMins: number;
+  grantedOtMins: number; // admin-granted OT (beyond-declared, including any rest-day grant)
   shortageMins: number;
   woDays: number;        // count of WO days that month
   woDebitMins: number;   // woDays × 480
-  netMins: number;       // (auto + restDay + granted) − shortage − woDebit
+  netMins: number;       // (auto + granted) − shortage − woDebit
   salaryRate: number;    // per-day rate at settlement time
   settlementCash: number;// woDays×rate + netMins/480×rate  (± rupees added to TOTAL DUE)
   locked: boolean;
@@ -302,6 +310,8 @@ export interface ConveyanceRecord {
   totalKm: number;
   ratePerKm: number;
   conveyance: number;
+  markedBy?: string; // 'admin' when set via a regularization approval (Protocol 2) — the
+                      // nightly exportToSheets computation skips a doc stamped this way
   computedAt?: Timestamp;
 }
 

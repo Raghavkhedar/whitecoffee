@@ -10,6 +10,7 @@ import { auth, db, functions } from './firebase';
 import { istTodayStr } from './date';
 import { effectiveGrantedDates } from './leaveDates';
 import { PAY_FIELDS, type Pay } from './compensation';
+import { usesConveyance } from './roleCapabilities';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
 import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry } from '@/types';
@@ -310,9 +311,10 @@ export async function rejectLeave(
  *
  * Two things happen per cancelled date, and only one of them is automatic:
  *
- *  - **Future / never-scored dates** need no attendance write at all. No
- *    `attendance_status` doc exists yet, and the nightly scorer will simply stop
- *    seeing leave for that day. This is why there is no past-vs-future branch here.
+ *  - **Future / never-scored dates** need no attendance write at all. A future date has
+ *    no `attendance_status` doc (except a Sunday/Holiday, which does — see the guard a
+ *    few lines below), and the nightly scorer will simply stop seeing leave for that day.
+ *    This is why there is no past-vs-future branch here.
  *  - **Already-scored dates** are reverted to `Absent` — a PL/LWP day has zero
  *    punches by construction, so with the leave gone it is exactly the scorer's own
  *    `no leave → Absent` fallback.
@@ -331,6 +333,28 @@ export async function rejectLeave(
  * Re-cancelling an already-cancelled date is a safe no-op: the UI only offers days
  * that are still granted, and even if one slipped through, the revert wrote
  * `markedBy: 'admin'`, so the guard above rejects it and no second refund happens.
+ *
+ * ⚠️ **Rest days (Protocol 1) are skipped by DATE, not by the doc's `status` field** — added
+ * after a review caught that this function wrote `attendance_status` directly via
+ * `batch.set`, bypassing `setAttendanceStatus`/`assertNotRestDay` exactly like
+ * `approveRegularization` does. Firestore batches are atomic: under the current
+ * `firestore.rules` (`!isRestDate(date)`), a batch that touches even one Sunday/holiday date
+ * is denied WHOLESALE — taking down the cancellation AND the `plBalance` refund for every
+ * *other*, perfectly legal date in the same range. Nightly scoring skips Sundays/holidays
+ * entirely (no PL/LWP doc is ever written there going forward), so a real collision needs a
+ * stale/legacy doc — but a cancellation spanning a Sunday is completely ordinary (leave
+ * ranges are calendar-day spans), so the *reachability* of that legacy doc is not the point;
+ * the blast radius if it exists is. The status-field check two lines below (`'Sunday' ||
+ * 'Holiday'`) is NOT a guard against this — it tests what the doc SAYS, not what the DATE
+ * IS, so a legacy PL/LWP doc sitting on a rest date sails straight past it into the batch.
+ * The fix here checks the date itself, mirroring `isRestDay`'s Sunday+holiday precedence, and
+ * SKIPS silently (like the "no doc" branch above) rather than reporting it in `skippedDates`
+ * or throwing: throwing would revive the exact all-or-nothing failure this fix exists to
+ * remove, and `skippedDates` means "something else already claimed this day" (an admin
+ * decision), which a rest day is not — nothing was ever legitimately scored there under
+ * Protocol 1, so there is nothing to flag, exactly like an unscored future date. Only the
+ * per-date write (and any refund tied to it) is skipped; every other date in the same call
+ * still cancels, writes, and refunds normally.
  */
 export async function cancelLeave(
   userId: string, requestId: string, cancellerName: string,
@@ -362,18 +386,32 @@ export async function cancelLeave(
   // Every read resolves BEFORE the batch opens — a Firestore batch cannot read.
   const statusRefs  = cancelling.map(d => doc(db, 'users', userId, 'attendance_status', d));
   const statusSnaps = await Promise.all(statusRefs.map(r => getDoc(r)));
+  // Holidays across the whole cancelled range (cancelling is sorted), so isRestDay can be
+  // checked by DATE for every date in the loop below — see the doc comment above.
+  const holidaysInRange = await getHolidaysForDateRange(cancelling[0], cancelling[cancelling.length - 1]);
+  const holidaySet = new Set(holidaysInRange.map(h => h.id));
 
   const batch = writeBatch(db);
   const skippedDates: string[] = [];
   let refundedDays = 0;
 
   statusSnaps.forEach((snap, i) => {
-    // No doc = never scored (a future date, a Sunday, a holiday). Nothing to undo,
-    // and NOT a skip — the cancellation lands cleanly.
+    const date = cancelling[i];
+    // Rest days (Protocol 1) are immutable at the attendance_status layer regardless of
+    // what a (legacy) doc there says — see the doc comment above for why this is a silent
+    // skip, not a thrown error and not a reported skippedDate.
+    if (isRestDay(date, holidaySet)) return;
+    // No doc = never scored (a future date, or a Sunday/holiday before this feature's
+    // deploy date). Nothing to undo, and NOT a skip — the cancellation lands cleanly.
     if (!snap.exists()) return;
     const data = snap.data() as AttendanceStatus;
+    // A Sunday/Holiday doc is never a leave day either — same "nothing to undo" case as
+    // no doc at all, just now backed by a real record instead of an absent one. (Catches a
+    // doc scored on a date that WAS a rest day but no longer resolves as one above — e.g.
+    // the holiday was later unmarked — which the date-based check can't see.)
+    if (data.status === 'Sunday' || data.status === 'Holiday') return;
     const scoredAsLeave = data.status === 'PL' || data.status === 'LWP';
-    if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(cancelling[i]); return; }
+    if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(date); return; }
 
     batch.set(
       statusRefs[i],
@@ -419,8 +457,18 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
 export async function approveRegularization(
   userId: string, requestId: string, date: string, approverName: string,
   comment: string, approvedStatus: string, userName = '', employeeId = '',
-  inTime?: string, outTime?: string,
+  inTime?: string, outTime?: string, km?: number,
 ) {
+  // Re-check rather than trust the submitted form: the regularization page already excludes WO
+  // from the outcome list for a rest-day request and refuses to file a request for one at all
+  // (Android), but neither of those is load-bearing here — this write bypasses
+  // setAttendanceStatus's assertNotRestDay (it goes straight to batch.set, per Protocol 1's
+  // "no admin, manager, regularization, or backfill may write... on those dates"), so a stale
+  // form, a race with a holiday just added, or a direct call must still be caught, with a clear
+  // Error instead of a raw permission-denied from firestore.rules' `!isRestDate(date)`.
+  const holidaysOnDate = await getHolidaysForDateRange(date, date);
+  assertNotRestDay(date, new Set(holidaysOnDate.map(h => h.id)));
+
   const batch = writeBatch(db);
   batch.update(
     doc(db, 'users', userId, 'regularization_requests', requestId),
@@ -439,6 +487,42 @@ export async function approveRegularization(
     }),
     { merge: true }
   );
+
+  // Protocol 2 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a claimed KM figure
+  // fixes conveyance for a missed-punch day the same way inTime/outTime already fixes OT.
+  // Independent of carryHours — an admin may want to correct conveyance without also touching
+  // the ledger override. Scoped to usesConveyance(role): office/admin never earn conveyance,
+  // so a stray km value on their request must never mint a conveyance doc for them.
+  //
+  // Re-checked here, not trusted from the page: conveyance is only claimable on a worked-day
+  // outcome. Absent/LWP/WO/PL either dock salary or formally assert the day was not worked —
+  // crediting travel reimbursement on the same day would be internally contradictory.
+  const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
+  if (canCreditKm && km !== undefined && km >= 0) {
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    const userData = userSnap.exists() ? userSnap.data() : undefined;
+    const targetRole = (userData?.role as string) ?? '';
+    if (usesConveyance(targetRole)) {
+      const rateType = userData?.conveyanceRateType;
+      const { rate1, rate2 } = await getConveyanceConfig();
+      // Mirrors firebase/functions/index.js's rateValues lookup (object-keyed, per-slot
+      // 2.5 fallback) — a plain `(rateType === 2 ? rate2 : rate1) || rate1` diverges from
+      // it whenever rate2 is unset (falls through to rate1 instead of its own 2.5) or
+      // rateType is a legacy string "2" (fails the strict === check).
+      const rates = { 1: rate1 || 2.5, 2: rate2 || 2.5 };
+      const ratePerKm = rates[Number(rateType) as 1 | 2] || rates[1];
+      batch.set(
+        doc(db, 'conveyance', `${userId}__${date}`),
+        stamped({
+          userId, userName, employeeId, date, month: date.slice(0, 7),
+          route: 'Regularized (manual entry)', totalKm: km, ratePerKm,
+          conveyance: km * ratePerKm, markedBy: 'admin', computedAt: Timestamp.now(),
+        }),
+        { merge: true },
+      );
+    }
+  }
+
   await batch.commit();
 }
 
@@ -584,6 +668,34 @@ export async function getSentNotifications(count = 20): Promise<SentNotification
 
 // ── Attendance Status ─────────────────────────────────────────────────────
 
+// Rest-day write guard (Protocol 1 — docs/superpowers/specs/2026-09-14-ot-redesign-design.md).
+// Sundays and company holidays are immutable rest days: no attendance_status doc may be
+// written on them by anyone. Mirrors resolveRestDayType's precedence (holiday wins over
+// Sunday) in firebase/functions/attendanceRules.js — the canonical definition of "is this
+// date a rest day" — without importing that CommonJS module into a browser bundle.
+//
+// `holidays` is an OPTIONAL set of "yyyy-mm-dd" dates, defaulting to empty, per controller
+// ruling: this unconditionally blocks Sundays the moment this guard lands, without requiring
+// every existing call site to be updated to pass the real holiday set — that wiring is
+// Task 4's job. Neither this nor isRestDay reads Firestore itself; the caller looks up
+// holidays and passes them in.
+//
+// Split into a pure boolean (isRestDay) and a throwing wrapper (assertNotRestDay) because
+// cancelLeave (below) needs the boolean form: a rest-day date reached while cancelling a
+// leave range must be silently SKIPPED, not thrown on — see cancelLeave's doc comment.
+// Exported so callers outside this file (e.g. the Regularization page, which needs to know
+// whether a request's date is a rest day to exclude WO as an outcome) can reuse this exact
+// check rather than re-deriving "is this a rest day" — see the module comment above.
+export function isRestDay(date: string, holidays: Set<string> = new Set()): boolean {
+  return holidays.has(date) || new Date(date + 'T00:00:00Z').getUTCDay() === 0;
+}
+
+function assertNotRestDay(date: string, holidays: Set<string> = new Set()): void {
+  if (!isRestDay(date, holidays)) return;
+  const kind = holidays.has(date) ? 'a holiday' : 'a Sunday';
+  throw new Error(`Cannot write attendance status for ${date}: it is ${kind}, an immutable rest day.`);
+}
+
 // month is 1-indexed (1 = January)
 export async function getAttendanceStatusForMonth(year: number, month: number): Promise<AttendanceStatus[]> {
   const monthStr  = `${year}-${String(month).padStart(2, '0')}`;
@@ -601,13 +713,27 @@ export async function getAttendanceStatusForMonth(year: number, month: number): 
 export async function setAttendanceStatus(
   userId: string,
   date: string,
-  data: Omit<AttendanceStatus, 'id' | 'updatedAt'>
+  data: Omit<AttendanceStatus, 'id' | 'updatedAt'>,
+  holidays: Set<string> = new Set(),
 ): Promise<void> {
+  assertNotRestDay(date, holidays);
   await setDoc(
     doc(db, 'users', userId, 'attendance_status', date),
     stamped({ ...data, updatedAt: Timestamp.now() }),
     { merge: true }
   );
+}
+
+// Mark a paid WO (no-work day off) for an employee. Writes a markedBy:'admin' status doc the
+// nightly function won't overwrite. WO is illegal on a rest day (Protocol 1) — a rest day
+// already carries no obligation, so a WO there is meaningless; setAttendanceStatus's guard
+// throws before any such write reaches Firestore. `holidays` is optional (see
+// assertNotRestDay) — Task 4 wires the real holiday set in from the Attendance page.
+export async function markWo(user: User, date: string, holidays: Set<string> = new Set()): Promise<void> {
+  await setAttendanceStatus(user.id, date, {
+    date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
+    role: user.role || '', status: 'WO', markedBy: 'admin',
+  }, holidays);
 }
 
 // Remove an admin-set status doc (e.g. clearing a WO) so the nightly function can recompute.
@@ -673,17 +799,6 @@ export async function setPlannedHours(
   await setDoc(
     doc(db, 'users', userId, 'planned_hours', date),
     stamped({ userId, date, startTime, endTime, declaredOtMins, updatedAt: Timestamp.now() }),
-    { merge: true }
-  );
-}
-
-// Authorize (or revoke) all-hours OT for an ops employee on a Sunday/holiday. Merges a flag
-// into planned_hours/{date} without requiring a shift window. When true, the OT/shortage
-// ledger counts every worked minute that day as auto-approved OT.
-export async function setOtAuthorization(userId: string, date: string, authorized: boolean): Promise<void> {
-  await setDoc(
-    doc(db, 'users', userId, 'planned_hours', date),
-    stamped({ userId, date, otAuthorized: authorized, updatedAt: Timestamp.now() }),
     { merge: true }
   );
 }
@@ -890,8 +1005,9 @@ export async function unlockSpecialAllowance(userId: string, month: string): Pro
 }
 
 // ── Holidays (company-wide) ───────────────────────────────────────────────
-// Stored at holidays/{date}; a marked day is skipped like a Sunday everywhere
-// attendance is evaluated (no status, no penalty, excluded from working days).
+// Stored at holidays/{date}; a marked day is payroll-neutral everywhere attendance
+// is evaluated (no penalty, excluded from working days) — it now gets an explicit
+// "Holiday" attendance_status doc (see computeDailyAttendanceStatus) instead of no doc at all.
 
 // month is 1-indexed (1 = January)
 export async function getHolidaysForMonth(year: number, month: number): Promise<Holiday[]> {
