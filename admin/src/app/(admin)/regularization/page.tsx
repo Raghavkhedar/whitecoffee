@@ -58,6 +58,10 @@ export default function RegularizationPage() {
   const isMobile = useIsMobile();
   const { user: portalUser } = useAccess();
   const isAdmin = portalUser?.role === 'admin';
+  // Same check /conveyance itself uses — a Regularization-only manager must never be offered
+  // this field, since a Firestore batch fails atomically if it includes a write they can't
+  // make (see firestore.rules:677-683 and the Protocol 2 spec's Enforcement section).
+  const canClaimConveyance = isAdmin || (portalUser?.tabAccess ?? []).includes('/conveyance');
   const [requests, setRequests]       = useState<RegularizationRequest[]>([]);
   const [filter, setFilter]           = useState<Filter>('pending');
   const [month, setMonth]             = useState(currentYearMonth());
@@ -69,6 +73,7 @@ export default function RegularizationPage() {
   const [approvedStatus, setApprovedStatus]   = useState<string>('Present');
   const [effIn, setEffIn]             = useState('');
   const [effOut, setEffOut]           = useState('');
+  const [km, setKm]                   = useState('');
   const [actioning, setActioning]     = useState('');
   const [employeeFilter, setEmployeeFilter]   = useState('');
   const [windowOpen, setWindowOpen]     = useState(false);
@@ -113,6 +118,7 @@ export default function RegularizationPage() {
     setApprovedStatus('Present');
     setEffIn('');
     setEffOut('');
+    setKm(req.claimedKm != null ? String(req.claimedKm) : '');
     // Synchronous first pass (Sunday only, no holiday lookup yet) so the WO option is already
     // gone for the common case the instant the modal renders; refined below once holidays load.
     setModalIsRestDay(isRestDay(req.date));
@@ -130,6 +136,11 @@ export default function RegularizationPage() {
       if (!!effIn !== !!effOut) { setError('Enter both in and out times, or leave both blank.'); return; }
       if (effIn && effOut && effOut <= effIn) { setError('Out time must be after in time.'); return; }
     }
+    let kmValue: number | undefined;
+    if (type === 'approve' && km.trim()) {
+      kmValue = parseFloat(km);
+      if (isNaN(kmValue) || kmValue < 0) { setError('KM must be a non-negative number.'); return; }
+    }
     setError('');
     setActioning(req.id);
     try {
@@ -138,7 +149,7 @@ export default function RegularizationPage() {
         const carry = approvedStatus === 'Present' && effIn && effOut;
         await approveRegularization(
           req.userId, req.id, req.date, adminName, actionComment, approvedStatus, req.userName, req.employeeId,
-          carry ? effIn : undefined, carry ? effOut : undefined,
+          carry ? effIn : undefined, carry ? effOut : undefined, kmValue,
         );
       } else {
         await rejectRegularization(req.userId, req.id, adminName, actionComment);
@@ -412,6 +423,22 @@ export default function RegularizationPage() {
                 </div>
                 <p className="text-xs text-text-secondary mt-1.5">
                   Set the real in/out for a missed-punch day so it carries shortage/overtime in the OT ledger (operations). Leave blank for a full-day Present.
+                </p>
+              </div>
+            )}
+
+            {actionModal.type === 'approve' && canClaimConveyance && (
+              <div className="mb-4">
+                <label className="label">KM traveled <span className="font-normal text-text-secondary">(optional)</span></label>
+                <input
+                  type="number" min="0" step="0.1"
+                  className="input mt-1"
+                  value={km}
+                  onChange={e => setKm(e.target.value)}
+                  placeholder={actionModal.req.claimedKm != null ? `Employee claimed ${actionModal.req.claimedKm} km` : 'e.g. 24.5'}
+                />
+                <p className="text-xs text-text-secondary mt-1.5">
+                  Sets conveyance for this date directly (km × the employee&apos;s own rate). Leave blank to leave conveyance untouched.
                 </p>
               </div>
             )}
