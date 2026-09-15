@@ -25,7 +25,7 @@ const END   = 18 * 60;   // 18:00 (8h shift)
 const DECLARED = 30;     // admin pre-declared 30 min OT
 // Convenience: build a normal-day input from in/out minute-of-day.
 const day = (inMin: number, outMin: number, declaredOtMins = 0) =>
-  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin, outMin, declaredOtMins, isRestDay: false });
+  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin, outMin, declaredOtMins, isRestDay: false, isWoDay: false });
 
 console.log('Normal working day (shift 10:00–18:00):');
 // Exactly on the window: no OT, no shortage.
@@ -85,38 +85,52 @@ check('in 10:20 out 17:45 → 35 shortage, 0 OT', day(START + 20, END - 15, DECL
 console.log('\nRest day (Sunday/holiday) — the whole worked window is PENDING, never auto-credited:');
 // Worked window on a rest day → all of it pending, zero everywhere else.
 check('rest day, 10:00–15:00 → +300 pending, 0 elsewhere',
-  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START, outMin: 15 * 60, declaredOtMins: 0, isRestDay: true }),
+  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START, outMin: 15 * 60, declaredOtMins: 0, isRestDay: true, isWoDay: false }),
   { pendingExtraMins: 300, shortageMins: 0, autoOtMins: 0 });
 // A rest day never yields shortage, whatever the in/out times (even "early-in"/"early-out").
 check('rest day, in 09:00 out 09:30 → 30 pending, 0 shortage',
-  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START - 60, outMin: START - 30, declaredOtMins: 0, isRestDay: true }),
+  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START - 60, outMin: START - 30, declaredOtMins: 0, isRestDay: true, isWoDay: false }),
   { pendingExtraMins: 30, shortageMins: 0, autoOtMins: 0 });
 // The declared-OT ceiling does NOT apply on a rest day: all of it is pending regardless of declaredOtMins.
 check('rest day, 10:00–15:00, declared 30 → still +300 pending (ceiling ignored)',
-  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START, outMin: 15 * 60, declaredOtMins: 30, isRestDay: true }),
+  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START, outMin: 15 * 60, declaredOtMins: 30, isRestDay: true, isWoDay: false }),
   { pendingExtraMins: 300, autoOtMins: 0, shortageMins: 0 });
 // Rest day ignores any shift window.
 check('rest day ignores shift (10:00–20:00)',
-  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin: START, outMin: 20 * 60, declaredOtMins: 0, isRestDay: true }),
+  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin: START, outMin: 20 * 60, declaredOtMins: 0, isRestDay: true, isWoDay: false }),
   { pendingExtraMins: 600, shortageMins: 0 });
 
 console.log('\nNo shift, not a rest day:');
 check('no shift → nothing accrues',
-  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START, outMin: END, declaredOtMins: 0, isRestDay: false }),
+  computeDayLedger({ shiftStartMin: 0, shiftEndMin: 0, inMin: START, outMin: END, declaredOtMins: 0, isRestDay: false, isWoDay: false }),
   { shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0 });
+
+console.log('\nWO day (Protocol 3) — mirrors rest-day treatment for shift math, on an ordinary weekday shift:');
+// Told to leave at 2pm on a 10:00–18:00 shift, day marked WO: no shortage from the early
+// leave, the 4h actually worked becomes pending OT instead (the exact "asked to leave at 2"
+// scenario the design conversation raised).
+check('WO day, shift 10–18, worked 10:00–14:00 → 240 pending, 0 shortage, 0 auto-OT',
+  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin: START, outMin: 14 * 60, declaredOtMins: 30, isRestDay: false, isWoDay: true }),
+  { pendingExtraMins: 240, shortageMins: 0, autoOtMins: 0 });
+// A WO day with no punches at all (the ordinary case) accrues nothing.
+check('WO day, no punches → 0 pending, 0 elsewhere',
+  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin: START, outMin: START, declaredOtMins: 0, isRestDay: false, isWoDay: true }),
+  { pendingExtraMins: 0, shortageMins: 0, autoOtMins: 0 });
+// The declared-OT ceiling does not apply on a WO day either — staying past shift end on a WO
+// day (unusual, but not impossible) is still all-pending, same as a rest day.
+check('WO day, worked 10:00–19:00, declared 30 → all 540 pending (ceiling ignored)',
+  computeDayLedger({ shiftStartMin: START, shiftEndMin: END, inMin: START, outMin: END + 60, declaredOtMins: 30, isRestDay: false, isWoDay: true }),
+  { pendingExtraMins: 540, shortageMins: 0, autoOtMins: 0 });
 
 console.log('\nistMinuteOfDay (epoch secs → IST minute-of-day):');
 eq('2026-06-01 09:50 IST → 590', istMinuteOfDay(Math.floor(new Date('2026-06-01T09:50:00+05:30').getTime() / 1000)), 590);
 eq('2026-06-01 17:56 IST → 1076', istMinuteOfDay(Math.floor(new Date('2026-06-01T17:56:00+05:30').getTime() / 1000)), 17 * 60 + 56);
 
-console.log('\nNet ledger (pending minutes are excluded entirely):');
-eq('prior shortage 30, +15 OT → net -15', netLedgerMins({ autoOtMins: 15, approvedGrantedMins: 0, shortageMins: 30, woDebitMins: 0 }), -15);
-eq('1 WO day, no OT → net -480', netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 0, shortageMins: 0, woDebitMins: WO_DEBIT_MINS }), -480);
-eq('1 WO day + 480 admin-granted (e.g. approved rest-day OT) → net 0', netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 480, shortageMins: 0, woDebitMins: WO_DEBIT_MINS }), 0);
-eq('1 WO day + 300 admin-granted → net -180', netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 300, shortageMins: 0, woDebitMins: WO_DEBIT_MINS }), -180);
-eq('mixed → +90', netLedgerMins({ autoOtMins: 60, approvedGrantedMins: 600, shortageMins: 90, woDebitMins: 480 }), 90);
-// A rest day's pendingExtraMins is not a NetLedgerParts field at all — it never reaches
-// netLedgerMins until an admin approval turns some of it into approvedGrantedMins.
+console.log('\nNet ledger (pending minutes are excluded entirely; WO debt no longer participates — Protocol 3):');
+eq('prior shortage 30, +15 OT → net -15', netLedgerMins({ autoOtMins: 15, approvedGrantedMins: 0, shortageMins: 30 }), -15);
+eq('60 auto + 600 granted − 90 shortage → net 570 (no WO term at all, Protocol 3)', netLedgerMins({ autoOtMins: 60, approvedGrantedMins: 600, shortageMins: 90 }), 570);
+// A WO's 480-minute debit is no longer a NetLedgerParts input at all — it is tracked and
+// settled entirely through the wo_ledger collection (see otAggregate.test.ts / Task 2).
 
 console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

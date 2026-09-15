@@ -23,6 +23,12 @@ export interface DayLedgerInput {
   outMin: number;         // actual last-out, IST minute-of-day
   declaredOtMins: number; // admin pre-declared OT for the day (auto-approval ceiling)
   isRestDay: boolean;     // Sunday or company holiday
+  isWoDay: boolean;       // Protocol 3: an admin-marked WO date. Treated exactly like a rest
+                          // day for THIS date's shift math (no shortage, no auto-OT credit,
+                          // the whole worked window becomes pending). A date is never both
+                          // isRestDay and isWoDay — WO is illegal on a rest day (Protocol 1).
+                          // The WO's own 480-minute debit is tracked entirely outside this
+                          // function, in the wo_ledger collection (Protocol 3).
 }
 
 export interface DayLedger {
@@ -35,34 +41,15 @@ const ZERO: DayLedger = {
   shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0,
 };
 
-// Per-day ledger for one operations worked day (both check-in and check-out present).
-//
-// Each shift edge is scored against the plain window:
-//   • checking in  before shift start → nothing (arriving early NEVER earns OT); after → late-in
-//   • checking out after  shift end   → late-out;  before → shortage (early-out)
-//
-// ⚠️ Late-out PAYS OFF late-in before any OT is credited. Staying past shift end first
-// makes up the minutes missed by arriving late; only the SURPLUS beyond break-even is OT,
-// and only the REMAINDER of the lateness is shortage. So a day is never both at once:
-// in 11:00 / out 18:30 on a 10–18 shift is 30 shortage and 0 OT, not "30 OT + 60 shortage".
-// (This deliberately supersedes the earlier independent-edge rule, which credited OT to
-// someone who had not yet worked their own shift — see docs/ot-shortage-design.md.)
-//
-// Early-out is NOT part of that netting and can never be cancelled: leaving before shift
-// end and after it are mutually exclusive, so an early-out day has no late-out to offset it.
-//
-// Declared OT is a pre-approval CEILING applied to the NET OT (auto up to declared, beyond
-// is pending) — it never changes shortage.
-//
-// Rest days (Sunday / company holiday) are immutable: nothing is pre-authorized. Any worked
-// window on a rest day raises a PENDING overtime request for the WHOLE window — never
-// auto-credited, never shortage, and the declared-OT ceiling does not apply (there is nothing
-// to be a ceiling on, since none of it is auto-approved). It is credited only when an admin
-// later approves some or all of it via the separate approval flow.
+// Rest days (Sunday / company holiday) AND WO days (admin-marked paid day off, Protocol 3)
+// are both immutable for shift-math purposes: nothing is pre-authorized. Any worked window on
+// either kind of day raises a PENDING overtime request for the WHOLE window — never
+// auto-credited, never shortage, and the declared-OT ceiling does not apply. It is credited
+// only when an admin later approves some or all of it via the separate approval flow.
 export function computeDayLedger(i: DayLedgerInput): DayLedger {
   const worked = Math.max(0, i.outMin - i.inMin);
 
-  if (i.isRestDay) return { ...ZERO, pendingExtraMins: worked };
+  if (i.isRestDay || i.isWoDay) return { ...ZERO, pendingExtraMins: worked };
 
   if (i.shiftEndMin > i.shiftStartMin) {
     const lateIn   = Math.max(0, i.inMin - i.shiftStartMin);   // came late
@@ -85,14 +72,18 @@ export function computeDayLedger(i: DayLedgerInput): DayLedger {
 }
 
 export interface NetLedgerParts {
-  autoOtMins: number;        // declared, auto-approved
-  approvedGrantedMins: number; // admin-granted OT (beyond-declared, or rest-day) via ot_approvals
+  autoOtMins: number;          // declared, auto-approved
+  approvedGrantedMins: number; // admin-granted OT (beyond-declared, or rest/WO-day), net of
+                                // any minutes already spent settling a WO debt (Protocol 3)
   shortageMins: number;
-  woDebitMins: number;       // (number of WO days) × WO_DEBIT_MINS
 }
 
-// Monthly/range net: approved OT (auto + granted) minus shortage minus WO debit.
-// Pending (un-approved) OT is intentionally excluded — it isn't credited until approved.
+// Monthly/range net: approved OT (auto + granted) minus shortage. WO debt no longer
+// participates here at all (Protocol 3) — it now lives entirely in the wo_ledger collection,
+// cleared only by an explicit admin settlement or a 2-month expiry write-off. A WO day's own
+// pay is unconditional (see otAggregate.ts's settlementCash) and no longer entangled with
+// whether OT ever offsets it. Pending (un-approved) OT is intentionally excluded — it isn't
+// credited until approved.
 export function netLedgerMins(p: NetLedgerParts): number {
-  return (p.autoOtMins + p.approvedGrantedMins) - p.shortageMins - p.woDebitMins;
+  return (p.autoOtMins + p.approvedGrantedMins) - p.shortageMins;
 }

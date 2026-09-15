@@ -10,7 +10,7 @@ const {
   WO_DEBIT_MINS, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
 } = require("./otLedger");
 
-const shift = { shiftStartMin: 600, shiftEndMin: 1080, declaredOtMins: 0, isRestDay: false };
+const shift = { shiftStartMin: 600, shiftEndMin: 1080, declaredOtMins: 0, isRestDay: false, isWoDay: false };
 
 test("constants", () => {
   assert.equal(WO_DEBIT_MINS, 480);
@@ -110,6 +110,22 @@ test("rest day ignores shift window, even when out extends past what would be la
   assert.equal(led.shortageMins, 0);
 });
 
+test("WO day mirrors rest-day treatment: worked window becomes pending, not shortage", () => {
+  // Told to leave at 2pm on a 10:00–18:00 shift, day marked WO: the 4h worked (in 600, out
+  // 840) becomes pending OT, not an early-out shortage.
+  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 840, isWoDay: true, declaredOtMins: 30 });
+  assert.equal(led.pendingExtraMins, 240);
+  assert.equal(led.shortageMins, 0);
+  assert.equal(led.autoOtMins, 0);
+});
+
+test("WO day with no punches accrues nothing", () => {
+  const led = computeDayLedger({ ...shift, inMin: 600, outMin: 600, isWoDay: true });
+  assert.equal(led.pendingExtraMins, 0);
+  assert.equal(led.shortageMins, 0);
+  assert.equal(led.autoOtMins, 0);
+});
+
 test("no valid shift (end <= start) and not rest day: nothing accrues", () => {
   const led = computeDayLedger({ ...shift, shiftStartMin: 600, shiftEndMin: 600, inMin: 600, outMin: 1140 });
   assert.equal(led.autoOtMins, 0);
@@ -117,12 +133,9 @@ test("no valid shift (end <= start) and not rest day: nothing accrues", () => {
   assert.equal(led.shortageMins, 0);
 });
 
-test("netLedgerMins nets approved OT minus shortage minus WO debit; pending is excluded entirely", () => {
-  assert.equal(netLedgerMins({ autoOtMins: 30, approvedGrantedMins: 30, shortageMins: 0, woDebitMins: 0 }), 60);
-  assert.equal(netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 0, shortageMins: 0, woDebitMins: 480 }), -480);
-  // 300 here stands in for a rest day's pendingExtraMins that an admin later approved into
-  // approvedGrantedMins — pendingExtraMins itself is never a NetLedgerParts input.
-  assert.equal(netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 300, shortageMins: 0, woDebitMins: 480 }), -180);
+test("netLedgerMins nets approved OT minus shortage; WO debt no longer participates (Protocol 3)", () => {
+  assert.equal(netLedgerMins({ autoOtMins: 30, approvedGrantedMins: 30, shortageMins: 0 }), 60);
+  assert.equal(netLedgerMins({ autoOtMins: 0, approvedGrantedMins: 300, shortageMins: 0 }), 300);
 });
 
 test("istMinuteOfDay converts epoch seconds to IST minute-of-day", () => {
