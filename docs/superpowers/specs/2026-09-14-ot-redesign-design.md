@@ -156,6 +156,15 @@ in the conveyance calculation, so there is no basis to fix it for one and not th
    skip — otherwise the fix is silently overwritten the same night it's approved.
 5. **Scope: operations and sales**, matching `usesConveyance(role)`. Office/admin may still
    file/be regularized exactly as today, simply with no conveyance effect (they never had one).
+6. **Scope: worked-day outcomes only.** A km value is claimable/creditable only when the
+   approval outcome is `Present` or `HalfDay` — never `Absent`/`LWP`/`WO`/`PL`. Those outcomes
+   either dock salary (`Absent`) or formally assert the day was not worked at all; crediting
+   travel reimbursement on the same day would be internally contradictory and an audit risk.
+   Decided 2026-09-15 after the final whole-branch review flagged it as an unexamined gap — the
+   hours override was already `Present`-only (`page.tsx`'s `carry` check) but the money override
+   had no equivalent restriction until this decision. Enforced in the UI (the km field is hidden
+   for any other outcome) and re-checked server-side in `approveRegularization` (never trust the
+   submitted form — same principle already applied there to the rest-day check).
 
 ### Schema changes
 

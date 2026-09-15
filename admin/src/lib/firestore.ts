@@ -493,7 +493,12 @@ export async function approveRegularization(
   // Independent of carryHours — an admin may want to correct conveyance without also touching
   // the ledger override. Scoped to usesConveyance(role): office/admin never earn conveyance,
   // so a stray km value on their request must never mint a conveyance doc for them.
-  if (km !== undefined && km >= 0) {
+  //
+  // Re-checked here, not trusted from the page: conveyance is only claimable on a worked-day
+  // outcome. Absent/LWP/WO/PL either dock salary or formally assert the day was not worked —
+  // crediting travel reimbursement on the same day would be internally contradictory.
+  const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
+  if (canCreditKm && km !== undefined && km >= 0) {
     const userSnap = await getDoc(doc(db, 'users', userId));
     const userData = userSnap.exists() ? userSnap.data() : undefined;
     const targetRole = (userData?.role as string) ?? '';

@@ -136,8 +136,12 @@ export default function RegularizationPage() {
       if (!!effIn !== !!effOut) { setError('Enter both in and out times, or leave both blank.'); return; }
       if (effIn && effOut && effOut <= effIn) { setError('Out time must be after in time.'); return; }
     }
+    // Conveyance is only claimable on a worked-day outcome — crediting travel reimbursement on
+    // a day simultaneously approved as Absent/LWP/WO/PL (which docks salary or asserts no work
+    // happened) is internally contradictory. SL isn't an outcome this page offers at all.
+    const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
     let kmValue: number | undefined;
-    if (type === 'approve' && km.trim()) {
+    if (type === 'approve' && canCreditKm && km.trim()) {
       kmValue = parseFloat(km);
       if (isNaN(kmValue) || kmValue < 0) { setError('KM must be a non-negative number.'); return; }
     }
@@ -427,7 +431,8 @@ export default function RegularizationPage() {
               </div>
             )}
 
-            {actionModal.type === 'approve' && canClaimConveyance && (
+            {actionModal.type === 'approve' && canClaimConveyance
+              && (approvedStatus === 'Present' || approvedStatus === 'HalfDay') && (
               <div className="mb-4">
                 <label className="label">KM traveled <span className="font-normal text-text-secondary">(optional)</span></label>
                 <input
