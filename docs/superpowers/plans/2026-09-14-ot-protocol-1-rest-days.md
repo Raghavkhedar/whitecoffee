@@ -109,6 +109,40 @@ The spec is the authority; this plan is its argument.
    keep it if historical audit entries can still render it.
 7. Verify with `npm run build` — there must be no unused-import or type errors left behind.
 
+## Task 6 — Fix: pending tracked by remaining amount, not by date presence
+
+**Spec:** the "Protocol 1 fix" addendum appended to `docs/superpowers/specs/2026-09-14-ot-redesign-design.md`
+after Protocol 1, found by the final whole-branch review (finding F2). Read it — it has the
+exact failure scenario and the exact formula.
+
+**Files:** `admin/src/lib/otAggregate.ts`, `firebase/functions/otAggregate.js`,
+`firebase/functions/index.js` (the OT Exception tab's inline pending derivation), plus their
+test files.
+
+1. In `computeRangeLedger`'s `accrueDay` (both `.ts` and `.js`), replace the
+   `led.pendingExtraMins > 0 && !apprByDate.has(date)` gate with a remaining-amount computation:
+   `remaining = Math.max(0, led.pendingExtraMins - (apprByDate.get(date)?.requestedMins ?? 0))`.
+   Accrue `remaining` into `pendingOtMins` and push the date into `pendingDates` when
+   `remaining > 0` — not when `pendingExtraMins > 0`.
+2. Apply the identical fix to `dailyOtWoCash`'s equivalent per-date pending logic if it derives
+   a pending figure there too (check; it may only need `netMins`, which is unaffected — granted
+   OT is still `Σ approvedMins` regardless of this change).
+3. In `index.js`, find the OT Exception tab's own "has a decision doc for this date" check
+   (search near where `otRowFor` resolves `Pending` vs `APPROVED`/`NOT APPROVED`) and apply the
+   same remaining-amount logic, so the sheet and the portal agree.
+4. **Tests.** Add: a date with `pendingExtraMins = 600` and an approval doc with
+   `requestedMins = 60` still reports `remaining = 540` as pending. A date with an approval doc
+   whose `requestedMins` matches or exceeds `pendingExtraMins` reports 0 remaining (this must
+   cover the ordinary approve/reject case — verify it is unaffected). A rejected day
+   (`approvedMins = 0`, `requestedMins` = the original ask) still nets 0 grantedOT and is
+   correctly NOT pending once `requestedMins` covers the amount. Confirm the invariant
+   `sum(dailyOtWoCash) === settlementCash(...)` still holds — this task must not change
+   `netMins`/`grantedOtMins`, only the pending derivation.
+
+**Verify:**
+- `cd admin && npx tsx src/lib/otAggregate.test.ts && npm run build`
+- `cd firebase/functions && node --check index.js && node --check otAggregate.js && npm test`
+
 ## Task 5 — Cloud Functions OT Exception tab
 
 **Files:** `firebase/functions/index.js`

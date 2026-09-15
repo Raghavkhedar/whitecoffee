@@ -121,3 +121,36 @@ them — and they become visible in the pending queue, which is the intended rem
 
 Weekday OT, shortage, WO on a weekday, the declared-OT ceiling, rates, and the settlement
 lock are all untouched. They are the subject of later protocols.
+
+### Protocol 1 fix — pending must be tracked by remaining amount, not by date
+
+**Approved 2026-09-15**, found by the final whole-branch review.
+
+`computeRangeLedger` (and the OT Exception tab's inline equivalent) decided whether a date was
+"pending" with `!apprByDate.has(date)` — *any* `ot_approvals/{date}` doc for that date, whatever
+amount it covers, marked the whole date decided. That is a pre-existing sharp edge in weekday
+OT (a `requestedMins` that happens to under-cover `pendingExtraMins` was already possible), but
+Protocol 1 makes it far more likely to bite: a rest day's *entire* worked window is now
+`pendingExtraMins`, not just an excess sliver.
+
+Concrete failure: a Sunday worked 09:00–19:00 (600 min pending). An admin separately adds a
+60-minute manual OT grant on that same date for an unrelated reason (`setManualOt`, which sets
+`requestedMins = approvedMins = 60`, not the ledger's 600). The date now has a decision doc, so
+the other 540 minutes vanish — not credited, not in the pending queue, not flagged anywhere.
+
+**Fix:** a date is only "decided" up to what its `ot_approvals/{date}.requestedMins` actually
+covers. The remainder is still pending:
+
+```
+remainingPendingMins = max(0, pendingExtraMins - (decision?.requestedMins ?? 0))
+```
+
+In the normal flow this changes nothing: the OT & Shortage approve/reject dialog always passes
+`day.pendingExtraMins` as `requestedMins` (`ot-shortage/page.tsx` `approveOt`/`rejectOt` calls),
+so `remainingPendingMins` is 0 the moment a decision is made on the full amount, exactly as
+before. It only surfaces a gap when a decision's `requestedMins` under-covers the date's actual
+`pendingExtraMins` — precisely the case that was silently swallowed.
+
+Applies to `admin/src/lib/otAggregate.ts`, `firebase/functions/otAggregate.js`, and
+`firebase/functions/index.js`'s inline OT Exception tab derivation (all three currently gate on
+doc presence, not covered amount).
