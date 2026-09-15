@@ -48,7 +48,8 @@ class FirestoreRegularizationRepository @Inject constructor(
     override suspend fun submitRequest(
         date: String,
         originalStatus: String,
-        reason: String
+        reason: String,
+        claimedKm: Double?
     ): Result<String> {
         return try {
             if (reason.isBlank()) {
@@ -103,6 +104,7 @@ class FirestoreRegularizationRepository @Inject constructor(
                 date           = date,
                 originalStatus = originalStatus,
                 reason         = reason,
+                claimedKm      = claimedKm,
                 submittedAt    = Timestamp.now()
             )
             val ref = regCol.document()

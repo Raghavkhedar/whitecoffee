@@ -48,6 +48,7 @@ class RegularizationFragment : Fragment() {
             // Inline Compose regularize dialog (replaces the old View AlertDialog).
             var dialogItem by remember { mutableStateOf<RegularizationDayItem?>(null) }
             var reason by remember { mutableStateOf("") }
+            var km by remember { mutableStateOf("") }
 
             LaunchedEffect(submit) {
                 when (val s = submit) {
@@ -62,6 +63,7 @@ class RegularizationFragment : Fragment() {
                     is UiState.Success -> {
                         dialogItem = p.data
                         reason = ""
+                        km = ""
                         viewModel.resetPickedDateState()
                     }
                     is UiState.Error -> {
@@ -79,7 +81,7 @@ class RegularizationFragment : Fragment() {
                 isWindowOpen = isWindowOpen,
                 windowCheckFailed = windowCheckFailed,
                 onBack = { findNavController().navigateUp() },
-                onRequest = { dialogItem = it; reason = "" },
+                onRequest = { dialogItem = it; reason = ""; km = "" },
                 onRetry = { viewModel.loadToday() },
                 onPickPastDate = { showPastDatePicker { date -> viewModel.loadForDate(date) } },
             )
@@ -96,7 +98,10 @@ class RegularizationFragment : Fragment() {
                         confirmText = "Submit",
                         confirmEnabled = reason.isNotBlank(),
                         onConfirm = {
-                            viewModel.submitRequest(item.date, item.originalStatus, reason.trim())
+                            viewModel.submitRequest(
+                                item.date, item.originalStatus, reason.trim(),
+                                km.trim().toDoubleOrNull(),
+                            )
                             dialogItem = null
                         },
                         onDismiss = { dialogItem = null },
@@ -108,6 +113,14 @@ class RegularizationFragment : Fragment() {
                             singleLine = false,
                             minLines = 3,
                         )
+                        if (viewModel.canClaimConveyance) {
+                            WcField(
+                                value = km,
+                                onValueChange = { km = it },
+                                placeholder = "KM traveled that day (optional)",
+                                singleLine = true,
+                            )
+                        }
                     }
                 }
             }

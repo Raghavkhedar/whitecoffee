@@ -99,7 +99,8 @@ class FakeRegularizationRepository(
     override suspend fun submitRequest(
         date: String,
         originalStatus: String,
-        reason: String
+        reason: String,
+        claimedKm: Double?
     ): Result<String> {
         failWith?.let { return Result.failure(it) }
         if (reason.isBlank()) {
@@ -128,6 +129,7 @@ class FakeRegularizationRepository(
             date = date,
             originalStatus = originalStatus,
             reason = reason,
+            claimedKm = claimedKm,
             status = "pending",
         )
         requests.value = requests.value + (date to request)

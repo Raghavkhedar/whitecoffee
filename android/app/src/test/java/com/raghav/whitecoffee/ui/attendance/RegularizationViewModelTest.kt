@@ -259,6 +259,17 @@ class RegularizationViewModelTest {
     }
 
     @Test
+    fun `submitRequest passes claimedKm through to the repository`() = runTest(dispatcher) {
+        val vm = subject()
+        advanceUntilIdle()
+
+        vm.submitRequest(WEEKDAY_DATE, "HalfDay", "Doctor visit", claimedKm = 12.5)
+        advanceUntilIdle()
+
+        assertEquals(12.5, repo.submitted.last().claimedKm)
+    }
+
+    @Test
     fun `a duplicate request for the same date is refused`() = runTest(dispatcher) {
         // See WEEKDAY_DATE's comment above — the date is incidental here too.
         repo.setRequestForDate(
