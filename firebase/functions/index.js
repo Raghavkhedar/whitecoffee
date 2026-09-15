@@ -1598,9 +1598,19 @@ exports.exportToSheets = onSchedule(
         let opCount = 0;
         const monthStr = monthStart.slice(0, 7);
 
+        // Skip any date an admin already set via regularization approval (Protocol 2) — without
+        // this, the very next nightly run silently overwrites it back to the (wrong) raw-event
+        // figure. Mirrors the markedBy:'admin' skip already used for attendance_status.
+        const existingConvSnap = await db.collection("conveyance").where("month", "==", monthStr).get();
+        const adminMarkedConv = new Set(
+          existingConvSnap.docs.filter((d) => d.data().markedBy === "admin").map((d) => d.id)
+        );
+
         for (const row of allRows) {
           const [date, userName, employeeId, route, totalKmStr, conveyanceStr, , odUserId, ratePerKm] = row;
-          const docRef = db.collection("conveyance").doc(`${odUserId}__${date}`);
+          const docId = `${odUserId}__${date}`;
+          if (adminMarkedConv.has(docId)) continue;
+          const docRef = db.collection("conveyance").doc(docId);
           fbBatch.set(docRef, {
             userId: odUserId, userName, employeeId, date, month: monthStr,
             route, totalKm: parseFloat(totalKmStr), ratePerKm,
