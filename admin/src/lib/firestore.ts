@@ -11,9 +11,10 @@ import { istTodayStr } from './date';
 import { effectiveGrantedDates } from './leaveDates';
 import { PAY_FIELDS, type Pay } from './compensation';
 import { usesConveyance } from './roleCapabilities';
+import { WO_DEBIT_MINS } from './otLedger';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
-import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry } from '@/types';
+import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry, WoLedgerEntry } from '@/types';
 
 // ── Write attribution ─────────────────────────────────────────────────────
 //
@@ -33,6 +34,19 @@ import type { User, LeaveRequest, AttendanceRecord, SentNotification, Attendance
 // by wrapping them in stamped(). See `firebase/firestore.rules`.
 export function stamped<T extends object>(data: T): T & { lastModifiedBy: string; lastModifiedAt: Timestamp } {
   return { ...data, lastModifiedBy: auth.currentUser?.uid ?? 'unknown', lastModifiedAt: Timestamp.now() };
+}
+
+// Add `months` calendar months to a "YYYY-MM-DD" date string, clamping to the target month's
+// last day if it doesn't have enough days (2026-01-31 + 1 month → 2026-02-28, never the raw
+// JS Date behavior of overflowing into March). Used only for wo_ledger's expiresAt (Protocol 3).
+function addCalendarMonths(dateStr: string, months: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetIndex = (m - 1) + months;
+  const targetYear = y + Math.floor(targetIndex / 12);
+  const targetMonth = ((targetIndex % 12) + 12) % 12; // 0-11
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(d, lastDayOfTargetMonth);
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`;
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────
@@ -488,6 +502,24 @@ export async function approveRegularization(
     { merge: true }
   );
 
+  // Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): approving a
+  // regularization TO a WO outcome creates the same wo_ledger debt record as marking WO
+  // directly from the Attendance page — this is the second of the two real WO-creation paths
+  // in the app (the other is attendance/page.tsx's markWo).
+  if (approvedStatus === 'WO') {
+    const issuedAt = Timestamp.now();
+    const expiresAtDate = addCalendarMonths(istTodayStr(), 2);
+    batch.set(
+      doc(db, 'users', userId, 'wo_ledger', date),
+      stamped({
+        date, userId, userName, employeeId,
+        debitMins: WO_DEBIT_MINS, remainingMins: WO_DEBIT_MINS, status: 'outstanding',
+        issuedAt, expiresAt: Timestamp.fromDate(new Date(`${expiresAtDate}T23:59:59+05:30`)),
+        markedBy: 'admin',
+      }),
+    );
+  }
+
   // Protocol 2 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a claimed KM figure
   // fixes conveyance for a missed-punch day the same way inTime/outTime already fixes OT.
   // Independent of carryHours — an admin may want to correct conveyance without also touching
@@ -725,20 +757,118 @@ export async function setAttendanceStatus(
 }
 
 // Mark a paid WO (no-work day off) for an employee. Writes a markedBy:'admin' status doc the
-// nightly function won't overwrite. WO is illegal on a rest day (Protocol 1) — a rest day
-// already carries no obligation, so a WO there is meaningless; setAttendanceStatus's guard
-// throws before any such write reaches Firestore. `holidays` is optional (see
-// assertNotRestDay) — Task 4 wires the real holiday set in from the Attendance page.
+// nightly function won't overwrite, AND a matching wo_ledger doc (Protocol 3) that tracks the
+// 480-minute debt as an outstanding, explicitly-settleable record with a 2-month hard expiry.
+// WO is illegal on a rest day (Protocol 1) — a rest day already carries no obligation, so a WO
+// there is meaningless; setAttendanceStatus's guard throws before any such write reaches
+// Firestore, and this whole batch never gets built in that case.
 export async function markWo(user: User, date: string, holidays: Set<string> = new Set()): Promise<void> {
-  await setAttendanceStatus(user.id, date, {
-    date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
-    role: user.role || '', status: 'WO', markedBy: 'admin',
-  }, holidays);
+  assertNotRestDay(date, holidays);
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, 'users', user.id, 'attendance_status', date),
+    stamped({
+      date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
+      role: user.role || '', status: 'WO', markedBy: 'admin', updatedAt: Timestamp.now(),
+    }),
+    { merge: true },
+  );
+  const issuedAt = Timestamp.now();
+  const expiresAtDate = addCalendarMonths(istTodayStr(), 2);
+  batch.set(
+    doc(db, 'users', user.id, 'wo_ledger', date),
+    stamped({
+      date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
+      debitMins: WO_DEBIT_MINS, remainingMins: WO_DEBIT_MINS, status: 'outstanding',
+      issuedAt, expiresAt: Timestamp.fromDate(new Date(`${expiresAtDate}T23:59:59+05:30`)),
+      markedBy: 'admin',
+    }),
+  );
+  await batch.commit();
 }
 
 // Remove an admin-set status doc (e.g. clearing a WO) so the nightly function can recompute.
 export async function deleteAttendanceStatus(userId: string, date: string): Promise<void> {
   await deleteDoc(doc(db, 'users', userId, 'attendance_status', date));
+}
+
+// Clear a WO: deletes both the attendance_status doc and its wo_ledger entry, regardless of
+// settlement progress. Any OT minutes already consumed settling this WO are NOT refunded —
+// a deliberate simplification (Protocol 3), not an oversight.
+export async function clearWo(userId: string, date: string): Promise<void> {
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'users', userId, 'attendance_status', date));
+  batch.delete(doc(db, 'users', userId, 'wo_ledger', date));
+  await batch.commit();
+}
+
+// All outstanding wo_ledger docs across every employee, for the Outstanding WOs admin view.
+// collectionGroup — see firestore.rules for the matching READ-ONLY collection-group rule.
+export async function getOutstandingWoDebits(): Promise<WoLedgerEntry[]> {
+  const q = query(collectionGroup(db, 'wo_ledger'), where('status', '==', 'outstanding'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as WoLedgerEntry));
+}
+
+// One employee's OT decisions (any date, any month) — the settlement picker needs to offer
+// sources beyond just the current settlement range, since a WO can be settled with OT from
+// any earlier unlocked month.
+export async function getOtApprovalsForUser(userId: string): Promise<OtApproval[]> {
+  const snap = await getDocs(collection(db, 'users', userId, 'ot_approvals'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as OtApproval));
+}
+
+// One employee's settlement docs (any month) — used to determine which of their ot_approvals
+// dates fall in an already-locked (unavailable) month.
+export async function getSettlementsForUser(userId: string): Promise<Settlement[]> {
+  const snap = await getDocs(collection(db, 'users', userId, 'settlements'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Settlement));
+}
+
+// Apply `minsApplied` minutes of OT from `otDate` to reduce the outstanding balance of the WO
+// on `woDate`. Validates both sides' remaining capacity client-side before writing (rules
+// independently enforce access + the "OT source's month isn't locked" check — see
+// firestore.rules). Throws with a clear message rather than letting a batch fail opaquely.
+export async function settleWoDebit(
+  userId: string, woDate: string, otDate: string, minsApplied: number, appliedBy: string,
+): Promise<void> {
+  if (minsApplied <= 0) throw new Error('minsApplied must be positive.');
+
+  const [woSnap, otSnap, settlementSnap] = await Promise.all([
+    getDoc(doc(db, 'users', userId, 'wo_ledger', woDate)),
+    getDoc(doc(db, 'users', userId, 'ot_approvals', otDate)),
+    getDoc(doc(db, 'users', userId, 'settlements', otDate.slice(0, 7))),
+  ]);
+  if (!woSnap.exists()) throw new Error(`No wo_ledger entry for ${woDate}.`);
+  if (!otSnap.exists()) throw new Error(`No ot_approvals entry for ${otDate}.`);
+  if (settlementSnap.exists() && settlementSnap.data().locked) {
+    throw new Error(`${otDate}'s month is already Settled & Locked — its OT can no longer be redirected.`);
+  }
+
+  const wo = woSnap.data();
+  const ot = otSnap.data();
+  const woRemaining = Number(wo.remainingMins) || 0;
+  const otAvailable = Math.max(0, (Number(ot.approvedMins) || 0) - (Number(ot.settledMins) || 0));
+  if (minsApplied > woRemaining) throw new Error(`Cannot apply ${minsApplied} min — only ${woRemaining} min remain outstanding on ${woDate}.`);
+  if (minsApplied > otAvailable) throw new Error(`Cannot apply ${minsApplied} min — only ${otAvailable} min available on ${otDate}.`);
+
+  const newRemaining = woRemaining - minsApplied;
+  const batch = writeBatch(db);
+  const settlementRef = doc(collection(db, 'users', userId, 'wo_ledger', woDate, 'settlements'));
+  batch.set(settlementRef, stamped({ otDate, minsApplied, appliedBy, appliedAt: Timestamp.now() }));
+  batch.update(
+    doc(db, 'users', userId, 'wo_ledger', woDate),
+    stamped({
+      remainingMins: newRemaining,
+      status: newRemaining <= 0 ? 'settled' : 'outstanding',
+      ...(newRemaining <= 0 ? { settledAt: Timestamp.now() } : {}),
+    }),
+  );
+  batch.update(
+    doc(db, 'users', userId, 'ot_approvals', otDate),
+    stamped({ settledMins: (Number(ot.settledMins) || 0) + minsApplied }),
+  );
+  await batch.commit();
 }
 
 export async function getAttendanceStatusForDateRange(start: string, end: string): Promise<AttendanceStatus[]> {

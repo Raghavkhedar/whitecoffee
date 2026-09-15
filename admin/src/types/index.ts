@@ -318,6 +318,35 @@ export interface ConveyanceRecord {
   computedAt?: Timestamp;
 }
 
+// One outstanding-or-settled WO debit. Doc id = date (the WO's own date), stored at
+// users/{uid}/wo_ledger/{date}. Created by markWo (Attendance page) and by
+// approveRegularization's WO-outcome branch — the two real WO-creation paths (Protocol 3).
+export interface WoLedgerEntry {
+  id: string;             // = date (YYYY-MM-DD), the WO's own date
+  date: string;
+  userId: string;
+  userName: string;
+  employeeId: string;
+  debitMins: number;      // always 480 (WO_DEBIT_MINS) at creation
+  remainingMins: number;  // decremented by settlement applications; floored at 0
+  status: 'outstanding' | 'settled' | 'forgiven';
+  issuedAt: Timestamp;    // when the WO was marked (not the WO's own date)
+  expiresAt: Timestamp;   // issuedAt + 2 calendar months
+  settledAt?: Timestamp;
+  forgivenAt?: Timestamp;
+  markedBy: string;       // 'admin'
+}
+
+// One settlement application against a WoLedgerEntry. Doc id = auto-id, stored at
+// users/{uid}/wo_ledger/{date}/settlements/{autoId}. Written by settleWoDebit.
+export interface WoSettlementEntry {
+  id: string;         // auto-id
+  otDate: string;
+  minsApplied: number;
+  appliedBy: string;
+  appliedAt: Timestamp;
+}
+
 /**
  * One entry in the tamper-proof audit log (top-level `audit_log`).
  * Written ONLY by the Cloud Function triggers via the Admin SDK; no client can write it.

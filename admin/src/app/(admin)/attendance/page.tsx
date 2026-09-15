@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus, isRestDay } from '@/lib/firestore';
+import { getAllUsers, getAttendanceForDate, getAttendanceStatusForMonth, getPlannedHoursForMonth, setPlannedHours, getHolidaysForMonth, setHoliday, deleteHoliday, setAttendanceStatus, deleteAttendanceStatus, isRestDay, markWo as fsMarkWo, clearWo as fsClearWo } from '@/lib/firestore';
 import type { User, AttendanceRecord, AttendanceStatus, PlannedHours, Holiday } from '@/types';
 import { RoleBadge, StatusBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -330,10 +330,7 @@ export default function AttendancePage() {
     setSaving(prev => ({ ...prev, [key]: true }));
     setSaveError('');
     try {
-      await setAttendanceStatus(user.id, date, {
-        date, userId: user.id, userName: user.name || '', employeeId: user.employeeId || '',
-        role: user.role || '', status: 'WO', markedBy: 'admin',
-      }, holidaySet);
+      await fsMarkWo(user, date, holidaySet);
       setStatusByDate(prev => {
         const next = new Map(prev);
         const dayMap = new Map(next.get(date) || new Map<string, AttendanceStatus>());
@@ -353,7 +350,7 @@ export default function AttendancePage() {
     setSaving(prev => ({ ...prev, [key]: true }));
     setSaveError('');
     try {
-      await deleteAttendanceStatus(userId, date);
+      await fsClearWo(userId, date);
       setStatusByDate(prev => {
         const next = new Map(prev);
         const dayMap = new Map(next.get(date) || new Map<string, AttendanceStatus>());
