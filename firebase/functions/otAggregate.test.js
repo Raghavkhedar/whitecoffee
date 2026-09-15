@@ -97,12 +97,29 @@ test("rejected day: requestedMins covers the full original ask, approvedMins=0 �
   assert.equal(r.pendingDates.length, 0); // remaining = 180 - 180 = 0; fully decided as rejected
 });
 
-test("WO status counted: woDates 1, woDebit 480, net -480", () => {
+test("WO day alone: woDates counted, but WO debt no longer touches netMins (Protocol 3)", () => {
   const woStatus = [{ id: "2026-06-02", userId: U, date: "2026-06-02", status: "WO" }];
   const r = computeRangeLedger(U, [], [], [], woStatus, noHol);
   assert.equal(r.woDates.length, 1);
-  assert.equal(r.woDebitMins, 480);
-  assert.equal(r.netMins, -480);
+  assert.equal(r.netMins, 0);
+});
+
+test("WO day with partial punches: no shortage, worked window becomes pending (Protocol 3)", () => {
+  const planWo = [{ id: "2026-06-16", userId: U, date: "2026-06-16", startTime: "10:00", endTime: "18:00", declaredOtMins: 30 }];
+  const evWo = [ev(U, "2026-06-16", "site_in", "10:00"), ev(U, "2026-06-16", "site_out", "14:00")];
+  const woStatusPartial = [{ id: "2026-06-16", userId: U, date: "2026-06-16", status: "WO" }];
+  const r = computeRangeLedger(U, evWo, planWo, [], woStatusPartial, noHol);
+  assert.equal(r.shortageMins, 0);
+  assert.equal(r.pendingOtMins, 240);
+  assert.equal(r.pendingDates[0], "2026-06-16");
+  assert.equal(r.netMins, 0);
+});
+
+test("settledMins excludes already-spent OT from payable cash (Protocol 3)", () => {
+  const apprSettled = [{ id: "2026-06-17", userId: U, date: "2026-06-17", requestedMins: 120, approvedMins: 120, settledMins: 50, status: "approved" }];
+  const r = computeRangeLedger(U, [], [], apprSettled, [], noHol);
+  assert.equal(r.grantedOtMins, 70);
+  assert.equal(r.netMins, 70);
 });
 
 test("regularized-to-Present in/out with no events accrues shortage (net -90)", () => {
@@ -153,12 +170,11 @@ test("inverted window (end<=start) treated as no plan → default", () => {
   assert.equal(r.shortageMins, 4);
 });
 
-test("settlementCash (rate 800)", () => {
-  assert.equal(settlementCash(800, 1, -480), 0);   // unworked WO
-  assert.equal(settlementCash(800, 1, 0), 800);    // WO worked off
-  assert.equal(settlementCash(800, 1, -180), 500); // WO + 300 rest-day
-  assert.equal(settlementCash(800, 0, 480), 800);  // pure OT
-  assert.equal(settlementCash(800, 0, -240), -400); // pure shortage
+test("settlementCash (rate 800) — pure function, unchanged formula", () => {
+  assert.equal(settlementCash(800, 1, 0), 800);    // 1 WO day, no other activity: pays unconditionally
+  assert.equal(settlementCash(800, 1, 480), 1600);  // 1 WO day + 480 min of separately-tracked OT elsewhere
+  assert.equal(settlementCash(800, 0, 480), 800);
+  assert.equal(settlementCash(800, 0, -240), -400);
 });
 
 const { dailyOtWoCash } = require("./otAggregate");

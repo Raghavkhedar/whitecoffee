@@ -27,7 +27,6 @@ function isSunday(date) {
 
 // Aggregate one ops employee's ledger over already-fetched arrays for a month/range.
 function computeRangeLedger(userId, events, planned, approvals, statuses, holidays) {
-  // Only windows with end > start are valid; an inverted/zero window falls back to default.
   const plannedByDate = new Map();
   planned.filter((p) => p.userId === userId).forEach((p) => {
     const startMin = hhmmToMin(p.startTime), endMin = hhmmToMin(p.endTime);
@@ -43,12 +42,14 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
   const apprByDate = new Map();
   approvals.filter((a) => a.userId === userId).forEach((a) => apprByDate.set(a.date, a));
 
-  // Regularized-to-Present days carry an admin effective in/out — override raw events.
   const overrideByDate = new Map();
   statuses.filter((s) => s.userId === userId && s.status === "Present" && s.inTime && s.outTime).forEach((s) => {
     const inMin = hhmmToMin(s.inTime), outMin = hhmmToMin(s.outTime);
     if (outMin > inMin) overrideByDate.set(s.date, { inMin, outMin });
   });
+
+  const woDates = statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date).sort();
+  const woDateSet = new Set(woDates);
 
   let autoOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates = [];
@@ -61,38 +62,34 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
       inMin, outMin,
       declaredOtMins: info ? info.declared : 0,
       isRestDay: isSunday(date) || holidays.has(date),
+      isWoDay: woDateSet.has(date),
     });
-    shortageMins  += led.shortageMins;
-    autoOtMins    += led.autoOtMins;
-    // A date is only "decided" up to what its ot_approvals doc's requestedMins actually covers —
-    // not merely by the doc's presence. An unrelated manual grant (e.g. setManualOt with
-    // requestedMins=60) must not swallow the rest of a rest day's 600-minute pendingExtraMins.
-    const appr = apprByDate.get(date);
-    const remaining = Math.max(0, led.pendingExtraMins - (appr ? Number(appr.requestedMins) || 0 : 0));
+    shortageMins += led.shortageMins;
+    autoOtMins   += led.autoOtMins;
+    const remaining = Math.max(0, led.pendingExtraMins - ((apprByDate.get(date) || {}).requestedMins || 0));
     if (remaining > 0) { pendingOtMins += remaining; pendingDates.push(date); }
   };
 
   eventsByDate.forEach((dayEvents, date) => {
-    if (overrideByDate.has(date)) return; // regularization in/out is authoritative
+    if (overrideByDate.has(date)) return;
     const ins  = dayEvents.filter((e) => OPS_IN_TYPES.has(e.type));
     const outs = dayEvents.filter((e) => OPS_OUT_TYPES.has(e.type));
     if (ins.length === 0) return;
     const firstIn = Math.min(...ins.map(tsSeconds));
     const lastOut = outs.length ? Math.max(...outs.map(tsSeconds)) : null;
-    if (lastOut === null || lastOut <= firstIn) return; // open/invalid day
+    if (lastOut === null || lastOut <= firstIn) return;
     accrueDay(date, istMinuteOfDay(firstIn), istMinuteOfDay(lastOut));
   });
 
   overrideByDate.forEach(({ inMin, outMin }, date) => accrueDay(date, inMin, outMin));
 
-  const grantedOtMins = Array.from(apprByDate.values()).reduce((s, a) => s + (Number(a.approvedMins) || 0), 0);
-  const woDates = statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date).sort();
-  const woDebitMins = woDates.length * WO_DEBIT_MINS;
-  const netMins = netLedgerMins({ autoOtMins, approvedGrantedMins: grantedOtMins, shortageMins, woDebitMins });
+  const grantedOtMins = Array.from(apprByDate.values())
+    .reduce((s, a) => s + Math.max(0, (Number(a.approvedMins) || 0) - (Number(a.settledMins) || 0)), 0);
+  const netMins = netLedgerMins({ autoOtMins, approvedGrantedMins: grantedOtMins, shortageMins });
 
   return {
     autoOtMins, grantedOtMins, shortageMins,
-    woDates, woDebitMins, netMins,
+    woDates, netMins,
     pendingDates: pendingDates.sort(), pendingOtMins,
   };
 }
@@ -148,14 +145,15 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
       inMin, outMin,
       declaredOtMins: info ? info.declared : 0,
       isRestDay: isSunday(date) || holidays.has(date),
+      isWoDay: woByDate.has(date),
     });
     const acc = ensure(date);
-    acc.shortageMins  += led.shortageMins;
-    acc.autoOtMins    += led.autoOtMins;
+    acc.shortageMins += led.shortageMins;
+    acc.autoOtMins   += led.autoOtMins;
   };
 
   eventsByDate.forEach((dayEvents, date) => {
-    if (overrideByDate.has(date)) return; // regularization in/out is authoritative
+    if (overrideByDate.has(date)) return;
     const ins  = dayEvents.filter((e) => OPS_IN_TYPES.has(e.type));
     const outs = dayEvents.filter((e) => OPS_OUT_TYPES.has(e.type));
     if (ins.length === 0) return;
@@ -171,11 +169,13 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
   const cash = new Map();
   dates.forEach((date) => {
     const p = perDate.get(date) || { autoOtMins: 0, shortageMins: 0 };
-    const granted = Number((apprByDate.get(date) || {}).approvedMins) || 0;
+    const appr = apprByDate.get(date) || {};
+    const granted = Math.max(0, (Number(appr.approvedMins) || 0) - (Number(appr.settledMins) || 0));
     const isWO = woByDate.has(date);
-    const woDebit = isWO ? WO_DEBIT_MINS : 0;
-    const netMins = p.autoOtMins + granted - p.shortageMins - woDebit;
-    cash.set(date, (isWO ? rate : 0) + (netMins / WO_DEBIT_MINS) * rate);
+    // Protocol 3: a WO date pays unconditionally (no debit term); OT/shortage on any date
+    // (WO or not) nets independently at the straight per-minute rate.
+    const netMinsForDate = p.autoOtMins + granted - p.shortageMins;
+    cash.set(date, (isWO ? rate : 0) + (netMinsForDate / WO_DEBIT_MINS) * rate);
   });
   return cash;
 }

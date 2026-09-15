@@ -73,6 +73,9 @@ export interface OtApproval {
   reason: string;
   approvedBy: string;
   approvedAt?: Timestamp;
+  settledMins?: number; // Protocol 3: minutes of approvedMins already spent settling a WO debt
+                         // via settleWoDebit — never written by writeOtDecision/approveOt/
+                         // rejectOt/setManualOt. available = approvedMins - settledMins.
 }
 
 export interface AttendanceStatus {

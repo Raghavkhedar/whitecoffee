@@ -25,16 +25,14 @@ function isSunday(date: string): boolean {
 
 export interface RangeLedger {
   autoOtMins: number;
-  grantedOtMins: number;          // sum of approvedMins across ot_approvals decisions
+  grantedOtMins: number;   // sum of (approvedMins − settledMins) across ot_approvals decisions (Protocol 3)
   shortageMins: number;
   woDates: string[];
-  woDebitMins: number;
-  netMins: number;                // (auto + granted) − shortage − woDebit
-  pendingDates: string[];         // un-decided pending OT days (block settlement) — includes rest days
+  netMins: number;         // (auto + granted) − shortage; WO debt no longer participates (Protocol 3) — see wo_ledger
+  pendingDates: string[];  // un-decided pending OT days (block settlement) — includes rest and WO days
   pendingOtMins: number;
 }
 
-// Aggregate one ops employee's ledger over already-fetched arrays for a date range/month.
 export function computeRangeLedger(
   userId: string,
   events: AttendanceRecord[],
@@ -43,8 +41,6 @@ export function computeRangeLedger(
   statuses: AttendanceStatus[],
   holidays: Set<string>,
 ): RangeLedger {
-  // Only windows with end > start are valid; an inverted/zero window (e.g. a mis-entered
-  // "06:00" end) is treated as no plan → the worked day falls back to the default 10:00–18:00.
   const plannedByDate = new Map<string, { startMin: number; endMin: number; declared: number }>();
   planned.filter(p => p.userId === userId).forEach(p => {
     const startMin = hhmmToMinutes(p.startTime), endMin = hhmmToMinutes(p.endTime);
@@ -62,11 +58,16 @@ export function computeRangeLedger(
 
   // Regularized-to-Present days carry an effective in/out captured by the admin (missed-punch
   // fix). These override raw events for the date so the corrected day can carry shortage/OT.
-  const overrideByDate = new Map<string, { inMin: number; outMin: number }>(); // date → effective in/out (IST min-of-day)
+  const overrideByDate = new Map<string, { inMin: number; outMin: number }>();
   statuses.filter(s => s.userId === userId && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
     const inMin = hhmmToMinutes(s.inTime), outMin = hhmmToMinutes(s.outTime);
     if (outMin > inMin) overrideByDate.set(s.date, { inMin, outMin });
   });
+
+  // Protocol 3: WO dates are computed BEFORE the accrual loop (previously derived after it)
+  // so each date's accrueDay call can suppress that date's shift math exactly like a rest day.
+  const woDates = statuses.filter(s => s.userId === userId && s.status === 'WO').map(s => s.date).sort();
+  const woDateSet = new Set(woDates);
 
   let autoOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates: string[] = [];
@@ -79,12 +80,10 @@ export function computeRangeLedger(
       inMin, outMin,
       declaredOtMins: info?.declared ?? 0,
       isRestDay: isSunday(date) || holidays.has(date),
+      isWoDay: woDateSet.has(date),
     });
     shortageMins   += led.shortageMins;
     autoOtMins     += led.autoOtMins;
-    // A date is only "decided" up to what its ot_approvals doc's requestedMins actually covers —
-    // not merely by the doc's presence. An unrelated manual grant (e.g. setManualOt with
-    // requestedMins=60) must not swallow the rest of a rest day's 600-minute pendingExtraMins.
     const remaining = Math.max(0, led.pendingExtraMins - (apprByDate.get(date)?.requestedMins ?? 0));
     if (remaining > 0) { pendingOtMins += remaining; pendingDates.push(date); }
   };
@@ -97,27 +96,31 @@ export function computeRangeLedger(
     const firstIn = Math.min(...ins.map(tsSeconds));
     const lastOut = outs.length ? Math.max(...outs.map(tsSeconds)) : null;
     if (lastOut === null || lastOut <= firstIn) return; // open/invalid day
-
     accrueDay(date, istMinuteOfDay(firstIn), istMinuteOfDay(lastOut));
   });
 
+  // A WO day's own status doc always wins over a stale Present-regularization override for the
+  // same date (WO is the later, authoritative admin decision) — accrueDay already treats it as
+  // a WO day via woDateSet regardless of which branch called it.
   overrideByDate.forEach(({ inMin, outMin }, date) => accrueDay(date, inMin, outMin));
 
-  const grantedOtMins = Array.from(apprByDate.values()).reduce((s, a) => s + (Number(a.approvedMins) || 0), 0);
-  const woDates = statuses.filter(s => s.userId === userId && s.status === 'WO').map(s => s.date).sort();
-  const woDebitMins = woDates.length * WO_DEBIT_MINS;
-  const netMins = netLedgerMins({ autoOtMins, approvedGrantedMins: grantedOtMins, shortageMins, woDebitMins });
+  // Protocol 3: granted OT is net of whatever has already been spent settling a WO debt —
+  // settled-away minutes must not ALSO count as payable cash (that would double-pay them).
+  const grantedOtMins = Array.from(apprByDate.values())
+    .reduce((s, a) => s + Math.max(0, (Number(a.approvedMins) || 0) - (Number(a.settledMins) || 0)), 0);
+  const netMins = netLedgerMins({ autoOtMins, approvedGrantedMins: grantedOtMins, shortageMins });
 
   return {
     autoOtMins, grantedOtMins, shortageMins,
-    woDates, woDebitMins, netMins,
+    woDates, netMins,
     pendingDates: pendingDates.sort(), pendingOtMins,
   };
 }
 
-// Settlement cash added to payroll TOTAL DUE: WO paid days + net OT/shortage at the straight
-// per-minute rate (salaryRate/480). netMins already includes the −480 per WO day, so an
-// unworked WO nets to 0 (paid +rate, debited −rate) and a worked-off WO keeps the +rate.
+// Settlement cash added to payroll TOTAL DUE: WO paid days — unconditional as of Protocol 3,
+// no longer entangled with whether OT ever offsets them (that offsetting now happens entirely
+// through the separate wo_ledger settlement flow, outside this function) — plus net OT/
+// shortage at the straight per-minute rate (salaryRate/480).
 export function settlementCash(salaryRate: number, woDays: number, netMins: number): number {
   const cash = woDays * salaryRate + (netMins / WO_DEBIT_MINS) * salaryRate;
   return Math.round(cash * 100) / 100;

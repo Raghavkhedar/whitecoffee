@@ -85,12 +85,27 @@ eq('granted = 0 (rejected)', r.grantedOtMins, 0);
 eq('net = 0', r.netMins, 0);
 eq('pending dates = 0 (remaining = 180 - 180 = 0; fully decided as rejected)', r.pendingDates.length, 0);
 
-console.log('\nWO day status counted:');
+console.log('\nWO day alone (Protocol 3): woDates counted, but WO debt no longer touches netMins:');
 const woStatus = [{ id: '2026-06-02', userId: U, date: '2026-06-02', status: 'WO' } as never];
 r = computeRangeLedger(U, [], [], [], woStatus, noHol);
 eq('woDates = 1', r.woDates.length, 1);
-eq('woDebit = 480', r.woDebitMins, 480);
-eq('net = -480', r.netMins, -480);
+eq('net = 0 (no other activity; WO debt tracked entirely in wo_ledger now, not here)', r.netMins, 0);
+
+console.log('\nWO day with partial punches (Protocol 3): no shortage, worked window becomes pending, not swallowed by the WO-dates-derived-after-the-loop bug:');
+const planWo = [{ id: '2026-06-16', userId: U, date: '2026-06-16', startTime: '10:00', endTime: '18:00', declaredOtMins: 30 } as never];
+const evWo = [ev(U, '2026-06-16', 'site_in', '10:00'), ev(U, '2026-06-16', 'site_out', '14:00')]; // told to leave at 2pm
+const woStatusPartial = [{ id: '2026-06-16', userId: U, date: '2026-06-16', status: 'WO' } as never];
+r = computeRangeLedger(U, evWo, planWo, [], woStatusPartial, noHol);
+eq('shortage = 0 (WO suppresses the early-out shortage)', r.shortageMins, 0);
+eq('pending = 240 (the 4h worked becomes pending OT, not lost)', r.pendingOtMins, 240);
+eq('pending dates includes 2026-06-16', r.pendingDates[0], '2026-06-16');
+eq('net = 0 (nothing auto-credited; the WO debt itself is tracked in wo_ledger, not here)', r.netMins, 0);
+
+console.log('\nsettledMins excludes already-spent OT from payable cash (Protocol 3):');
+const apprSettled = [{ id: '2026-06-17', userId: U, date: '2026-06-17', requestedMins: 120, approvedMins: 120, settledMins: 50, status: 'approved' } as never];
+r = computeRangeLedger(U, [], [], apprSettled, [], noHol);
+eq('granted = 70 (120 approved − 50 already settled against a WO)', r.grantedOtMins, 70);
+eq('net = 70', r.netMins, 70);
 
 console.log('\nRegularized-to-Present day with effective in/out (missed punch, no events):');
 // 2026-06-03 Wednesday, shift 10:00–18:00 (480). Admin regularized with worked 09:00–17:00 (480
@@ -137,10 +152,9 @@ r = computeRangeLedger(U, evInv, planInv, [], [], noHol);
 eq('inverted → default → OT 0 (early-in ignored)', r.pendingOtMins, 0);
 eq('inverted → default → shortage 4', r.shortageMins, 4);
 
-console.log('\nsettlementCash (rate ₹800/day):');
-eq('unworked WO → 0', settlementCash(800, 1, -480), 0);              // +800 − 800
-eq('WO worked off (net 0) → +800', settlementCash(800, 1, 0), 800);  // kept the paid day
-eq('WO + 300 rest-day (net -180) → 500', settlementCash(800, 1, -180), 500); // 800 − 300
+console.log('\nsettlementCash (rate ₹800/day) — pure function, unchanged formula:');
+eq('1 WO day, no other activity → net 0 feeds in, WO pays unconditionally → 800', settlementCash(800, 1, 0), 800);
+eq('1 WO day + 300 min of its own separately-tracked OT elsewhere this range → 800 + 500', settlementCash(800, 1, 480), 1600);
 eq('no WO, net +480 OT → +800', settlementCash(800, 0, 480), 800);
 eq('no WO, net -240 shortage → -400', settlementCash(800, 0, -240), -400);
 
