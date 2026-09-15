@@ -474,6 +474,29 @@ service cloud.firestore {
         allow write: if isLoggedIn() && (isAdmin() || (canWriteOtApprovals() && notSelf(userId)));
       }
 
+      // ── /wo_ledger/{date} ──────────────────────────────────────────────
+      // Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): an outstanding
+      // WO debt record, created alongside the WO's attendance_status doc. Read/write mirrors
+      // ot_approvals exactly — the same Attendance/OT & Shortage tabs that grant OT are the
+      // ones that create, clear, or (via the settlements subcollection below) pay down a WO.
+      match /wo_ledger/{date} {
+        allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadOtApprovals());
+        // notSelf: marking your own WO settled/forgiven is adjusting your own debt record.
+        allow write: if isLoggedIn() && (isAdmin() || (canWriteOtApprovals() && notSelf(userId)));
+
+        // ── /wo_ledger/{date}/settlements/{autoId} ─────────────────────
+        // One immutable log entry per settlement application (an admin spending some OT's
+        // minutes to pay down this WO). The OT source's own home month must not already be
+        // Settled & Locked — that cash is already paid and cannot be redirected retroactively.
+        match /settlements/{autoId} {
+          allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadOtApprovals());
+          allow create: if isLoggedIn() && (isAdmin() || (canWriteOtApprovals() && notSelf(userId)))
+                        && !isSettledMonth(userId, request.resource.data.otDate);
+          allow update: if false; // immutable log — settle again with a new entry, never edit one
+          allow delete: if false;
+        }
+      }
+
       // ── /settlements/{month} ──────────────────────────────────────────
       // Frozen monthly OT/shortage/WO settlement (Settle & Lock on the OT Settlements
       // page). Read by the employee, admin, and managers holding OT Settlements, who also settle.
@@ -583,6 +606,14 @@ service cloud.firestore {
     }
     // Required for getOtApprovalsForDateRange() which does collectionGroup("ot_approvals").
     match /{path=**}/ot_approvals/{date} {
+      allow read: if isLoggedIn() && (isAdmin() || canReadOtApprovals());
+    }
+    // Required for the Outstanding WOs admin view, which does collectionGroup("wo_ledger")
+    // across every employee. READ-ONLY on purpose, same reasoning as attendance_status/
+    // specialAllowance above: a collectionGroup match cannot bind {userId}, so it cannot
+    // enforce notSelf. Writes must go through /users/{userId}/wo_ledger/{date}, which knows
+    // whose record it is.
+    match /{path=**}/wo_ledger/{date} {
       allow read: if isLoggedIn() && (isAdmin() || canReadOtApprovals());
     }
     // Required for getSettlementsForMonth() which does collectionGroup("settlements").
