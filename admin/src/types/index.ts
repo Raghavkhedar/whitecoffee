@@ -169,6 +169,7 @@ export interface RegularizationRequest {
   approvedBy: string;
   approverComment: string;
   approvedStatus?: string;
+  claimedKm?: number; // employee-claimed travel distance for a missed-punch day (Protocol 2)
   submittedAt?: Timestamp;
   reviewedAt?: Timestamp;
 }
@@ -309,6 +310,8 @@ export interface ConveyanceRecord {
   totalKm: number;
   ratePerKm: number;
   conveyance: number;
+  markedBy?: string; // 'admin' when set via a regularization approval (Protocol 2) — the
+                      // nightly exportToSheets computation skips a doc stamped this way
   computedAt?: Timestamp;
 }
 

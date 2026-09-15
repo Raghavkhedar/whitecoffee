@@ -17,6 +17,7 @@ data class RegularizationRequest(
     val approvedBy: String = "",
     val approverComment: String = "",
     val approvedStatus: String = "",
+    val claimedKm: Double? = null,
     val submittedAt: Timestamp? = null,
     val reviewedAt: Timestamp? = null
 ) {
@@ -31,6 +32,7 @@ data class RegularizationRequest(
         "approvedBy"      to approvedBy,
         "approverComment" to approverComment,
         "approvedStatus"  to approvedStatus,
+        "claimedKm"       to claimedKm,
         "submittedAt"     to submittedAt,
         "reviewedAt"      to reviewedAt
     )
@@ -50,6 +52,7 @@ data class RegularizationRequest(
                     approvedBy      = doc.getString("approvedBy") ?: "",
                     approverComment = doc.getString("approverComment") ?: "",
                     approvedStatus  = doc.getString("approvedStatus") ?: "",
+                    claimedKm       = doc.getDouble("claimedKm"),
                     submittedAt     = doc.getTimestamp("submittedAt"),
                     reviewedAt      = doc.getTimestamp("reviewedAt")
                 )
