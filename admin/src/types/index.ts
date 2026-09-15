@@ -169,7 +169,7 @@ export interface RegularizationRequest {
   approvedBy: string;
   approverComment: string;
   approvedStatus?: string;
-  claimedKm?: number; // employee-claimed travel distance for a missed-punch day (Protocol 2)
+  claimedKm?: number | null; // employee-claimed travel distance for a missed-punch day (Protocol 2); Android's toMap() always writes the key, explicit null when unset
   submittedAt?: Timestamp;
   reviewedAt?: Timestamp;
 }

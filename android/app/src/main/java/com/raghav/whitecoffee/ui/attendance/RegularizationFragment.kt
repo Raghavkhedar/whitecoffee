@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -119,6 +120,7 @@ class RegularizationFragment : Fragment() {
                                 onValueChange = { km = it },
                                 placeholder = "KM traveled that day (optional)",
                                 singleLine = true,
+                                keyboardType = KeyboardType.Decimal,
                             )
                         }
                     }

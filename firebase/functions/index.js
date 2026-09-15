@@ -1527,6 +1527,17 @@ exports.exportToSheets = onSchedule(
       const convUsersSnap = await db.collection("users").where("role", "in", rolesWith("usesConveyance")).get();
       const convUsers   = new Map(convUsersSnap.docs.map((d) => [d.id, d.data()]));
 
+      const monthStr = monthStart.slice(0, 7);
+      // Protocol 2: an admin-corrected conveyance day overrides the raw-computed figure entirely,
+      // for the Employee Dashboard total AND the Sheets tab AND the Firestore persist step below —
+      // not just the last of the three. Read before building rows so all three can use it.
+      const existingConvSnap = await db.collection("conveyance").where("month", "==", monthStr).get();
+      const adminMarkedConv = new Map(
+        existingConvSnap.docs
+          .filter((d) => d.data().markedBy === "admin")
+          .map((d) => [d.id, d.data()])
+      );
+
       const attendSnap = await db.collectionGroup("attendance")
         .where("date", ">=", monthStart)
         .where("date", "<=", today)
@@ -1574,6 +1585,15 @@ exports.exportToSheets = onSchedule(
         const batch   = entries.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ([key, events]) => {
           const userId = key.split("__")[0];
+          // Protocol 2: an admin already corrected this date via regularization approval —
+          // use the stored figure verbatim instead of recomputing from raw GPS events.
+          const override = adminMarkedConv.get(key);
+          if (override) {
+            conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + override.conveyance);
+            return [override.date, override.userName, override.employeeId, override.route,
+                    override.totalKm.toFixed(2), override.conveyance.toFixed(2),
+                    `₹${override.ratePerKm}/km`, userId, override.ratePerKm];
+          }
           const user   = convUsers.get(userId) || {};
           const ratePerKm = rateValues[user.conveyanceRateType] || rateValues[1] || CONVEYANCE_RATE_FALLBACK;
           let totalKm  = 0;
@@ -1589,6 +1609,18 @@ exports.exportToSheets = onSchedule(
         allRows.push(...results);
       }
 
+      // A whole missed day (zero attendance events) never appears in `grouped`, so its admin
+      // correction needs its own row here — otherwise it's invisible to the dashboard and Sheets
+      // tab even though a real, corrected Firestore doc exists for it.
+      for (const [key, override] of adminMarkedConv) {
+        if (grouped.has(key)) continue; // already produced a row above
+        const userId = key.split("__")[0];
+        conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + override.conveyance);
+        allRows.push([override.date, override.userName, override.employeeId, override.route,
+                      override.totalKm.toFixed(2), override.conveyance.toFixed(2),
+                      `₹${override.ratePerKm}/km`, userId, override.ratePerKm]);
+      }
+
       allRows.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
 
       // Persist daily conveyance records to Firestore
@@ -1596,16 +1628,12 @@ exports.exportToSheets = onSchedule(
         const BATCH_LIMIT = 500;
         let fbBatch = db.batch();
         let opCount = 0;
-        const monthStr = monthStart.slice(0, 7);
 
         // Skip any date an admin already set via regularization approval (Protocol 2) — without
         // this, the very next nightly run silently overwrites it back to the (wrong) raw-event
         // figure. Mirrors the markedBy:'admin' skip already used for attendance_status.
-        const existingConvSnap = await db.collection("conveyance").where("month", "==", monthStr).get();
-        const adminMarkedConv = new Set(
-          existingConvSnap.docs.filter((d) => d.data().markedBy === "admin").map((d) => d.id)
-        );
-
+        // (monthStr/adminMarkedConv are computed earlier in this section, before row-building,
+        // so the Employee Dashboard total and Sheets tab can honor the same override.)
         for (const row of allRows) {
           const [date, userName, employeeId, route, totalKmStr, conveyanceStr, , odUserId, ratePerKm] = row;
           const docId = `${odUserId}__${date}`;

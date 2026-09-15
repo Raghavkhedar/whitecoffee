@@ -495,21 +495,24 @@ export async function approveRegularization(
   // so a stray km value on their request must never mint a conveyance doc for them.
   if (km !== undefined && km >= 0) {
     const userSnap = await getDoc(doc(db, 'users', userId));
-    const targetRole = userSnap.exists() ? (userSnap.data().role as string) : '';
+    const userData = userSnap.exists() ? userSnap.data() : undefined;
+    const targetRole = (userData?.role as string) ?? '';
     if (usesConveyance(targetRole)) {
-      const rateType = userSnap.data()?.conveyanceRateType;
+      const rateType = userData?.conveyanceRateType;
       const { rate1, rate2 } = await getConveyanceConfig();
-      // Mirrors firebase/functions/index.js's CONVEYANCE_RATE_FALLBACK (2.5) — the two
-      // codebases have no shared build graph, so the fallback is duplicated deliberately
-      // rather than left silently absent on this side.
-      const ratePerKm = (rateType === 2 ? rate2 : rate1) || rate1 || 2.5;
+      // Mirrors firebase/functions/index.js's rateValues lookup (object-keyed, per-slot
+      // 2.5 fallback) — a plain `(rateType === 2 ? rate2 : rate1) || rate1` diverges from
+      // it whenever rate2 is unset (falls through to rate1 instead of its own 2.5) or
+      // rateType is a legacy string "2" (fails the strict === check).
+      const rates = { 1: rate1 || 2.5, 2: rate2 || 2.5 };
+      const ratePerKm = rates[Number(rateType) as 1 | 2] || rates[1];
       batch.set(
         doc(db, 'conveyance', `${userId}__${date}`),
-        {
+        stamped({
           userId, userName, employeeId, date, month: date.slice(0, 7),
           route: 'Regularized (manual entry)', totalKm: km, ratePerKm,
           conveyance: km * ratePerKm, markedBy: 'admin', computedAt: Timestamp.now(),
-        },
+        }),
         { merge: true },
       );
     }
