@@ -570,6 +570,35 @@ exports.computeDailyAttendanceStatus = onSchedule(
   }
 );
 
+// Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a WO debt not fully
+// settled within 2 months of being issued is written off automatically, with zero pay impact
+// — it simply stops being offered as settleable. Runs daily; Admin SDK bypasses rules.
+exports.expireWoDebits = onSchedule(
+  {
+    schedule: "30 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
+    retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
+  },
+  async () => {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    const snap = await db.collectionGroup("wo_ledger")
+      .where("status", "==", "outstanding")
+      .where("expiresAt", "<=", now)
+      .get();
+    if (snap.empty) return null;
+
+    let batch = db.batch();
+    let ops = 0;
+    for (const docSnap of snap.docs) {
+      batch.update(docSnap.ref, { status: "forgiven", forgivenAt: now });
+      ops++;
+      if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+    }
+    if (ops > 0) await batch.commit();
+    return null;
+  },
+);
+
 // ── Forecasting export — flat SpendData + Daily Snapshot view ─────────────────
 // Reads Firestore dailySpend (Manpower, per employee/day) + the MDD ledger (Vendor
 // Payment / Office Expense / Communication), buckets into 22 spend
@@ -871,13 +900,13 @@ exports.exportToSheets = onSchedule(
         plannedMap.set(key, { startMin, endMin, declared: Math.max(0, d.declaredOtMins || 0) });
       }
     });
-    const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins (approvedMins; rejected → 0)
+    const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins available for cash (approvedMins − settledMins; rejected → 0)
     const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy, requestedMins } (for the OT Exception Report)
     const approvalSnap = await db.collectionGroup("ot_approvals").get();
     approvalSnap.docs.forEach((doc) => {
       const d = doc.data();
       const key = `${uidOf(doc)}__${d.date || ""}`;
-      approvalMap.set(key, Number(d.approvedMins) || 0);
+      approvalMap.set(key, Math.max(0, (Number(d.approvedMins) || 0) - (Number(d.settledMins) || 0)));
       // requestedMins is carried so "is this date fully decided" can be judged by how much
       // of the day's pending OT the decision actually covers, not merely by doc presence —
       // see the remaining-amount computation in otRowFor below.
@@ -1021,6 +1050,7 @@ exports.exportToSheets = onSchedule(
               inMin, outMin,
               declaredOtMins: plan ? plan.declared : 0,
               isRestDay: restDay,
+              isWoDay: statusMap.get(key) === 'WO',
             });
             // A rest day's auto-approved slice is always 0 (nothing is pre-authorized on
             // a rest day) — its whole worked window is pendingExtraMins, credited only via
@@ -1137,6 +1167,7 @@ exports.exportToSheets = onSchedule(
             inMin, outMin,
             declaredOtMins: plan ? plan.declared : 0,
             isRestDay: restDay,
+            isWoDay: statusMap.get(key) === 'WO',
           });
         }
 
@@ -1147,9 +1178,10 @@ exports.exportToSheets = onSchedule(
         //   (a rest day's whole worked window is PENDING until an admin approves it).
         let rawOtMins = 0, approvedOtMins = 0;
         if (inMin != null && outMin != null) {
-          if (restDay) {
+          const isWoDay = statusMap.get(key) === 'WO';
+          if (restDay || isWoDay) {
             rawOtMins = Math.max(0, outMin - inMin);
-            approvedOtMins = 0; // never auto-credited on a rest day; approvalMap adds any grant below
+            approvedOtMins = 0; // never auto-credited on a rest/WO day; approvalMap adds any grant below
           } else {
             rawOtMins = led.autoOtMins + led.pendingExtraMins;
             approvedOtMins = led.autoOtMins;
@@ -1342,6 +1374,7 @@ exports.exportToSheets = onSchedule(
             inMin, outMin,
             declaredOtMins: plan ? plan.declared : 0,
             isRestDay: restDay,
+            isWoDay: statusMap.get(key) === 'WO',
           });
           // Rest-day auto-approved slice is always 0 — credit comes only via approvalMap below.
           creditedOt = led.autoOtMins;
