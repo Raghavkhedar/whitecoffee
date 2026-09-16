@@ -563,7 +563,7 @@ function SettleWoModal({ wo, onClose, onSettled }: { wo: WoLedgerEntry; onClose:
         getOtApprovalsForUser(wo.userId),
         getSettlementsForUser(wo.userId),
       ]);
-      setLockedMonths(new Set(settlements.filter(s => s.locked).map(s => s.month)));
+      setLockedMonths(new Set(settlements.filter(s => s.locked).map(s => s.id ?? s.month)));
       setSources(approvals);
     })();
   }, [wo.userId]);

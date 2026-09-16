@@ -211,7 +211,7 @@ export interface Settlement {
   shortageMins: number;
   woDays: number;        // count of WO days that month
   woDebitMins: number;   // woDays × 480
-  netMins: number;       // (auto + granted) − shortage − woDebit
+  netMins: number;       // (auto + granted) − shortage; WO debt no longer participates (Protocol 3)
   salaryRate: number;    // per-day rate at settlement time
   settlementCash: number;// woDays×rate + netMins/480×rate  (± rupees added to TOTAL DUE)
   locked: boolean;

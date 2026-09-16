@@ -10,7 +10,7 @@ import { auth, db, functions } from './firebase';
 import { istTodayStr } from './date';
 import { effectiveGrantedDates } from './leaveDates';
 import { PAY_FIELDS, type Pay } from './compensation';
-import { usesConveyance } from './roleCapabilities';
+import { usesConveyance, usesOtShortageLedger } from './roleCapabilities';
 import { WO_DEBIT_MINS } from './otLedger';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
@@ -507,17 +507,26 @@ export async function approveRegularization(
   // directly from the Attendance page — this is the second of the two real WO-creation paths
   // in the app (the other is attendance/page.tsx's markWo).
   if (approvedStatus === 'WO') {
-    const issuedAt = Timestamp.now();
-    const expiresAtDate = addCalendarMonths(istTodayStr(), 2);
-    batch.set(
-      doc(db, 'users', userId, 'wo_ledger', date),
-      stamped({
-        date, userId, userName, employeeId,
-        debitMins: WO_DEBIT_MINS, remainingMins: WO_DEBIT_MINS, status: 'outstanding',
-        issuedAt, expiresAt: Timestamp.fromDate(new Date(`${expiresAtDate}T23:59:59+05:30`)),
-        markedBy: 'admin',
-      }),
-    );
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    const targetRole = userSnap.exists() ? (userSnap.data().role as string) : '';
+    if (usesOtShortageLedger(targetRole)) {
+      const issuedAt = Timestamp.now();
+      const expiresAtDate = addCalendarMonths(istTodayStr(), 2);
+      batch.set(
+        doc(db, 'users', userId, 'wo_ledger', date),
+        stamped({
+          date, userId, userName, employeeId,
+          debitMins: WO_DEBIT_MINS, remainingMins: WO_DEBIT_MINS, status: 'outstanding',
+          issuedAt, expiresAt: Timestamp.fromDate(new Date(`${expiresAtDate}T23:59:59+05:30`)),
+          markedBy: 'admin',
+        }),
+      );
+    }
+  } else {
+    // A date that was previously WO but is now being regularized to a different outcome must
+    // have its wo_ledger entry deleted too — orphaned debt must not survive an outcome change.
+    // batch.delete on a non-existent doc is a harmless no-op, so this is safe to run always.
+    batch.delete(doc(db, 'users', userId, 'wo_ledger', date));
   }
 
   // Protocol 2 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a claimed KM figure
@@ -804,10 +813,13 @@ export async function clearWo(userId: string, date: string): Promise<void> {
 
 // All outstanding wo_ledger docs across every employee, for the Outstanding WOs admin view.
 // collectionGroup — see firestore.rules for the matching READ-ONLY collection-group rule.
+// Filtered in application code (not a .where() on the collectionGroup) to avoid ever needing a
+// COLLECTION_GROUP-scoped Firestore index — this repo's house pattern for small collections.
 export async function getOutstandingWoDebits(): Promise<WoLedgerEntry[]> {
-  const q = query(collectionGroup(db, 'wo_ledger'), where('status', '==', 'outstanding'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as WoLedgerEntry));
+  const snap = await getDocs(collectionGroup(db, 'wo_ledger'));
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as WoLedgerEntry))
+    .filter(w => w.status === 'outstanding');
 }
 
 // One employee's OT decisions (any date, any month) — the settlement picker needs to offer
@@ -846,6 +858,9 @@ export async function settleWoDebit(
   }
 
   const wo = woSnap.data();
+  if (wo.status !== 'outstanding') {
+    throw new Error(`This WO (${woDate}) is no longer outstanding (status: ${wo.status}) and cannot be settled.`);
+  }
   const ot = otSnap.data();
   const woRemaining = Number(wo.remainingMins) || 0;
   const otAvailable = Math.max(0, (Number(ot.approvedMins) || 0) - (Number(ot.settledMins) || 0));

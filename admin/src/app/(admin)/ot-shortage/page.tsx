@@ -155,7 +155,8 @@ interface EmpRow {
   // WO (paid no-work day off) — operations only
   woDates: string[];           // dates marked WO in range
   woDebitMins: number;         // woDates.length × WO_DEBIT_MINS
-  netLedgerMins: number;       // (autoOt + approvedOt) − shortage − woDebit; pending OT excluded
+  netLedgerMins: number;       // (autoOt + approvedOt) − shortage; pending OT excluded — WO debt
+                                // no longer participates (Protocol 3), tracked via wo_ledger
 }
 
 function aggregateForEmployee(
@@ -579,18 +580,19 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
             </div>
           )}
 
-          {/* WO days — paid no-work days off, each owes 8h payable by OT (operations only) */}
+          {/* WO days — paid no-work days off (operations only). Each is 8h of debt tracked and
+              settled separately via the Outstanding WOs system (Protocol 3), not netted here. */}
           {row.isOps && row.woDates.length > 0 && (
             <div>
-              <div className="label mb-2">WO days · -{minutesToDisplay(row.woDebitMins)} ({row.woDates.length} × 8h)</div>
+              <div className="label mb-2">WO days (settled separately) · {minutesToDisplay(row.woDebitMins)} ({row.woDates.length} × 8h)</div>
               <div className="space-y-2">
                 {row.woDates.map(date => (
                   <div key={date} className="flex items-start justify-between bg-[#F2F7FC] border border-[#DCE9F6] rounded-lg px-3 py-2 text-sm">
                     <div>
                       <div className="font-medium text-text-primary">{fmtDay(date)}</div>
-                      <div className="text-xs text-text-secondary">Paid no-work day off — owes 8h, payable by OT this month</div>
+                      <div className="text-xs text-text-secondary">Paid no-work day off — 8h debt, tracked and settled separately via Outstanding WOs (Protocol 3)</div>
                     </div>
-                    <span className="font-mono text-[#1A5FAF] font-semibold whitespace-nowrap">-{minutesToDisplay(WO_DEBIT_MINS)}</span>
+                    <span className="font-mono text-[#1A5FAF] font-semibold whitespace-nowrap">{minutesToDisplay(WO_DEBIT_MINS)}</span>
                   </div>
                 ))}
               </div>
@@ -770,16 +772,16 @@ export default function OtShortagePage() {
           <div className="text-[11px] text-text-secondary mt-0.5">automatic, no approval</div>
         </div>
         <div className="card !p-4">
-          <div className="text-xs text-text-secondary mb-1">WO debit · Ops</div>
-          <div className="text-xl font-bold text-[#1A5FAF]">-{minutesToDisplay(totals.woDebitMins)}</div>
-          <div className="text-[11px] text-text-secondary mt-0.5">{totals.woDays} WO day{totals.woDays === 1 ? '' : 's'} × 8h</div>
+          <div className="text-xs text-text-secondary mb-1">WO debt (settled separately) · Ops</div>
+          <div className="text-xl font-bold text-[#1A5FAF]">{minutesToDisplay(totals.woDebitMins)}</div>
+          <div className="text-[11px] text-text-secondary mt-0.5">{totals.woDays} WO day{totals.woDays === 1 ? '' : 's'} × 8h — not part of Net (see Outstanding WOs)</div>
         </div>
         <div className="card !p-4">
           <div className="text-xs text-text-secondary mb-1">Net · Ops</div>
           <div className={`text-xl font-bold ${totals.netLedgerMins < 0 ? 'text-[#C42B2B]' : 'text-[#0A7A50]'}`}>
             {totals.netLedgerMins < 0 ? '-' : '+'}{minutesToDisplay(totals.netLedgerMins)}
           </div>
-          <div className="text-[11px] text-text-secondary mt-0.5">OT − shortage − WO</div>
+          <div className="text-[11px] text-text-secondary mt-0.5">OT − shortage</div>
         </div>
         <div className="card !p-4">
           <div className="text-xs text-text-secondary mb-1">Employees</div>

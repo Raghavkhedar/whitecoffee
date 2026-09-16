@@ -77,6 +77,24 @@ test("a manager without Attendance or OT & Shortage cannot create a wo_ledger do
   );
 });
 
+test("a manager holding ONLY /ot-settlements (no Attendance, no OT & Shortage) can create a wo_ledger doc and a settlement entry against an unlocked month", async () => {
+  // Fix I5: canSettleWoDebits() folds in /ot-settlements alongside Attendance/OT & Shortage —
+  // the Settle action on the OT Settlements page must work for a manager scoped to that tab
+  // alone, without also granting canWriteOtApprovals() (ordinary OT approve/reject/manual grant).
+  await seedUsers(env, { woSettleMgr: { role: "office", tabAccess: [TABS.OT_SETTLEMENTS] } });
+  const db = asUser(env, "woSettleMgr");
+  await assertSucceeds(
+    db.doc("users/woOther/wo_ledger/2026-09-15").set({
+      date: "2026-09-15", userId: "woOther", debitMins: 480, remainingMins: 480, status: "outstanding",
+    }),
+  );
+  await assertSucceeds(
+    db.collection("users/woEmp/wo_ledger/2026-09-15/settlements").add({
+      otDate: "2026-09-16", minsApplied: 120, appliedBy: "OT Settlements Manager",
+    }),
+  );
+});
+
 test("an OT & Shortage manager can create a settlement entry against an unlocked month", async () => {
   const db = asUser(env, "woMgr");
   await assertSucceeds(

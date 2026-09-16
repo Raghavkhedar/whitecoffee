@@ -113,6 +113,16 @@ service cloud.firestore {
       return userTabs().hasAny(['/attendance', '/ot-shortage']);
     }
 
+    // Settling a WO debt (wo_ledger writes + its settlements subcollection) is available to the
+    // same tabs that grant OT (Attendance, OT & Shortage) PLUS OT Settlements — the natural home
+    // for resolving outstanding WO debt is that page's Outstanding WOs section (Protocol 3).
+    // Deliberately NOT folded into canWriteOtApprovals() itself: that continues to gate ONLY
+    // ot_approvals writes (approve/reject/manual OT), and an OT-Settlements-only manager must
+    // not gain that unrelated capability as a side effect of being able to settle a WO.
+    function canSettleWoDebits() {
+      return userTabs().hasAny(['/attendance', '/ot-shortage', '/ot-settlements']);
+    }
+
     // Frozen monthly settlements: read + write for OT Settlements only.
     function canAccessSettlements() {
       return userTabs().hasAny(['/ot-settlements']);
@@ -476,13 +486,13 @@ service cloud.firestore {
 
       // ── /wo_ledger/{date} ──────────────────────────────────────────────
       // Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): an outstanding
-      // WO debt record, created alongside the WO's attendance_status doc. Read/write mirrors
-      // ot_approvals exactly — the same Attendance/OT & Shortage tabs that grant OT are the
-      // ones that create, clear, or (via the settlements subcollection below) pay down a WO.
+      // WO debt record, created alongside the WO's attendance_status doc. Read mirrors
+      // ot_approvals exactly; write uses canSettleWoDebits() (Attendance, OT & Shortage, PLUS
+      // OT Settlements — the natural home for resolving outstanding WO debt).
       match /wo_ledger/{date} {
         allow read:  if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadOtApprovals());
         // notSelf: marking your own WO settled/forgiven is adjusting your own debt record.
-        allow write: if isLoggedIn() && (isAdmin() || (canWriteOtApprovals() && notSelf(userId)));
+        allow write: if isLoggedIn() && (isAdmin() || (canSettleWoDebits() && notSelf(userId)));
 
         // ── /wo_ledger/{date}/settlements/{autoId} ─────────────────────
         // One immutable log entry per settlement application (an admin spending some OT's
@@ -490,7 +500,7 @@ service cloud.firestore {
         // Settled & Locked — that cash is already paid and cannot be redirected retroactively.
         match /settlements/{autoId} {
           allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canReadOtApprovals());
-          allow create: if isLoggedIn() && (isAdmin() || (canWriteOtApprovals() && notSelf(userId)))
+          allow create: if isLoggedIn() && (isAdmin() || (canSettleWoDebits() && notSelf(userId)))
                         && !isSettledMonth(userId, request.resource.data.otDate);
           allow update: if false; // immutable log — settle again with a new entry, never edit one
           allow delete: if false;

@@ -581,15 +581,19 @@ exports.expireWoDebits = onSchedule(
   async () => {
     const db = admin.firestore();
     const now = admin.firestore.Timestamp.now();
-    const snap = await db.collectionGroup("wo_ledger")
-      .where("status", "==", "outstanding")
-      .where("expiresAt", "<=", now)
-      .get();
-    if (snap.empty) return null;
+    // Filtered in application code rather than chained .where() clauses on the collectionGroup —
+    // this avoids ever needing a COLLECTION_GROUP-scoped Firestore index for a collection that
+    // will always be small (one doc per outstanding WO per employee).
+    const snap = await db.collectionGroup("wo_ledger").get();
+    const toExpire = snap.docs.filter((d) => {
+      const data = d.data();
+      return data.status === "outstanding" && data.expiresAt && data.expiresAt.toMillis() <= now.toMillis();
+    });
+    if (toExpire.length === 0) return null;
 
     let batch = db.batch();
     let ops = 0;
-    for (const docSnap of snap.docs) {
+    for (const docSnap of toExpire) {
       batch.update(docSnap.ref, { status: "forgiven", forgivenAt: now });
       ops++;
       if (ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }

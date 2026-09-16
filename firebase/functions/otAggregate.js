@@ -94,8 +94,10 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
   };
 }
 
-// Settlement cash: WO paid days + net OT/shortage at the straight per-minute rate (rate/480).
-// netMins already includes −480 per WO day, so an unworked WO nets to 0.
+// Settlement cash added to payroll TOTAL DUE: WO paid days — unconditional as of Protocol 3,
+// no longer entangled with whether OT ever offsets them (that offsetting now happens entirely
+// through the separate wo_ledger settlement flow, outside this function) — plus net OT/
+// shortage at the straight per-minute rate (salaryRate/480).
 function settlementCash(salaryRate, woDays, netMins) {
   const cash = woDays * salaryRate + (netMins / WO_DEBIT_MINS) * salaryRate;
   return Math.round(cash * 100) / 100;
