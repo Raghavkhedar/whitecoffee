@@ -22,10 +22,10 @@ let env;
 before(async () => {
   env = await setup();
   await seedUsers(env, {
-    admin:  { role: "admin", name: "Admin" },
-    otMgr:  { role: "office", tabAccess: [TABS.OT_SHORTAGE] },
-    emp:    { role: "operations", name: "Employee" },
-    other:  { role: "operations", name: "Other" },
+    admin:   { role: "admin", name: "Admin" },
+    woMgr:   { role: "office", tabAccess: [TABS.OT_SHORTAGE] },
+    woEmp:   { role: "operations", name: "Employee" },
+    woOther: { role: "operations", name: "Other" },
   });
 });
 
@@ -33,66 +33,82 @@ after(async () => { await teardown(); });
 
 beforeEach(async () => {
   await seedDocs(env, {
-    "users/emp/wo_ledger/2026-09-15": {
-      date: "2026-09-15", userId: "emp", debitMins: 480, remainingMins: 480, status: "outstanding",
+    "users/woEmp/wo_ledger/2026-09-15": {
+      date: "2026-09-15", userId: "woEmp", debitMins: 480, remainingMins: 480, status: "outstanding",
     },
-    "users/emp/ot_approvals/2026-09-16": {
-      date: "2026-09-16", userId: "emp", approvedMins: 120, settledMins: 0, status: "approved",
+    "users/woEmp/ot_approvals/2026-09-16": {
+      date: "2026-09-16", userId: "woEmp", approvedMins: 120, settledMins: 0, status: "approved",
     },
-    "users/emp/settlements/2026-09": { locked: false },
+    "users/woEmp/settlements/2026-09": { locked: false },
   });
 });
 
 test("an OT & Shortage manager can create a wo_ledger doc", async () => {
-  const db = asUser(env, "otMgr");
+  const db = asUser(env, "woMgr");
   await assertSucceeds(
-    db.doc("users/other/wo_ledger/2026-09-15").set({
-      date: "2026-09-15", userId: "other", debitMins: 480, remainingMins: 480, status: "outstanding",
+    db.doc("users/woOther/wo_ledger/2026-09-15").set({
+      date: "2026-09-15", userId: "woOther", debitMins: 480, remainingMins: 480, status: "outstanding",
+    }),
+  );
+});
+
+test("an OT & Shortage manager CANNOT create their own wo_ledger doc (notSelf)", async () => {
+  // notSelf on the /wo_ledger/{date} write rule itself — distinct from the nested
+  // settlements/{autoId} notSelf test below, which only covers the settlement subcollection.
+  const db = asUser(env, "woMgr");
+  await assertFails(
+    db.doc("users/woMgr/wo_ledger/2026-09-15").set({
+      date: "2026-09-15", userId: "woMgr", debitMins: 480, remainingMins: 480, status: "outstanding",
+    }),
+  );
+  await assertSucceeds(
+    db.doc("users/woOther/wo_ledger/2026-09-15").set({
+      date: "2026-09-15", userId: "woOther", debitMins: 480, remainingMins: 480, status: "outstanding",
     }),
   );
 });
 
 test("a manager without Attendance or OT & Shortage cannot create a wo_ledger doc", async () => {
-  const db = asUser(env, "emp"); // no tabAccess at all
+  const db = asUser(env, "woEmp"); // no tabAccess at all
   await assertFails(
-    db.doc("users/other/wo_ledger/2026-09-15").set({
-      date: "2026-09-15", userId: "other", debitMins: 480, remainingMins: 480, status: "outstanding",
+    db.doc("users/woOther/wo_ledger/2026-09-15").set({
+      date: "2026-09-15", userId: "woOther", debitMins: 480, remainingMins: 480, status: "outstanding",
     }),
   );
 });
 
 test("an OT & Shortage manager can create a settlement entry against an unlocked month", async () => {
-  const db = asUser(env, "otMgr");
+  const db = asUser(env, "woMgr");
   await assertSucceeds(
-    db.collection("users/emp/wo_ledger/2026-09-15/settlements").add({
+    db.collection("users/woEmp/wo_ledger/2026-09-15/settlements").add({
       otDate: "2026-09-16", minsApplied: 120, appliedBy: "OT Manager",
     }),
   );
 });
 
 test("a settlement entry against an already-LOCKED month is denied", async () => {
-  await seedDocs(env, { "users/emp/settlements/2026-09": { locked: true } });
-  const db = asUser(env, "otMgr");
+  await seedDocs(env, { "users/woEmp/settlements/2026-09": { locked: true } });
+  const db = asUser(env, "woMgr");
   await assertFails(
-    db.collection("users/emp/wo_ledger/2026-09-15/settlements").add({
+    db.collection("users/woEmp/wo_ledger/2026-09-15/settlements").add({
       otDate: "2026-09-16", minsApplied: 120, appliedBy: "OT Manager",
     }),
   );
 });
 
 test("a settlement entry is denied for a manager settling their own WO (notSelf)", async () => {
-  await seedUsers(env, { otMgrSelf: { role: "office", tabAccess: [TABS.OT_SHORTAGE] } });
+  await seedUsers(env, { woMgrSelf: { role: "office", tabAccess: [TABS.OT_SHORTAGE] } });
   await seedDocs(env, {
-    "users/otMgrSelf/wo_ledger/2026-09-15": {
-      date: "2026-09-15", userId: "otMgrSelf", debitMins: 480, remainingMins: 480, status: "outstanding",
+    "users/woMgrSelf/wo_ledger/2026-09-15": {
+      date: "2026-09-15", userId: "woMgrSelf", debitMins: 480, remainingMins: 480, status: "outstanding",
     },
-    "users/otMgrSelf/ot_approvals/2026-09-16": {
-      date: "2026-09-16", userId: "otMgrSelf", approvedMins: 120, settledMins: 0, status: "approved",
+    "users/woMgrSelf/ot_approvals/2026-09-16": {
+      date: "2026-09-16", userId: "woMgrSelf", approvedMins: 120, settledMins: 0, status: "approved",
     },
   });
-  const db = asUser(env, "otMgrSelf");
+  const db = asUser(env, "woMgrSelf");
   await assertFails(
-    db.collection("users/otMgrSelf/wo_ledger/2026-09-15/settlements").add({
+    db.collection("users/woMgrSelf/wo_ledger/2026-09-15/settlements").add({
       otDate: "2026-09-16", minsApplied: 120, appliedBy: "OT Manager",
     }),
   );
@@ -101,12 +117,12 @@ test("a settlement entry is denied for a manager settling their own WO (notSelf)
 test("full admin can create a wo_ledger doc and a settlement entry with no tabAccess at all", async () => {
   const db = asUser(env, "admin");
   await assertSucceeds(
-    db.doc("users/other/wo_ledger/2026-09-16").set({
-      date: "2026-09-16", userId: "other", debitMins: 480, remainingMins: 480, status: "outstanding",
+    db.doc("users/woOther/wo_ledger/2026-09-16").set({
+      date: "2026-09-16", userId: "woOther", debitMins: 480, remainingMins: 480, status: "outstanding",
     }),
   );
   await assertSucceeds(
-    db.collection("users/emp/wo_ledger/2026-09-15/settlements").add({
+    db.collection("users/woEmp/wo_ledger/2026-09-15/settlements").add({
       otDate: "2026-09-16", minsApplied: 120, appliedBy: "Admin",
     }),
   );
@@ -114,7 +130,7 @@ test("full admin can create a wo_ledger doc and a settlement entry with no tabAc
 
 test("a settlement entry is immutable — update and delete are both denied", async () => {
   const db = asUser(env, "admin");
-  const ref = await db.collection("users/emp/wo_ledger/2026-09-15/settlements").add({
+  const ref = await db.collection("users/woEmp/wo_ledger/2026-09-15/settlements").add({
     otDate: "2026-09-16", minsApplied: 50, appliedBy: "Admin",
   });
   await assertFails(ref.update({ minsApplied: 100 }));
@@ -122,7 +138,7 @@ test("a settlement entry is immutable — update and delete are both denied", as
 });
 
 test("an employee can read their own wo_ledger doc but not another employee's", async () => {
-  const db = asUser(env, "emp");
-  await assertSucceeds(db.doc("users/emp/wo_ledger/2026-09-15").get());
-  await assertFails(db.doc("users/other/wo_ledger/2026-09-15").get());
+  const db = asUser(env, "woEmp");
+  await assertSucceeds(db.doc("users/woEmp/wo_ledger/2026-09-15").get());
+  await assertFails(db.doc("users/woOther/wo_ledger/2026-09-15").get());
 });
