@@ -8,11 +8,13 @@ import {
   getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange,
   getSettlementsForMonth, settleMonth, unlockMonthSettlement, getCompensationMap,
   getSpecialAllowancesForMonth, lockSpecialAllowances, unlockSpecialAllowance,
+  getOutstandingWoDebits, getOtApprovalsForUser, getSettlementsForUser, settleWoDebit,
 } from '@/lib/firestore';
 import { withPay } from '@/lib/compensation';
 import { istTodayStr } from '@/lib/date';
-import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus, Settlement, SpecialAllowance } from '@/types';
+import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus, Settlement, SpecialAllowance, WoLedgerEntry } from '@/types';
 import { computeRangeLedger, settlementCash, type RangeLedger } from '@/lib/otAggregate';
+import { WO_DEBIT_MINS } from '@/lib/otLedger';
 import { usesOtShortageLedger } from '@/lib/roleCapabilities';
 import ExportButton from '@/components/ExportButton';
 import { downloadExcel } from '@/lib/excel';
@@ -68,6 +70,8 @@ export default function SettlementsPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [allowances, setAllowances] = useState<SpecialAllowance[]>([]);
+  const [outstandingWos, setOutstandingWos] = useState<WoLedgerEntry[]>([]);
+  const [settleTarget, setSettleTarget] = useState<WoLedgerEntry | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [adminName, setAdminName] = useState('Admin');
@@ -88,7 +92,7 @@ export default function SettlementsPage() {
   const loadData = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [u, e, p, a, h, s, st, sa, comp] = await Promise.all([
+      const [u, e, p, a, h, s, st, sa, comp, wo] = await Promise.all([
         getAllUsers(),
         getAttendanceForDateRange(start, end),
         getPlannedHoursForDateRange(start, end),
@@ -100,10 +104,11 @@ export default function SettlementsPage() {
         // salaryRate drives settlementCash, and pay now lives in the restricted
         // users/{uid}/compensation/current doc rather than on the user doc.
         getCompensationMap(),
+        getOutstandingWoDebits(),
       ]);
       setUsers(u.map(x => withPay(x, comp.get(x.id))));
       setEvents(e); setPlanned(p); setApprovals(a); setHolidays(h); setStatuses(s);
-      setSettlements(st); setAllowances(sa);
+      setSettlements(st); setAllowances(sa); setOutstandingWos(wo);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -178,7 +183,7 @@ export default function SettlementsPage() {
         grantedOtMins: r.ledger.grantedOtMins,
         shortageMins: r.ledger.shortageMins,
         woDays: r.ledger.woDates.length,
-        woDebitMins: r.ledger.woDebitMins,
+        woDebitMins: r.ledger.woDates.length * WO_DEBIT_MINS,
         netMins: r.ledger.netMins,
         salaryRate: r.user.salaryRate ?? 0,
         settlementCash: r.cash,
@@ -370,7 +375,7 @@ export default function SettlementsPage() {
                       <td className="px-[14px] py-3 text-xs font-mono text-[#0A7A50]">{r.ledger.autoOtMins ? `+${minutesToDisplay(r.ledger.autoOtMins)}` : '—'}</td>
                       <td className="px-[14px] py-3 text-xs font-mono text-[#0A7A50]">{r.ledger.grantedOtMins ? `+${minutesToDisplay(r.ledger.grantedOtMins)}` : '—'}</td>
                       <td className="px-[14px] py-3 text-xs font-mono text-[#C42B2B]">{r.ledger.shortageMins ? `-${minutesToDisplay(r.ledger.shortageMins)}` : '—'}</td>
-                      <td className="px-[14px] py-3 text-xs font-mono text-[#1A5FAF]">{r.ledger.woDates.length ? `${r.ledger.woDates.length}d · -${minutesToDisplay(r.ledger.woDebitMins)}` : '—'}</td>
+                      <td className="px-[14px] py-3 text-xs font-mono text-[#1A5FAF]">{r.ledger.woDates.length ? `${r.ledger.woDates.length}d · -${minutesToDisplay(r.ledger.woDates.length * WO_DEBIT_MINS)}` : '—'}</td>
                       <td className="px-[14px] py-3 text-xs font-mono font-semibold">
                         <span className={r.ledger.netMins < 0 ? 'text-[#C42B2B]' : r.ledger.netMins > 0 ? 'text-[#0A7A50]' : 'text-text-secondary'}>
                           {r.ledger.netMins < 0 ? '-' : '+'}{minutesToDisplay(r.ledger.netMins)}
@@ -496,6 +501,129 @@ export default function SettlementsPage() {
           Employees with none entered are shown for completeness only: they do <strong>not</strong> block Settle &amp; Lock, and a
           month in which nobody receives an allowance is still lockable.
         </p>
+      </div>
+
+      {/* ── Outstanding WOs ─────────────────────────────────────────────────
+          Every WO debit not yet fully settled, across all employees and months — not
+          scoped to the selected month above, since a WO can be settled with OT earned
+          in any later unlocked month. */}
+      <div className="mt-8">
+        <h2 className="text-lg font-bold text-text-primary mb-3">Outstanding WOs</h2>
+        {outstandingWos.length === 0 ? (
+          <p className="text-sm text-text-secondary">No outstanding WO debt.</p>
+        ) : (
+          <div className="space-y-2">
+            {[...outstandingWos]
+              .sort((a, b) => a.expiresAt.toMillis() - b.expiresAt.toMillis())
+              .map(wo => {
+                const daysLeft = Math.ceil((wo.expiresAt.toMillis() - Date.now()) / 86400000);
+                return (
+                  <div key={`${wo.userId}__${wo.date}`} className="border border-border rounded-xl p-4 flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold text-text-primary text-sm">{wo.userName} · {wo.date}</div>
+                      <div className="text-xs text-text-secondary mt-0.5">
+                        {wo.remainingMins} min outstanding ·{' '}
+                        <span className={daysLeft <= 14 ? 'text-[#C42B2B] font-semibold' : ''}>
+                          expires in {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </div>
+                    <button onClick={() => setSettleTarget(wo)} className="btn-outline !py-1.5 !px-4 text-[13px]">
+                      Settle
+                    </button>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
+
+      {settleTarget && (
+        <SettleWoModal
+          wo={settleTarget}
+          onClose={() => setSettleTarget(null)}
+          onSettled={() => { loadData(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SettleWoModal({ wo, onClose, onSettled }: { wo: WoLedgerEntry; onClose: () => void; onSettled: () => void }) {
+  const [sources, setSources] = useState<OtApproval[]>([]);
+  const [lockedMonths, setLockedMonths] = useState<Set<string>>(new Set());
+  const [selectedDate, setSelectedDate] = useState('');
+  const [mins, setMins] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const [approvals, settlements] = await Promise.all([
+        getOtApprovalsForUser(wo.userId),
+        getSettlementsForUser(wo.userId),
+      ]);
+      setLockedMonths(new Set(settlements.filter(s => s.locked).map(s => s.month)));
+      setSources(approvals);
+    })();
+  }, [wo.userId]);
+
+  const eligible = sources.filter(a => {
+    const available = (a.approvedMins || 0) - (a.settledMins || 0);
+    return available > 0 && !lockedMonths.has(a.date.slice(0, 7));
+  });
+  const selected = eligible.find(a => a.date === selectedDate);
+  const maxMins = selected ? Math.min(wo.remainingMins, (selected.approvedMins || 0) - (selected.settledMins || 0)) : 0;
+
+  async function submit() {
+    const value = Math.round(Number(mins) || 0);
+    if (!selected || value <= 0 || value > maxMins) { setError(`Enter a value between 1 and ${maxMins}.`); return; }
+    setSaving(true);
+    setError('');
+    try {
+      await settleWoDebit(wo.userId, wo.date, selected.date, value, 'Admin');
+      onSettled();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to settle.');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 md:px-4" onClick={onClose}>
+      <div className="bg-white md:rounded-2xl shadow-xl w-full h-full md:h-auto md:max-w-lg md:max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
+          <h2 className="text-lg font-bold text-text-primary">Settle WO · {wo.userName} · {wo.date}</h2>
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary text-xl leading-none">×</button>
+        </div>
+        <div className="overflow-y-auto p-5 space-y-4">
+          {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{error}</p>}
+          <p className="text-sm text-text-secondary">{wo.remainingMins} min still outstanding.</p>
+          <div>
+            <label className="label">OT source</label>
+            <select className="input" value={selectedDate} onChange={e => { setSelectedDate(e.target.value); setMins(''); }}>
+              <option value="">Select a date…</option>
+              {eligible.map(a => (
+                <option key={a.date} value={a.date}>
+                  {a.date} · {(a.approvedMins || 0) - (a.settledMins || 0)} min available
+                </option>
+              ))}
+            </select>
+          </div>
+          {selected && (
+            <div>
+              <label className="label">Minutes to apply (max {maxMins})</label>
+              <input type="number" min="1" max={maxMins} value={mins} onChange={e => setMins(e.target.value)} className="input" />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 p-5 border-t border-border flex-shrink-0">
+          <button onClick={onClose} className="btn-outline !py-1.5 !px-4 text-[13px]">Cancel</button>
+          <button onClick={submit} disabled={saving || !selected} className="btn-success !py-1.5 !px-4 text-[13px]">
+            {saving ? 'Saving…' : 'Settle'}
+          </button>
+        </div>
       </div>
     </div>
   );
