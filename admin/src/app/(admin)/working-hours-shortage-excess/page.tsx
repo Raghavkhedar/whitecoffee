@@ -185,6 +185,12 @@ function aggregateForEmployee(
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
 
+  // Protocol 3: WO dates, needed so commitDay can suppress that date's shift math exactly
+  // like a rest day (ops/usesLedger only — WO has no meaning for office/admin/sales here).
+  const woDateSet = usesLedger
+    ? new Set(statuses.filter(s => s.userId === user.id && s.status === 'WO').map(s => s.date))
+    : new Set<string>();
+
   // A completed worked day (raw events or a regularized override) → ledger + totals.
   const commitDay = (date: string, firstIn: number, lastOut: number) => {
     const dayMins = Math.round((lastOut - firstIn) / 60);
@@ -207,13 +213,13 @@ function aggregateForEmployee(
     if (usesLedger) {
       const led = computeDayLedger({
         shiftStartMin, shiftEndMin, inMin, outMin,
-        declaredOtMins: declaredDay, isRestDay: restDay,
+        declaredOtMins: declaredDay, isRestDay: restDay, isWoDay: woDateSet.has(date),
       });
       shortageMins    += led.shortageMins;
       autoOtRangeMins += led.autoOtMins;
-      // Raw excess = actual time worked past the decided shift end, regardless of approval status.
-      // On a rest day there's no decided shift, so any time worked at all counts as excess.
-      rawExcessMins += restDay ? Math.max(0, outMin - inMin) : Math.max(0, outMin - shiftEndMin);
+      // Raw excess = actual time worked past the decided shift end, regardless of approval
+      // status. On a rest OR WO day there's no decided shift, so any time worked at all counts.
+      rawExcessMins += (restDay || woDateSet.has(date)) ? Math.max(0, outMin - inMin) : Math.max(0, outMin - shiftEndMin);
       if (led.pendingExtraMins > 0) {
         otDays.push({ date, plannedMins: plannedDay, declaredOtMins: declaredDay, actualMins: dayMins, autoOtMins: led.autoOtMins, pendingExtraMins: led.pendingExtraMins });
       }

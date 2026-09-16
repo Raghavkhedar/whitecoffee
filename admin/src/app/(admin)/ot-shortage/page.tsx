@@ -171,7 +171,6 @@ function aggregateForEmployee(
   const isOps = user.role === 'operations';
   const userEvents = allEvents.filter(e => e.userId === user.id);
 
-  // Planned shift + declared-OT minutes per date (ops use admin-set windows)
   const plannedByDate = new Map<string, { planned: number; declared: number; startTime: string; endTime: string }>();
   plannedItems.filter(p => p.userId === user.id).forEach(p => {
     const dur = hhmmToMinutes(p.endTime) - hhmmToMinutes(p.startTime);
@@ -181,13 +180,20 @@ function aggregateForEmployee(
   let workingMins: number | null;
   if (isOps) {
     let total = 0;
-    plannedByDate.forEach(d => { total += d.planned; }); // expected = shift windows only (declared OT is overtime)
+    plannedByDate.forEach(d => { total += d.planned; });
     workingMins = total > 0 ? total : null;
   } else {
     workingMins = countWorkingDays(start, end, holidays) * OFFICE_DAY_MINS;
   }
 
-  // Group events per day
+  // Protocol 3: WO dates are needed BEFORE commitDay is defined (moved up from after the
+  // event loop) so each date's computeDayLedger call can suppress that date's shift math
+  // exactly like a rest day.
+  const woDates = isOps
+    ? statuses.filter(s => s.userId === user.id && s.status === 'WO').map(s => s.date).sort()
+    : [];
+  const woDateSet = new Set(woDates);
+
   const eventsByDate = new Map<string, AttendanceRecord[]>();
   userEvents.forEach(e => {
     if (!eventsByDate.has(e.date)) eventsByDate.set(e.date, []);
@@ -204,7 +210,6 @@ function aggregateForEmployee(
   let globalFirstIn: number | null = null;
   let globalLastOut: number | null = null;
 
-  // A completed worked day (raw events or a regularized override) → ledger + detail + totals.
   const commitDay = (date: string, firstIn: number, lastOut: number, regularized: boolean) => {
     const dayMins = Math.round((lastOut - firstIn) / 60);
     totalActualMins += dayMins;
@@ -214,7 +219,6 @@ function aggregateForEmployee(
 
     const restDay     = isSunday(date) || holidays.has(date);
     const planInfo    = isOps ? plannedByDate.get(date) : { planned: OFFICE_DAY_MINS, declared: 0, startTime: '10:00', endTime: '18:00' };
-    // No valid plan for an ops worked day → fall back to the default 10:00–18:00 shift.
     const shiftStartMin = planInfo ? hhmmToMinutes(planInfo.startTime) : DEFAULT_SHIFT_START_MIN;
     const shiftEndMin   = planInfo ? hhmmToMinutes(planInfo.endTime)   : DEFAULT_SHIFT_END_MIN;
     const plannedDay  = shiftEndMin - shiftStartMin;
@@ -232,6 +236,7 @@ function aggregateForEmployee(
         inMin: istMinuteOfDay(firstIn), outMin: istMinuteOfDay(lastOut),
         declaredOtMins: declaredDay,
         isRestDay: restDay,
+        isWoDay: woDateSet.has(date),
       });
       detail.shortageMins     = led.shortageMins;
       detail.autoOtMins       = led.autoOtMins;
@@ -239,16 +244,14 @@ function aggregateForEmployee(
 
       if (led.shortageMins > 0)     { shortageRangeMins += led.shortageMins; shortageDays.push(detail); }
       if (led.autoOtMins > 0)       autoOtRangeMins += led.autoOtMins;
-      // A rest day's full worked window arrives here as pendingExtraMins (Protocol 1) — it
-      // joins the ordinary pending-OT queue, labelled Sunday/Holiday in the UI below, and is
-      // approvable for a partial figure through the same dialog as any other pending OT day.
+      // A rest OR WO day's full worked window arrives here as pendingExtraMins — it joins the
+      // ordinary pending-OT queue, labelled Sunday/Holiday in the UI below (a WO day gets no
+      // special label here, it just has 0 shortage/autoOt like a rest day would).
       if (led.pendingExtraMins > 0) otDays.push(detail);
     }
     workedDays.push(detail);
   };
 
-  // Regularized-to-Present days carry admin-set effective in/out (missed-punch fix); these
-  // override raw events for the date so the corrected day can carry shortage/OT (ops only).
   const overrideByDate = new Map<string, { inSecs: number; outSecs: number }>();
   if (isOps) {
     statuses.filter(s => s.userId === user.id && s.status === 'Present' && s.inTime && s.outTime).forEach(s => {
@@ -258,18 +261,15 @@ function aggregateForEmployee(
   }
 
   eventsByDate.forEach((dayEvents, date) => {
-    if (overrideByDate.has(date)) return; // regularization in/out is authoritative for this date
+    if (overrideByDate.has(date)) return;
     const inEvents  = dayEvents.filter(e => isOps ? OPS_IN_TYPES.has(e.type)  : e.type === 'office_in');
     const outEvents = dayEvents.filter(e => isOps ? OPS_OUT_TYPES.has(e.type) : e.type === 'office_out');
-    if (inEvents.length === 0) return; // no check-in → nothing to show
+    if (inEvents.length === 0) return;
 
     const firstIn = Math.min(...inEvents.map(tsSeconds));
     const lastOut = outEvents.length ? Math.max(...outEvents.map(tsSeconds)) : null;
     if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
 
-    // Open day — checked in but not yet checked out. Final hours can't be measured,
-    // so it never counts toward totals / OT / shortage, but the check-in time stays
-    // visible (shown as "in progress" in the single-day view).
     if (lastOut === null || lastOut <= firstIn) return;
 
     commitDay(date, firstIn, lastOut, false);
@@ -283,18 +283,20 @@ function aggregateForEmployee(
   const pendingOt = otDays.filter(d => !approvedByDate.has(d.date)).sort((a, b) => a.date.localeCompare(b.date));
   const pendingOtMins = pendingOt.reduce((s, d) => s + d.pendingExtraMins, 0);
   const approvedInRange = Array.from(approvedByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-  const approvedOtRangeMins = approvedInRange.reduce((s, a) => s + (a.approvedMins || 0), 0);
+  // Protocol 3: net of whatever has already been spent settling a WO debt — settled-away
+  // minutes must not ALSO display as payable/approved OT here.
+  const approvedOtRangeMins = approvedInRange.reduce((s, a) => s + Math.max(0, (a.approvedMins || 0) - (a.settledMins || 0)), 0);
 
-  // WO debit (ops only): each WO-marked day owes a standard 8h, payable by OT this month.
-  const woDates = isOps
-    ? statuses.filter(s => s.userId === user.id && s.status === 'WO').map(s => s.date).sort()
-    : [];
+  // WO debit (ops only, DISPLAY ONLY as of Protocol 3): each WO-marked day owes a standard 8h,
+  // now tracked and settled entirely through the separate wo_ledger collection — no longer
+  // subtracted from netLedgerMins below. Kept here purely as an informational figure.
   const woDebitMins = woDates.length * WO_DEBIT_MINS;
 
-  // Net ledger for the range. Pending OT is excluded (not credited until approved).
-  // Informational only — no payroll effect yet.
+  // Net ledger for the range: approved OT minus shortage. WO debt no longer participates
+  // (Protocol 3) — see the Outstanding WOs section on the OT Settlements page (Task 7) for
+  // that. Informational only — no payroll effect yet.
   const rangeNetMins = isOps
-    ? netLedgerMins({ autoOtMins: autoOtRangeMins, approvedGrantedMins: approvedOtRangeMins, shortageMins: shortageRangeMins, woDebitMins })
+    ? netLedgerMins({ autoOtMins: autoOtRangeMins, approvedGrantedMins: approvedOtRangeMins, shortageMins: shortageRangeMins })
     : 0;
 
   return {
@@ -410,7 +412,7 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
           {/* Net ledger for the range (operations only) — informational, no payroll effect yet */}
           {row.isOps && (
             <div className="flex items-center justify-between bg-[#FBFAF8] border border-[#F0EEEB] rounded-xl px-4 py-3">
-              <div className="text-sm text-text-secondary">Net ledger (range) · approved OT − shortage − WO</div>
+              <div className="text-sm text-text-secondary">Net ledger (range) · approved OT − shortage</div>
               <div className={`text-lg font-bold font-mono ${row.netLedgerMins < 0 ? 'text-[#C42B2B]' : 'text-[#0A7A50]'}`}>
                 {row.netLedgerMins < 0 ? '-' : '+'}{minutesToDisplay(row.netLedgerMins)}
               </div>
