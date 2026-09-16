@@ -1,6 +1,6 @@
 # WhiteCoffee — Claude Code Context File
 ### Android side of the whitecoffee monorepo. Root context: ../CLAUDE.md
-### Released: v1.8 / versionCode 8. Per-change history lives in git, not here.
+### Released: v1.14 / versionCode 14. Per-change history lives in git, not here.
 
 ---
 
