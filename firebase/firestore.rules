@@ -119,8 +119,18 @@ service cloud.firestore {
     // Deliberately NOT folded into canWriteOtApprovals() itself: that continues to gate ONLY
     // ot_approvals writes (approve/reject/manual OT), and an OT-Settlements-only manager must
     // not gain that unrelated capability as a side effect of being able to settle a WO.
+    //
+    // Regularization is included too: approveRegularization's batch touches wo_ledger as a
+    // side effect of a decision that tab ALREADY authorizes (create on a WO outcome, delete on
+    // a WO date later regularized to something else) — canWriteAttendanceStatus() already grants
+    // /regularization the equivalent attendance_status write in the very same batch, so gating
+    // the incidental wo_ledger touch behind a DIFFERENT, narrower tab set would fail that batch
+    // atomically for a regularization-only manager on every approval, not just WO ones (caught
+    // 2026-09-16, final-review fix-wave re-review). This does not hand a regularization-only
+    // manager the standalone Settle-WO-debt UI (that lives on /ot-settlements, unreachable
+    // without holding it) — only the side-effect write their own approvals already trigger.
     function canSettleWoDebits() {
-      return userTabs().hasAny(['/attendance', '/ot-shortage', '/ot-settlements']);
+      return userTabs().hasAny(['/attendance', '/ot-shortage', '/ot-settlements', '/regularization']);
     }
 
     // Frozen monthly settlements: read + write for OT Settlements only.

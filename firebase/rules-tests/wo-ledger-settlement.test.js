@@ -160,3 +160,26 @@ test("an employee can read their own wo_ledger doc but not another employee's", 
   await assertSucceeds(db.doc("users/woEmp/wo_ledger/2026-09-15").get());
   await assertFails(db.doc("users/woOther/wo_ledger/2026-09-15").get());
 });
+
+test("a manager holding ONLY /regularization can batch a regularization approval that clears a stale wo_ledger doc (Fix 3/4 else-branch regression, caught in final-review re-review)", async () => {
+  // approveRegularization's batch writes attendance_status (already permitted for
+  // /regularization via canWriteAttendanceStatus) AND, since the final review's fix wave,
+  // unconditionally deletes any wo_ledger doc for that date when the outcome isn't WO — the
+  // "clear a stale WO on outcome change" cleanup. Both writes must succeed together for a
+  // manager scoped to /regularization alone, with no Attendance/OT & Shortage/OT Settlements
+  // tab — otherwise the WHOLE batch (including the ordinary attendance_status write) fails
+  // atomically on every non-WO approval, not just WO ones.
+  await seedUsers(env, { regMgr: { role: "office", tabAccess: [TABS.REGULARIZATION] } });
+  await seedDocs(env, {
+    "users/woEmp/wo_ledger/2026-09-17": {
+      date: "2026-09-17", userId: "woEmp", debitMins: 480, remainingMins: 480, status: "outstanding",
+    },
+  });
+  const db = asUser(env, "regMgr");
+  const batch = db.batch();
+  batch.set(db.doc("users/woEmp/attendance_status/2026-09-17"), {
+    date: "2026-09-17", userId: "woEmp", status: "Present", markedBy: "admin",
+  }, { merge: true });
+  batch.delete(db.doc("users/woEmp/wo_ledger/2026-09-17"));
+  await assertSucceeds(batch.commit());
+});
