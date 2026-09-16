@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -83,6 +83,9 @@ export default function RegularizationPage() {
   // lookup) when the modal opens; defaults to false so a Sunday still renders correctly the
   // instant openModal's synchronous isRestDay(date) check (no holidays) resolves below.
   const [modalIsRestDay, setModalIsRestDay] = useState(false);
+  // Tracks which request's holiday lookup is currently authoritative for modalIsRestDay — guards
+  // against a stale async resolution overwriting a newer modal's verdict (see openModal below).
+  const activeModalDateRef = useRef<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
@@ -122,9 +125,18 @@ export default function RegularizationPage() {
     // Synchronous first pass (Sunday only, no holiday lookup yet) so the WO option is already
     // gone for the common case the instant the modal renders; refined below once holidays load.
     setModalIsRestDay(isRestDay(req.date));
+    activeModalDateRef.current = req.date;
     if (type === 'approve') {
+      const requestedDate = req.date;
       getHolidaysForDateRange(req.date, req.date)
-        .then(holidays => setModalIsRestDay(isRestDay(req.date, new Set(holidays.map(h => h.id)))))
+        .then(holidays => {
+          // Guard against a stale resolution: if the admin closed this modal and opened a
+          // different request before this lookup finished, its result must not overwrite the
+          // newer modal's rest-day verdict.
+          if (activeModalDateRef.current === requestedDate) {
+            setModalIsRestDay(isRestDay(requestedDate, new Set(holidays.map(h => h.id))));
+          }
+        })
         .catch(() => {}); // leave the Sunday-only verdict in place; the server-side rules are the real guard either way
     }
   }

@@ -446,11 +446,16 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
 
                       {/* Detailed breakdown: planned shift, actual punches, OT split */}
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs mb-3 bg-[#FBFAF8] border border-[#F0EEEB] rounded-lg p-3">
-                        <div className="flex justify-between"><span className="text-text-secondary">Planned shift</span><span className="font-mono text-text-primary">{day.plannedStart ? `${fmtHHMM(day.plannedStart)} – ${fmtHHMM(day.plannedEnd)}` : '—'}</span></div>
-                        <div className="flex justify-between"><span className="text-text-secondary">Planned hrs</span><span className="font-mono text-text-primary">{minutesToDisplay(day.plannedMins)}</span></div>
+                        {/* A rest day has no real shift window — Protocol 1 makes the WHOLE
+                            worked window pending, not just time past a shift end. day.plannedStart/
+                            plannedEnd/plannedMins always carry the 10:00–18:00 default (never
+                            undefined), so showing them here for a rest day would fabricate a shift
+                            that was never in effect. */}
+                        <div className="flex justify-between"><span className="text-text-secondary">Planned shift</span><span className="font-mono text-text-primary">{day.isRestDay ? '—' : (day.plannedStart ? `${fmtHHMM(day.plannedStart)} – ${fmtHHMM(day.plannedEnd)}` : '—')}</span></div>
+                        <div className="flex justify-between"><span className="text-text-secondary">Planned hrs</span><span className="font-mono text-text-primary">{day.isRestDay ? '—' : minutesToDisplay(day.plannedMins)}</span></div>
                         <div className="flex justify-between"><span className="text-text-secondary">Checked in / out</span><span className="font-mono text-text-primary">{formatTime(day.firstInSecs)} – {formatTime(day.lastOutSecs)}</span></div>
                         <div className="flex justify-between"><span className="text-text-secondary">Worked hrs</span><span className="font-mono text-text-primary">{minutesToDisplay(day.actualMins)}</span></div>
-                        <div className="flex justify-between"><span className="text-text-secondary">OT after</span><span className="font-mono text-text-primary">{day.plannedEnd ? fmtHHMM(day.plannedEnd) : '—'}</span></div>
+                        <div className="flex justify-between"><span className="text-text-secondary">OT after</span><span className="font-mono text-text-primary">{day.isRestDay ? '—' : (day.plannedEnd ? fmtHHMM(day.plannedEnd) : '—')}</span></div>
                         <div className="flex justify-between"><span className="text-text-secondary">Declared OT</span><span className="font-mono text-text-primary">{minutesToDisplay(day.declaredOtMins)}</span></div>
                         <div className="flex justify-between"><span className="text-text-secondary">Auto-approved</span><span className="font-mono text-[#0A7A50]">+{minutesToDisplay(day.autoOtMins)}</span></div>
                         <div className="flex justify-between"><span className="text-text-secondary">Pending review</span><span className="font-mono text-[#9A5B1E] font-semibold">+{minutesToDisplay(day.pendingExtraMins)}</span></div>
