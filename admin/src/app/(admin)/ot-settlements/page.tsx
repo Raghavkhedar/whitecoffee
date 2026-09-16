@@ -506,36 +506,84 @@ export default function SettlementsPage() {
       {/* ── Outstanding WOs ─────────────────────────────────────────────────
           Every WO debit not yet fully settled, across all employees and months — not
           scoped to the selected month above, since a WO can be settled with OT earned
-          in any later unlocked month. */}
+          in any later unlocked month. Mirrors the Special Allowance section's table-on-
+          desktop / cards-on-mobile structure for visual consistency across this page. */}
       <div className="mt-8">
         <h2 className="text-lg font-bold text-text-primary mb-3">Outstanding WOs</h2>
-        {outstandingWos.length === 0 ? (
-          <p className="text-sm text-text-secondary">No outstanding WO debt.</p>
-        ) : (
-          <div className="space-y-2">
-            {[...outstandingWos]
-              .sort((a, b) => a.expiresAt.toMillis() - b.expiresAt.toMillis())
-              .map(wo => {
-                const daysLeft = Math.ceil((wo.expiresAt.toMillis() - Date.now()) / 86400000);
-                return (
-                  <div key={`${wo.userId}__${wo.date}`} className="border border-border rounded-xl p-4 flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold text-text-primary text-sm">{wo.userName} · {wo.date}</div>
-                      <div className="text-xs text-text-secondary mt-0.5">
-                        {wo.remainingMins} min outstanding ·{' '}
-                        <span className={daysLeft <= 14 ? 'text-[#C42B2B] font-semibold' : ''}>
-                          expires in {daysLeft} day{daysLeft === 1 ? '' : 's'}
-                        </span>
+        <div className="bg-white border border-[#E9E6E2] rounded-2xl overflow-hidden">
+          {(() => {
+            const sortedWos = [...outstandingWos].sort((a, b) => a.expiresAt.toMillis() - b.expiresAt.toMillis());
+            if (isMobile) {
+              return sortedWos.length === 0 ? (
+                <div className="py-10 text-center text-text-secondary text-sm">No outstanding WO debt.</div>
+              ) : (
+                <div className="divide-y divide-[#F4F2EF]">
+                  {sortedWos.map(wo => {
+                    const daysLeft = Math.ceil((wo.expiresAt.toMillis() - Date.now()) / 86400000);
+                    return (
+                      <div key={`${wo.userId}__${wo.date}`} className="px-4 py-3 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-medium text-text-primary truncate">{wo.userName} · {wo.date}</div>
+                          <div className="text-[11px] text-text-secondary font-mono">
+                            {wo.remainingMins} min ·{' '}
+                            <span className={daysLeft <= 14 ? 'text-[#C42B2B] font-semibold' : ''}>
+                              {daysLeft} day{daysLeft === 1 ? '' : 's'} left
+                            </span>
+                          </div>
+                        </div>
+                        <button onClick={() => setSettleTarget(wo)} className="btn-outline !py-1.5 !px-4 text-[13px] flex-shrink-0">
+                          Settle
+                        </button>
                       </div>
-                    </div>
-                    <button onClick={() => setSettleTarget(wo)} className="btn-outline !py-1.5 !px-4 text-[13px]">
-                      Settle
-                    </button>
-                  </div>
-                );
-              })}
-          </div>
-        )}
+                    );
+                  })}
+                </div>
+              );
+            }
+            return (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr>
+                      <th className={`${TH} pl-[18px]`}>Name</th>
+                      <th className={TH}>Employee ID</th>
+                      <th className={TH}>Date</th>
+                      <th className={TH}>Remaining</th>
+                      <th className={TH}>Expires</th>
+                      <th className={`${TH} pr-[18px]`}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedWos.map(wo => {
+                      const daysLeft = Math.ceil((wo.expiresAt.toMillis() - Date.now()) / 86400000);
+                      return (
+                        <tr key={`${wo.userId}__${wo.date}`} className="border-t border-[#F4F2EF]">
+                          <td className="px-[14px] py-3 pl-[18px] font-medium text-text-primary whitespace-nowrap">{wo.userName}</td>
+                          <td className="px-[14px] py-3 text-xs font-mono text-text-secondary">{wo.employeeId || '—'}</td>
+                          <td className="px-[14px] py-3 text-xs font-mono text-text-secondary">{wo.date}</td>
+                          <td className="px-[14px] py-3 text-xs font-mono text-text-primary">{wo.remainingMins} min</td>
+                          <td className="px-[14px] py-3 text-xs">
+                            <span className={daysLeft <= 14 ? 'text-[#C42B2B] font-semibold' : 'text-text-secondary'}>
+                              {daysLeft} day{daysLeft === 1 ? '' : 's'}
+                            </span>
+                          </td>
+                          <td className="px-[14px] py-3 pr-[18px] text-right">
+                            <button onClick={() => setSettleTarget(wo)} className="btn-outline !py-1.5 !px-4 text-[13px]">
+                              Settle
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {sortedWos.length === 0 && (
+                      <tr><td colSpan={6} className="py-10 text-center text-text-secondary text-sm">No outstanding WO debt.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {settleTarget && (

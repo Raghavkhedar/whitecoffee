@@ -20,6 +20,11 @@ const ZERO = {
   shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0,
 };
 
+// Rest days (Sunday / company holiday) AND WO days (admin-marked paid day off, Protocol 3)
+// are both immutable for shift-math purposes: nothing is pre-authorized. Any worked window on
+// either kind of day raises a PENDING overtime request for the WHOLE window — never
+// auto-credited, never shortage, and the declared-OT ceiling does not apply. It is credited
+// only when an admin later approves some or all of it via the separate approval flow.
 function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, isWoDay }) {
   const worked = Math.max(0, outMin - inMin);
 
