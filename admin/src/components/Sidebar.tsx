@@ -7,7 +7,7 @@ import { auth } from '@/lib/firebase';
 import { getAllLeaveRequests } from '@/lib/firestore';
 import { TABS, allowedPaths, type TabDef } from '@/lib/portalAccess';
 import { useAccess } from './AccessContext';
-import { POPUP_SESSION_KEY } from './PendingReminderPopup';
+import { POPUP_SESSION_KEY } from './HeaderNotificationBell';
 import Icon from './Icon';
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {

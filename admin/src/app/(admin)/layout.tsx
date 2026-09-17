@@ -7,7 +7,6 @@ import { auth, db } from '@/lib/firebase';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import { AccessProvider } from '@/components/AccessContext';
-import PendingReminderPopup from '@/components/PendingReminderPopup';
 import { hasPortalAccess, canAccess, landingPath } from '@/lib/portalAccess';
 import type { User } from '@/types';
 
@@ -66,7 +65,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <main className="flex-1 overflow-y-auto px-4 py-4 md:px-[30px] md:py-[26px] pb-12">{children}</main>
         </div>
       </div>
-      {user.role === 'admin' && <PendingReminderPopup />}
     </AccessProvider>
   );
 }

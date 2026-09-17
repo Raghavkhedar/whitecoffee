@@ -3,6 +3,7 @@ import { usePathname } from 'next/navigation';
 import { useAccess } from './AccessContext';
 import { allowedPaths } from '@/lib/portalAccess';
 import Icon from './Icon';
+import HeaderNotificationBell from './HeaderNotificationBell';
 
 const TITLES: Record<string, { title: string; subtitle: string }> = {
   '/dashboard':           { title: 'Dashboard',          subtitle: 'Live overview of your team today' },
@@ -56,7 +57,15 @@ export default function Header({ onMenuClick }: { onMenuClick: () => void }) {
         <div className="hidden sm:flex items-center gap-2 h-9 px-[13px] border border-border rounded-[9px] bg-white text-[12.5px] text-[#6B635C] font-medium">
           <span className="text-[#B4ADA5] flex"><Icon name="calendar" size={15} /></span>{today}
         </div>
-        <div className="w-px h-[26px] bg-border" />
+        <div className="w-px h-[26px] bg-border hidden sm:block" />
+        
+        {user?.role === 'admin' && (
+          <>
+            <HeaderNotificationBell />
+            <div className="w-px h-[26px] bg-border" />
+          </>
+        )}
+
         <div className="flex items-center gap-2.5">
           <div className="w-[34px] h-[34px] rounded-full bg-primary text-white flex items-center justify-center text-[12.5px] font-semibold font-mono">{initials(name)}</div>
           <div className="leading-[1.2]">
