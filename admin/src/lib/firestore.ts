@@ -7,11 +7,12 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from './firebase';
-import { istTodayStr } from './date';
+import { istTodayStr, istDaysAgoStr } from './date';
 import { effectiveGrantedDates } from './leaveDates';
 import { PAY_FIELDS, type Pay } from './compensation';
 import { usesConveyance, usesOtShortageLedger } from './roleCapabilities';
 import { WO_DEBIT_MINS } from './otLedger';
+import { pendingOtDayCount } from './otAggregate';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
 import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry, WoLedgerEntry } from '@/types';
@@ -1017,6 +1018,25 @@ async function writeOtDecision(
     }),
     { merge: true },
   );
+}
+
+// Total pending-OT DAYS across every ledger-tracking (operations) employee, over the same
+// last-30-days range /ot-shortage itself defaults to. Used only by the admin login reminder
+// popup — pays the same collectionGroup(attendance) cost that page already pays on open; this
+// just moves it to login time (see docs/superpowers/specs/2026-09-17-admin-login-pending-reminder-popup-design.md).
+export async function getPendingOtCount(): Promise<number> {
+  const end   = istTodayStr();
+  const start = istDaysAgoStr(30);
+  const [users, events, planned, approvals, holidaysList, statuses] = await Promise.all([
+    getAllUsers(),
+    getAttendanceForDateRange(start, end),
+    getPlannedHoursForDateRange(start, end),
+    getOtApprovalsForDateRange(start, end),
+    getHolidaysForDateRange(start, end),
+    getAttendanceStatusForDateRange(start, end),
+  ]);
+  const holidaySet = new Set(holidaysList.map(h => h.date));
+  return pendingOtDayCount(users, events, planned, approvals, statuses, holidaySet);
 }
 
 // ── Monthly Settlements ───────────────────────────────────────────────────
