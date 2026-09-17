@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { getAllLeaveRequests, getAllRegularizationRequests, getPendingOtCount } from '@/lib/firestore';
 
@@ -11,9 +12,14 @@ export default function HeaderNotificationBell() {
   const [counts, setCounts] = useState<Counts | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const total = counts ? counts.leaves + counts.regularizations + counts.ot : 0;
+
+  // `document.body` (for the portal below) only exists client-side; this also keeps the
+  // static export's build-time render from touching it.
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     let active = true;
@@ -129,7 +135,7 @@ export default function HeaderNotificationBell() {
         )}
       </div>
 
-      {showModal && total > 0 && (
+      {mounted && showModal && total > 0 && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-[400px] max-w-[90vw] overflow-hidden">
             <div className="bg-[#FFFBEB] px-6 py-4 border-b border-[#FDE68A] flex items-center gap-3">
@@ -174,7 +180,8 @@ export default function HeaderNotificationBell() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
