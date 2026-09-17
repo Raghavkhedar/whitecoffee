@@ -1,5 +1,5 @@
 // Tests for the range/month aggregation. Run: npx tsx src/lib/otAggregate.test.ts
-import { computeRangeLedger, settlementCash } from './otAggregate';
+import { computeRangeLedger, settlementCash, pendingOtDayCount } from './otAggregate';
 
 let passed = 0, failed = 0;
 function eq(name: string, got: number | string, want: number | string) {
@@ -157,6 +157,15 @@ eq('1 WO day, no other activity → net 0 feeds in, WO pays unconditionally → 
 eq('1 WO day + 300 min of its own separately-tracked OT elsewhere this range → 800 + 500', settlementCash(800, 1, 480), 1600);
 eq('no WO, net +480 OT → +800', settlementCash(800, 0, 480), 800);
 eq('no WO, net -240 shortage → -400', settlementCash(800, 0, -240), -400);
+
+console.log('\npendingOtDayCount — total pending OT DAYS across ledger-tracking (operations) users, for the admin login popup:');
+const opsA   = { id: 'u1', role: 'operations' };
+const opsB   = { id: 'u5', role: 'operations' };
+const salesC = { id: 'u6', role: 'sales' };
+const evOpsB = [ev('u5', '2026-06-07', 'site_in', '11:00'), ev('u5', '2026-06-07', 'site_out', '16:00')]; // another ops user's own pending Sunday
+eq('single ops user, 1 pending Sunday day', pendingOtDayCount([opsA], evSun, [], [], [], noHol), 1);
+eq('sales user excluded even with the same pending-shaped fixture', pendingOtDayCount([salesC], evSun, [], [], [], noHol), 0);
+eq('two ops users, each with their own pending Sunday, sums to 2', pendingOtDayCount([opsA, opsB], [...evSun, ...evOpsB], [], [], [], noHol), 2);
 
 console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -7,6 +7,7 @@ import {
   computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay,
   DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
 } from './otLedger';
+import { usesOtShortageLedger } from './roleCapabilities';
 
 const OPS_IN_TYPES  = new Set(['site_in', 'market_in']);
 const OPS_OUT_TYPES = new Set(['site_out', 'market_out']);
@@ -125,3 +126,21 @@ export function settlementCash(salaryRate: number, woDays: number, netMins: numb
   const cash = woDays * salaryRate + (netMins / WO_DEBIT_MINS) * salaryRate;
   return Math.round(cash * 100) / 100;
 }
+
+// Total pending OT DAYS across every ledger-tracking (operations) user in the given range —
+// counts days, not minutes, to match "N OT approvals pending" phrasing on the admin login
+// reminder popup. `usesOtShortageLedger` matches the filter ot-settlements/page.tsx already
+// uses (operations only — broader than tracksShortage, which also covers office/admin).
+export function pendingOtDayCount(
+  users: { id: string; role: string }[],
+  events: AttendanceRecord[],
+  planned: PlannedHours[],
+  approvals: OtApproval[],
+  statuses: AttendanceStatus[],
+  holidays: Set<string>,
+): number {
+  return users
+    .filter(u => usesOtShortageLedger(u.role))
+    .reduce((sum, u) => sum + computeRangeLedger(u.id, events, planned, approvals, statuses, holidays).pendingDates.length, 0);
+}
+
