@@ -7,6 +7,7 @@ import { auth } from '@/lib/firebase';
 import { getAllLeaveRequests } from '@/lib/firestore';
 import { TABS, allowedPaths, type TabDef } from '@/lib/portalAccess';
 import { useAccess } from './AccessContext';
+import { POPUP_SESSION_KEY } from './PendingReminderPopup';
 import Icon from './Icon';
 
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -41,6 +42,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   }, [canSeeLeaves]);
 
   async function handleLogout() {
+    try { sessionStorage.removeItem(POPUP_SESSION_KEY); } catch { /* private mode etc. — nothing to clear */ }
     await signOut(auth);
     router.replace('/login');
   }
