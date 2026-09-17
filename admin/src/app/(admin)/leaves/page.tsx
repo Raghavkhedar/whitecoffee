@@ -33,6 +33,22 @@ function typeDotColor(t: string) {
   return '#9A938C';
 }
 
+// "17 Sep, 10:42 am" — Firestore Timestamp → readable applied-on datetime. Tolerates
+// legacy docs written before `submittedAt` existed.
+function formatSubmittedAt(t?: { toDate?: () => Date } | null) {
+  return t?.toDate
+    ? t.toDate().toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+    : '—';
+}
+
+// Whole days since submission — only shown while a request is still pending, so
+// there's no "reviewed" endpoint to net against.
+function pendingLabel(t?: { toDate?: () => Date } | null): string | null {
+  if (!t?.toDate) return null;
+  const days = Math.floor((Date.now() - t.toDate().getTime()) / 86_400_000);
+  return days <= 0 ? 'Applied today' : `Pending ${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
 export default function LeavesPage() {
   // Cancelling is ADMIN-ONLY, unlike approve/decline which any Leaves manager may do.
   // Reverting an already-scored day writes `attendance_status` (needs /attendance or
@@ -259,6 +275,7 @@ export default function LeavesPage() {
                 <div><div className={metaLabel}>Type</div><div className={metaVal}><span className="w-[7px] h-[7px] rounded-full" style={{ background: typeDotColor(l.leaveType) }} />{l.leaveType}</div></div>
                 <div><div className={metaLabel}>Dates</div><div className={metaVal}>{l.fromDate}{l.toDate && l.toDate !== l.fromDate ? ` → ${l.toDate}` : ''}</div></div>
                 <div><div className={metaLabel}>Days</div><div className={`${metaVal} font-mono`}>{l.totalDays}</div></div>
+                <div><div className={metaLabel}>Applied</div><div className={metaVal}>{formatSubmittedAt(l.submittedAt)}</div></div>
                 <div className="min-w-[160px] flex-1"><div className={metaLabel}>Reason</div><div className="text-[13px] text-[#4A433D] mt-[3px]">{l.reason}{/* Red reads as a rejection reason — approve now takes a comment too, so only tint it when it actually is one. */}
                 {l.approverComment && <span className={`block text-[12px] mt-0.5 ${l.status === 'rejected' ? 'text-red-500' : 'text-[#8A817A]'}`}>“{l.approverComment}”</span>}</div></div>
               </div>
@@ -266,10 +283,15 @@ export default function LeavesPage() {
             </div>
             <div className="flex sm:flex-col items-stretch sm:items-end gap-2.5 flex-shrink-0">
               {l.status === 'pending' ? (
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button className="btn-outline !py-1.5 !px-3 text-[13px] !text-[#C42B2B] !border-[#F0D3D3] hover:!bg-[#FBEAEA] flex-1 sm:flex-none" disabled={actioning === l.id} onClick={() => { setRejectModal(l); setRejectComment(''); }}>Decline</button>
-                  <button className="btn-success !py-1.5 !px-3 text-[13px] flex-1 sm:flex-none" disabled={actioning === l.id} onClick={() => openApprove(l)}>Approve</button>
-                </div>
+                <>
+                  {pendingLabel(l.submittedAt) && (
+                    <span className="text-[11.5px] text-[#A8A29E]">{pendingLabel(l.submittedAt)}</span>
+                  )}
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button className="btn-outline !py-1.5 !px-3 text-[13px] !text-[#C42B2B] !border-[#F0D3D3] hover:!bg-[#FBEAEA] flex-1 sm:flex-none" disabled={actioning === l.id} onClick={() => { setRejectModal(l); setRejectComment(''); }}>Decline</button>
+                    <button className="btn-success !py-1.5 !px-3 text-[13px] flex-1 sm:flex-none" disabled={actioning === l.id} onClick={() => openApprove(l)}>Approve</button>
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="flex items-center gap-1.5">
