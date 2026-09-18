@@ -88,6 +88,18 @@ function resolveRestDayType(dateStr, isHoliday) {
   return dayOfWeek === 0 ? "Sunday" : null;
 }
 
+/**
+ * Resolve a day inside an approved-but-unpunched leave range into its status and whether it
+ * draws paid salary credit. The status is uniformly "SCHL" regardless of balance — a single
+ * leave request can straddle the balance boundary (e.g. 4 days approved, 2 days of balance
+ * left), and the days should read the same on the calendar either way. Payroll still needs to
+ * know which days were actually paid, which is what `salaryCredit` is for.
+ */
+function resolveLeaveStatus(plBalance) {
+  const balance = Number(plBalance) || 0;
+  return { status: "SCHL", salaryCredit: balance > 0 ? 1 : 0 };
+}
+
 module.exports = {
   OFFICE_START_MIN,
   OFFICE_END_MIN,
@@ -95,4 +107,5 @@ module.exports = {
   classify,
   resolveOpsWindow,
   resolveRestDayType,
+  resolveLeaveStatus,
 };
