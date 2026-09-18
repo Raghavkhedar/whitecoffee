@@ -411,7 +411,7 @@ service cloud.firestore {
       match /leave_requests/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessLeaves());
         // Must be created pending — a self-approved leave would otherwise be
-        // counted as PL by the nightly computeDailyAttendanceStatus function.
+        // counted as SCHL by the nightly computeDailyAttendanceStatus function.
         // The payload was previously unvalidated: fromDate/toDate had no bound and
         // totalDays was client-supplied and never checked against the range, so a
         // decade-long request or a 5-day range claiming 500 days was accepted and only a
