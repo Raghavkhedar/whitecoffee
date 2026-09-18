@@ -85,13 +85,16 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO' | 'Sunday' | 'Holiday';
+  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'SCHL' | 'USCHL' | 'WO' | 'Sunday' | 'Holiday';
   markedBy: 'auto' | 'admin';
   // Effective worked window captured when an admin regularizes a day to Present (missed-punch
   // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw
   // events so the corrected day can carry shortage/OT. "HH:MM" 24h, ops only.
   inTime?: string;
   outTime?: string;
+  // Only present on a SCHL day: whether it drew paid salary credit from plBalance (1) or the
+  // balance was already exhausted (0) — see docs/superpowers/specs/2026-09-18-schl-uschl-...
+  salaryCredit?: 0 | 1;
   updatedAt?: Timestamp;
 }
 
