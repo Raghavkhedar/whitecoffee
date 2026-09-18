@@ -81,16 +81,23 @@ touches the Users page, Working Hours page, and Android besides Sheets).
 
 ## Implementation surface
 
-### Cloud Functions (`firebase/functions/`)
-
+- `attendanceRules.js` gains `resolveLeaveStatus(plBalance)` → `{ status: "SCHL", salaryCredit:
+  plBalance > 0 ? 1 : 0 }`, unit-tested in `attendanceRules.test.js`. This follows the module's
+  own established reason for existing (its own JSDoc: the scoring formula used to live inline
+  in `computeDailyAttendanceStatus` with no test covering it, because the test suite graded a
+  copy of the arithmetic instead of the real thing) — the PL/LWP fork has had exactly that
+  problem until now, and gets the same fix.
+- `payrollDeductions.js` gains `computeDaysNP({present, sl, halfDay, lnf, schlPaid, holiday,
+  absent})`, unit-tested in `payrollDeductions.test.js`, implementing the formula in the
+  decision above. `index.js` calls it instead of inlining the arithmetic.
 - `index.js`, `computeDailyAttendanceStatus` (~L478-491): replace the `status = balance>0 ?
-  "PL" : "LWP"` fork with `status = "SCHL"` and `salaryCredit = balance>0 ? 1 : 0`. The
-  idempotency guard (`priorStatus.get(user.id) !== "PL"` → only decrement once per day even on
-  a retry) must key off the *prior doc's* `salaryCredit === 1`, not its status string — `
-  priorStatus` currently stores only the status string and needs to carry `salaryCredit` too.
+  "PL" : "LWP"` fork with a call to `resolveLeaveStatus(balance)`. The idempotency guard
+  (`priorStatus.get(user.id) !== "PL"` → only decrement once per day even on a retry) must key
+  off the *prior doc's* `salaryCredit === 1`, not its status string — `priorStatus` currently
+  stores only the status string and needs to carry `salaryCredit` too.
 - Employee Dashboard tab (~L922-943 MTD counters, ~L1807 Days-NP formula): counters become
   `schl` / `schlPaid` (sum of `salaryCredit`) / `uschl` / `holiday`, replacing `pl` / `lwp`;
-  Days-NP formula updated per the decision above.
+  Days-NP now calls `computeDaysNP(...)`.
 - Sheets header/columns (~L1787): `PL`/`LWP` → `SCHL (Paid)` / `SCHL (Unpaid)` / `USCHL` /
   `Holiday`.
 - `roleCapabilities.js` — untouched; this change is not role-gated.
@@ -119,19 +126,21 @@ touches the Users page, Working Hours page, and Android besides Sheets).
 
 ### Android app
 
-- `data/model/AttendanceStatusRecord.kt`, `AttendanceStatusRules.kt`, and the screens/viewmodels
-  that read them (`HomeScreen`, `HomeViewModel`, `SalesAttendanceScreen`,
-  `RegularizationViewModel`, `ResolveTodayStatusUseCase`, the two Firestore repositories) get
-  the same status-string swap so an employee's own attendance history shows SCHL/USCHL. Verified
-  via the Kotlin build/tests, not on-device (no Android test device in this workflow).
+**No code changes.** Verified by grep: `AttendanceStatusRecord.status` is a raw passthrough
+`String` (no enum, no `when` branching on it) — the app never hardcodes `PL`/`LWP`/any leave
+status anywhere. The only status literals that do exist (`RegularizationViewModel`,
+`HomeScreen`'s `TodayAttendanceStatus`) belong to the *live, punch-derived* preview
+(Present/HalfDay/SL/LNF/Absent) — matching the admin portal's own `deriveStatus`, leave statuses
+are never derived client-side, only ever read from the stored doc and displayed as-is. So
+SCHL/USCHL/Holiday will simply show correctly with zero Kotlin changes.
 
 ## Rollout
 
 - No backfill (decided above).
 - Deploy order: Cloud Functions first (so new docs are written correctly), then Firestore rules
-  (comment-only, low risk), then the admin portal, then Android. The nightly function is the
-  only writer of `SCHL`, so there's no window where the portal expects a status the function
-  hasn't started producing yet, as long as Functions deploys first.
+  (comment-only, low risk), then the admin portal. The nightly function is the only writer of
+  `SCHL`, so there's no window where the portal expects a status the function hasn't started
+  producing yet, as long as Functions deploys first. No Android deploy needed (no code change).
 - Testing: `firebase/functions` `node --test` boundary suite updated for the new fork and
   Days-NP formula; `firebase/rules-tests` (110 tests) run before/after since `attendance_status`
   rule comments are touched; `admin` has no test framework (per repo convention) — verified via
