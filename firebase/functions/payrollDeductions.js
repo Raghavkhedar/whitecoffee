@@ -83,4 +83,27 @@ function computeDeductions({
   return { pf, esi, imprest, totalDue };
 }
 
-module.exports = { computeDeductions };
+/**
+ * Days NP ("net pay days") for the Employee Dashboard tab — the day-count that
+ * `salaryDue = daysNP × salaryRate` is built from.
+ *
+ * SCHL's pay is per-day, not per-status (see attendanceRules.resolveLeaveStatus): pass only
+ * the PAID slice as `schlPaid` (the sum of `salaryCredit` across that user's SCHL docs this
+ * month) — the unpaid slice contributes nothing, same as USCHL, which has no parameter here
+ * at all because it never earns credit.
+ *
+ * @param present   count of Present days (×1)
+ * @param sl        count of SL (Short Leave) days (×0.75)
+ * @param halfDay   count of HalfDay days (×0.5)
+ * @param lnf       count of LNF (Log Not Found) days (×0.5)
+ * @param schlPaid  sum of `salaryCredit` across this month's SCHL days (×1 each)
+ * @param holiday   count of Holiday days (×1)
+ * @param absent    count of Absent days (×-2, the no-show penalty)
+ */
+function computeDaysNP({ present, sl, halfDay, lnf, schlPaid, holiday, absent } = {}) {
+  const n = (v) => Number(v) || 0;
+  return n(present) + n(sl) * 0.75 + n(halfDay) * 0.5 + n(lnf) * 0.5
+    + n(schlPaid) + n(holiday) - n(absent) * 2;
+}
+
+module.exports = { computeDeductions, computeDaysNP };

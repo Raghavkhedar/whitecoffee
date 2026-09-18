@@ -5,7 +5,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { computeDeductions } = require("./payrollDeductions");
+const { computeDeductions, computeDaysNP } = require("./payrollDeductions");
 
 const base = {
   salaryDue: 0, covy: 0, settlement: 0,
@@ -137,4 +137,45 @@ test("garbage percentages are treated as 0, not NaN", () => {
   assert.equal(r.esi, 0);
   assert.equal(r.imprest, 0);
   assert.equal(r.totalDue, 10000);
+});
+
+// ── Days NP ───────────────────────────────────────────────────────────────
+
+test("computeDaysNP: a full Present day counts as 1", () => {
+  assert.equal(computeDaysNP({ present: 1 }), 1);
+});
+
+test("computeDaysNP: SL/HalfDay/LNF use their fractional weights", () => {
+  assert.equal(computeDaysNP({ sl: 1 }), 0.75);
+  assert.equal(computeDaysNP({ halfDay: 1 }), 0.5);
+  assert.equal(computeDaysNP({ lnf: 1 }), 0.5);
+});
+
+test("computeDaysNP: only the paid slice of SCHL counts (the 4-day/2-balance example)", () => {
+  // 4 SCHL days, balance covered 2 of them → schlPaid=2, the other 2 are salaryCredit 0
+  // and simply aren't counted (they're not passed at all).
+  assert.equal(computeDaysNP({ schlPaid: 2 }), 2);
+});
+
+test("computeDaysNP: USCHL is not a field — it contributes nothing by construction", () => {
+  assert.equal(computeDaysNP({ present: 5 }), 5); // no uschl param exists to add
+});
+
+test("computeDaysNP: Holiday credits a full day", () => {
+  assert.equal(computeDaysNP({ holiday: 1 }), 1);
+});
+
+test("computeDaysNP: Absent is a -2 day penalty", () => {
+  assert.equal(computeDaysNP({ absent: 1 }), -2);
+});
+
+test("computeDaysNP: a realistic mixed month", () => {
+  // 18 Present, 1 SL, 1 HalfDay, 1 LNF, 2 SCHL paid, 1 Holiday, 1 Absent
+  const r = computeDaysNP({ present: 18, sl: 1, halfDay: 1, lnf: 1, schlPaid: 2, holiday: 1, absent: 1 });
+  assert.equal(r, 18 + 0.75 + 0.5 + 0.5 + 2 + 1 - 2);
+});
+
+test("computeDaysNP: missing fields default to 0", () => {
+  assert.equal(computeDaysNP({}), 0);
+  assert.equal(computeDaysNP(), 0);
 });
