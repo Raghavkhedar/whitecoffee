@@ -13,6 +13,7 @@ const {
   classify,
   resolveOpsWindow,
   resolveRestDayType,
+  resolveLeaveStatus,
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
@@ -357,12 +358,13 @@ exports.computeDailyAttendanceStatus = onSchedule(
     // Skip users whose attendance_status was manually set by admin (regularization approvals)
     // Read per-user docs directly to avoid needing a collectionGroup index on date.
     const adminOverrides = new Set();
-    const priorStatus    = new Map(); // userId → status already recorded for today
+    const priorStatus    = new Map(); // userId → { status, salaryCredit } already recorded for today
     const statusChecks = allUsers.map(async (user) => {
       const statusDoc = await db.doc(`users/${user.id}/attendance_status/${today}`).get();
       if (statusDoc.exists) {
-        if (statusDoc.data().markedBy === "admin") adminOverrides.add(user.id);
-        priorStatus.set(user.id, statusDoc.data().status);
+        const d = statusDoc.data();
+        if (d.markedBy === "admin") adminOverrides.add(user.id);
+        priorStatus.set(user.id, { status: d.status, salaryCredit: d.salaryCredit });
       }
     });
 
@@ -462,6 +464,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
         }
 
         let status;
+        let salaryCredit; // only set for SCHL
 
         if (checkIns.length > 0 && checkOuts.length > 0) {
           const firstIn  = checkIns[0];
@@ -477,13 +480,13 @@ exports.computeDailyAttendanceStatus = onSchedule(
         } else {
           if (leave) {
             const balance = user.plBalance || 0;
-            if (balance > 0) {
-              status = "PL";
-              // Only deduct when today wasn't already counted as PL, so a re-run
-              // (manual trigger / retry) doesn't decrement the balance twice.
-              if (priorStatus.get(user.id) !== "PL") plDeductions.push(user.id);
-            } else {
-              status = "LWP";
+            const resolved = resolveLeaveStatus(balance);
+            status = resolved.status;
+            salaryCredit = resolved.salaryCredit;
+            // Only deduct when today wasn't already recorded as a paid SCHL day, so a re-run
+            // (manual trigger / retry) doesn't decrement the balance twice.
+            if (salaryCredit === 1 && priorStatus.get(user.id)?.salaryCredit !== 1) {
+              plDeductions.push(user.id);
             }
           } else {
             status = "Absent";
@@ -493,6 +496,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
         batch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
           date: today, userId: user.id, userName: user.name || "",
           employeeId: user.employeeId || "", role: user.role, status,
+          ...(salaryCredit !== undefined ? { salaryCredit } : {}),
           markedBy: "auto", updatedAt: admin.firestore.Timestamp.now(),
         });
 
