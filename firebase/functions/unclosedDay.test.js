@@ -46,7 +46,7 @@ test("Absent is NOT auto-filed — that is the noise trap", () => {
 });
 
 test("no other scored status is auto-filed", () => {
-  for (const st of ["Present", "SL", "HalfDay", "PL", "LWP", "WO", "", "lnf"]) {
+  for (const st of ["Present", "SL", "HalfDay", "PL", "LWP", "SCHL", "USCHL", "Holiday", "Sunday", "WO", "", "lnf"]) {
     assert.equal(
       needsAutoRegularization(scored({ status: st }), []), false,
       `${st} must not auto-file`

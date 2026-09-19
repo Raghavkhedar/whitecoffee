@@ -246,9 +246,11 @@ export interface SpecialAllowance {
   lockedAt?: Timestamp | null;
 }
 
-// Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). A marked holiday is
-// skipped like a Sunday: no attendance status is written, no Absent penalty, and
-// it is excluded from expected working days (unpaid, no payroll effect).
+// Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). The nightly run writes a
+// `Holiday` attendance status for every active user (never Absent). It credits +1 day
+// in Days NP — except a Holiday dated on a Sunday, which adds 0 because the
+// month-to-date loop skips Sundays first — and is excluded from expected
+// hours/shortage.
 export interface Holiday {
   id: string;
   date: string;        // "yyyy-MM-dd"
