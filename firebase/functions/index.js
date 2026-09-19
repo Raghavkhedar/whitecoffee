@@ -2488,9 +2488,11 @@ exports.snapshotDailySpend = onSchedule(
 
         const status = statusByDate.get(date); // may be undefined (OT/conveyance-only day)
         const sunday = isSunday(date);
-        // Sundays are not paid working days — matches the MTD summary, which skips only
-        // Sundays for salary (NOT holidays); an OT/conveyance-only day has no status → 0.
-        const salary = (status && !sunday) ? dailySalary(rate, status.status) : 0;
+        // Sundays are not paid working days — matches the MTD summary, which skips Sundays
+        // first (so a Sunday-dated Holiday credits 0). Holidays are NOT skipped: a Holiday
+        // status pays +1; SCHL pays only when its salaryCredit is 1; an OT/conveyance-only
+        // day has no status → 0.
+        const salary = (status && !sunday) ? dailySalary(rate, status.status, status.salaryCredit) : 0;
         const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${date}`) || 0) : 0;
         const otWo = round2(otMap.get(date) || 0);
         // SA lands entirely on its one manager-picked date; every other day of the month is 0.

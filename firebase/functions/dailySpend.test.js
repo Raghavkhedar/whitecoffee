@@ -22,6 +22,44 @@ test("dailySalary: rate × weight, negative on an Absent day", () => {
   assert.equal(dailySalary(0, "Present"), 0);
 });
 
+// ── SCHL / USCHL / Holiday (PL/LWP retired for new writes; legacy docs still priced) ──
+test("dayWeight: SCHL pays 1 only when salaryCredit is strictly 1", () => {
+  assert.equal(dayWeight("SCHL", 1), 1);
+  assert.equal(dayWeight("SCHL", 0), 0);
+  assert.equal(dayWeight("SCHL", undefined), 0); // credit missing → unpaid
+  assert.equal(dayWeight("SCHL"), 0);
+  assert.equal(dayWeight("SCHL", "1"), 0);       // strict equality, not truthiness
+  assert.equal(dayWeight("SCHL", true), 0);
+});
+
+test("dayWeight: USCHL is always unpaid, even with a stray salaryCredit", () => {
+  assert.equal(dayWeight("USCHL"), 0);
+  assert.equal(dayWeight("USCHL", 1), 0);
+});
+
+test("dayWeight: Holiday credits +1 day", () => {
+  assert.equal(dayWeight("Holiday"), 1);
+});
+
+test("dayWeight: legacy PL still 1 and LWP still 0 (old docs sit inside the open window)", () => {
+  assert.equal(dayWeight("PL"), 1);
+  assert.equal(dayWeight("LWP"), 0);
+  assert.equal(dayWeight("PL", 0), 1); // legacy PL ignores salaryCredit
+  assert.equal(dayWeight("Sunday"), 0);
+  assert.equal(dayWeight("WO"), 0);
+  assert.equal(dayWeight("Unknown", 1), 0);
+});
+
+test("dailySalary: SCHL(credit 1) = rate, SCHL(credit 0/missing) = 0, Holiday = rate", () => {
+  assert.equal(dailySalary(1000, "SCHL", 1), 1000);
+  assert.equal(dailySalary(1000, "SCHL", 0), 0);
+  assert.equal(dailySalary(1000, "SCHL"), 0);
+  assert.equal(dailySalary(1000, "USCHL", 1), 0);
+  assert.equal(dailySalary(1000, "Holiday"), 1000);
+  assert.equal(dailySalary(1000, "PL"), 1000);
+  assert.equal(dailySalary(1000, "LWP"), 0);
+});
+
 const { dailyDeductions, dailyTotal } = require("./dailySpend");
 
 test("dailyDeductions: flat % of the day's salary, no floor", () => {
