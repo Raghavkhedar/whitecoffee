@@ -53,6 +53,9 @@ const {
 // leaveCoverage.js). Missing/empty `approvedDates` = the whole range, so legacy
 // leaves and the Android approve action keep their current meaning.
 const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
+// Leave approved after its days have passed — pure planner behind scoreRetroactiveLeave
+// (see retroLeaveScoring.js).
+const { pastGrantedDates, planRetroLeaveScoring } = require("./retroLeaveScoring");
 // Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
 // the legacy inline fields — see compensation.js for why the split exists.
 const { withPay } = require("./compensation");
@@ -587,6 +590,55 @@ exports.computeDailyAttendanceStatus = onSchedule(
     });
   }
 );
+
+// ── Late-approved leave ──────────────────────────────────────────────────────────────────
+// The nightly run only ever writes today, so leave approved after its days have passed used
+// to leave those days Absent (−2). Score them as SCHL (paid or unpaid by the running
+// plBalance) and decrement plBalance, all in one transaction. Cloud Function rather than the
+// portal on purpose: plBalance writes are admin-only in firestore.rules and status writes are
+// tab-gated, so a client-side version would fail for a non-admin Leaves manager or need the
+// rules widened. The decision logic lives in retroLeaveScoring.js (unit-tested).
+exports.scoreRetroactiveLeave = onDocumentWritten("users/{userId}/leave_requests/{requestId}", async (event) => {
+  const after = event.data && event.data.after;
+  if (!after || !after.exists) return;
+  const leave = after.data();
+  if (leave.status !== "approved") return;
+
+  const db = admin.firestore();
+  const userId = event.params.userId;
+  // IST "yyyy-MM-dd" string — same expression computeDailyAttendanceStatus uses for `today`.
+  const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const dates = pastGrantedDates(leave, todayIST);
+  if (dates.length === 0) return;
+
+  const userRef = db.doc(`users/${userId}`);
+  const statusRefs = dates.map((d) => db.doc(`users/${userId}/attendance_status/${d}`));
+
+  const plan = await db.runTransaction(async (tx) => {
+    // Every read before any write (Firestore transaction rule).
+    const [userSnap, ...statusSnaps] = await tx.getAll(userRef, ...statusRefs);
+    if (!userSnap.exists) return { updates: [], paidDays: 0 };
+    const statusByDate = new Map();
+    statusSnaps.forEach((snap, i) => { if (snap.exists) statusByDate.set(dates[i], snap.data()); });
+    const result = planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance: userSnap.data().plBalance });
+    result.updates.forEach((u) => {
+      tx.set(db.doc(`users/${userId}/attendance_status/${u.date}`), {
+        status: u.status,
+        salaryCredit: u.salaryCredit,
+        markedBy: "auto",
+        updatedAt: admin.firestore.Timestamp.now(),
+      }, { merge: true });
+    });
+    if (result.paidDays > 0) {
+      tx.update(userRef, { plBalance: admin.firestore.FieldValue.increment(-result.paidDays) });
+    }
+    return result;
+  });
+
+  if (plan.updates.length > 0) {
+    console.log(`scoreRetroactiveLeave: ${userId} leave ${event.params.requestId} → ${plan.updates.length} past day(s) scored SCHL (${plan.paidDays} paid)`);
+  }
+});
 
 // Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a WO debt not fully
 // settled within 2 months of being issued is written off automatically, with zero pay impact
