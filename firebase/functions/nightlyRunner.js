@@ -114,7 +114,11 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
     eventsByUser.get(d.userId).push(d);
   });
 
-  const leavesSnap = await db.collectionGroup("leave_requests").get();
+  // Only leaves whose toDate >= today can possibly cover today — earlier leaves are already closed
+  // and leaveCoversDate() would reject them anyway. Filtering in the query keeps this read
+  // O(open-leaves) instead of O(all-time). Requires the COLLECTION_GROUP fieldOverride on
+  // leave_requests.toDate (firestore.indexes.json) — deploy the indexes BEFORE the functions.
+  const leavesSnap = await db.collectionGroup("leave_requests").where("toDate", ">=", today).get();
   const leavesToday = new Map();
   leavesSnap.docs.forEach((doc) => {
     const d = doc.data();

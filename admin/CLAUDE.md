@@ -36,9 +36,14 @@ No test framework configured.
 - `users/{uid}/daily_hours/{date}` — per-day `plannedMins`/`actualMins`/`shortageMins`/`otMins` (written by `computeDailyAttendanceStatus`, fully-worked days only)
 - `users/{uid}/ot_approvals/{date}` — admin OT decision: `requestedMins`/`approvedMins`/`status` (`approved`|`rejected`)/`manual`/`reason`/`approvedBy` (written by `approveOt`/`rejectOt`/`setManualOt`). `manual:true` = admin-entered OT for a day with no auto-detected surplus (e.g. missed-punch anomaly), added via the **Add manual OT** form in the OT/Shortage drill-in modal; counted as granted OT in the ledger like any approval
 - `users/{uid}/settlements/{YYYY-MM}` — frozen monthly OT/shortage/WO settlement (one per ops employee): full breakdown + `netMins` + `settlementCash` + `locked`/`settledBy`. Written by admin **Settle & Lock** on the **OT Settlements** page (`settleMonth`); the Cloud Function reads the **previous month's locked** settlement and adds `settlementCash` to payroll TOTAL DUE (OT paid in arrears). `settlementCash = woDays×rate + netMins/480×rate`
+- `users/{uid}/specialAllowance/{YYYY-MM}` — optional per-employee monthly bonus outside the OT/shortage ledger: `amount` (₹, number), `date` (YYYY-MM-DD string for the month the allowance covers), `locked` (boolean, set by Settle & Lock alongside the matching `settlements` doc). Read by `exportToSheets` (`snapshotDailySpend`) for the Employee Dashboard tab — added to TOTAL DUE alongside salary/OT/conveyance. **The locking union**: a month is considered locked (`lockedSet`) if EITHER the `settlements` doc OR the `specialAllowance` doc for that month is `locked === true`, so an office-only month with no settlement doc can still be locked via its SA doc. Managed via `setSpecialAllowance` / `deleteSpecialAllowance` on the **OT Settlements** page; admin-only read/write. ⚠️ Tested in `firebase/rules-tests/specialAllowance.test.js` but not yet documented in the functions test suite.
 - `users/{uid}/material_requests/`
 - Top-level: `material_purchases`, `material_transfers`, `tool_transfers`, `work_progress`, `conveyance`
 - `holidays/{date}` — company-wide holidays (`title`/`description`), marked by admin on the **Attendance** calendar. A marked day is never scored Absent: the nightly function writes a `Holiday` status doc for every active user with no doc yet (a Sunday gets a payroll-neutral `Sunday` doc the same way), and `Holiday` credits **+1 day** in Days NP (non-Sunday only — a Sunday-dated Holiday still gets its doc but adds 0, since the month-to-date Days-NP loop skips Sundays first). **Exception:** an operations employee who actually worked the holiday (complete in/out pair, worked minutes > 0) gets `salaryCredit: 0` on their Holiday doc — no +1, because all rest-day work is raised as pending OT and that approval is their pay for the day; everyone else gets `salaryCredit: 1`, and a legacy doc with no field is paid. It is excluded from expected working days and from expected-hours/shortage math (a paid day off, nothing more). The +1 is ALSO withdrawn at pay time when approved OT exists for that date (e.g. manual OT granted for a missed-punch holiday, which the nightly saw as nothing to approve and left at `salaryCredit: 1`) — readers apply `effectiveHolidayCredit` (`holidayCredit.js`), so the credit frozen at 23:59 from punches is reconciled with the approval and the day is never paid +1 and OT together. Managed via `setHoliday`/`deleteHoliday`, which both refuse any date before today (IST) — a past day is already scored, so it is fixed through Regularization (`admin/src/lib/holidayGuard.ts`); the refusal is a CLIENT-SIDE admin guard only — `firestore.rules` still permits a direct write; read by `getHolidaysForMonth`/`getHolidaysForDateRange`.
+
+⚠️ **`woBalance` is a dead field** — it appears on the user doc and is read by the Working Hours page, the Users export, and the Sheets Attendance tab, but **nothing in the codebase ever writes it**. Every employee shows `woBalance = 0`. Do not add reads that depend on this being accurate; do not use it in payroll math. It can only be populated once a backend writer is added.
+
+
 
 Required composite indexes (Firebase Console):
 - `leave_requests`: `status` ASC + `submittedAt` ASC
@@ -46,6 +51,10 @@ Required composite indexes (Firebase Console):
 - `material_requests`: `submittedAt` DESC
 - collection-group `planned_hours`: `date` ASC (for `getPlannedHoursForMonth`, `getPlannedHoursForDateRange`)
 - collection-group `attendance`: `date` ASC + `timestamp` ASC (for `getAttendanceForDateRange`)
+- collection-group `attendance_status`: `date` ASC (for bounded nightly reads in `snapshotDailySpend`)
+- collection-group `ot_approvals`: `date` ASC (for bounded reads in `snapshotDailySpend`)
+- collection-group `leave_requests`: `toDate` ASC (for bounded read in `computeDailyAttendanceStatus`)
+
 
 ## Attendance Status Logic
 

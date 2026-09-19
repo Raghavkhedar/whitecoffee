@@ -1399,7 +1399,7 @@ exports.exportToSheets = onSchedule(
       });
       grouped.forEach((events) => events.sort((a, b) => a.timestamp.seconds - b.timestamp.seconds));
 
-      function buildRoute(events) {
+      const buildRoute = (events) => {
         const parts = [];
         events.forEach((e) => {
           let loc = "";
@@ -1409,14 +1409,14 @@ exports.exportToSheets = onSchedule(
           if (loc && parts[parts.length - 1] !== loc) parts.push(loc);
         });
         return parts.join(" → ");
-      }
+      };
 
-      function resolveCoords(event, user) {
+      const resolveCoords = (event, user) => {
         if ((event.type === "home_in" || event.type === "home_out") && user.homeLat && user.homeLng) {
           return { lat: user.homeLat, lng: user.homeLng };
         }
         return { lat: event.latitude, lng: event.longitude };
-      }
+      };
 
       const entries = [...grouped.entries()];
       const BATCH   = 20;
@@ -2183,18 +2183,22 @@ exports.snapshotDailySpend = onSchedule(
     const earliest = windowMonths[0];
     const rangeStart = `${earliest}-01`;
 
-    // Per-day sources scoped to [rangeStart, today]. Module-scope uidOf resolves the owner
-    // (userId field if present, else the subcollection parent).
-    const inRange = (d) => d.date >= rangeStart && d.date <= today;
-
-    const statusDocs = (await db.collectionGroup("attendance_status").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
-    const eventDocs = (await db.collectionGroup("attendance").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
-    const plannedDocs = (await db.collectionGroup("planned_hours").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
-    const approvalDocs = (await db.collectionGroup("ot_approvals").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+    // Per-day sources scoped to [rangeStart, today]. Date bounds are pushed into the query
+    // (not filtered in JS after a full collection-group read) so the read cost stays
+    // proportional to the window size, not all-time history. Requires the COLLECTION_GROUP
+    // index on each collection's `date` field (firestore.indexes.json).
+    const statusDocs = (await db.collectionGroup("attendance_status")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    const eventDocs = (await db.collectionGroup("attendance")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    const plannedDocs = (await db.collectionGroup("planned_hours")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    const approvalDocs = (await db.collectionGroup("ot_approvals")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
     // `${uid}__${date}` → approvedMins GROSS of settlement (rejected excluded): "was OT granted
     // that day", for effectiveHolidayCredit below. Not the net cash figure otMap carries.
     const otGrantedByKey = new Map();
