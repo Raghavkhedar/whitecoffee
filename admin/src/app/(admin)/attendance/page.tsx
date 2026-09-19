@@ -665,7 +665,7 @@ export default function AttendancePage() {
               {!selectedIsPast && (
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={() => setHolidayForm({ title: selectedHoliday.title, description: selectedHoliday.description || '' })}
+                  onClick={() => { setHolidayError(''); setHolidayForm({ title: selectedHoliday.title, description: selectedHoliday.description || '' }); }}
                   className="btn-outline !py-1 !px-3 !text-xs"
                 >
                   Edit
