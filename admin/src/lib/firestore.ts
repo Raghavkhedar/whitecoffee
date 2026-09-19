@@ -537,7 +537,7 @@ export async function approveRegularization(
   // so a stray km value on their request must never mint a conveyance doc for them.
   //
   // Re-checked here, not trusted from the page: conveyance is only claimable on a worked-day
-  // outcome. Absent/LWP/WO/PL either dock salary or formally assert the day was not worked —
+  // outcome. Absent/USCHL/WO/SCHL either dock salary or formally assert the day was not worked —
   // crediting travel reimbursement on the same day would be internally contradictory.
   const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
   if (canCreditKm && km !== undefined && km >= 0) {
