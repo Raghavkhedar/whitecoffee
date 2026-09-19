@@ -4,7 +4,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, addDays } = require("./retroLeaveScoring");
+const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, leaveDatesInvalid, addDays } = require("./retroLeaveScoring");
 
 const TODAY = "2026-09-21";
 const leave = (over = {}) => ({ status: "approved", fromDate: "2026-09-14", toDate: "2026-09-17", ...over });
@@ -125,4 +125,26 @@ test("an oversize span (> 400 days) is REFUSED, never truncated to its oldest da
   assert.equal(leaveSpanTooLong(leave({ fromDate: "2025-01-01", toDate: "2026-02-04" })), false); // 400 days
   assert.equal(leaveSpanTooLong(leave({ fromDate: "2025-01-01", toDate: "2026-02-05" })), true);  // 401 days
   assert.equal(leaveSpanTooLong(null), false);
+});
+
+test("leaveDatesInvalid: true for a leave with both fields whose dates are not a real, ordered range", () => {
+  for (const bad of ["2025-13-01", "2025-00-05", "2026-02-31"]) {
+    assert.equal(leaveDatesInvalid(leave({ fromDate: bad })), true, `fromDate ${bad}`);
+    assert.equal(leaveDatesInvalid(leave({ toDate: bad })), true, `toDate ${bad}`);
+  }
+  assert.equal(leaveDatesInvalid(leave({ fromDate: 20260914 })), true);
+  assert.equal(leaveDatesInvalid(leave({ toDate: {} })), true);
+  assert.equal(leaveDatesInvalid(leave({ fromDate: "2026-09-17", toDate: "2026-09-14" })), true);
+});
+
+test("leaveDatesInvalid: false for valid ranges (an over-long span is leaveSpanTooLong's case) and for absent fields", () => {
+  assert.equal(leaveDatesInvalid(leave()), false);
+  assert.equal(leaveDatesInvalid(leave({ fromDate: "2026-09-14", toDate: "2026-09-14" })), false);
+  assert.equal(leaveDatesInvalid(leave({ fromDate: "2025-01-01", toDate: "2026-01-01" })), false); // 366 days
+  assert.equal(leaveDatesInvalid(leave({ fromDate: "2020-01-01", toDate: "2030-01-01" })), false); // oversize, handled elsewhere
+  assert.equal(leaveDatesInvalid(undefined), false);
+  assert.equal(leaveDatesInvalid(null), false);
+  assert.equal(leaveDatesInvalid({}), false);
+  assert.equal(leaveDatesInvalid({ status: "approved", fromDate: "2026-09-14" }), false);
+  assert.equal(leaveDatesInvalid({ status: "approved", toDate: "2026-09-14" }), false);
 });

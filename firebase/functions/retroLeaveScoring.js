@@ -67,6 +67,17 @@ function leaveSpanTooLong(leave) {
 }
 
 /**
+ * True when a leave has BOTH fromDate and toDate but they are not a real calendar range: either is
+ * not a real date (2025-13-01, 2026-02-31, a non-string) or fromDate > toDate. False for a valid
+ * range of ANY length (an over-long one is leaveSpanTooLong's case) and for a null/undefined leave or
+ * a missing field. Pure, so the trigger can log a malformed doc that pastGrantedDates silently scores as [].
+ */
+function leaveDatesInvalid(leave) {
+  if (!leave || leave.fromDate == null || leave.toDate == null) return false;
+  return spanDays(leave) === null;
+}
+
+/**
  * Dates an approved leave grants that are strictly before todayIST ("yyyy-MM-dd"), ascending.
  * [] (never a throw) for a non-approved leave, an invalid or inverted range, or a span over MAX_DAYS.
  */
@@ -104,4 +115,4 @@ function planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance } = {}
   return { updates, paidDays };
 }
 
-module.exports = { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, addDays };
+module.exports = { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, leaveDatesInvalid, addDays };

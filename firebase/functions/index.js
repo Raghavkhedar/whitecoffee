@@ -57,7 +57,7 @@ const {
 const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
 // Leave approved after its days have passed — pure planner behind scoreRetroactiveLeave
 // (see retroLeaveScoring.js).
-const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong } = require("./retroLeaveScoring");
+const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, leaveDatesInvalid } = require("./retroLeaveScoring");
 // Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
 // the legacy inline fields — see compensation.js for why the split exists.
 const { withPay } = require("./compensation");
@@ -644,7 +644,14 @@ exports.scoreRetroactiveLeave = onDocumentWritten(
       }
       const dates = pastGrantedDates(leave, todayIST);
       candidateDates = dates.length;
-      if (dates.length === 0) return;
+      if (dates.length === 0) {
+        // Log-only: an approved leave whose dates are not a real ordered range scores nothing (the
+        // planner returns []), which would otherwise be silent. Must never throw: retry: true would loop.
+        if (leaveDatesInvalid(leave)) {
+          console.warn(`scoreRetroactiveLeave: SKIPPED malformed leave dates for user ${userId} leave ${requestId} (fromDate=${JSON.stringify(leave.fromDate)}, toDate=${JSON.stringify(leave.toDate)})`);
+        }
+        return;
+      }
 
       const userRef = db.doc(`users/${userId}`);
       const statusRefs = dates.map((d) => db.doc(`users/${userId}/attendance_status/${d}`));
@@ -654,6 +661,7 @@ exports.scoreRetroactiveLeave = onDocumentWritten(
       // Candidate dates that had no status doc at read time (log-only; reset on every txn attempt).
       let missingStatusDates = 0;
       const plan = await db.runTransaction(async (tx) => {
+        missingStatusDates = 0; // reset on every attempt: the callback may re-run on contention
         // Every read before any write (Firestore transaction rule).
         const [userSnap, leaveSnap, ...statusSnaps] = await tx.getAll(userRef, leaveRef, ...statusRefs);
         if (!userSnap.exists) return { updates: [], paidDays: 0 };
