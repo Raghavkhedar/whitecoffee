@@ -444,7 +444,9 @@ export async function cancelLeave(
 
     batch.set(
       statusRefs[i],
-      stamped({ status: 'Absent', markedBy: 'admin', updatedAt: Timestamp.now() }),
+      // salaryCredit is cleared with the revert (no stale credit left on an Absent doc). The refund
+      // decision below reads `data.salaryCredit` from the snapshot taken BEFORE this write.
+      stamped({ status: 'Absent', markedBy: 'admin', salaryCredit: deleteField(), updatedAt: Timestamp.now() }),
       { merge: true },
     );
     // Refund only a day that actually drew from plBalance: paid SCHL (salaryCredit 1) or legacy
@@ -514,6 +516,8 @@ export async function approveRegularization(
       date, userId, userName, employeeId, status: approvedStatus, markedBy: 'admin',
       inTime: carryHours ? inTime : deleteField(),
       outTime: carryHours ? outTime : deleteField(),
+      // Clear a stale credit from a previous auto SCHL/Holiday doc: the admin status is the truth now.
+      salaryCredit: deleteField(),
       updatedAt: Timestamp.now(),
     }),
     { merge: true }

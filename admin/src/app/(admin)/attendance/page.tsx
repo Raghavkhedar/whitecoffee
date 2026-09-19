@@ -11,6 +11,7 @@ import { classify, resolveOpsWindow, OFFICE_START_MIN, OFFICE_END_MIN } from '@/
 import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger } from '@/lib/roleCapabilities';
 import { auth } from '@/lib/firebase';
 import { HOLIDAY_PAST_MESSAGE } from '@/lib/holidayGuard';
+import { isSunday } from '@/lib/leaveDates';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -659,6 +660,7 @@ export default function AttendancePage() {
                   <p className="text-xs text-text-secondary mt-1">{selectedHoliday.description}</p>
                 )}
                 <p className="text-[11px] text-text-secondary/70 mt-1 italic">Paid day off — credits 1 day of salary and is excluded from expected hours. Operations staff who work it are paid through OT approval instead (no day credit). A holiday that falls on a Sunday adds nothing extra.</p>
+                {holidayError && <p className="text-xs text-red-600 mt-1">{holidayError}</p>}
               </div>
               {!selectedIsPast && (
               <div className="flex items-center gap-2 shrink-0">
@@ -712,7 +714,7 @@ export default function AttendancePage() {
               + Mark as holiday
             </button>
           ) : null}
-          {selectedIsPast && (
+          {selectedIsPast && !isSunday(selectedDate) && (
             <p className="text-[11px] text-text-secondary/70 mt-2 italic">Holidays can&apos;t be changed for past dates — fix a scored day through Regularization.</p>
           )}
         </div>
