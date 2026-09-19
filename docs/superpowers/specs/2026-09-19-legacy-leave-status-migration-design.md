@@ -41,3 +41,46 @@ Once the requester confirms a clean run (0 remaining), the legacy handling can b
 
 - Frozen past-month Sheets blocks are never recomputed by design and keep their old columns.
 - The script cannot be run by the assistant (no production credentials, and writing pay history needs the owner's go-ahead).
+
+## How to run it
+
+The script is `firebase/functions/scripts/migrateLegacyLeaveStatuses.js`. It is excluded from the functions deploy (`scripts` is in the `functions.ignore` list of `firebase.json`) and `index.js` never requires it.
+
+**Prerequisites.** Credentials that can read and write Firestore in `white-coffee-92c27`, either of:
+- `gcloud auth application-default login`, or
+- `export GOOGLE_APPLICATION_CREDENTIALS=<path to a service-account key with Firestore access>`. Keep that key out of the repo (it is never committed).
+
+**1. Dry run** (the default; nothing is written to Firestore):
+
+```bash
+cd firebase/functions
+node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27
+```
+
+It prints the counts by mapping (`PL`, `LWP` non-admin, `LWP` admin), per-month counts, and the path of the plan file (`./migration-out/legacy-leave-migration_<project>_<time>_dry-run.jsonl`). Open the file: one line per doc, with `path`, the full original doc as `before`, and the patch as `after`. Check that the counts and a few lines look right. Use `--user <uid>` to try a single employee first.
+
+**2. Apply:**
+
+```bash
+node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --apply
+```
+
+It writes a fresh backup (`..._apply.jsonl`) to disk and flushes it BEFORE the first write, then rewrites in batches of at most 400 with `merge: true`, then re-scans. The run ends with `Legacy docs REMAINING: 0`; the exit code is non-zero if any batch failed or any legacy doc remains. A failed batch stops the run; docs already written stay written, and re-running `--apply` simply picks up what is left.
+
+**3. Confirm** by re-running the dry run from step 1: it should report `Legacy docs found: 0`.
+
+**4. Undo (if ever needed).** Restoring is a dry run unless `--apply` is given:
+
+```bash
+node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --restore migration-out/<the ..._apply.jsonl file>
+node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --restore migration-out/<the ..._apply.jsonl file> --apply
+```
+
+Restore puts each doc back to its backed-up `before` state with a full `set()` (the added `migratedFrom`, `migratedAt` and `lastModifiedBy` disappear, a removed `salaryCredit` returns, Timestamps are restored exactly). Docs already in that state are skipped, so it is safe to repeat. Use the backup from the `--apply` run, not a dry-run file. Restore overwrites any change made to those docs since the migration.
+
+**Safety notes**
+- Every doc the script writes triggers the existing `auditUserSubcollection` trigger, so the audit trail gets one `audit_log` entry per changed doc (a restore adds one per restored doc too). `lastModifiedBy` is `system:migrateLegacyLeaveStatuses`.
+- It is safe to run while the app is live: the mapping is pay-neutral and it only touches docs whose status is exactly `PL` or `LWP`. It reads each user's `attendance_status` with a per-user collection query and never touches `plBalance` or any other collection.
+- `--project` is required and is the project firebase-admin is initialised with, so the script cannot fall back to whichever project the shell is logged in to. If `FIRESTORE_EMULATOR_HOST` is set it prints a loud EMULATOR banner instead.
+- The plan/backup files contain employee attendance data. Keep them somewhere private, do not commit or share them (`migration-out/` is git-ignored, and files are created readable by the owner only). Keep the `--apply` backup until the change has been verified.
+- Restore needs the `--apply` backup file, so do not delete it after a successful run until you are sure you will not need to undo.
