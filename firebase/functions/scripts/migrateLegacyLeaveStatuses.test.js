@@ -131,10 +131,20 @@ class FakeCollection extends FakeQuery {
   }
 }
 
-class FakeBatch {
-  constructor(db) {
-    this._db = db;
+// The only write path the runner may use: a transaction. There is deliberately NO db.batch():
+// a blind batch.set would overwrite a doc that changed after the scan, so any regression to it
+// fails these tests with a TypeError instead of passing silently.
+class FakeTx {
+  constructor() {
     this.ops = [];
+  }
+  async getAll(...refs) {
+    // Firestore rejects a transaction that reads after it has written.
+    assert.equal(this.ops.length, 0, "all transaction reads must come before any write");
+    return refs.map((ref) => {
+      assert.ok(ref instanceof FakeRef);
+      return new FakeSnap(ref._db, ref.path, ref._db.store.get(ref.path));
+    });
   }
   set(ref, data, options) {
     assert.ok(ref instanceof FakeRef);
@@ -142,40 +152,51 @@ class FakeBatch {
     this.ops.push({ path: ref.path, data, merge: options !== undefined });
     return this;
   }
-  async commit() {
-    const db = this._db;
-    db.commitCalls += 1;
-    if (db.opts.beforeCommit) db.opts.beforeCommit(this.ops);
-    if (db.opts.failOnCommit === db.commitCalls) throw new Error("simulated commit failure");
-    db.batchSizes.push(this.ops.length);
-    for (const { path: p, data, merge } of this.ops) {
+}
+
+class FakeDb {
+  // opts.beforeTransaction(db, n): runs just before the n-th (1-based) transaction body reads
+  //   anything, i.e. AFTER the scan — the hook is how a test plays "someone edited the doc in between".
+  // opts.reexecute: run the callback twice and discard the first run, as Firestore does on contention.
+  // opts.failOnCommit: the n-th commit throws.  opts.failQuery: every query throws.
+  constructor(seed, opts = {}) {
+    this.store = new Map(Object.entries(seed).map(([p, d]) => [p, clone(d)]));
+    this.opts = opts;
+    this.batchSizes = []; // writes per committed transaction
+    this.commitCalls = 0;
+    this.txCalls = 0;
+    this.queries = [];
+  }
+  collection(p) { return new FakeCollection(this, p); }
+  doc(p) { return new FakeRef(this, p); }
+  async runTransaction(fn) {
+    this.txCalls += 1;
+    if (this.opts.beforeTransaction) this.opts.beforeTransaction(this, this.txCalls);
+    let tx = new FakeTx();
+    if (this.opts.reexecute) {
+      await fn(tx);
+      tx = new FakeTx(); // first run's writes are discarded
+    }
+    const result = await fn(tx);
+    this.commitCalls += 1;
+    if (this.opts.failOnCommit === this.commitCalls) throw new Error("simulated commit failure");
+    this.batchSizes.push(tx.ops.length);
+    for (const { path: p, data, merge } of tx.ops) {
       if (!merge) {
-        db.store.set(p, clone(data));
+        this.store.set(p, clone(data));
         continue;
       }
-      const cur = clone(db.store.get(p) || {});
+      const cur = clone(this.store.get(p) || {});
       for (const [k, v] of Object.entries(data)) {
         assert.ok(!(v && typeof v === "object" && !(v instanceof FakeTimestamp) && v !== DELETE && !Array.isArray(v)),
           "fake supports only shallow merges");
         if (v === DELETE) delete cur[k];
         else cur[k] = clone(v);
       }
-      db.store.set(p, cur);
+      this.store.set(p, cur);
     }
+    return result;
   }
-}
-
-class FakeDb {
-  constructor(seed, opts = {}) {
-    this.store = new Map(Object.entries(seed).map(([p, d]) => [p, clone(d)]));
-    this.opts = opts;
-    this.batchSizes = [];
-    this.commitCalls = 0;
-    this.queries = [];
-  }
-  collection(p) { return new FakeCollection(this, p); }
-  doc(p) { return new FakeRef(this, p); }
-  batch() { return new FakeBatch(this); }
   dump() { return Object.fromEntries([...this.store.entries()].map(([p, d]) => [p, clone(d)])); }
 }
 
@@ -485,17 +506,17 @@ test("backup: one line per changed doc, faithful full 'before', patch as 'after'
   assert.deepEqual(adm.salaryCredit, { __delete: true });
 });
 
-test("backup is on disk BEFORE the first write is committed", async (t) => {
+test("backup is on disk BEFORE the first write transaction even starts", async (t) => {
   const seen = [];
   const out = tmpDir(t);
   const db = new FakeDb(seed(), {
-    beforeCommit: () => {
+    beforeTransaction: () => {
       const files = fs.readdirSync(out);
       seen.push(files.map((f) => readJsonl(path.join(out, f)).length));
     },
   });
   await runMigration(opts(db, out, { apply: true }));
-  assert.deepEqual(seen, [[7]], "the complete 7-line backup already existed at the first commit");
+  assert.deepEqual(seen, [[7]], "the complete 7-line backup already existed at the first transaction");
 });
 
 test("backup files are never overwritten", async (t) => {
@@ -564,6 +585,125 @@ test("summary carries per-month counts by legacy status", async (t) => {
   });
 });
 
+// ─────────────── the race: a doc changes between the scan and the write ───────────────
+// The scan is not a lock. Every write goes through a transaction that re-reads the doc and
+// refuses to write if it is gone, no longer legacy, or differs at all from what the scan saw.
+
+const P1 = "users/u1/attendance_status/2026-01-05"; // PL auto
+const P2 = "users/u1/attendance_status/2026-02-10"; // LWP auto
+const P3 = "users/u2/attendance_status/2026-03-03"; // PL, no markedBy
+const editOnce = (p, edit) => (d, n) => { if (n === 1) d.store.set(p, edit(clone(d.store.get(p)))); };
+
+test("race: a doc edited after the scan is NOT overwritten, is counted, and the rest are written", async (t) => {
+  const s = seed();
+  const db = new FakeDb(s, { beforeTransaction: editOnce(P1, (d) => ({ ...d, note: "edited mid-run" })) });
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  const after = db.dump();
+  assert.deepEqual(after[P1], { ...s[P1], note: "edited mid-run" }, "the edited doc is exactly as the other writer left it");
+  assert.deepEqual(summary.skippedChanged, [P1]);
+  assert.equal(summary.written, 6, "the six unchanged docs ARE written");
+  assert.equal(summary.planned, 7);
+  assert.equal(summary.remaining, 1, "the skipped doc is still PL");
+  assert.equal(exitCodeForMigration(summary), 1, "so the run exits non-zero and the operator re-runs");
+  assert.deepEqual(summary.errors, []);
+  for (const p of ["users/u1/attendance_status/2026-01-06", P2, "users/u2/attendance_status/2026-03-01", P3]) {
+    assert.ok(after[p].migratedFrom, `${p} was migrated`);
+  }
+  assert.equal(readJsonl(summary.backupFile).length, 7, "the backup line for the skipped doc stays in the file");
+});
+
+test("race: a doc deleted after the scan is skipped and NOT re-created", async (t) => {
+  const db = new FakeDb(seed(), { beforeTransaction: (d, n) => { if (n === 1) d.store.delete(P2); } });
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  assert.ok(!db.store.has(P2), "a merge-set would have resurrected it as a stub doc");
+  assert.deepEqual(summary.skippedChanged, [P2]);
+  assert.equal(summary.written, 6);
+  assert.equal(summary.remaining, 0, "a deleted doc is not legacy any more");
+  assert.equal(exitCodeForMigration(summary), 0);
+});
+
+test("race: markedBy flipping auto -> admin is skipped (never written under the stale mapping); a re-run maps it correctly", async (t) => {
+  const s = seed();
+  const db = new FakeDb(s, { beforeTransaction: editOnce(P2, (d) => ({ ...d, markedBy: "admin" })) });
+  const out = tmpDir(t);
+  const first = await runMigration(opts(db, out, { apply: true }));
+  assert.deepEqual(db.dump()[P2], { ...s[P2], markedBy: "admin" }, "not rewritten to SCHL/0 from the stale scan");
+  assert.deepEqual(first.skippedChanged, [P2]);
+  assert.equal(first.remaining, 1);
+  assert.equal(exitCodeForMigration(first), 1);
+
+  db.opts = {};
+  const second = await runMigration(opts(db, out, { apply: true, now: new Date(NOW.getTime() + 1) }));
+  const fixed = db.dump()[P2];
+  assert.equal(fixed.status, "USCHL", "now an admin LWP -> USCHL, as it should be");
+  assert.ok(!("salaryCredit" in fixed));
+  assert.equal(fixed.migratedFrom, "LWP");
+  assert.equal(fixed.markedBy, "admin");
+  assert.equal(second.planned, 1);
+  assert.equal(second.written, 1);
+  assert.deepEqual(second.skippedChanged, []);
+  assert.equal(second.remaining, 0);
+  assert.equal(exitCodeForMigration(second), 0);
+  // the second run's backup captured the doc as it stood then (markedBy admin), so restore is faithful
+  const line = readJsonl(second.backupFile)[0];
+  assert.equal(line.before.markedBy, "admin");
+});
+
+test("race: a doc that stopped being legacy is skipped and does not count as remaining", async (t) => {
+  const s = seed();
+  const db = new FakeDb(s, { beforeTransaction: editOnce(P3, (d) => ({ ...d, status: "Present" })) });
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  assert.deepEqual(db.dump()[P3], { ...s[P3], status: "Present" });
+  assert.deepEqual(summary.skippedChanged, [P3]);
+  assert.equal(summary.written, 6);
+  assert.equal(summary.remaining, 0);
+});
+
+test("race: a doc whose only change is an unrelated field (or a Timestamp) is still skipped", async (t) => {
+  const db = new FakeDb(seed(), { beforeTransaction: editOnce(P1, (d) => ({ ...d, updatedAt: T(99999) })) });
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  assert.deepEqual(summary.skippedChanged, [P1]);
+  assert.equal(db.dump()[P1].status, "PL");
+  assert.deepEqual(db.dump()[P1].updatedAt, T(99999));
+});
+
+test("race: fresh data the backup could not encode counts as changed instead of crashing the chunk", async (t) => {
+  const db = new FakeDb(seed(), { beforeTransaction: editOnce(P1, (d) => ({ ...d, weird: NaN })) });
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  assert.deepEqual(summary.skippedChanged, [P1]);
+  assert.deepEqual(summary.errors, []);
+  assert.equal(summary.written, 6);
+});
+
+test("race: the transaction callback is safe to re-execute (counts come from its return value)", async (t) => {
+  const db = new FakeDb(seed(), {
+    reexecute: true,
+    beforeTransaction: editOnce(P1, (d) => ({ ...d, note: "edited" })),
+  });
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  assert.equal(summary.written, 6, "not 12");
+  assert.deepEqual(summary.skippedChanged, [P1], "listed once, not twice");
+  assert.equal(db.commitCalls, 1);
+  assert.deepEqual(db.batchSizes, [6]);
+});
+
+test("writes go through transactions only (the fake has no batch()), one per chunk of at most 400", async (t) => {
+  const db = new FakeDb(seedLegacy(950));
+  assert.equal(typeof db.batch, "undefined");
+  const summary = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  assert.equal(db.txCalls, 3);
+  assert.deepEqual(db.batchSizes, [400, 400, 150]);
+  assert.equal(summary.written, 950);
+  assert.deepEqual(summary.skippedChanged, []);
+});
+
+test("a dry run reports no skips and starts no transaction", async (t) => {
+  const db = new FakeDb(seed());
+  const summary = await runMigration(opts(db, tmpDir(t)));
+  assert.deepEqual(summary.skippedChanged, []);
+  assert.equal(db.txCalls, 0);
+});
+
 // ────────────────────────────────── the restore ──────────────────────────────────
 
 test("restore: apply then restore returns the store to its ORIGINAL contents exactly", async (t) => {
@@ -615,10 +755,81 @@ test("restore: full set() replaces the doc, so fields added by the migration dis
   const file = path.join(path.dirname(tmpDir(t)), "b.jsonl");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const p = "users/u1/attendance_status/2026-01-05";
-  fs.writeFileSync(file, JSON.stringify({ path: p, before: { status: "PL", markedBy: "auto" }, after: {} }) + "\n");
-  const db = new FakeDb({ [p]: { status: "SCHL", salaryCredit: 1, migratedFrom: "PL", markedBy: "auto", rogue: 1 } });
+  const after = { status: "SCHL", salaryCredit: 1, migratedFrom: "PL" };
+  fs.writeFileSync(file, JSON.stringify({ path: p, before: { status: "PL", markedBy: "auto" }, after }) + "\n");
+  const db = new FakeDb({ [p]: { markedBy: "auto", ...after } }); // exactly the migrated state
   await runRestore({ db, Timestamp: FakeTimestamp, file, apply: true, log: () => {} });
   assert.deepEqual(db.dump()[p], { status: "PL", markedBy: "auto" });
+});
+
+// Restore has the same race as the migration: an edit made AFTER the migration must not be
+// silently reverted. Only docs still in exactly the migrated state are put back.
+
+async function migrated(t, dbOpts) {
+  const s = seed();
+  const db = new FakeDb(s);
+  const mig = await runMigration(opts(db, tmpDir(t), { apply: true }));
+  db.opts = dbOpts || {};
+  db.txCalls = 0; db.commitCalls = 0; db.batchSizes.length = 0; // count only what restore does
+  return { s, db, mig, migratedState: db.dump() };
+}
+const restore = (db, file, apply = true) => runRestore({ db, Timestamp: FakeTimestamp, file, apply, log: () => {} });
+
+test("restore: a doc edited since the migration is skipped and listed, not reverted", async (t) => {
+  const { s, db, mig } = await migrated(t);
+  const edited = "users/u1/attendance_status/2026-01-05";
+  db.store.set(edited, { ...db.store.get(edited), status: "Present", note: "regularized by HR" }); // a real later edit
+  const editedState = db.dump()[edited];
+  const res = await restore(db, mig.backupFile);
+  assert.deepEqual(db.dump()[edited], editedState, "the later edit must survive");
+  assert.deepEqual(res.skippedChanged, [edited]);
+  assert.equal(res.restored, 6);
+  for (const p of Object.keys(s)) if (p !== edited) assert.deepEqual(db.dump()[p], s[p], p);
+  assert.equal(exitCodeForRestore(res), 0, "a deliberate skip is reported, not an error");
+});
+
+test("restore: a doc deleted since the migration is skipped, not re-created", async (t) => {
+  const { db, mig } = await migrated(t);
+  const gone = "users/u2/attendance_status/2026-03-01";
+  db.store.delete(gone);
+  const res = await restore(db, mig.backupFile);
+  assert.ok(!db.store.has(gone));
+  assert.deepEqual(res.skippedChanged, [gone]);
+  assert.equal(res.restored, 6);
+});
+
+test("restore: dry run classifies the same way and writes nothing", async (t) => {
+  const { db, mig } = await migrated(t);
+  const edited = "users/u1/attendance_status/2026-02-10";
+  db.store.set(edited, { ...db.store.get(edited), markedBy: "admin" });
+  const before = db.dump();
+  const res = await restore(db, mig.backupFile, false);
+  assert.deepEqual(db.dump(), before);
+  assert.equal(res.toRestore, 6);
+  assert.deepEqual(res.skippedChanged, [edited]);
+  assert.equal(res.restored, 0);
+});
+
+test("restore: a doc edited between the classification and the transaction is skipped too", async (t) => {
+  const edited = "users/u1/attendance_status/2026-01-06";
+  const { db, mig } = await migrated(t, {
+    beforeTransaction: (d, n) => { if (n === 1) d.store.set(edited, { ...d.store.get(edited), note: "edited mid-restore" }); },
+  });
+  const res = await restore(db, mig.backupFile);
+  assert.equal(db.dump()[edited].note, "edited mid-restore");
+  assert.equal(db.dump()[edited].status, "SCHL", "still the migrated status, not reverted");
+  assert.deepEqual(res.skippedChanged, [edited]);
+  assert.equal(res.restored, 6);
+});
+
+test("restore: a backup taken by a dry run (nothing migrated) restores nothing", async (t) => {
+  const db = new FakeDb(seed());
+  const dry = await runMigration(opts(db, tmpDir(t)));
+  const res = await restore(db, dry.backupFile);
+  assert.equal(res.alreadyOriginal, 7);
+  assert.equal(res.toRestore, 0);
+  assert.deepEqual(res.skippedChanged, []);
+  assert.equal(db.commitCalls, 0);
 });
 
 test("restore: batches of at most 400", async (t) => {

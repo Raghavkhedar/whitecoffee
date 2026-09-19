@@ -14,7 +14,11 @@
  *     and fsync'd BEFORE the first Firestore write. It is the restore source.
  *   - The mapping is pay-neutral (the readers already price legacy PL like SCHL credit 1 and
  *     LWP like credit 0) and touches ONLY docs whose status is exactly "PL" or "LWP".
- *   - --restore <backup.jsonl> puts every doc back to its backed-up `before` state.
+ *   - The scan is not a lock. Every write chunk is a Firestore TRANSACTION that re-reads its docs and
+ *     writes one only if it still exists, is still legacy and is deep-equal to what the scan saw;
+ *     otherwise it is skipped, counted in `skippedChanged`, and picked up by the next run.
+ *   - --restore <backup.jsonl> puts docs back to their backed-up `before` state, but only those
+ *     still exactly as the migration left them (a later edit is never reverted; it is listed).
  *   - --project <id> is REQUIRED and is what firebase-admin is initialised with, so the script
  *     cannot silently run against whatever project the shell happens to be logged into.
  *
@@ -150,6 +154,22 @@ async function listUserRefs(db, userId) {
   return db.collection("users").listDocuments();
 }
 
+/**
+ * True only if `snap` (a fresh read) still exists, is still legacy AND is deep-equal (via the same
+ * faithful encoding the backup uses, so ANY changed field counts) to what the scan captured.
+ * Data the encoder cannot represent cannot equal the scan, so it counts as changed.
+ */
+function unchangedSinceScan(snap, beforeKey) {
+  if (!snap || !snap.exists) return false;
+  const data = snap.data();
+  if (planLegacyStatusMigration(data) === null) return false;
+  try {
+    return canonical(encodeValue(data)) === beforeKey;
+  } catch {
+    return false;
+  }
+}
+
 /** One PER-USER COLLECTION query (a collection-group query would need a guarded index override). */
 async function scanUser(userRef) {
   const snap = await userRef.collection("attendance_status").where("status", "in", LEGACY_STATUSES).get();
@@ -201,14 +221,18 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
         after.salaryCredit = { __delete: true };
       }
       // encodeValue throws on anything it cannot restore exactly -> abort before any write.
-      entries.push({ ref: doc.ref, write, line: JSON.stringify({ path: doc.ref.path, before: encodeValue(before), after }) });
+      const encodedBefore = encodeValue(before);
+      entries.push({
+        ref: doc.ref, write, beforeKey: canonical(encodedBefore),
+        line: JSON.stringify({ path: doc.ref.path, before: encodedBefore, after }),
+      });
     }
     if (n > 0) log(`  users/${userRef.id}: ${n} legacy doc(s)`);
   }
 
   const summary = {
     apply: !!apply, projectId, users: userRefs.length, found, byMonth,
-    planned: entries.length, written: 0, remaining: entries.length, backupFile: null, errors: [],
+    planned: entries.length, written: 0, skippedChanged: [], remaining: entries.length, backupFile: null, errors: [],
   };
 
   // 2. PLAN / BACKUP FILE — always, and durably on disk before any write.
@@ -220,17 +244,36 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
 
   if (!apply) return summary;
 
-  // 3. WRITE, in batches of at most BATCH_LIMIT. First failure stops the run.
+  // 3. WRITE, one TRANSACTION per chunk of at most BATCH_LIMIT. The scan above is not a lock, so
+  // each chunk re-reads its docs first and writes a doc only if it still exists, is still legacy
+  // and is exactly what the scan saw; anything else is skipped (a re-run will pick it up and
+  // back it up properly). The callback can be re-executed by Firestore on contention, so it has
+  // no outside side effects: what it did is returned, and counted from the return value.
+  // First chunk that throws stops the run.
   for (let i = 0; i < entries.length; i += BATCH_LIMIT) {
     const chunk = entries.slice(i, i + BATCH_LIMIT);
-    const batch = db.batch();
-    for (const e of chunk) batch.set(e.ref, e.write, { merge: true });
     try {
-      await batch.commit();
-      summary.written += chunk.length;
+      const outcome = await db.runTransaction(async (tx) => {
+        const snaps = await tx.getAll(...chunk.map((e) => e.ref)); // every read before any write
+        const fresh = new Map(snaps.map((s) => [s.ref.path, s]));
+        let written = 0;
+        const skipped = [];
+        for (const e of chunk) {
+          if (unchangedSinceScan(fresh.get(e.ref.path), e.beforeKey)) {
+            tx.set(e.ref, e.write, { merge: true });
+            written += 1;
+          } else {
+            skipped.push(e.ref.path);
+          }
+        }
+        return { written, skipped };
+      });
+      summary.written += outcome.written;
+      summary.skippedChanged.push(...outcome.skipped);
+      outcome.skipped.forEach((p) => log(`  SKIPPED (changed since the scan): ${p}`));
       log(`  committed ${summary.written}/${entries.length}`);
     } catch (err) {
-      summary.errors.push(`batch of docs ${i + 1}-${i + chunk.length} failed, stopping: ${firstLine(err)}`);
+      summary.errors.push(`docs ${i + 1}-${i + chunk.length} failed, stopping: ${firstLine(err)}`);
       break;
     }
   }
@@ -250,12 +293,18 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
 // ───────────────────────────────────── restore ─────────────────────────────────────
 
 /**
- * runRestore({ db, Timestamp, file, apply, log }) -> { apply, file, entries, toRestore, alreadyOriginal, restored, errors }
+ * runRestore({ db, Timestamp, file, apply, log })
+ *   -> { apply, file, entries, toRestore, alreadyOriginal, skippedChanged, restored, errors }
  *
- * Puts every doc in the backup back to its `before` state with a FULL set() (no merge), so
- * fields the migration added (migratedFrom, ...) disappear. Default is a dry run. The whole file
- * is validated before anything is written. Docs already in their `before` state are skipped, so
- * running it twice is a no-op. NOTE it overwrites any edit made to those docs since the migration.
+ * Puts docs in the backup back to their `before` state with a FULL set() (no merge), so fields the
+ * migration added (migratedFrom, ...) disappear. Default is a dry run. The whole file is validated
+ * before anything is written.
+ *
+ * A doc is restored ONLY if it is still exactly in the state the migration left it in (`before`
+ * with `after` applied). Already in its `before` state -> nothing to do (so running it twice is a
+ * no-op). Anything else — edited, regularized or deleted since the migration — is NOT touched and
+ * is listed in `skippedChanged`: restore must never silently revert a later legitimate change.
+ * Each write chunk is a transaction that re-reads and re-checks, like the migration itself.
  */
 async function runRestore({ db, Timestamp, file, apply = false, log = console.log }) {
   if (!Timestamp) Timestamp = loadAdmin().firestore.Timestamp;
@@ -274,38 +323,79 @@ async function runRestore({ db, Timestamp, file, apply = false, log = console.lo
     if (seen.has(p)) throw new Error(`backup line ${idx + 1} repeats path ${p}; refusing (ambiguous which state to restore)`);
     seen.add(p);
     if (!isPlainObject(row.before)) throw new Error(`backup line ${idx + 1} has no "before" object`);
-    items.push({ path: p, before: decodeValue(row.before, Timestamp), beforeKey: canonical(row.before) });
+    if (!isPlainObject(row.after)) throw new Error(`backup line ${idx + 1} has no "after" object`);
+    // The state the migration left the doc in: `before` with the `after` patch merged on top.
+    const migratedEnc = { ...row.before };
+    for (const [k, v] of Object.entries(row.after)) {
+      if (isPlainObject(v) && v.__delete === true) delete migratedEnc[k];
+      else migratedEnc[k] = v;
+    }
+    items.push({
+      path: p, before: decodeValue(row.before, Timestamp),
+      beforeKey: canonical(row.before), migratedKey: canonical(migratedEnc),
+    });
   });
 
+  // Where is this doc now? "original" | "migrated" | "changed" (edited, or deleted, or unencodable).
+  const classify = (snap, it) => {
+    if (!snap || !snap.exists) return "changed";
+    let key;
+    try { key = canonical(encodeValue(snap.data())); } catch { return "changed"; }
+    if (key === it.beforeKey) return "original";
+    if (key === it.migratedKey) return "migrated";
+    return "changed";
+  };
+
   const todo = [];
+  const skippedChanged = [];
   let alreadyOriginal = 0;
-  let missing = 0;
   for (const it of items) {
     const ref = db.doc(it.path);
-    const snap = await ref.get();
-    if (snap.exists && canonical(encodeValue(snap.data())) === it.beforeKey) { alreadyOriginal += 1; continue; }
-    if (!snap.exists) missing += 1;
-    todo.push({ ref, path: it.path, before: it.before });
+    const state = classify(await ref.get(), it);
+    if (state === "original") alreadyOriginal += 1;
+    else if (state === "changed") skippedChanged.push(it.path);
+    else todo.push({ ref, it });
   }
 
-  const result = { apply: !!apply, file, entries: items.length, toRestore: todo.length, alreadyOriginal, restored: 0, errors: [] };
-  log(`  backup has ${items.length} doc(s): ${todo.length} to restore, ${alreadyOriginal} already in their original state` + (missing ? ` (${missing} no longer exist and would be re-created)` : ""));
+  const result = { apply: !!apply, file, entries: items.length, toRestore: todo.length, alreadyOriginal, skippedChanged, restored: 0, errors: [] };
+  log(`  backup has ${items.length} doc(s): ${todo.length} to restore, ${alreadyOriginal} already in their original state, ${skippedChanged.length} changed since the migration (left alone)`);
+  skippedChanged.forEach((p) => log(`    SKIPPED (changed since the migration): ${p}`));
   if (!apply) {
-    todo.slice(0, 20).forEach((t) => log(`    would restore ${t.path}`));
+    todo.slice(0, 20).forEach((t) => log(`    would restore ${t.it.path}`));
     if (todo.length > 20) log(`    ... and ${todo.length - 20} more`);
     return result;
   }
 
   for (let i = 0; i < todo.length; i += BATCH_LIMIT) {
     const chunk = todo.slice(i, i + BATCH_LIMIT);
-    const batch = db.batch();
-    for (const t of chunk) batch.set(t.ref, t.before); // full replace, deliberately NOT merge
     try {
-      await batch.commit();
-      result.restored += chunk.length;
+      // Re-read and re-check inside the transaction; no outside side effects (it may be re-executed).
+      const outcome = await db.runTransaction(async (tx) => {
+        const snaps = await tx.getAll(...chunk.map((t) => t.ref));
+        const fresh = new Map(snaps.map((s) => [s.ref.path, s]));
+        let restored = 0;
+        let already = 0;
+        const skipped = [];
+        for (const t of chunk) {
+          const state = classify(fresh.get(t.it.path), t.it);
+          if (state === "migrated") {
+            tx.set(t.ref, t.it.before); // full replace, deliberately NOT merge
+            restored += 1;
+          } else if (state === "original") {
+            already += 1;
+          } else {
+            skipped.push(t.it.path);
+          }
+        }
+        return { restored, already, skipped };
+      });
+      result.restored += outcome.restored;
+      result.alreadyOriginal += outcome.already;
+      result.skippedChanged.push(...outcome.skipped);
+      outcome.skipped.forEach((p) => log(`    SKIPPED (changed since the migration): ${p}`));
       log(`  restored ${result.restored}/${todo.length}`);
     } catch (err) {
-      result.errors.push(`batch of docs ${i + 1}-${i + chunk.length} failed, stopping: ${firstLine(err)}`);
+      result.errors.push(`docs ${i + 1}-${i + chunk.length} failed, stopping: ${firstLine(err)}`);
       break;
     }
   }
@@ -419,6 +509,9 @@ function printMigrationSummary(s, log) {
   log(`Plan/backup file:     ${s.backupFile}`);
   if (s.apply) {
     log(`Written:              ${s.written} of ${s.planned}`);
+    log(`Skipped (changed since the scan): ${s.skippedChanged.length}`);
+    s.skippedChanged.forEach((p) => log(`  ${p}`));
+    if (s.skippedChanged.length) log("  These docs were edited or deleted while the script ran and were NOT written. Re-run --apply to pick them up.");
     log(`Legacy docs REMAINING: ${s.remaining === null ? "unknown (re-scan failed)" : s.remaining}   (expected 0)`);
   } else {
     log("");
@@ -441,6 +534,7 @@ async function main(argv, env = process.env, log = console.log) {
     if (restore) {
       const result = await runRestore({ db, Timestamp: admin.firestore.Timestamp, file: path.resolve(process.cwd(), restore), apply, log });
       log(apply ? `Restored ${result.restored} of ${result.toRestore} doc(s).` : "DRY RUN complete — NOTHING was written to Firestore.");
+      if (result.skippedChanged.length) log(`${result.skippedChanged.length} doc(s) were edited or deleted since the migration and were LEFT ALONE (listed above).`);
       result.errors.forEach((e) => log(`ERROR: ${e}`));
       return exitCodeForRestore(result);
     }

@@ -29,7 +29,7 @@ Why the pay is unchanged: `tallyAttendanceStatus`, `dayWeight` and `cancelLeave`
 - One script, `firebase/functions/scripts/migrateLegacyLeaveStatuses.js`, exporting a pure `planLegacyStatusMigration(doc)` and a runner that takes a Firestore handle so it can be tested with a fake and run against the emulator.
 - It lists `users`, and for each user queries that user's own `attendance_status` subcollection for `status in ["PL","LWP"]`. A per-user collection query needs no extra index; a collection-group query would need a `fieldOverride` in `firestore.indexes.json` (a known trap in this repo).
 - Flags: default is a DRY RUN. `--apply` writes. `--project <id>` is REQUIRED and must equal the project the SDK resolved, so it cannot hit the wrong project. `--user <uid>` limits it to one user. `--out <dir>` chooses where the plan/backup JSONL goes.
-- It always writes the plan/backup file first (path, before, after for every doc), and only then, with `--apply`, writes in batches of at most 400 with `merge: true` (and `FieldValue.delete()` for `salaryCredit` when a doc becomes `USCHL`). It re-scans afterwards and reports how many `PL`/`LWP` docs remain (expected 0).
+- It always writes the plan/backup file first (path, before, after for every doc), and only then, with `--apply`, writes in transactions of at most 400 docs with `merge: true` (and `FieldValue.delete()` for `salaryCredit` when a doc becomes `USCHL`); each transaction re-reads its docs and skips any that no longer exist, are no longer legacy, or differ from what the scan saw. It re-scans afterwards and reports how many `PL`/`LWP` docs remain (expected 0).
 - Idempotent: a second run finds nothing.
 - Each written doc triggers the existing `auditUserSubcollection` trigger, so the audit trail records every change (one `audit_log` entry per doc).
 
@@ -65,7 +65,9 @@ It prints the counts by mapping (`PL`, `LWP` non-admin, `LWP` admin), per-month 
 node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --apply
 ```
 
-It writes a fresh backup (`..._apply.jsonl`) to disk and flushes it BEFORE the first write, then rewrites in batches of at most 400 with `merge: true`, then re-scans. The run ends with `Legacy docs REMAINING: 0`; the exit code is non-zero if any batch failed or any legacy doc remains. A failed batch stops the run; docs already written stay written, and re-running `--apply` simply picks up what is left.
+It writes a fresh backup (`..._apply.jsonl`) to disk and flushes it BEFORE the first write, then rewrites in transactions of at most 400 docs (`merge: true`), then re-scans. The scan is not a lock, so each transaction first re-reads its docs and writes a doc only if it still exists, is still `PL`/`LWP` and is identical to what the scan saw. A doc that was edited or deleted while the script ran is NOT written (and a deleted one is not re-created): it is counted as `Skipped (changed since the scan)`, its path is printed, and the run carries on. Its backup line stays in the file but is harmless.
+
+The run ends with `Legacy docs REMAINING: 0`. The exit code is non-zero if any transaction failed or any legacy doc remains, which includes a skipped doc that is still `PL`/`LWP`. **If `Skipped` is not 0, just re-run the same `--apply` command**: the next run re-scans, backs the skipped docs up as they now are, and maps them correctly (for example a doc an admin flipped from auto to admin `LWP` in the meantime becomes `USCHL`, not `SCHL`). A failed transaction stops the run; docs already written stay written, and re-running `--apply` picks up what is left.
 
 **3. Confirm** by re-running the dry run from step 1: it should report `Legacy docs found: 0`.
 
@@ -76,11 +78,11 @@ node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --restor
 node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --restore migration-out/<the ..._apply.jsonl file> --apply
 ```
 
-Restore puts each doc back to its backed-up `before` state with a full `set()` (the added `migratedFrom`, `migratedAt` and `lastModifiedBy` disappear, a removed `salaryCredit` returns, Timestamps are restored exactly). Docs already in that state are skipped, so it is safe to repeat. Use the backup from the `--apply` run, not a dry-run file. Restore overwrites any change made to those docs since the migration.
+Restore puts each doc back to its backed-up `before` state with a full `set()` (the added `migratedFrom`, `migratedAt` and `lastModifiedBy` disappear, a removed `salaryCredit` returns, Timestamps are restored exactly). Only docs still exactly as the migration left them are restored (each transaction re-checks). A doc that was edited, regularized or deleted since the migration is left alone and listed as `SKIPPED (changed since the migration)`, so a later legitimate change is never silently reverted; the restore still exits 0 in that case, so read the list. Docs already in their original state are skipped too, so it is safe to repeat. Use the backup from the `--apply` run, not a dry-run file.
 
 **Safety notes**
 - Every doc the script writes triggers the existing `auditUserSubcollection` trigger, so the audit trail gets one `audit_log` entry per changed doc (a restore adds one per restored doc too). `lastModifiedBy` is `system:migrateLegacyLeaveStatuses`.
-- It is safe to run while the app is live: the mapping is pay-neutral and it only touches docs whose status is exactly `PL` or `LWP`. It reads each user's `attendance_status` with a per-user collection query and never touches `plBalance` or any other collection.
+- It is safe to run while the app is live: the mapping is pay-neutral, it only touches docs whose status is exactly `PL` or `LWP`, and the transactional re-check means it never overwrites a doc that changed after the scan. It reads each user's `attendance_status` with a per-user collection query and never touches `plBalance` or any other collection.
 - `--project` is required and is the project firebase-admin is initialised with, so the script cannot fall back to whichever project the shell is logged in to. If `FIRESTORE_EMULATOR_HOST` is set it prints a loud EMULATOR banner instead.
 - The plan/backup files contain employee attendance data. Keep them somewhere private, do not commit or share them (`migration-out/` is git-ignored, and files are created readable by the owner only). Keep the `--apply` backup until the change has been verified.
 - Restore needs the `--apply` backup file, so do not delete it after a successful run until you are sure you will not need to undo.
