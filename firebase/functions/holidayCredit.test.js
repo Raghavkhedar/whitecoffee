@@ -4,7 +4,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { resolveHolidayCredit } = require("./holidayCredit");
+const { resolveHolidayCredit, effectiveHolidayCredit } = require("./holidayCredit");
 
 // Epoch seconds for an IST wall-clock time on 2026-09-21.
 const at = (h, m, s = 0) => Date.UTC(2026, 8, 21, h, m, s) / 1000 - 19800;
@@ -52,5 +52,33 @@ test("office, admin, sales and unknown roles always keep the +1", () => {
   const worked = [ev("office_in", at(10, 0)), ev("office_out", at(18, 0)), ev("site_in", at(10, 0)), ev("site_out", at(18, 0))];
   for (const role of ["office", "admin", "sales", "mystery", ""]) {
     assert.equal(resolveHolidayCredit(role, worked), 1, role);
+  }
+});
+
+test("effectiveHolidayCredit: ops keeps the +1 when nothing was withdrawn and no OT is approved", () => {
+  assert.equal(effectiveHolidayCredit(undefined, "operations", 0), 1); // legacy doc, paid
+  assert.equal(effectiveHolidayCredit(1, "operations", undefined), 1);
+  assert.equal(effectiveHolidayCredit(1, "operations", 0), 1);
+});
+
+test("effectiveHolidayCredit: a strict 0 from the nightly stays withdrawn", () => {
+  assert.equal(effectiveHolidayCredit(0, "operations", 0), 0);
+  assert.equal(effectiveHolidayCredit(0, "operations", undefined), 0);
+});
+
+test("effectiveHolidayCredit: approved OT for an ops holiday withdraws the +1 (missed checkout, later manual OT)", () => {
+  assert.equal(effectiveHolidayCredit(1, "operations", 240), 0);
+  assert.equal(effectiveHolidayCredit(undefined, "operations", 240), 0);
+  assert.equal(effectiveHolidayCredit(1, "operations", "240"), 0); // numeric string coerces, like approvedMins elsewhere
+});
+
+test("effectiveHolidayCredit: junk approved minutes never withdraw", () => {
+  assert.equal(effectiveHolidayCredit(1, "operations", -5), 1);
+  assert.equal(effectiveHolidayCredit(1, "operations", NaN), 1);
+});
+
+test("effectiveHolidayCredit: non-ledger roles are never affected by approved minutes", () => {
+  for (const role of ["office", "sales", "admin", "mystery"]) {
+    assert.equal(effectiveHolidayCredit(1, role, 240), 1, role);
   }
 });

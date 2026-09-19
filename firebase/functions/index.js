@@ -17,7 +17,9 @@ const {
   shouldDecrementPlBalance,
 } = require("./attendanceRules");
 // Whether a Holiday day still pays its +1 (operations who worked it are paid via OT instead).
-const { resolveHolidayCredit } = require("./holidayCredit");
+// resolveHolidayCredit freezes it at 23:59 from punches; effectiveHolidayCredit reconciles that
+// with approved OT at read time (a later manual-OT grant for a missed checkout).
+const { resolveHolidayCredit, effectiveHolidayCredit } = require("./holidayCredit");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
@@ -1019,10 +1021,15 @@ exports.exportToSheets = onSchedule(
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins available for cash (approvedMins − settledMins; rejected → 0)
     const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy, requestedMins } (for the OT Exception Report)
+    // `${uid}__${date}` → approvedMins GROSS of settlement (rejected docs excluded). "Was OT granted
+    // that day" — NOT the net-of-settled cash above: a day whose minutes all went to settling a WO
+    // debt still had OT granted. Feeds effectiveHolidayCredit in the MTD tally below.
+    const otGrantedMap = new Map();
     const approvalSnap = await db.collectionGroup("ot_approvals").get();
     approvalSnap.docs.forEach((doc) => {
       const d = doc.data();
       const key = `${uidOf(doc)}__${d.date || ""}`;
+      if (d.status !== "rejected") otGrantedMap.set(key, Number(d.approvedMins) || 0);
       approvalMap.set(key, Math.max(0, (Number(d.approvedMins) || 0) - (Number(d.settledMins) || 0)));
       // requestedMins is carried so "is this date fully decided" can be judged by how much
       // of the day's pending OT the decision actually covers, not merely by doc presence —
@@ -1045,7 +1052,12 @@ exports.exportToSheets = onSchedule(
       if (dayOfWeek === 0) return;
       if (!userAttendanceMTD.has(d.userId)) userAttendanceMTD.set(d.userId, newAttendanceTally());
       // Status → bucket mapping (incl. the legacy PL/LWP fold) lives in payrollDeductions.js.
-      tallyAttendanceStatus(userAttendanceMTD.get(d.userId), d.status, d.salaryCredit);
+      // A Holiday's +1 is withdrawn for an ops employee who worked it (salaryCredit 0 from the
+      // nightly) OR who has approved OT that date (manual OT for a missed checkout) — reconcile both.
+      const credit = d.status === "Holiday"
+        ? effectiveHolidayCredit(d.salaryCredit, userRoleMap.get(d.userId), otGrantedMap.get(`${d.userId}__${d.date}`))
+        : d.salaryCredit;
+      tallyAttendanceStatus(userAttendanceMTD.get(d.userId), d.status, credit);
     });
 
     // Every attendance event ever recorded. Read ONCE and shared by the Attendance
@@ -2494,6 +2506,12 @@ exports.snapshotDailySpend = onSchedule(
       .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
     const approvalDocs = (await db.collectionGroup("ot_approvals").get()).docs
       .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+    // `${uid}__${date}` → approvedMins GROSS of settlement (rejected excluded): "was OT granted
+    // that day", for effectiveHolidayCredit below. Not the net cash figure otMap carries.
+    const otGrantedByKey = new Map();
+    approvalDocs.forEach((a) => {
+      if (a.status !== "rejected") otGrantedByKey.set(`${a.userId}__${a.date}`, Number(a.approvedMins) || 0);
+    });
 
     const holidaySnap = await db.collection("holidays")
       .where("date", ">=", rangeStart).where("date", "<=", today).get();
@@ -2569,9 +2587,13 @@ exports.snapshotDailySpend = onSchedule(
         const sunday = isSunday(date);
         // Sundays are not paid working days — matches the MTD summary, which skips Sundays
         // first (so a Sunday-dated Holiday credits 0). Holidays are NOT skipped: a Holiday
-        // status pays +1; SCHL pays only when its salaryCredit is 1; an OT/conveyance-only
+        // status pays +1 unless withdrawn (ops who worked it, or approved OT that day — see
+        // effectiveHolidayCredit); SCHL pays only when its salaryCredit is 1; an OT/conveyance-only
         // day has no status → 0.
-        const salary = (status && !sunday) ? dailySalary(rate, status.status, status.salaryCredit) : 0;
+        const credit = (status && status.status === "Holiday")
+          ? effectiveHolidayCredit(status.salaryCredit, user.role, otGrantedByKey.get(`${user.id}__${date}`))
+          : (status && status.salaryCredit);
+        const salary = (status && !sunday) ? dailySalary(rate, status.status, credit) : 0;
         const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${date}`) || 0) : 0;
         const otWo = round2(otMap.get(date) || 0);
         // SA lands entirely on its one manager-picked date; every other day of the month is 0.

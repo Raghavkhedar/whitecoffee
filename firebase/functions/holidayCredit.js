@@ -43,4 +43,29 @@ function resolveHolidayCredit(role, events) {
   return worked > 0 ? 0 : 1;
 }
 
-module.exports = { resolveHolidayCredit, istMinuteOfDay };
+/**
+ * The +1 a Holiday day pays AT READ TIME. Reconciles the credit frozen at 23:59 (punch-based:
+ * resolveHolidayCredit → salaryCredit) with the real pay gate for an operations employee who
+ * works a holiday — an approved ot_approvals doc, which can appear LATER (e.g. the admin grants
+ * manual OT for a missed checkout, which the nightly saw as "nothing to approve" and left at 1).
+ * Without this such a day would pay the +1 AND the OT. Readers pass the result on as the
+ * `salaryCredit` argument of tallyAttendanceStatus / dailySalary.
+ *
+ * 0 when the nightly already withdrew it (strict `salaryCredit === 0`), or when a ledger role
+ * (operations) has approved OT minutes > 0 for that user+date (pay is the OT). Otherwise 1 —
+ * including a missing/legacy salaryCredit, which is a paid day. Non-ledger roles are never
+ * affected by approvedOtMins.
+ *
+ * @param {number | undefined} salaryCredit the Holiday doc's frozen credit
+ * @param {string} role
+ * @param {number | string | undefined} approvedOtMins ot_approvals.approvedMins for that user+date
+ *   (gross of any settlement, not "rejected"); anything non-numeric or <= 0 counts as none
+ * @returns {0 | 1}
+ */
+function effectiveHolidayCredit(salaryCredit, role, approvedOtMins) {
+  if (salaryCredit === 0) return 0;
+  if (usesOtShortageLedger(role) && Number(approvedOtMins) > 0) return 0;
+  return 1;
+}
+
+module.exports = { resolveHolidayCredit, effectiveHolidayCredit, istMinuteOfDay };
