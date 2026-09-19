@@ -330,9 +330,13 @@ export async function rejectLeave(
  *    no `attendance_status` doc (except a Sunday/Holiday, which does — see the guard a
  *    few lines below), and the nightly scorer will simply stop seeing leave for that day.
  *    This is why there is no past-vs-future branch here.
- *  - **Already-scored dates** are reverted to `Absent` — a PL/LWP day has zero
+ *  - **Already-scored dates** are reverted to `Absent` — a leave-scored day has zero
  *    punches by construction, so with the leave gone it is exactly the scorer's own
- *    `no leave → Absent` fallback.
+ *    `no leave → Absent` fallback. The current leave status is `SCHL` (with a
+ *    `salaryCredit` of 1 or 0 recording whether that day drew from `plBalance`). Docs
+ *    scored BEFORE the SCHL change carry the retired `PL`/`LWP` statuses and are kept
+ *    as-is, so those are still recognised as leave-scored here too — otherwise cancelling
+ *    a leave approved before the change shipped would revert nothing and refund nothing.
  *
  * ⚠️ The revert is gated on `markedBy === 'auto'`, upholding the same invariant the
  * nightly function does: an admin-marked day is never silently rewritten. If someone
@@ -340,8 +344,10 @@ export async function rejectLeave(
  * is still recorded as cancelled, but its status doc is left alone and returned in
  * `skippedDates` so the caller can say so out loud.
  *
- * ⚠️ Only a **PL** day refunds `plBalance`. LWP is leave taken with a zero balance —
- * it never decremented anything, so refunding it would mint leave out of nothing.
+ * ⚠️ Only a day that actually drew from `plBalance` refunds it: a `SCHL` day with
+ * **`salaryCredit === 1`**, or a legacy **`PL`** day. A `SCHL` day with `salaryCredit` 0
+ * (or missing), a legacy `LWP` day, and a `USCHL` day never decremented anything, so
+ * refunding them would mint leave out of nothing.
  * This is the codebase's first `plBalance` increment outside the monthly accrual in
  * `accrueMonthlyLeave`; every other write is a decrement.
  *
@@ -356,12 +362,12 @@ export async function rejectLeave(
  * `firestore.rules` (`!isRestDate(date)`), a batch that touches even one Sunday/holiday date
  * is denied WHOLESALE — taking down the cancellation AND the `plBalance` refund for every
  * *other*, perfectly legal date in the same range. Nightly scoring skips Sundays/holidays
- * entirely (no PL/LWP doc is ever written there going forward), so a real collision needs a
+ * entirely (no SCHL/USCHL doc is ever written there going forward), so a real collision needs a
  * stale/legacy doc — but a cancellation spanning a Sunday is completely ordinary (leave
  * ranges are calendar-day spans), so the *reachability* of that legacy doc is not the point;
  * the blast radius if it exists is. The status-field check two lines below (`'Sunday' ||
  * 'Holiday'`) is NOT a guard against this — it tests what the doc SAYS, not what the DATE
- * IS, so a legacy PL/LWP doc sitting on a rest date sails straight past it into the batch.
+ * IS, so a legacy PL/LWP (or SCHL) doc sitting on a rest date sails straight past it into the batch.
  * The fix here checks the date itself, mirroring `isRestDay`'s Sunday+holiday precedence, and
  * SKIPS silently (like the "no doc" branch above) rather than reporting it in `skippedDates`
  * or throwing: throwing would revive the exact all-or-nothing failure this fix exists to
@@ -425,7 +431,9 @@ export async function cancelLeave(
     // doc scored on a date that WAS a rest day but no longer resolves as one above — e.g.
     // the holiday was later unmarked — which the date-based check can't see.)
     if (data.status === 'Sunday' || data.status === 'Holiday') return;
-    const scoredAsLeave = data.status === 'PL' || data.status === 'LWP';
+    // SCHL is the current leave status; PL/LWP are LEGACY docs scored before the SCHL change
+    // (kept as-is, never migrated) — a leave approved back then must still cancel cleanly.
+    const scoredAsLeave = data.status === 'SCHL' || data.status === 'PL' || data.status === 'LWP';
     if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(date); return; }
 
     batch.set(
@@ -433,7 +441,9 @@ export async function cancelLeave(
       stamped({ status: 'Absent', markedBy: 'admin', updatedAt: Timestamp.now() }),
       { merge: true },
     );
-    if (data.status === 'PL') refundedDays += 1; // PL only — see the LWP note above
+    // Refund only a day that actually drew from plBalance: paid SCHL (salaryCredit 1) or legacy
+    // PL. Unpaid SCHL (salaryCredit 0/missing) and legacy LWP never decremented — see the note above.
+    if ((data.status === 'SCHL' && data.salaryCredit === 1) || data.status === 'PL') refundedDays += 1;
   });
 
   if (refundedDays > 0) {
