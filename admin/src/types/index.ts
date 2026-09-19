@@ -85,7 +85,8 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'SCHL' | 'USCHL' | 'WO' | 'Sunday' | 'Holiday';
+  // 'PL' | 'LWP' are LEGACY: frozen pre-change history, never written anymore (kept so old docs still type-check).
+  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'SCHL' | 'USCHL' | 'PL' | 'LWP' | 'WO' | 'Sunday' | 'Holiday';
   markedBy: 'auto' | 'admin';
   // Effective worked window captured when an admin regularizes a day to Present (missed-punch
   // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw

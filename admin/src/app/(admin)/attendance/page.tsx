@@ -256,7 +256,7 @@ export default function AttendancePage() {
       else if (s.status === 'SL') sl++;
       else if (s.status === 'LNF' || s.status === 'SLNF') slnf++;
       else if (s.status === 'Absent')  absent++;
-      else if (s.status === 'SCHL' || s.status === 'USCHL') leave++;
+      else if (s.status === 'SCHL' || s.status === 'USCHL' || s.status === 'PL' || s.status === 'LWP') leave++; // PL/LWP: legacy history
     });
     return { present, halfDay, sl, slnf, absent, leave };
   }
@@ -443,7 +443,7 @@ export default function AttendancePage() {
   const totalSL      = statusValues.filter(s => s === 'SL').length;
   const totalSLNF    = statusValues.filter(s => s === 'LNF' || s === 'SLNF').length;
   const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
-  const totalLeave   = statusValues.filter(s => s === 'SCHL' || s === 'USCHL').length;
+  const totalLeave   = statusValues.filter(s => s === 'SCHL' || s === 'USCHL' || s === 'PL' || s === 'LWP').length; // PL/LWP: legacy history
   const totalWo      = statusValues.filter(s => s === 'WO').length;
 
   const selectedDateDisplay = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {

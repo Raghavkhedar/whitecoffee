@@ -30,6 +30,8 @@ function ApprovedStatusBadge({ status }: { status: string }) {
     HalfDay:  'bg-amber-100 text-amber-700',
     Absent:   'bg-red-100 text-red-700',
     USCHL:    'bg-purple-100 text-purple-700',
+    PL:       'bg-blue-100 text-blue-700',    // legacy: historical approved rows
+    LWP:      'bg-purple-100 text-purple-700', // legacy: historical approved rows
     WO:       'bg-sky-100 text-sky-700',
   };
   const cls = colors[status] ?? 'bg-gray-100 text-gray-600';
