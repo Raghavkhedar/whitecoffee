@@ -100,6 +100,21 @@ function resolveLeaveStatus(plBalance) {
   return { status: "SCHL", salaryCredit: balance > 0 ? 1 : 0 };
 }
 
+/**
+ * Should tonight's run decrement `plBalance` for this user? Idempotency guard: a re-run (manual
+ * trigger / retry) must not draw the same day's balance twice. `salaryCredit` is what today's
+ * run resolved (1 = drew a day); `prior` is the `{status, salaryCredit}` already recorded for
+ * today, or undefined.
+ *
+ * Two kinds of prior doc mean "this day already drew a balance day": a new SCHL doc with
+ * `salaryCredit: 1`, and a LEGACY `PL` doc — written before SCHL existed, so it carries no
+ * `salaryCredit` at all (PL behaved like salaryCredit 1). Keying on salaryCredit alone would
+ * miss the legacy doc and let a same-day re-run on the deploy date decrement twice.
+ */
+function shouldDecrementPlBalance(salaryCredit, prior) {
+  return salaryCredit === 1 && prior?.salaryCredit !== 1 && prior?.status !== "PL";
+}
+
 module.exports = {
   OFFICE_START_MIN,
   OFFICE_END_MIN,
@@ -108,4 +123,5 @@ module.exports = {
   resolveOpsWindow,
   resolveRestDayType,
   resolveLeaveStatus,
+  shouldDecrementPlBalance,
 };

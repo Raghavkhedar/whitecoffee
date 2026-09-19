@@ -14,6 +14,7 @@ const {
   resolveOpsWindow,
   resolveRestDayType,
   resolveLeaveStatus,
+  shouldDecrementPlBalance,
 } = require("./attendanceRules");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
@@ -485,9 +486,9 @@ exports.computeDailyAttendanceStatus = onSchedule(
             const resolved = resolveLeaveStatus(balance);
             status = resolved.status;
             salaryCredit = resolved.salaryCredit;
-            // Only deduct when today wasn't already recorded as a paid SCHL day, so a re-run
-            // (manual trigger / retry) doesn't decrement the balance twice.
-            if (salaryCredit === 1 && priorStatus.get(user.id)?.salaryCredit !== 1) {
+            // Only deduct when today wasn't already recorded as a paid day (SCHL credit 1, or a
+            // legacy PL doc), so a re-run (manual trigger / retry) doesn't decrement twice.
+            if (shouldDecrementPlBalance(salaryCredit, priorStatus.get(user.id))) {
               plDeductions.push(user.id);
             }
           } else {
