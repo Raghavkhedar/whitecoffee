@@ -55,7 +55,7 @@ const {
 const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
 // Leave approved after its days have passed — pure planner behind scoreRetroactiveLeave
 // (see retroLeaveScoring.js).
-const { pastGrantedDates, planRetroLeaveScoring } = require("./retroLeaveScoring");
+const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong } = require("./retroLeaveScoring");
 // Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
 // the legacy inline fields — see compensation.js for why the split exists.
 const { withPay } = require("./compensation");
@@ -598,47 +598,79 @@ exports.computeDailyAttendanceStatus = onSchedule(
 // portal on purpose: plBalance writes are admin-only in firestore.rules and status writes are
 // tab-gated, so a client-side version would fail for a non-admin Leaves manager or need the
 // rules widened. The decision logic lives in retroLeaveScoring.js (unit-tested).
-exports.scoreRetroactiveLeave = onDocumentWritten("users/{userId}/leave_requests/{requestId}", async (event) => {
-  const after = event.data && event.data.after;
-  if (!after || !after.exists) return;
-  const leave = after.data();
-  if (leave.status !== "approved") return;
+//
+// Failure: an error is logged with its context and RE-THROWN, and the trigger has `retry: true`,
+// so a transient failure is redelivered instead of silently leaving pay-affecting days Absent.
+// Retrying is correctness-safe: each attempt is a fresh transaction that re-reads the status
+// docs, and the planner is idempotent (an already-SCHL day is no longer Absent). The planner
+// never throws on a malformed leave doc (it returns nothing), so a deterministic failure cannot
+// turn retry into a storm.
+//
+// Two KNOWN, deliberately-unfixed races (each needs two admin actions within one invocation):
+//  (a) `cancelLeave` (admin/src/lib/firestore.ts) reads day statuses BEFORE its batch, so a
+//      cancel landing while this trigger is mid-flight can leave a cancelled day scored as
+//      paid SCHL and a PL day burned (window ≈ one invocation).
+//  (b) At ~23:59–00:00 IST the nightly run reads plBalance up front and decrements it
+//      non-transactionally, so an approval landing in that window can score two paid days
+//      against one day of balance and leave plBalance at −1 (self-heals at the next monthly
+//      accrual).
+exports.scoreRetroactiveLeave = onDocumentWritten(
+  { document: "users/{userId}/leave_requests/{requestId}", retry: true },
+  async (event) => {
+    const userId = event.params.userId;
+    const requestId = event.params.requestId;
+    let candidateDates = 0;
+    try {
+      const after = event.data && event.data.after;
+      if (!after || !after.exists) return;
+      const leave = after.data();
+      if (leave.status !== "approved") return;
 
-  const db = admin.firestore();
-  const userId = event.params.userId;
-  // IST "yyyy-MM-dd" string — same expression computeDailyAttendanceStatus uses for `today`.
-  const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const dates = pastGrantedDates(leave, todayIST);
-  if (dates.length === 0) return;
+      const db = admin.firestore();
+      // IST "yyyy-MM-dd" string — same expression computeDailyAttendanceStatus uses for `today`.
+      const todayIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (leaveSpanTooLong(leave)) {
+        // Rules bound totalDays, not fromDate…toDate, so this is a malformed doc: refuse, don't truncate.
+        console.warn(`scoreRetroactiveLeave: REFUSED oversize leave range for user ${userId} leave ${requestId} (${leave.fromDate} → ${leave.toDate})`);
+        return;
+      }
+      const dates = pastGrantedDates(leave, todayIST);
+      candidateDates = dates.length;
+      if (dates.length === 0) return;
 
-  const userRef = db.doc(`users/${userId}`);
-  const statusRefs = dates.map((d) => db.doc(`users/${userId}/attendance_status/${d}`));
+      const userRef = db.doc(`users/${userId}`);
+      const statusRefs = dates.map((d) => db.doc(`users/${userId}/attendance_status/${d}`));
 
-  const plan = await db.runTransaction(async (tx) => {
-    // Every read before any write (Firestore transaction rule).
-    const [userSnap, ...statusSnaps] = await tx.getAll(userRef, ...statusRefs);
-    if (!userSnap.exists) return { updates: [], paidDays: 0 };
-    const statusByDate = new Map();
-    statusSnaps.forEach((snap, i) => { if (snap.exists) statusByDate.set(dates[i], snap.data()); });
-    const result = planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance: userSnap.data().plBalance });
-    result.updates.forEach((u) => {
-      tx.set(db.doc(`users/${userId}/attendance_status/${u.date}`), {
-        status: u.status,
-        salaryCredit: u.salaryCredit,
-        markedBy: "auto",
-        updatedAt: admin.firestore.Timestamp.now(),
-      }, { merge: true });
-    });
-    if (result.paidDays > 0) {
-      tx.update(userRef, { plBalance: admin.firestore.FieldValue.increment(-result.paidDays) });
+      const plan = await db.runTransaction(async (tx) => {
+        // Every read before any write (Firestore transaction rule).
+        const [userSnap, ...statusSnaps] = await tx.getAll(userRef, ...statusRefs);
+        if (!userSnap.exists) return { updates: [], paidDays: 0 };
+        const statusByDate = new Map();
+        statusSnaps.forEach((snap, i) => { if (snap.exists) statusByDate.set(dates[i], snap.data()); });
+        const result = planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance: userSnap.data().plBalance });
+        result.updates.forEach((u) => {
+          tx.set(db.doc(`users/${userId}/attendance_status/${u.date}`), {
+            status: u.status,
+            salaryCredit: u.salaryCredit,
+            markedBy: "auto",
+            updatedAt: admin.firestore.Timestamp.now(),
+          }, { merge: true });
+        });
+        if (result.paidDays > 0) {
+          tx.update(userRef, { plBalance: admin.firestore.FieldValue.increment(-result.paidDays) });
+        }
+        return result;
+      });
+
+      if (plan.updates.length > 0) {
+        console.log(`scoreRetroactiveLeave: ${userId} leave ${requestId} → ${plan.updates.length} past day(s) scored SCHL (${plan.paidDays} paid)`);
+      }
+    } catch (err) {
+      console.error(`scoreRetroactiveLeave: FAILED for user ${userId} leave ${requestId} (${candidateDates} candidate date(s)):`, err);
+      throw err; // re-throw so the platform retries (retry: true)
     }
-    return result;
-  });
-
-  if (plan.updates.length > 0) {
-    console.log(`scoreRetroactiveLeave: ${userId} leave ${event.params.requestId} → ${plan.updates.length} past day(s) scored SCHL (${plan.paidDays} paid)`);
   }
-});
+);
 
 // Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a WO debt not fully
 // settled within 2 months of being issued is written off automatically, with zero pay impact

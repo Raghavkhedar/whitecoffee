@@ -4,7 +4,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { pastGrantedDates, planRetroLeaveScoring } = require("./retroLeaveScoring");
+const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, addDays } = require("./retroLeaveScoring");
 
 const TODAY = "2026-09-21";
 const leave = (over = {}) => ({ status: "approved", fromDate: "2026-09-14", toDate: "2026-09-17", ...over });
@@ -89,8 +89,40 @@ test("malformed input never throws", () => {
   assert.deepEqual(pastGrantedDates(leave(), undefined), []);
 });
 
-test("pastGrantedDates is ascending and bounded", () => {
+test("rules-legal but non-calendar dates return [] and never throw (as fromDate, as toDate, and inverted)", () => {
+  // firestore.rules accepts month/day 00-99, so these all reach the module.
+  for (const bad of ["2025-13-01", "2025-00-05", "2025-02-99", "2026-02-31"]) {
+    assert.deepEqual(pastGrantedDates(leave({ fromDate: bad }), TODAY), [], `fromDate ${bad}`);
+    assert.deepEqual(pastGrantedDates(leave({ toDate: bad }), TODAY), [], `toDate ${bad}`);
+    assert.equal(leaveSpanTooLong(leave({ fromDate: bad })), false);
+    assert.equal(leaveSpanTooLong(leave({ toDate: bad })), false);
+    const r = planRetroLeaveScoring({ leave: leave({ fromDate: bad }), todayIST: TODAY, statusByDate: statuses(D4), plBalance: 9 });
+    assert.deepEqual(r, { updates: [], paidDays: 0 });
+  }
+  assert.deepEqual(pastGrantedDates(leave({ fromDate: "2026-09-17", toDate: "2026-09-14" }), TODAY), []);
+  assert.equal(leaveSpanTooLong(leave({ fromDate: "2026-09-17", toDate: "2026-09-14" })), false);
+  assert.doesNotThrow(() => addDays("2025-13-01", 1));
+  assert.equal(addDays("2025-13-01", 1), null);
+});
+
+test("pastGrantedDates is ascending; a real 366-day span is still scored normally", () => {
   assert.deepEqual(pastGrantedDates(leave(), TODAY), D4);
+  // 2025-01-01 .. 2026-01-01 is 366 inclusive days, all before TODAY.
+  const year = leave({ fromDate: "2025-01-01", toDate: "2026-01-01" });
+  const dates = pastGrantedDates(year, TODAY);
+  assert.equal(dates.length, 366);
+  assert.equal(dates[0], "2025-01-01");
+  assert.equal(dates[365], "2026-01-01");
+  assert.equal(leaveSpanTooLong(year), false);
+});
+
+test("an oversize span (> 400 days) is REFUSED, never truncated to its oldest days", () => {
   const huge = leave({ fromDate: "2020-01-01", toDate: "2030-01-01" });
-  assert.ok(pastGrantedDates(huge, TODAY).length <= 400);
+  assert.deepEqual(pastGrantedDates(huge, TODAY), []);
+  assert.equal(leaveSpanTooLong(huge), true);
+  assert.deepEqual(planRetroLeaveScoring({ leave: huge, todayIST: TODAY, statusByDate: statuses(D4), plBalance: 9 }), { updates: [], paidDays: 0 });
+  // Boundary: exactly 400 inclusive days is allowed, 401 is refused.
+  assert.equal(leaveSpanTooLong(leave({ fromDate: "2025-01-01", toDate: "2026-02-04" })), false); // 400 days
+  assert.equal(leaveSpanTooLong(leave({ fromDate: "2025-01-01", toDate: "2026-02-05" })), true);  // 401 days
+  assert.equal(leaveSpanTooLong(null), false);
 });
