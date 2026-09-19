@@ -11,6 +11,9 @@
 // dayWeight. PL ×1 / LWP ×0 are LEGACY (retired for new writes, but old docs still sit inside
 // the snapshot's open window); PL behaved like salaryCredit 1, LWP like 0.
 // These weights are mirrored in payrollDeductions.js — change them together.
+// Callers pre-reconcile the Holiday credit with `effectiveHolidayCredit` (holidayCredit.js) before
+// calling dayWeight/dailySalary, so an operations employee with approved OT that date is passed a
+// salaryCredit of 0 here; this module reads the credit it is handed and does not re-reconcile.
 const STATUS_WEIGHT = {
   Present: 1, SL: 0.75, HalfDay: 0.5, LNF: 0.5, SLNF: 0.5, Holiday: 1, USCHL: 0,
   PL: 1, LWP: 0, Absent: -2,
