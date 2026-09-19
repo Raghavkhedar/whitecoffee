@@ -651,6 +651,8 @@ exports.scoreRetroactiveLeave = onDocumentWritten(
 
       const leaveRef = db.doc(`users/${userId}/leave_requests/${requestId}`);
 
+      // Candidate dates that had no status doc at read time (log-only; reset on every txn attempt).
+      let missingStatusDates = 0;
       const plan = await db.runTransaction(async (tx) => {
         // Every read before any write (Firestore transaction rule).
         const [userSnap, leaveSnap, ...statusSnaps] = await tx.getAll(userRef, leaveRef, ...statusRefs);
@@ -660,6 +662,7 @@ exports.scoreRetroactiveLeave = onDocumentWritten(
         if (!liveLeave || liveLeave.status !== "approved") return { updates: [], paidDays: 0 };
         const statusByDate = new Map();
         statusSnaps.forEach((snap, i) => { if (snap.exists) statusByDate.set(dates[i], snap.data()); });
+        missingStatusDates = dates.length - statusByDate.size;
         const result = planRetroLeaveScoring({ leave: liveLeave, todayIST, statusByDate, plBalance: userSnap.data().plBalance });
         result.updates.forEach((u) => {
           tx.set(db.doc(`users/${userId}/attendance_status/${u.date}`), {
@@ -675,6 +678,11 @@ exports.scoreRetroactiveLeave = onDocumentWritten(
         return result;
       });
 
+      // Log-only: a past granted day with no status doc is left untouched (nothing to convert).
+      // Surfaced so a gap in the nightly run's history does not pass silently; never throws, writes nothing.
+      if (missingStatusDates > 0) {
+        console.warn(`scoreRetroactiveLeave: ${missingStatusDates} of ${candidateDates} candidate date(s) had no status doc for user ${userId} leave ${requestId}`);
+      }
       if (plan.updates.length > 0) {
         console.log(`scoreRetroactiveLeave: ${userId} leave ${requestId} → ${plan.updates.length} past day(s) scored SCHL (${plan.paidDays} paid)`);
       }
@@ -1899,7 +1907,7 @@ exports.exportToSheets = onSchedule(
       const header = [
         "Date", "EMP Name", "EMP ID", "Level", "Days Passed in Month",
         "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)",
-        "SCHL (Paid) (×1)", "SCHL (Unpaid) (×0)", "USCHL (×0)", "Holiday (×1)", "Absent (×-2)",
+        "SCHL (Paid) (×1)", "SCHL (Unpaid) (×0)", "USCHL (×0)", "Holiday (×1)", "Absent (×-2)", // Holiday ×1 unless withdrawn (ops who worked it, or approved OT that day)
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
         "Covy Due (approx avg)", "Imprest Due MTD", "OT/WO amount (₹)", "SA",
@@ -1920,7 +1928,7 @@ exports.exportToSheets = onSchedule(
         const ua       = userAttendanceMTD.get(user.id) || newAttendanceTally();
 
         // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. Only the PAID slice of
-        // SCHL counts (schlPaid); USCHL never counts. Holiday is a full paid day off.
+        // SCHL counts (schlPaid); USCHL never counts. Holiday is a paid day off, +1 unless withdrawn (ops who worked it, or approved OT that day).
         const daysNP   = computeDaysNP({
           present: ua.present, sl: ua.sl, halfDay: ua.halfDay, lnf: ua.slnf,
           schlPaid: ua.schlPaid, holiday: ua.holiday, absent: ua.absent,

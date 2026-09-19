@@ -30,6 +30,7 @@ const { resolveLeaveStatus } = require("./attendanceRules");
 // arbitrarily long or not a calendar date at all. A real leave is at most 366 days, so a span
 // over MAX_DAYS is malformed: it is REFUSED (never truncated — truncating would score the
 // oldest days of a bogus range and drain plBalance).
+// MAX_DAYS is also what keeps the scoring transaction under Firestore's 500-write cap (<= 400 status writes + 1 user update).
 const MAX_DAYS = 400;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;

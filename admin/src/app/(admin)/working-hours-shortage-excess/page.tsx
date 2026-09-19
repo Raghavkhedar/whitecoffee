@@ -199,7 +199,7 @@ function aggregateForEmployee(
     if (globalFirstIn === null || firstIn < globalFirstIn) globalFirstIn = firstIn;
     if (globalLastOut === null || lastOut > globalLastOut) globalLastOut = lastOut;
 
-    // Sunday/holiday: all worked minutes count as OT, but only when admin-authorized (auto-approved).
+    // Sunday/holiday: all worked minutes become pending OT for admin approval (never auto-approved).
     // Otherwise (normal working day with a shift): declared OT is a pre-approval ceiling, not an
     // obligation — shortage is vs the plain shift; OT up to declared is auto-approved, beyond needs review.
     const restDay     = new Date(date + 'T12:00:00').getDay() === 0 || holidays.has(date);

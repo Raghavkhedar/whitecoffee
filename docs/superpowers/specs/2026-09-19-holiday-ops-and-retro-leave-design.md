@@ -25,6 +25,8 @@ Readers treat **only a strict `0`** as "+1 withdrawn"; a legacy `Holiday` doc wi
 
 Judgement calls (rulings): the +1 is withdrawn only when the ledger *would raise pending OT* (worked minutes > 0), so an employee who forgot to check out (one-sided punches → nothing to approve) or who punched in and out inside the same minute keeps the +1. A holiday worked for an admin-approved 0 minutes therefore pays nothing — that is the consequence of "only the OT".
 
+Reconciliation at read time: the +1 is withdrawn when EITHER the nightly wrote `salaryCredit: 0` (punch-based) OR approved OT minutes > 0 exist for that user+date. The second condition is applied by the readers through `effectiveHolidayCredit` (`holidayCredit.js`), because the credit frozen at 23:59 can go stale: a holiday worked with a missed checkout keeps `salaryCredit: 1`, and a later manual-OT grant (`setManualOt`) would otherwise pay the day twice (+1 and the OT).
+
 ### B. Past-date holiday guard
 
 `setHoliday` / `deleteHoliday` (admin/src/lib/firestore.ts) refuse any date before today (IST) with a message pointing at Regularization; the Attendance page hides the holiday editor for past dates. This is an admin safety guard, not a security boundary, so `firestore.rules` is untouched.
