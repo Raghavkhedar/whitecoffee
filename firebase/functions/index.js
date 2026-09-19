@@ -424,7 +424,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
         restDayCount++;
       }
       await restDayBatch.commit();
-      console.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc) (${holidayWithdrawn} holiday +1 withdrawn: worked, paid via OT)`);
+      console.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc)${restDayType === "Holiday" ? ` (${holidayWithdrawn} holiday +1 withdrawn: worked, paid via OT)` : ""}`);
       return;
     }
 
