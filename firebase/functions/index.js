@@ -20,7 +20,9 @@ const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
 const { bannerFor, parseBlocks, monthLabelToKey, assembleTab, selectRebuildKeys } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
-const { computeDeductions, computeDaysNP } = require("./payrollDeductions");
+const {
+  computeDeductions, computeDaysNP, newAttendanceTally, tallyAttendanceStatus,
+} = require("./payrollDeductions");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
@@ -934,36 +936,9 @@ exports.exportToSheets = onSchedule(
       // runtime's UTC timezone shifting a "+05:30 midnight" back to the prior day).
       const dayOfWeek = new Date(d.date + "T00:00:00Z").getUTCDay();
       if (dayOfWeek === 0) return;
-      if (!userAttendanceMTD.has(d.userId))
-        userAttendanceMTD.set(d.userId, {
-          present: 0, halfDay: 0, sl: 0, slnf: 0,
-          schl: 0, schlPaid: 0, uschl: 0, holiday: 0, absent: 0,
-        });
-      const ua = userAttendanceMTD.get(d.userId);
-      switch (d.status) {
-        case "Present":  ua.present++;  break;
-        case "HalfDay":  ua.halfDay++;  break;
-        case "SL":       ua.sl++;       break;
-        case "LNF":      ua.slnf++;     break; // "Log Not Found"
-        case "SLNF":     ua.slnf++;     break; // legacy value, same bucket
-        case "SCHL":
-          ua.schl++;
-          if (d.salaryCredit === 1) ua.schlPaid++;
-          break;
-        // A PAST month's PL/LWP docs are frozen history and never reach this map (the
-        // date filter above restricts to monthStart..today). But THIS map covers the
-        // CURRENT month, rebuilt live every run — a mid-month deploy leaves early-month
-        // days still scored "PL"/"LWP" from before the deploy, sitting right next to
-        // "SCHL" days scored after it, in the same live block. Map them onto the same
-        // buckets SCHL uses (PL behaved exactly like salaryCredit:1, LWP like
-        // salaryCredit:0) so Days NP and the Sheets columns stay correct through the
-        // transition instead of silently losing credit for leave already taken this month.
-        case "PL":       ua.schl++; ua.schlPaid++; break;
-        case "LWP":      ua.schl++;                break;
-        case "USCHL":    ua.uschl++;    break;
-        case "Holiday":  ua.holiday++;  break;
-        case "Absent":   ua.absent++;   break;
-      }
+      if (!userAttendanceMTD.has(d.userId)) userAttendanceMTD.set(d.userId, newAttendanceTally());
+      // Status → bucket mapping (incl. the legacy PL/LWP fold) lives in payrollDeductions.js.
+      tallyAttendanceStatus(userAttendanceMTD.get(d.userId), d.status, d.salaryCredit);
     });
 
     // Every attendance event ever recorded. Read ONCE and shared by the Attendance
@@ -1823,10 +1798,7 @@ exports.exportToSheets = onSchedule(
 
       sortedUsers.forEach((user) => {
         const empId    = user.employeeId || "";
-        const ua       = userAttendanceMTD.get(user.id) || {
-          present: 0, halfDay: 0, sl: 0, slnf: 0,
-          schl: 0, schlPaid: 0, uschl: 0, holiday: 0, absent: 0,
-        };
+        const ua       = userAttendanceMTD.get(user.id) || newAttendanceTally();
 
         // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. Only the PAID slice of
         // SCHL counts (schlPaid); USCHL never counts. Holiday is a full paid day off.

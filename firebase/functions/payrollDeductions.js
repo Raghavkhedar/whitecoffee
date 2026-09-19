@@ -106,4 +106,44 @@ function computeDaysNP({ present, sl, halfDay, lnf, schlPaid, holiday, absent } 
     + n(schlPaid) + n(holiday) - n(absent) * 2;
 }
 
-module.exports = { computeDeductions, computeDaysNP };
+/** A zeroed month-to-date attendance tally — the shape `tallyAttendanceStatus` fills. */
+function newAttendanceTally() {
+  return { present: 0, halfDay: 0, sl: 0, slnf: 0, schl: 0, schlPaid: 0, uschl: 0, holiday: 0, absent: 0 };
+}
+
+/**
+ * Add ONE attendance-status doc to a month-to-date tally (in place; returns the tally).
+ * Feeds `computeDaysNP` in the Sheets Employee Dashboard (map schlPaid/holiday/absent
+ * straight across and lnf ← slnf). The caller owns date filtering and the Sunday skip —
+ * this only maps a status to a bucket. Sunday / WO / anything unknown changes nothing.
+ *
+ * Legacy PL/LWP: this tally covers the CURRENT month and is rebuilt live every run, so a
+ * mid-month deploy leaves early-month days still scored "PL"/"LWP" beside "SCHL" days. They
+ * fold onto SCHL's buckets — PL behaved exactly like salaryCredit 1, LWP like 0 — so Days NP
+ * keeps the credit for leave already taken. (A past month's docs never reach this.)
+ *
+ * The Days-NP weights are mirrored in dailySpend.js (STATUS_WEIGHT / dayWeight) — change
+ * both together.
+ */
+function tallyAttendanceStatus(tally, status, salaryCredit) {
+  switch (status) {
+    case "Present":  tally.present++; break;
+    case "HalfDay":  tally.halfDay++; break;
+    case "SL":       tally.sl++;      break;
+    case "LNF":      tally.slnf++;    break; // "Log Not Found"
+    case "SLNF":     tally.slnf++;    break; // legacy value, same bucket
+    case "SCHL":
+      tally.schl++;
+      if (salaryCredit === 1) tally.schlPaid++;
+      break;
+    case "PL":       tally.schl++; tally.schlPaid++; break; // legacy ≡ salaryCredit 1
+    case "LWP":      tally.schl++;                   break; // legacy ≡ salaryCredit 0
+    case "USCHL":    tally.uschl++;   break;
+    case "Holiday":  tally.holiday++; break;
+    case "Absent":   tally.absent++;  break;
+    default: break; // Sunday, WO, unknown → no change
+  }
+  return tally;
+}
+
+module.exports = { computeDeductions, computeDaysNP, newAttendanceTally, tallyAttendanceStatus };
