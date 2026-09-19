@@ -66,6 +66,9 @@ the WO outcome only) — it falls through exactly like Absent does today.
 
 ### No historical migration
 
+> **Superseded 2026-09-19:** the relabel was later approved after all; see
+> `docs/superpowers/specs/2026-09-19-legacy-leave-status-migration-design.md`. The text below is the original decision, kept as a record.
+
 Existing `attendance_status` docs already written as `PL` or `LWP` are left exactly as they are
 — frozen history, same convention this codebase already uses for frozen Sheets month-blocks.
 Only new writes, from deploy forward, use `SCHL`/`USCHL`. Reports spanning a month before deploy
