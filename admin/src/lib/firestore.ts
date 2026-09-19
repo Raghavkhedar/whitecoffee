@@ -377,6 +377,11 @@ export async function rejectLeave(
  * Protocol 1, so there is nothing to flag, exactly like an unscored future date. Only the
  * per-date write (and any refund tied to it) is skipped; every other date in the same call
  * still cancels, writes, and refunds normally.
+ *
+ * Known, unfixed race: this reads the day statuses BEFORE opening its batch (it is not a
+ * transaction), so a cancel that lands while the `scoreRetroactiveLeave` Cloud Function is
+ * mid-flight can leave a cancelled day scored as paid SCHL and a PL day burned (window ≈ one
+ * trigger invocation).
  */
 export async function cancelLeave(
   userId: string, requestId: string, cancellerName: string,

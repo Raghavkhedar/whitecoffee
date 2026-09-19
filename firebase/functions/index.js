@@ -606,7 +606,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
 // never throws on a malformed leave doc (it returns nothing), so a deterministic failure cannot
 // turn retry into a storm.
 //
-// Two KNOWN, deliberately-unfixed races (each needs two admin actions within one invocation):
+// Two KNOWN, deliberately-unfixed races (each needs another write to land within one invocation):
 //  (a) `cancelLeave` (admin/src/lib/firestore.ts) reads day statuses BEFORE its batch, so a
 //      cancel landing while this trigger is mid-flight can leave a cancelled day scored as
 //      paid SCHL and a PL day burned (window ≈ one invocation).
