@@ -361,10 +361,10 @@ export async function rejectLeave(
  * `approveRegularization` does. Firestore batches are atomic: under the current
  * `firestore.rules` (`!isRestDate(date)`), a batch that touches even one Sunday/holiday date
  * is denied WHOLESALE — taking down the cancellation AND the `plBalance` refund for every
- * *other*, perfectly legal date in the same range. Nightly scoring skips Sundays/holidays
- * entirely (no SCHL/USCHL doc is ever written there going forward), so a real collision needs a
- * stale/legacy doc — but a cancellation spanning a Sunday is completely ordinary (leave
- * ranges are calendar-day spans), so the *reachability* of that legacy doc is not the point;
+ * *other*, perfectly legal date in the same range. Nightly scoring writes only
+ * `Sunday`/`Holiday` status docs on those dates (never leave docs), so a real collision with a
+ * leave-cancel batch still needs a stale/legacy leave doc on a rest date — but a cancellation
+ * spanning a Sunday is completely ordinary (leave ranges are calendar-day spans), so the *reachability* of that legacy doc is not the point;
  * the blast radius if it exists is. The status-field check two lines below (`'Sunday' ||
  * 'Holiday'`) is NOT a guard against this — it tests what the doc SAYS, not what the DATE
  * IS, so a legacy PL/LWP (or SCHL) doc sitting on a rest date sails straight past it into the batch.

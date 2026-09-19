@@ -655,7 +655,7 @@ export default function AttendancePage() {
                 {selectedHoliday.description && (
                   <p className="text-xs text-text-secondary mt-1">{selectedHoliday.description}</p>
                 )}
-                <p className="text-[11px] text-text-secondary/70 mt-1 italic">Skipped like a Sunday — no attendance or salary effect.</p>
+                <p className="text-[11px] text-text-secondary/70 mt-1 italic">Paid day off — credits 1 day of salary (a holiday that falls on a Sunday adds nothing extra) and is excluded from expected hours.</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button

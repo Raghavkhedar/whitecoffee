@@ -180,7 +180,7 @@ server. Reporting success for an approval the rules then reject is worse than a 
 > `salaryCredit` field (1 = drew a day from `plBalance`, 0 = balance already exhausted).
 > **USCHL** (Unscheduled Leave) is never written nightly — admin-only, set as a Regularization
 > outcome, always unpaid. Sundays / company holidays get a `Sunday` / `Holiday` doc (Holiday
-> credits +1 day). `PL` / `LWP` are **legacy**: retired for new writes, existing docs untouched.
+> credits +1 day, 0 if dated on a Sunday). `PL` / `LWP` are **legacy**: retired for new writes, existing docs untouched.
 > No events + no leave → **Absent**.
 >
 > **No app code change was needed for SCHL/USCHL/Holiday:** `AttendanceStatusRecord.status` is a

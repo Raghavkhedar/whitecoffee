@@ -38,7 +38,7 @@ No test framework configured.
 - `users/{uid}/settlements/{YYYY-MM}` — frozen monthly OT/shortage/WO settlement (one per ops employee): full breakdown + `netMins` + `settlementCash` + `locked`/`settledBy`. Written by admin **Settle & Lock** on the **OT Settlements** page (`settleMonth`); the Cloud Function reads the **previous month's locked** settlement and adds `settlementCash` to payroll TOTAL DUE (OT paid in arrears). `settlementCash = woDays×rate + netMins/480×rate`
 - `users/{uid}/material_requests/`
 - Top-level: `material_purchases`, `material_transfers`, `tool_transfers`, `work_progress`, `conveyance`
-- `holidays/{date}` — company-wide holidays (`title`/`description`), marked by admin on the **Attendance** calendar. A marked day is never scored Absent: the nightly function writes a `Holiday` status doc for every active user with no doc yet (a Sunday gets a payroll-neutral `Sunday` doc the same way), and `Holiday` credits **+1 day** in Days NP. It is excluded from expected working days and from expected-hours/shortage math (a paid day off, nothing more). Managed via `setHoliday`/`deleteHoliday`; read by `getHolidaysForMonth`/`getHolidaysForDateRange`.
+- `holidays/{date}` — company-wide holidays (`title`/`description`), marked by admin on the **Attendance** calendar. A marked day is never scored Absent: the nightly function writes a `Holiday` status doc for every active user with no doc yet (a Sunday gets a payroll-neutral `Sunday` doc the same way), and `Holiday` credits **+1 day** in Days NP (non-Sunday only — a Sunday-dated Holiday still gets its doc but adds 0, since the month-to-date Days-NP loop skips Sundays first). It is excluded from expected working days and from expected-hours/shortage math (a paid day off, nothing more). Managed via `setHoliday`/`deleteHoliday`; read by `getHolidaysForMonth`/`getHolidaysForDateRange`.
 
 Required composite indexes (Firebase Console):
 - `leave_requests`: `status` ASC + `submittedAt` ASC
@@ -51,7 +51,7 @@ Required composite indexes (Firebase Console):
 
 > Full backend reference: **`docs/cloud-functions.md`** (all 6 functions, triggers, collections, deploy/auth notes).
 
-`computeDailyAttendanceStatus` Cloud Function runs at 23:59 IST. **Sundays and company-wide holidays (`holidays/{date}`) are not scored: the function writes a `Sunday` / `Holiday` status doc (`resolveRestDayType` in `attendanceRules.js`; Holiday wins when both apply) for every active user who has no doc yet — an existing auto/admin doc wins — then returns. No penalty; `Sunday` credits 0, `Holiday` credits +1 day.**
+`computeDailyAttendanceStatus` Cloud Function runs at 23:59 IST. **Sundays and company-wide holidays (`holidays/{date}`) are not scored: the function writes a `Sunday` / `Holiday` status doc (`resolveRestDayType` in `attendanceRules.js`; Holiday wins when both apply) for every active user who has no doc yet — an existing auto/admin doc wins — then returns. No penalty; `Sunday` credits 0, `Holiday` credits +1 day (a Holiday dated on a Sunday adds 0 — the month-to-date Days-NP loop skips Sundays first).**
 
 **Events and window by role** (event types + window come from `roleCapabilities`, not a hardcoded branch):
 - **Office/admin**: `office_in` / `office_out`; fixed 10:00–18:00 IST
@@ -64,9 +64,9 @@ Required composite indexes (Firebase Console):
 | Short Leave (SL) | Both punches present, early-out only (checked in on time, no late-in) — any amount, zero grace | 0.75 |
 | Half Day | Any late-in at all, however small — zero grace; wins over an early-out on the same day | 0.5 |
 | LNF (Log Not Found) | Exactly one punch (missing check-in OR check-out); formerly SLNF | 0.5 |
-| SCHL (Scheduled Leave) | Day inside an APPROVED leave, no check-in punches. Always `SCHL`; `salaryCredit` says whether it was paid | 1 if `salaryCredit: 1` (drew from `plBalance`), 0 if `salaryCredit: 0` (balance exhausted) |
-| USCHL (Unscheduled Leave) | **Admin-only** — Regularization outcome; never written by the nightly function. No `salaryCredit`, no conveyance, no wo_ledger effect | 0 |
-| Holiday | `holidays/{date}` — auto-written for every active user (no punches needed) | 1 |
+| SCHL (Scheduled Leave) | Day inside an APPROVED leave, no punches. Always `SCHL`; `salaryCredit` says whether it was paid | 1 if `salaryCredit: 1` (drew from `plBalance`), 0 if `salaryCredit: 0` (balance exhausted) |
+| USCHL (Unscheduled Leave) | **Admin-only** — Regularization outcome; never written by the nightly function. No `salaryCredit`, no conveyance, creates no wo_ledger debt (and clears any stale one — `approveRegularization` deletes a non-WO date's ledger doc). Regularizing an auto-SCHL day to USCHL can leave a stale `salaryCredit` on the doc; payroll ignores it because only `status === 'SCHL'` counts credit | 0 |
+| Holiday | `holidays/{date}` — auto-written for every active user (no punches needed) | 1 (non-Sunday; 0 if the Holiday falls on a Sunday) |
 | Absent | No events, no approved leave — all roles alike (ops included, since 2026-07-17) | -2 |
 
 Legacy `PL` (= paid, 1) / `LWP` (= unpaid, 0) docs written before the SCHL change stay in Firestore untouched and stay visible (the TS `AttendanceStatus` type keeps them as legacy members; badges/counts handle them). `SCHL` example: 4 approved leave days with `plBalance` 2 → all four read `SCHL`, the first two `salaryCredit: 1`, the last two `salaryCredit: 0`.
@@ -75,7 +75,7 @@ Legacy `PL` (= paid, 1) / `LWP` (= unpaid, 0) docs written before the SCHL chang
 
 **`markedBy: 'backfill'` — 22 docs, 2026-07-09..16, 5 ops employees (S106/S271/S276/S353/S369), written 2026-07-17.** One-time recovery of ops days that were *worked* but never scored, because the pre-2026-07-17 function skipped any ops day with no `planned_hours`. Scored by the same rule the nightly now uses (plan if present, else default 10:00–18:00). **Punches-only** — no Absent/PL/LWP was ever created retroactively, so the backfill could only add days people worked, never remove pay; days with no punches were left unmarked. Existing docs (incl. admin regularizations) were never overwritten. The HTTP function was deployed, dry-run, committed, then deleted — it is not in source, matching the earlier `backfillAttendanceStatus` precedent. Note some recovered days had a plan entered *late* (e.g. a `planned_hours/2026-07-09` created on 07-10), after that night's run had already skipped them: **entering a shift retroactively does not re-score the day** — the nightly only ever writes today. A second pass then scanned **all 22 users, every role, inactive included**, and found exactly **one** further recoverable day (a suspended test account, deliberately left) — confirming the bug only ever touched operations, that office/admin/sales were never affected, and that the recovery is complete.
 
-**Days NP** (pure, unit-tested `computeDaysNP` in `functions/payrollDeductions.js`): `present + SL×0.75 + halfDay×0.5 + LNF×0.5 + Σ(salaryCredit over SCHL days) + holiday×1 − absent×2`. Only the **paid** slice of SCHL counts; USCHL and unpaid SCHL contribute 0. In the current-month Sheets block, legacy `PL` folds into SCHL-paid and legacy `LWP` into SCHL-unpaid so a mid-month deploy loses no credit.
+**Days NP** (pure, unit-tested `computeDaysNP` in `functions/payrollDeductions.js`): `present + SL×0.75 + halfDay×0.5 + LNF×0.5 + Σ(salaryCredit over SCHL days) + holiday×1 − absent×2` (`holiday` counts non-Sunday Holiday docs — the MTD loop skips Sundays). Only the **paid** slice of SCHL counts; USCHL and unpaid SCHL contribute 0. In the current-month Sheets block, legacy `PL` folds into SCHL-paid and legacy `LWP` into SCHL-unpaid so a mid-month deploy loses no credit.
 
 **Salary**: `daysNP × salaryRate`
 
