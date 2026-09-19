@@ -113,7 +113,7 @@ function deriveStatus(
   // Ops are scored every working day like everyone else (flipped 2026-07-17) — a day with no
   // plan and no punches is a no-show, not an unscheduled day. Callers guard Sundays/holidays,
   // matching the Cloud Function's function-level skips. (Approved leave isn't visible here;
-  // PL/LWP always arrive via the stored doc the nightly run writes.)
+  // SCHL/USCHL always arrive via the stored doc the nightly run writes.)
   if (!worked) return 'Absent';
 
   if (checkIns.length === 0 || checkOuts.length === 0) return 'LNF';
@@ -256,7 +256,7 @@ export default function AttendancePage() {
       else if (s.status === 'SL') sl++;
       else if (s.status === 'LNF' || s.status === 'SLNF') slnf++;
       else if (s.status === 'Absent')  absent++;
-      else if (s.status === 'PL' || s.status === 'LWP') leave++;
+      else if (s.status === 'SCHL' || s.status === 'USCHL') leave++;
     });
     return { present, halfDay, sl, slnf, absent, leave };
   }
@@ -443,7 +443,7 @@ export default function AttendancePage() {
   const totalSL      = statusValues.filter(s => s === 'SL').length;
   const totalSLNF    = statusValues.filter(s => s === 'LNF' || s === 'SLNF').length;
   const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
-  const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'LWP').length;
+  const totalLeave   = statusValues.filter(s => s === 'SCHL' || s === 'USCHL').length;
   const totalWo      = statusValues.filter(s => s === 'WO').length;
 
   const selectedDateDisplay = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
@@ -605,7 +605,7 @@ export default function AttendancePage() {
             { label: 'SL = Short Leave',  cls: 'bg-amber-100 text-amber-700' },
             { label: '? = Log Not Found', cls: 'bg-gray-100 text-gray-700' },
             { label: 'A = Absent',        cls: 'bg-red-100 text-red-700' },
-            { label: 'L = PL / LWP',     cls: 'bg-blue-100 text-blue-700' },
+            { label: 'L = SCHL / USCHL', cls: 'bg-blue-100 text-blue-700' },
             { label: 'Holiday',           cls: 'bg-purple-100 text-purple-700' },
           ].map(({ label, cls }) => (
             <span key={label} className={`text-xs px-2 py-0.5 rounded font-medium ${cls}`}>
