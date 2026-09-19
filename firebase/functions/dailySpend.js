@@ -5,7 +5,8 @@
 
 // Attendance-status → payroll multiplier. Mirrors the MTD `daysNP` weights (computeDaysNP +
 // tallyAttendanceStatus in payrollDeductions.js): Present ×1, SL ×0.75, HalfDay/LNF/SLNF ×0.5,
-// Holiday ×1, USCHL ×0, Absent ×−2 (the −2 penalty). SCHL is NOT in this map: it pays 1 only
+// Holiday ×1 (unless its `salaryCredit` is exactly 0: an operations employee who worked it is
+// paid through OT approval instead — see dayWeight), USCHL ×0, Absent ×−2 (the −2 penalty). SCHL is NOT in this map: it pays 1 only
 // when the day's `salaryCredit` is exactly 1 (drew a day from plBalance), else 0 — see
 // dayWeight. PL ×1 / LWP ×0 are LEGACY (retired for new writes, but old docs still sit inside
 // the snapshot's open window); PL behaved like salaryCredit 1, LWP like 0.
@@ -21,6 +22,7 @@ function round2(n) {
 
 function dayWeight(status, salaryCredit) {
   if (status === "SCHL") return salaryCredit === 1 ? 1 : 0;
+  if (status === "Holiday") return salaryCredit === 0 ? 0 : 1; // 0 = operations worked it, paid via OT instead
   return STATUS_WEIGHT[status] ?? 0;
 }
 

@@ -116,6 +116,8 @@ function newAttendanceTally() {
  * Feeds `computeDaysNP` in the Sheets Employee Dashboard (map schlPaid/holiday/absent
  * straight across and lnf ← slnf). The caller owns date filtering and the Sunday skip —
  * this only maps a status to a bucket. Sunday / WO / anything unknown changes nothing.
+ * A Holiday counts unless salaryCredit is exactly 0 (an operations employee who worked it is
+ * paid through OT approval instead); a legacy Holiday doc with no salaryCredit counts.
  *
  * Legacy PL/LWP: this tally covers the CURRENT month and is rebuilt live every run, so a
  * mid-month deploy leaves early-month days still scored "PL"/"LWP" beside "SCHL" days. They
@@ -139,7 +141,7 @@ function tallyAttendanceStatus(tally, status, salaryCredit) {
     case "PL":       tally.schl++; tally.schlPaid++; break; // legacy ≡ salaryCredit 1
     case "LWP":      tally.schl++;                   break; // legacy ≡ salaryCredit 0
     case "USCHL":    tally.uschl++;   break;
-    case "Holiday":  tally.holiday++; break;
+    case "Holiday":  if (salaryCredit !== 0) tally.holiday++; break; // 0 = operations worked it, paid via OT instead
     case "Absent":   tally.absent++;  break;
     default: break; // Sunday, WO, unknown → no change
   }

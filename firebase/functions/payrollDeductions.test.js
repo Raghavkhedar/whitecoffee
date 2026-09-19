@@ -242,3 +242,18 @@ test("tallyAttendanceStatus: mixed mid-month deploy [PL, LWP, SCHL(1), SCHL(0), 
   });
   assert.equal(daysNP, 1);
 });
+
+// ── Holiday credit (operations who worked the holiday are paid through OT instead) ──────────
+
+test("tally: a Holiday with no salaryCredit (legacy doc) is paid", () => {
+  const t = tallyAttendanceStatus(newAttendanceTally(), "Holiday", undefined);
+  assert.equal(t.holiday, 1);
+});
+
+test("tally: a Holiday with salaryCredit 1 is paid", () => {
+  assert.equal(tallyAttendanceStatus(newAttendanceTally(), "Holiday", 1).holiday, 1);
+});
+
+test("tally: a Holiday with salaryCredit 0 is NOT counted (paid via OT instead)", () => {
+  assert.equal(tallyAttendanceStatus(newAttendanceTally(), "Holiday", 0).holiday, 0);
+});

@@ -182,3 +182,11 @@ test("saRowPatch: ₹0 against a row already at 0 is a no-op", () => {
 test("saRowPatch: ₹0 with no row → null (an SA of ₹0 must not conjure an all-zero row)", () => {
   assert.equal(saRowPatch(null, 0), null);
 });
+
+test("Holiday: legacy doc (no salaryCredit) and salaryCredit 1 pay a day; salaryCredit 0 pays nothing", () => {
+  assert.equal(dayWeight("Holiday"), 1);
+  assert.equal(dayWeight("Holiday", 1), 1);
+  assert.equal(dayWeight("Holiday", 0), 0);
+  assert.equal(dailySalary(1000, "Holiday", 0), 0);
+  assert.equal(dailySalary(1000, "Holiday", 1), 1000);
+});

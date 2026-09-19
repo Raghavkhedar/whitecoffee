@@ -16,6 +16,8 @@ const {
   resolveLeaveStatus,
   shouldDecrementPlBalance,
 } = require("./attendanceRules");
+// Whether a Holiday day still pays its +1 (operations who worked it are paid via OT instead).
+const { resolveHolidayCredit } = require("./holidayCredit");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
@@ -398,10 +400,19 @@ exports.computeDailyAttendanceStatus = onSchedule(
     if (restDayType) {
       const restDayBatch = db.batch();
       let restDayCount = 0;
+      let holidayWithdrawn = 0;
       for (const user of allUsers) {
         if (priorStatus.has(user.id)) continue; // any existing doc (auto or admin) wins
+        // Holiday only: an operations employee who actually worked it is paid through the
+        // OT-approval flow instead (all rest-day work is raised as pending OT), so the +1 day
+        // is withdrawn (salaryCredit 0). A Sunday doc carries no credit field.
+        const holidayCredit = restDayType === "Holiday"
+          ? resolveHolidayCredit(user.role, eventsByUser.get(user.id) || [])
+          : undefined;
+        if (holidayCredit === 0) holidayWithdrawn++;
         restDayBatch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
           status: restDayType,
+          ...(holidayCredit !== undefined ? { salaryCredit: holidayCredit } : {}),
           markedBy: "auto",
           date: today,
           userId: user.id,
@@ -413,7 +424,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
         restDayCount++;
       }
       await restDayBatch.commit();
-      console.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc)`);
+      console.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc) (${holidayWithdrawn} holiday +1 withdrawn: worked, paid via OT)`);
       return;
     }
 
