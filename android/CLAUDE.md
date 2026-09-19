@@ -164,7 +164,8 @@ server. Reporting success for an approval the rules then reject is worse than a 
 | userName | String | Denormalized |
 | employeeId | String | Denormalized |
 | role | String | operations / office / sales / admin |
-| status | String | Present / SL / HalfDay / LNF / Absent / PL / LWP / WO |
+| status | String | Present / SL / HalfDay / LNF / Absent / SCHL / USCHL / WO / Sunday / Holiday (legacy: PL / LWP) |
+| salaryCredit | Number? | Only on `SCHL` docs: `1` = paid day (drew from `plBalance`), `0` = unpaid (balance exhausted). Absent on every other status. Not mapped by the Android model (payroll-only) |
 | markedBy | String | auto (Cloud Function) / admin (manual override) / backfill |
 | updatedAt | Timestamp | |
 
@@ -174,8 +175,17 @@ server. Reporting success for an approval the rules then reject is worse than a 
 > side** — any late-in at all → **HalfDay**; any early-out at all with no late-in → **SL**;
 > neither → **Present**; both present → HalfDay wins. On-time is **inclusive** of the start —
 > checking in at exactly 10:00 is on time (`inMinutes ≤ 600`), NOT late. One punch → **LNF**
-> (Log Not Found, formerly SLNF). No events + approved leave → **PL** (if plBalance > 0) or
-> **LWP**. No events + no leave → **Absent**.
+> (Log Not Found, formerly SLNF). No events + approved leave → **SCHL** (Scheduled Leave) —
+> always the same status string; whether the day is paid is carried by the per-day
+> `salaryCredit` field (1 = drew a day from `plBalance`, 0 = balance already exhausted).
+> **USCHL** (Unscheduled Leave) is never written nightly — admin-only, set as a Regularization
+> outcome, always unpaid. Sundays / company holidays get a `Sunday` / `Holiday` doc (Holiday
+> credits +1 day). `PL` / `LWP` are **legacy**: retired for new writes, existing docs untouched.
+> No events + no leave → **Absent**.
+>
+> **No app code change was needed for SCHL/USCHL/Holiday:** `AttendanceStatusRecord.status` is a
+> raw passthrough `String` and the app never derives a leave status live, so these display as
+> stored.
 >
 > The app's live home-screen / regularization preview uses **`AttendanceStatusRules`**
 > (`data/model`) — a pure, unit-tested port of this logic (minute-based, SL-aware) so what the
