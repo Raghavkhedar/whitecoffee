@@ -10,6 +10,7 @@ import { LAUNCH_DATE } from '@/lib/config';
 import { classify, resolveOpsWindow, OFFICE_START_MIN, OFFICE_END_MIN } from '@/lib/attendanceRules';
 import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger } from '@/lib/roleCapabilities';
 import { auth } from '@/lib/firebase';
+import { HOLIDAY_PAST_MESSAGE } from '@/lib/holidayGuard';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -381,7 +382,7 @@ export default function AttendancePage() {
       setHolidaysByDate(prev => new Map(prev).set(selectedDate, saved));
       setHolidayForm(null);
     } catch (err) {
-      setHolidayError('Failed to save holiday. Please try again.');
+      setHolidayError(err instanceof Error && err.message === HOLIDAY_PAST_MESSAGE ? err.message : 'Failed to save holiday. Please try again.');
       console.error(err);
     }
     setHolidaySaving(false);
@@ -395,7 +396,7 @@ export default function AttendancePage() {
       setHolidaysByDate(prev => { const next = new Map(prev); next.delete(selectedDate); return next; });
       setHolidayForm(null);
     } catch (err) {
-      setHolidayError('Failed to remove holiday. Please try again.');
+      setHolidayError(err instanceof Error && err.message === HOLIDAY_PAST_MESSAGE ? err.message : 'Failed to remove holiday. Please try again.');
       console.error(err);
     }
     setHolidaySaving(false);
@@ -409,6 +410,8 @@ export default function AttendancePage() {
   const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
   const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
   const selectedHoliday  = holidaysByDate.get(selectedDate);
+  // A day before today is already scored — its holiday can't be added/edited/removed (Regularization instead).
+  const selectedIsPast   = selectedDate < todayStr;
   // The canonical predicate (same one setAttendanceStatus/markWo enforce server-adjacent),
   // reused rather than re-deriving "is this a rest day" a fourth time in this codebase.
   const selectedIsRestDay = isRestDay(selectedDate, holidaySet);
@@ -657,6 +660,7 @@ export default function AttendancePage() {
                 )}
                 <p className="text-[11px] text-text-secondary/70 mt-1 italic">Paid day off — credits 1 day of salary and is excluded from expected hours. Operations staff who work it are paid through OT approval instead (no day credit). A holiday that falls on a Sunday adds nothing extra.</p>
               </div>
+              {!selectedIsPast && (
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => setHolidayForm({ title: selectedHoliday.title, description: selectedHoliday.description || '' })}
@@ -668,6 +672,7 @@ export default function AttendancePage() {
                   {holidaySaving ? '…' : 'Remove'}
                 </button>
               </div>
+              )}
             </div>
           ) : holidayForm ? (
             <div className="p-4 rounded-lg bg-purple-50 border border-purple-200 space-y-3">
@@ -702,10 +707,13 @@ export default function AttendancePage() {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : !selectedIsPast ? (
             <button onClick={() => setHolidayForm({ title: '', description: '' })} className="btn-outline !py-1.5 !px-3 !text-xs">
               + Mark as holiday
             </button>
+          ) : null}
+          {selectedIsPast && (
+            <p className="text-[11px] text-text-secondary/70 mt-2 italic">Holidays can&apos;t be changed for past dates — fix a scored day through Regularization.</p>
           )}
         </div>
 

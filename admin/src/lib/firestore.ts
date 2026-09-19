@@ -13,6 +13,7 @@ import { PAY_FIELDS, type Pay } from './compensation';
 import { usesConveyance, usesOtShortageLedger } from './roleCapabilities';
 import { WO_DEBIT_MINS } from './otLedger';
 import { pendingOtDayCount } from './otAggregate';
+import { holidayEditError } from './holidayGuard';
 // Site removed from import — site management not in use
 // DailyAssignment, SiteAssignmentItem removed from import — daily assignment system not in use
 import type { User, LeaveRequest, AttendanceRecord, SentNotification, AttendanceStatus, RegularizationRequest, ConveyanceRecord, PlannedHours, OtApproval, Holiday, Settlement, SpecialAllowance, AttendanceCorrection, AuditEntry, WoLedgerEntry } from '@/types';
@@ -1207,6 +1208,8 @@ export async function getHolidaysForDateRange(start: string, end: string): Promi
 }
 
 export async function setHoliday(date: string, title: string, description: string, createdBy: string): Promise<void> {
+  const blocked = holidayEditError(date, istTodayStr());
+  if (blocked) throw new Error(blocked);
   await setDoc(
     doc(db, 'holidays', date),
     stamped({ date, title: title.trim(), description: description.trim(), createdBy, createdAt: Timestamp.now() }),
@@ -1215,6 +1218,8 @@ export async function setHoliday(date: string, title: string, description: strin
 }
 
 export async function deleteHoliday(date: string): Promise<void> {
+  const blocked = holidayEditError(date, istTodayStr());
+  if (blocked) throw new Error(blocked);
   await deleteDoc(doc(db, 'holidays', date));
 }
 
