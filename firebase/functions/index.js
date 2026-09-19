@@ -602,14 +602,20 @@ exports.computeDailyAttendanceStatus = onSchedule(
 // Failure: an error is logged with its context and RE-THROWN, and the trigger has `retry: true`,
 // so a transient failure is redelivered instead of silently leaving pay-affecting days Absent.
 // Retrying is correctness-safe: each attempt is a fresh transaction that re-reads the status
-// docs, and the planner is idempotent (an already-SCHL day is no longer Absent). The planner
-// never throws on a malformed leave doc (it returns nothing), so a deterministic failure cannot
-// turn retry into a storm.
+// docs AND the leave doc itself (the event snapshot is only used to pick candidate dates, so a
+// retry never acts on a stale leave — e.g. one an admin has since cancelled a day of), and the
+// planner is idempotent (an already-SCHL day is no longer Absent; a candidate date with no status
+// doc is skipped). The planner never throws on a malformed leave doc (it returns nothing), so a
+// deterministic failure cannot turn retry into a storm.
 //
 // Two KNOWN, deliberately-unfixed races (each needs another write to land within one invocation):
 //  (a) `cancelLeave` (admin/src/lib/firestore.ts) reads day statuses BEFORE its batch, so a
 //      cancel landing while this trigger is mid-flight can leave a cancelled day scored as
-//      paid SCHL and a PL day burned (window ≈ one invocation).
+//      paid SCHL and a PL day burned (window ≈ one invocation). Re-reading the leave inside
+//      the transaction NARROWS this — a cancel whose `cancelledDates` write commits before this
+//      transaction commits makes the transaction retry and see the cancel — but does NOT close
+//      it: `cancelLeave`'s batch is unconditional, so a cancel whose batch commits AFTER this
+//      transaction still leaves the day scored.
 //  (b) At ~23:59–00:00 IST the nightly run reads plBalance up front and decrements it
 //      non-transactionally, so an approval landing in that window can score two paid days
 //      against one day of balance and leave plBalance at −1 (self-heals at the next monthly
@@ -641,13 +647,18 @@ exports.scoreRetroactiveLeave = onDocumentWritten(
       const userRef = db.doc(`users/${userId}`);
       const statusRefs = dates.map((d) => db.doc(`users/${userId}/attendance_status/${d}`));
 
+      const leaveRef = db.doc(`users/${userId}/leave_requests/${requestId}`);
+
       const plan = await db.runTransaction(async (tx) => {
         // Every read before any write (Firestore transaction rule).
-        const [userSnap, ...statusSnaps] = await tx.getAll(userRef, ...statusRefs);
+        const [userSnap, leaveSnap, ...statusSnaps] = await tx.getAll(userRef, leaveRef, ...statusRefs);
         if (!userSnap.exists) return { updates: [], paidDays: 0 };
+        // Plan from the leave as it is NOW, not the event snapshot (which may be stale on a retry).
+        const liveLeave = leaveSnap.exists ? leaveSnap.data() : null;
+        if (!liveLeave || liveLeave.status !== "approved") return { updates: [], paidDays: 0 };
         const statusByDate = new Map();
         statusSnaps.forEach((snap, i) => { if (snap.exists) statusByDate.set(dates[i], snap.data()); });
-        const result = planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance: userSnap.data().plBalance });
+        const result = planRetroLeaveScoring({ leave: liveLeave, todayIST, statusByDate, plBalance: userSnap.data().plBalance });
         result.updates.forEach((u) => {
           tx.set(db.doc(`users/${userId}/attendance_status/${u.date}`), {
             status: u.status,
