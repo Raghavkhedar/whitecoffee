@@ -276,16 +276,27 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
     // partial first attempt would cut an employee's pay for a day their balance genuinely bought.
     // Add the drawn day back for the scoring decision only — nothing is written to the balance.
     //
-    // `priorDrewBalance` is DERIVED from the decrement guard rather than restating its condition,
-    // so the two can never drift: `shouldDecrementPlBalance(1, prior)` answers "would a paid day
-    // draw balance given this prior doc?", and its negation is exactly "this date has already
-    // drawn one" — covering both a `salaryCredit: 1` SCHL doc and a legacy `PL` doc with no
-    // credit field at all. attendanceRules.js is untouched.
+    // "Has this date already drawn a balance day?" is a question only a LEAVE day can answer, so
+    // `shouldDecrementPlBalance` is asked about `leavePrior` — the prior doc if and only if it is
+    // one — and never about a prior of some other kind. The guard keys on `salaryCredit`, and a
+    // `Holiday` doc also carries `salaryCredit: 1` (the rest-day branch writes it via
+    // resolveHolidayCredit) even though that credit is the holiday's own pay and not a PL draw.
+    // Handing such a doc to the guard mints money both ways: the day is scored paid out of nothing
+    // (effective balance) AND the draw is suppressed (decrement). Reachable whenever a date is
+    // re-scored as a working day after being scored as a rest day — e.g. an admin removes a
+    // `holidays/{date}` entered by mistake. Sanitising at the call site keeps the fix here;
+    // attendanceRules.js is a three-way-mirrored rule module and is untouched.
+    //
+    // `priorDrewBalance` is then DERIVED from the guard rather than restating its condition, so
+    // the two can never drift: `shouldDecrementPlBalance(1, leavePrior)` answers "would a paid day
+    // draw balance given this prior?", and its negation is exactly "this date already drew one" —
+    // covering an SCHL doc with `salaryCredit: 1` and a legacy `PL` doc with no credit field.
     //
     // Note what this deliberately does NOT do: it never adds a day back to the stored balance.
     // A cancellation refunds through `cancelLeave`'s own transaction; if the leave no longer
     // covers the date, the day is rewritten Absent with no credit and the balance is left alone.
-    const priorDrewBalance = !shouldDecrementPlBalance(1, prior);
+    const leavePrior = prior && (prior.status === "SCHL" || prior.status === "PL") ? prior : undefined;
+    const priorDrewBalance = !shouldDecrementPlBalance(1, leavePrior);
     const effectiveBalance = priorDrewBalance ? (Number(live.plBalance) || 0) + 1 : live.plBalance;
     // Punches are NOT re-read: `events`/`plan`/`role` stay the snapshot's, so this rescoring can
     // only ever land back in {Absent, SCHL} — the partition invariant holds, and a transactional
@@ -303,10 +314,11 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
       user: { ...item.user, ...live, id: item.user.id },
       today, status, salaryCredit, now: () => Timestamp.now(),
     }));
-    // Same single decision point as before — but `prior` was read in THIS transaction, so it is
-    // no longer advisory: a concurrent scoreRetroactiveLeave that drew the same day is now
-    // serialized against us instead of racing us (race (b)).
-    if (shouldDecrementPlBalance(salaryCredit, prior)) {
+    // Same single decision point as before — but `leavePrior` was read in THIS transaction, so it
+    // is no longer advisory: a concurrent scoreRetroactiveLeave that drew the same day is now
+    // serialized against us instead of racing us (race (b)). Same sanitised prior as above, so
+    // the scoring decision and the draw decision can never disagree about this date's history.
+    if (shouldDecrementPlBalance(salaryCredit, leavePrior)) {
       tx.update(userRef, { plBalance: FieldValue.increment(-1) });
       return { status, decremented: true };
     }

@@ -920,3 +920,158 @@ test("a mid-way chunk commit failure THROWS (nothing swallowed) and a retry conv
   assert.equal(s.scored, 450);
   assert.equal(s.ok, true);
 });
+
+// ── The effective balance counts only a PL DRAW, not any prior `salaryCredit: 1` ──────────────
+//
+// A Holiday doc also carries `salaryCredit: 1` (the rest-day branch writes it via
+// resolveHolidayCredit), but that credit is the holiday's own pay — it is NOT a drawn PL day. If
+// the effective balance added a day back for it, a leave day re-scored over a stale Holiday doc
+// would be paid out of thin air. Reachable: the holiday doc is scored first, an admin then
+// removes `holidays/{date}` (wrong date entered), and the date is re-scored as a working day.
+
+test("F1 a stale HOLIDAY prior (credit 1) is NOT a PL draw: with balance 0 the leave day is UNPAID", async () => {
+  const uid = await seedUser({ plBalance: 0 });
+  await seedLeave(uid);
+  await seedStatus(uid, TODAY, {
+    date: TODAY, userId: uid, userName: `User ${uid}`, employeeId: `E-${uid}`, role: "office",
+    status: "Holiday", salaryCredit: 1, markedBy: "auto", updatedAt: Timestamp.now(),
+  });
+  // holidays/{TODAY} deliberately absent — the date is scored as an ordinary working day now.
+
+  await run();
+
+  const s = await readStatus(uid);
+  assert.equal(s.status, "SCHL");
+  assert.equal(s.salaryCredit, 0, "no balance funded this day, so it must not be paid");
+  assert.equal(await readBalance(uid), 0, "and nothing is minted");
+  assert.equal((await readSummary()).plDeducted, 0);
+});
+
+test("F1 a stale HOLIDAY prior (credit 1) with balance 1: paid, and the balance IS drawn once", async () => {
+  const uid = await seedUser({ plBalance: 1 });
+  await seedLeave(uid);
+  await seedStatus(uid, TODAY, {
+    date: TODAY, userId: uid, userName: `User ${uid}`, employeeId: `E-${uid}`, role: "office",
+    status: "Holiday", salaryCredit: 1, markedBy: "auto", updatedAt: Timestamp.now(),
+  });
+
+  await run();
+
+  const s = await readStatus(uid);
+  assert.equal(s.status, "SCHL");
+  assert.equal(s.salaryCredit, 1);
+  assert.equal(await readBalance(uid), 0, "paid AND drawn — never paid while keeping the day");
+  assert.equal((await readSummary()).plDeducted, 1);
+});
+
+test("F1 a stale HOLIDAY prior with credit 0 (ops who worked it) behaves the same way", async () => {
+  const uid = await seedUser({ role: "operations", plBalance: 1 });
+  await seedLeave(uid);
+  await seedStatus(uid, TODAY, {
+    date: TODAY, userId: uid, userName: `User ${uid}`, employeeId: `E-${uid}`, role: "operations",
+    status: "Holiday", salaryCredit: 0, markedBy: "auto", updatedAt: Timestamp.now(),
+  });
+
+  await run();
+
+  assert.equal((await readStatus(uid)).status, "SCHL");
+  assert.equal((await readStatus(uid)).salaryCredit, 1);
+  assert.equal(await readBalance(uid), 0, "drawn exactly once");
+});
+
+test("F1 a stale SUNDAY prior (no credit field) is not a PL draw either", async () => {
+  const uid = await seedUser({ plBalance: 1 });
+  await seedLeave(uid);
+  await seedStatus(uid, TODAY, {
+    date: TODAY, userId: uid, userName: `User ${uid}`, employeeId: `E-${uid}`, role: "office",
+    status: "Sunday", markedBy: "auto", updatedAt: Timestamp.now(),
+  });
+
+  await run();
+
+  assert.equal((await readStatus(uid)).status, "SCHL");
+  assert.equal((await readStatus(uid)).salaryCredit, 1);
+  assert.equal(await readBalance(uid), 0, "drawn exactly once");
+});
+
+// ── F2: the plBalance coercion is load-bearing ────────────────────────────────────────────────
+
+test("F2 a user with NO plBalance field re-scored over a paid SCHL stays paid, with no NaN written", async () => {
+  const uid = newUid();
+  // Deliberately no plBalance key at all — legacy user docs look like this.
+  await db.doc(`users/${uid}`).set({ name: `User ${uid}`, employeeId: `E-${uid}`, role: "office" });
+  await seedLeave(uid);
+  await seedStatus(uid, TODAY, {
+    date: TODAY, userId: uid, userName: `User ${uid}`, employeeId: `E-${uid}`, role: "office",
+    status: "SCHL", salaryCredit: 1, markedBy: "auto", updatedAt: Timestamp.now(),
+  });
+
+  await run();
+
+  const s = await readStatus(uid);
+  assert.equal(s.status, "SCHL");
+  assert.equal(s.salaryCredit, 1, "undefined + 1 must be 1, not NaN");
+  assert.equal(Number.isNaN(s.salaryCredit), false);
+  const user = (await db.doc(`users/${uid}`).get()).data();
+  assert.equal("plBalance" in user, false, "the balance was never written, so no NaN landed on the user doc");
+  assert.equal((await readSummary()).plDeducted, 0);
+});
+
+// ── F3: more transactional users than the concurrency chunk (CHUNK = 10) ─────────────────────
+
+test("F3 30 transactional users (3x the concurrency chunk) are every one scored, exactly once", async () => {
+  const paid = [];    // approved leave + balance  -> SCHL credit 1, one draw each
+  const unpaid = [];  // approved leave, balance 0 -> SCHL credit 0, no draw
+  const absent = [];  // no leave                  -> Absent
+  for (let i = 0; i < 30; i++) {
+    const bucket = i % 3;
+    const uid = await seedUser({ plBalance: bucket === 0 ? 2 : 0 });
+    if (bucket === 0) { await seedLeave(uid); paid.push(uid); }
+    else if (bucket === 1) { await seedLeave(uid); unpaid.push(uid); }
+    else absent.push(uid);
+  }
+
+  const { rec } = await run();
+
+  assert.equal(rec.transactions, 30, "one transaction per user, none run twice");
+  assert.equal(new Set(rec.txnUsers).size, 30);
+  for (const uid of paid) {
+    assert.equal((await readStatus(uid)).salaryCredit, 1, `${uid} paid`);
+    assert.equal(await readBalance(uid), 1, `${uid} drawn exactly once`);
+  }
+  for (const uid of unpaid) {
+    assert.equal((await readStatus(uid)).salaryCredit, 0);
+    assert.equal(await readBalance(uid), 0);
+  }
+  for (const uid of absent) assert.equal((await readStatus(uid)).status, "Absent");
+
+  const s = await readSummary();
+  assert.equal(s.scored, 30);
+  assert.equal(s.expected, 30);
+  assert.equal(s.plDeducted, paid.length, "one decrement per paid SCHL user and no more");
+  assert.equal(s.plAttempted, paid.length);
+  assert.equal(s.ok, true);
+});
+
+// ── M1: identity fields come from the IN-TXN user doc ─────────────────────────────────────────
+
+test("M1 a name/employeeId/role edited mid-run lands on the status doc, without changing the status", async () => {
+  const uid = await seedUser({ role: "office", plBalance: 0, name: "Old Name", employeeId: "E-OLD" });
+
+  const wrapper = wrapDb({
+    beforeTransaction: async () => {
+      await db.doc(`users/${uid}`).update({ name: "New Name", employeeId: "E-NEW", role: "operations" });
+    },
+  });
+  await run({ wrapper });
+
+  const s = await readStatus(uid);
+  assert.equal(s.userName, "New Name", "identity comes from the in-transaction user doc");
+  assert.equal(s.employeeId, "E-NEW");
+  assert.equal(s.role, "operations");
+  assert.equal(s.userId, uid, "the doc id still comes from the snapshot — `live` has no id field");
+  // The STATUS is still scored from the snapshot's role/events/plan, so a mid-run role change
+  // cannot move a user out of the Absent/SCHL partition (which would need a daily_hours doc).
+  assert.equal(s.status, "Absent");
+  assert.equal(await readHours(uid), undefined);
+});
