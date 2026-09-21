@@ -2,7 +2,7 @@
 // decision logic was extracted into leaveCancellation.ts. Expected values were derived by reading
 // that original loop, not the extracted module.
 // Run: npx tsx src/lib/leaveCancellation.test.ts
-import { planLeaveCancellation, resolveCancellingDates, type StatusDocLike, type LeaveCancellationPlan } from './leaveCancellation';
+import { planLeaveCancellation, resolveCancellingDates, MAX_CANCEL_DATES, cancelCapError, type StatusDocLike, type LeaveCancellationPlan } from './leaveCancellation';
 import type { LeaveLike } from './leaveDates';
 
 let passed = 0;
@@ -282,6 +282,23 @@ console.log('\nPurity:');
   const a = planLeaveCancellation({ leave, datesToCancel: dates, statusByDate: statuses, holidaySet: holidays });
   const b = planLeaveCancellation({ leave, datesToCancel: dates, statusByDate: statuses, holidaySet: holidays });
   eq('deterministic on repeat calls', a, b);
+}
+
+// ── The per-transaction cap (design §6 Q2) ────────────────────────────────────────────────────
+// A Firestore transaction reads 2 docs per date and writes up to 1 per date + 2; the cap keeps a
+// pathological "cancel the whole year" call inside a sane read/write budget. The message must tell
+// the admin what to do about it (chunks of at most 200), because the UI shows it verbatim.
+{
+  eq('MAX_CANCEL_DATES is 200', MAX_CANCEL_DATES, 200);
+  eq('0 dates: no cap error (the empty case has its own error)', cancelCapError(0), null);
+  eq('1 date: no cap error', cancelCapError(1), null);
+  eq('exactly the cap: no cap error', cancelCapError(MAX_CANCEL_DATES), null);
+  const over = cancelCapError(MAX_CANCEL_DATES + 1);
+  eq('one over the cap: an error', typeof over, 'string');
+  eq('the error tells the admin to cancel in chunks of at most 200', /chunks of at most 200 dates/.test(over ?? ''), true);
+  eq('the error names how many were selected', /201/.test(over ?? ''), true);
+  eq('the error is prefixed like every other cancelLeave error', (over ?? '').startsWith('cancelLeave: '), true);
+  eq('a far-over count is still an error', typeof cancelCapError(366), 'string');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -59,6 +59,22 @@ export interface LeaveCancellationPlan {
 }
 
 /**
+ * Most dates a single `cancelLeave` transaction will touch. A transaction reads two docs per
+ * date (status + holiday) and writes up to one per date plus two more (user + leave), so 200
+ * dates is ≤ 400 reads / ≤ 202 writes — comfortably inside Firestore's limits and quick enough
+ * to retry on contention. A leave's `totalDays` is bounded 1–366 by the rules, so a very long
+ * leave is cancelled in a few chunks. Design: docs/superpowers/specs/2026-09-21-transactional-nightly-and-cancel-design.md §6 Q2.
+ */
+export const MAX_CANCEL_DATES = 200;
+
+/** The error for a request over the cap (or null when within it). The UI shows this text verbatim, so it says what to do. */
+export function cancelCapError(count: number): string | null {
+  if (count <= MAX_CANCEL_DATES) return null;
+  return `cancelLeave: ${count} dates selected, but at most ${MAX_CANCEL_DATES} can be cancelled at once — ` +
+    `cancel them in chunks of at most ${MAX_CANCEL_DATES} dates.`;
+}
+
+/**
  * Re-derive what is still granted from the SERVER copy rather than trusting the caller's list:
  * a stale tab could otherwise "cancel" a day another admin already cancelled and double-refund it.
  * Exposed separately because `cancelLeave` needs this list BEFORE it can read the status docs.
