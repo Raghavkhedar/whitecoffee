@@ -58,7 +58,7 @@ function findCol(header, patterns) {
 
 function parseAmount(v) {
   if (typeof v === "number") return Number.isFinite(v) ? v : 0;
-  const n = parseFloat(String(v == null ? "" : v).replace(/[^0-9.\-]/g, ""));
+  const n = parseFloat(String(v == null ? "" : v).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 

@@ -214,9 +214,10 @@ export function leaveCancelledMessage(
 ): { title: string; body: string } {
   const revoked   = [...cancelledNow].filter(d => DATE_RE.test(d)).sort();
   const cancelledSet = new Set(revoked);
-  // Computed from the ORIGINAL grant minus what this action revoked, so the count is
-  // right whether or not the caller's `leave` has been refreshed from Firestore yet.
-  const remaining = grantedDates(leave).filter(d => !cancelledSet.has(d));
+  // Computed from the grant minus days an EARLIER action already cancelled (the stored
+  // `cancelledDates`) minus what THIS action revoked, so the count is right on a second
+  // cancellation and whether or not the caller's `leave` has been refreshed from Firestore yet.
+  const remaining = effectiveGrantedDates(leave).filter(d => !cancelledSet.has(d));
 
   const dayWord = revoked.length === 1 ? 'day' : 'days';
   let body = `${revoked.length} approved leave ${dayWord} ${revoked.length === 1 ? 'has' : 'have'} been cancelled: ${formatDatesShort(revoked)}. You are expected at work on ${revoked.length === 1 ? 'that day' : 'those days'}.`;

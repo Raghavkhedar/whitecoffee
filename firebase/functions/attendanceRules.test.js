@@ -18,6 +18,8 @@ const {
   classify,
   resolveOpsWindow,
   resolveRestDayType,
+  resolveLeaveStatus,
+  shouldDecrementPlBalance,
 } = require("./attendanceRules");
 
 const m = (h, min = 0) => h * 60 + min;
@@ -94,4 +96,51 @@ test("resolveRestDayType: a weekday marked as a holiday is Holiday", () => {
 
 test("resolveRestDayType: Sunday marked as a holiday is Holiday, not Sunday", () => {
   assert.strictEqual(resolveRestDayType("2026-09-13", true), "Holiday"); // Sunday + holiday
+});
+
+test("resolveLeaveStatus: positive balance is SCHL with salaryCredit 1", () => {
+  assert.deepStrictEqual(resolveLeaveStatus(2), { status: "SCHL", salaryCredit: 1 });
+});
+
+test("resolveLeaveStatus: zero balance is SCHL with salaryCredit 0", () => {
+  assert.deepStrictEqual(resolveLeaveStatus(0), { status: "SCHL", salaryCredit: 0 });
+});
+
+test("resolveLeaveStatus: negative/undefined balance is treated as exhausted (salaryCredit 0)", () => {
+  assert.deepStrictEqual(resolveLeaveStatus(-1), { status: "SCHL", salaryCredit: 0 });
+  assert.deepStrictEqual(resolveLeaveStatus(undefined), { status: "SCHL", salaryCredit: 0 });
+});
+
+// ── shouldDecrementPlBalance: the nightly job's idempotency guard for plBalance ─────────
+// A re-run (manual trigger / retry) must not draw the same day's balance twice. `prior` is the
+// {status, salaryCredit} already recorded for today, or undefined.
+test("shouldDecrementPlBalance: paid SCHL with no prior doc decrements", () => {
+  assert.equal(shouldDecrementPlBalance(1, undefined), true);
+  assert.equal(shouldDecrementPlBalance(1, null), true);
+});
+
+test("shouldDecrementPlBalance: prior SCHL that already drew credit blocks a second decrement", () => {
+  assert.equal(shouldDecrementPlBalance(1, { status: "SCHL", salaryCredit: 1 }), false);
+});
+
+test("shouldDecrementPlBalance: prior SCHL that drew NO credit does not block", () => {
+  assert.equal(shouldDecrementPlBalance(1, { status: "SCHL", salaryCredit: 0 }), true);
+});
+
+test("shouldDecrementPlBalance: a LEGACY prior PL doc (no salaryCredit) blocks a second decrement", () => {
+  assert.equal(shouldDecrementPlBalance(1, { status: "PL" }), false);
+  assert.equal(shouldDecrementPlBalance(1, { status: "PL", salaryCredit: undefined }), false);
+});
+
+test("shouldDecrementPlBalance: a legacy prior LWP never drew a balance, so it does not block", () => {
+  assert.equal(shouldDecrementPlBalance(1, { status: "LWP" }), true);
+});
+
+test("shouldDecrementPlBalance: no credit today (0 / undefined) never decrements, whatever the prior", () => {
+  const priors = [undefined, { status: "SCHL", salaryCredit: 1 }, { status: "SCHL", salaryCredit: 0 },
+    { status: "PL" }, { status: "LWP" }, { status: "Absent" }];
+  for (const prior of priors) {
+    assert.equal(shouldDecrementPlBalance(0, prior), false);
+    assert.equal(shouldDecrementPlBalance(undefined, prior), false);
+  }
 });

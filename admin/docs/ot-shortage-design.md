@@ -4,6 +4,11 @@
 > questions answered 2026-06-29. Pure math in `src/lib/otLedger.ts` + `src/lib/otAggregate.ts`
 > (62 unit tests across both). Drafted 2026-06-29; decisions locked 2026-06-29. Latest change:
 > late-out-nets-against-late-in fix, deployed 2026-08-24 (see below).
+>
+> **Note (Protocol 3, 2026-09-14): the WO netting described below was superseded.** A WO now pays
+> 1×rate unconditionally; its 480-minute debit lives in the `users/{uid}/wo_ledger` collection and
+> no longer nets into the monthly total (`netMins` = auto OT + granted OT − shortage). This record is
+> kept as written for history; see `admin/CLAUDE.md` and `admin/src/lib/otAggregate.ts` for current behaviour.
 
 ## Why we're redesigning
 

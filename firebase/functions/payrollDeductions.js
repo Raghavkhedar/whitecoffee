@@ -83,4 +83,69 @@ function computeDeductions({
   return { pf, esi, imprest, totalDue };
 }
 
-module.exports = { computeDeductions };
+/**
+ * Days NP ("net pay days") for the Employee Dashboard tab — the day-count that
+ * `salaryDue = daysNP × salaryRate` is built from.
+ *
+ * SCHL's pay is per-day, not per-status (see attendanceRules.resolveLeaveStatus): pass only
+ * the PAID slice as `schlPaid` (the sum of `salaryCredit` across that user's SCHL docs this
+ * month) — the unpaid slice contributes nothing, same as USCHL, which has no parameter here
+ * at all because it never earns credit.
+ *
+ * @param present   count of Present days (×1)
+ * @param sl        count of SL (Short Leave) days (×0.75)
+ * @param halfDay   count of HalfDay days (×0.5)
+ * @param lnf       count of LNF (Log Not Found) days (×0.5)
+ * @param schlPaid  sum of `salaryCredit` across this month's SCHL days (×1 each)
+ * @param holiday   count of Holiday days (×1)
+ * @param absent    count of Absent days (×-2, the no-show penalty)
+ */
+function computeDaysNP({ present, sl, halfDay, lnf, schlPaid, holiday, absent } = {}) {
+  const n = (v) => Number(v) || 0;
+  return n(present) + n(sl) * 0.75 + n(halfDay) * 0.5 + n(lnf) * 0.5
+    + n(schlPaid) + n(holiday) - n(absent) * 2;
+}
+
+/** A zeroed month-to-date attendance tally — the shape `tallyAttendanceStatus` fills. */
+function newAttendanceTally() {
+  return { present: 0, halfDay: 0, sl: 0, slnf: 0, schl: 0, schlPaid: 0, uschl: 0, holiday: 0, absent: 0 };
+}
+
+/**
+ * Add ONE attendance-status doc to a month-to-date tally (in place; returns the tally).
+ * Feeds `computeDaysNP` in the Sheets Employee Dashboard (map schlPaid/holiday/absent
+ * straight across and lnf ← slnf). The caller owns date filtering and the Sunday skip —
+ * this only maps a status to a bucket. Sunday / WO / anything unknown changes nothing.
+ * A Holiday counts unless salaryCredit is exactly 0 (an operations employee who worked it is
+ * paid through OT approval instead); a legacy Holiday doc with no salaryCredit counts.
+ *
+ * Legacy PL/LWP: this tally covers the CURRENT month and is rebuilt live every run, so a
+ * mid-month deploy leaves early-month days still scored "PL"/"LWP" beside "SCHL" days. They
+ * fold onto SCHL's buckets — PL behaved exactly like salaryCredit 1, LWP like 0 — so Days NP
+ * keeps the credit for leave already taken. (A past month's docs never reach this.)
+ *
+ * The Days-NP weights are mirrored in dailySpend.js (STATUS_WEIGHT / dayWeight) — change
+ * both together.
+ */
+function tallyAttendanceStatus(tally, status, salaryCredit) {
+  switch (status) {
+    case "Present":  tally.present++; break;
+    case "HalfDay":  tally.halfDay++; break;
+    case "SL":       tally.sl++;      break;
+    case "LNF":      tally.slnf++;    break; // "Log Not Found"
+    case "SLNF":     tally.slnf++;    break; // legacy value, same bucket
+    case "SCHL":
+      tally.schl++;
+      if (salaryCredit === 1) tally.schlPaid++;
+      break;
+    case "PL":       tally.schl++; tally.schlPaid++; break; // legacy ≡ salaryCredit 1
+    case "LWP":      tally.schl++;                   break; // legacy ≡ salaryCredit 0
+    case "USCHL":    tally.uschl++;   break;
+    case "Holiday":  if (salaryCredit !== 0) tally.holiday++; break; // 0 = operations worked it, paid via OT instead
+    case "Absent":   tally.absent++;  break;
+    default: break; // Sunday, WO, unknown → no change
+  }
+  return tally;
+}
+
+module.exports = { computeDeductions, computeDaysNP, newAttendanceTally, tallyAttendanceStatus };

@@ -12,7 +12,7 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 
 type Filter = 'pending' | 'approved' | 'rejected' | 'all';
 
-const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'PL', 'LWP', 'WO'] as const;
+const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'USCHL', 'WO'] as const;
 
 function StatusBadge({ status }: { status: string }) {
   const cls = status === 'approved' ? 'badge-approved' : status === 'rejected' ? 'badge-rejected' : 'badge-pending';
@@ -29,8 +29,9 @@ function ApprovedStatusBadge({ status }: { status: string }) {
     Present:  'bg-green-100 text-green-700',
     HalfDay:  'bg-amber-100 text-amber-700',
     Absent:   'bg-red-100 text-red-700',
-    PL:       'bg-blue-100 text-blue-700',
-    LWP:      'bg-purple-100 text-purple-700',
+    USCHL:    'bg-purple-100 text-purple-700',
+    PL:       'bg-blue-100 text-blue-700',    // legacy: historical approved rows
+    LWP:      'bg-purple-100 text-purple-700', // legacy: historical approved rows
     WO:       'bg-sky-100 text-sky-700',
   };
   const cls = colors[status] ?? 'bg-gray-100 text-gray-600';
@@ -149,7 +150,7 @@ export default function RegularizationPage() {
       if (effIn && effOut && effOut <= effIn) { setError('Out time must be after in time.'); return; }
     }
     // Conveyance is only claimable on a worked-day outcome — crediting travel reimbursement on
-    // a day simultaneously approved as Absent/LWP/WO/PL (which docks salary or asserts no work
+    // a day simultaneously approved as Absent/USCHL/WO/SCHL (which docks salary or asserts no work
     // happened) is internally contradictory. SL isn't an outcome this page offers at all.
     const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
     let kmValue: number | undefined;

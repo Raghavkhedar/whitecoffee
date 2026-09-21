@@ -5,7 +5,9 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { computeDeductions } = require("./payrollDeductions");
+const {
+  computeDeductions, computeDaysNP, newAttendanceTally, tallyAttendanceStatus,
+} = require("./payrollDeductions");
 
 const base = {
   salaryDue: 0, covy: 0, settlement: 0,
@@ -137,4 +139,121 @@ test("garbage percentages are treated as 0, not NaN", () => {
   assert.equal(r.esi, 0);
   assert.equal(r.imprest, 0);
   assert.equal(r.totalDue, 10000);
+});
+
+// ── Days NP ───────────────────────────────────────────────────────────────
+
+test("computeDaysNP: a full Present day counts as 1", () => {
+  assert.equal(computeDaysNP({ present: 1 }), 1);
+});
+
+test("computeDaysNP: SL/HalfDay/LNF use their fractional weights", () => {
+  assert.equal(computeDaysNP({ sl: 1 }), 0.75);
+  assert.equal(computeDaysNP({ halfDay: 1 }), 0.5);
+  assert.equal(computeDaysNP({ lnf: 1 }), 0.5);
+});
+
+test("computeDaysNP: only the paid slice of SCHL counts (the 4-day/2-balance example)", () => {
+  // 4 SCHL days, balance covered 2 of them → schlPaid=2, the other 2 are salaryCredit 0
+  // and simply aren't counted (they're not passed at all).
+  assert.equal(computeDaysNP({ schlPaid: 2 }), 2);
+});
+
+test("computeDaysNP: USCHL is not a field — it contributes nothing by construction", () => {
+  assert.equal(computeDaysNP({ present: 5 }), 5); // no uschl param exists to add
+});
+
+test("computeDaysNP: Holiday credits a full day", () => {
+  assert.equal(computeDaysNP({ holiday: 1 }), 1);
+});
+
+test("computeDaysNP: Absent is a -2 day penalty", () => {
+  assert.equal(computeDaysNP({ absent: 1 }), -2);
+});
+
+test("computeDaysNP: a realistic mixed month", () => {
+  // 18 Present, 1 SL, 1 HalfDay, 1 LNF, 2 SCHL paid, 1 Holiday, 1 Absent
+  const r = computeDaysNP({ present: 18, sl: 1, halfDay: 1, lnf: 1, schlPaid: 2, holiday: 1, absent: 1 });
+  assert.equal(r, 18 + 0.75 + 0.5 + 0.5 + 2 + 1 - 2);
+});
+
+test("computeDaysNP: missing fields default to 0", () => {
+  assert.equal(computeDaysNP({}), 0);
+  assert.equal(computeDaysNP(), 0);
+});
+
+// ── MTD attendance tally (feeds computeDaysNP in the Sheets Employee Dashboard) ──────────
+const ZERO_TALLY = { present: 0, halfDay: 0, sl: 0, slnf: 0, schl: 0, schlPaid: 0, uschl: 0, holiday: 0, absent: 0 };
+const tallyOf = (status, credit) => tallyAttendanceStatus(newAttendanceTally(), status, credit);
+
+test("newAttendanceTally: all nine counters start at 0, and each call returns a fresh object", () => {
+  assert.deepEqual(newAttendanceTally(), ZERO_TALLY);
+  assert.notEqual(newAttendanceTally(), newAttendanceTally());
+});
+
+test("tallyAttendanceStatus: mutates in place and returns the same tally", () => {
+  const t = newAttendanceTally();
+  assert.equal(tallyAttendanceStatus(t, "Present"), t);
+  assert.equal(t.present, 1);
+});
+
+test("tallyAttendanceStatus: each plain status feeds exactly its own bucket", () => {
+  assert.deepEqual(tallyOf("Present"), { ...ZERO_TALLY, present: 1 });
+  assert.deepEqual(tallyOf("HalfDay"), { ...ZERO_TALLY, halfDay: 1 });
+  assert.deepEqual(tallyOf("SL"), { ...ZERO_TALLY, sl: 1 });
+  assert.deepEqual(tallyOf("LNF"), { ...ZERO_TALLY, slnf: 1 });
+  assert.deepEqual(tallyOf("SLNF"), { ...ZERO_TALLY, slnf: 1 }); // legacy value, same bucket
+  assert.deepEqual(tallyOf("USCHL"), { ...ZERO_TALLY, uschl: 1 });
+  assert.deepEqual(tallyOf("Holiday"), { ...ZERO_TALLY, holiday: 1 });
+  assert.deepEqual(tallyOf("Absent"), { ...ZERO_TALLY, absent: 1 });
+});
+
+test("tallyAttendanceStatus: SCHL counts as leave; only salaryCredit === 1 counts as paid", () => {
+  assert.deepEqual(tallyOf("SCHL", 1), { ...ZERO_TALLY, schl: 1, schlPaid: 1 });
+  assert.deepEqual(tallyOf("SCHL", 0), { ...ZERO_TALLY, schl: 1 });
+  assert.deepEqual(tallyOf("SCHL", undefined), { ...ZERO_TALLY, schl: 1 });
+  assert.deepEqual(tallyOf("SCHL", "1"), { ...ZERO_TALLY, schl: 1 }); // strict equality
+});
+
+test("tallyAttendanceStatus: legacy PL folds into paid SCHL, legacy LWP into unpaid SCHL", () => {
+  assert.deepEqual(tallyOf("PL"), { ...ZERO_TALLY, schl: 1, schlPaid: 1 });
+  assert.deepEqual(tallyOf("LWP"), { ...ZERO_TALLY, schl: 1 });
+  // a legacy doc has no salaryCredit, and a stray one must not change the fold
+  assert.deepEqual(tallyOf("PL", 0), { ...ZERO_TALLY, schl: 1, schlPaid: 1 });
+  assert.deepEqual(tallyOf("LWP", 1), { ...ZERO_TALLY, schl: 1 });
+});
+
+test("tallyAttendanceStatus: Sunday / WO / unknown / empty leave the tally unchanged", () => {
+  for (const s of ["Sunday", "WO", "Bogus", "", undefined, null]) {
+    assert.deepEqual(tallyOf(s), ZERO_TALLY, `status ${String(s)}`);
+    assert.deepEqual(tallyOf(s, 1), ZERO_TALLY, `status ${String(s)} with credit`);
+  }
+});
+
+test("tallyAttendanceStatus: mixed mid-month deploy [PL, LWP, SCHL(1), SCHL(0), USCHL, Holiday, Absent]", () => {
+  const t = newAttendanceTally();
+  [["PL"], ["LWP"], ["SCHL", 1], ["SCHL", 0], ["USCHL"], ["Holiday"], ["Absent"]]
+    .forEach(([status, credit]) => tallyAttendanceStatus(t, status, credit));
+  assert.deepEqual(t, { ...ZERO_TALLY, schl: 4, schlPaid: 2, uschl: 1, holiday: 1, absent: 1 });
+  // 2 paid leave + 1 holiday - 2 (absent penalty) = 1
+  const daysNP = computeDaysNP({
+    present: t.present, sl: t.sl, halfDay: t.halfDay, lnf: t.slnf,
+    schlPaid: t.schlPaid, holiday: t.holiday, absent: t.absent,
+  });
+  assert.equal(daysNP, 1);
+});
+
+// ── Holiday credit (operations who worked the holiday are paid through OT instead) ──────────
+
+test("tally: a Holiday with no salaryCredit (legacy doc) is paid", () => {
+  const t = tallyAttendanceStatus(newAttendanceTally(), "Holiday", undefined);
+  assert.equal(t.holiday, 1);
+});
+
+test("tally: a Holiday with salaryCredit 1 is paid", () => {
+  assert.equal(tallyAttendanceStatus(newAttendanceTally(), "Holiday", 1).holiday, 1);
+});
+
+test("tally: a Holiday with salaryCredit 0 is NOT counted (paid via OT instead)", () => {
+  assert.equal(tallyAttendanceStatus(newAttendanceTally(), "Holiday", 0).holiday, 0);
 });

@@ -85,13 +85,20 @@ export interface AttendanceStatus {
   userName: string;
   employeeId: string;
   role: string;
-  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'PL' | 'LWP' | 'WO' | 'Sunday' | 'Holiday';
+  // 'PL' | 'LWP' are LEGACY: frozen pre-change history, never written anymore (kept so old docs still type-check).
+  status: 'Present' | 'HalfDay' | 'SL' | 'LNF' | 'SLNF' | 'Absent' | 'SCHL' | 'USCHL' | 'PL' | 'LWP' | 'WO' | 'Sunday' | 'Holiday';
   markedBy: 'auto' | 'admin';
   // Effective worked window captured when an admin regularizes a day to Present (missed-punch
   // fix). When present on a Present day, the OT/shortage ledger uses these instead of raw
   // events so the corrected day can carry shortage/OT. "HH:MM" 24h, ops only.
   inTime?: string;
   outTime?: string;
+  // Present only on a SCHL or Holiday day.
+  //  - SCHL: whether it drew paid salary credit from plBalance (1) or the balance was already
+  //    exhausted (0) — see docs/superpowers/specs/2026-09-18-schl-uschl-...
+  //  - Holiday: 0 = an operations employee worked it and is paid through OT approval instead
+  //    (the +1 is withdrawn), 1 = everyone else. Absent on a legacy Holiday doc = paid.
+  salaryCredit?: 0 | 1;
   updatedAt?: Timestamp;
 }
 
@@ -242,9 +249,13 @@ export interface SpecialAllowance {
   lockedAt?: Timestamp | null;
 }
 
-// Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). A marked holiday is
-// skipped like a Sunday: no attendance status is written, no Absent penalty, and
-// it is excluded from expected working days (unpaid, no payroll effect).
+// Company-wide holiday. Doc id is the date ("yyyy-MM-dd"). The nightly run writes a
+// `Holiday` attendance status for every active user (never Absent). It credits +1 day
+// in Days NP — except a Holiday dated on a Sunday, which adds 0 because the
+// month-to-date loop skips Sundays first — and is excluded from expected
+// hours/shortage. Operations staff who actually worked the holiday have the +1 withdrawn
+// (`salaryCredit: 0` on their Holiday doc): their rest-day work is raised as pending OT and
+// paid through OT approval instead.
 export interface Holiday {
   id: string;
   date: string;        // "yyyy-MM-dd"

@@ -3,22 +3,34 @@
 // Pure per-day spend decomposition for the Daily Spend Snapshot. Firestore-free so it can be
 // unit-tested via `npm test`. See docs/superpowers/specs/2026-07-24-daily-spend-snapshot-design.md.
 
-// Attendance-status → payroll multiplier. Mirrors the MTD `daysNP` weights in index.js:
-// Present ×1, SL ×0.75, HalfDay/LNF/SLNF ×0.5, PL ×1, LWP ×0, Absent ×−2 (the −2 penalty).
+// Attendance-status → payroll multiplier. Mirrors the MTD `daysNP` weights (computeDaysNP +
+// tallyAttendanceStatus in payrollDeductions.js): Present ×1, SL ×0.75, HalfDay/LNF/SLNF ×0.5,
+// Holiday ×1 (unless its `salaryCredit` is exactly 0: an operations employee who worked it is
+// paid through OT approval instead — see dayWeight), USCHL ×0, Absent ×−2 (the −2 penalty). SCHL is NOT in this map: it pays 1 only
+// when the day's `salaryCredit` is exactly 1 (drew a day from plBalance), else 0 — see
+// dayWeight. PL ×1 / LWP ×0 are LEGACY (retired for new writes, but old docs still sit inside
+// the snapshot's open window); PL behaved like salaryCredit 1, LWP like 0.
+// These weights are mirrored in payrollDeductions.js — change them together.
+// Callers pre-reconcile the Holiday credit with `effectiveHolidayCredit` (holidayCredit.js) before
+// calling dayWeight/dailySalary, so an operations employee with approved OT that date is passed a
+// salaryCredit of 0 here; this module reads the credit it is handed and does not re-reconcile.
 const STATUS_WEIGHT = {
-  Present: 1, SL: 0.75, HalfDay: 0.5, LNF: 0.5, SLNF: 0.5, PL: 1, LWP: 0, Absent: -2,
+  Present: 1, SL: 0.75, HalfDay: 0.5, LNF: 0.5, SLNF: 0.5, Holiday: 1, USCHL: 0,
+  PL: 1, LWP: 0, Absent: -2,
 };
 
 function round2(n) {
   return parseFloat((Number(n) || 0).toFixed(2));
 }
 
-function dayWeight(status) {
+function dayWeight(status, salaryCredit) {
+  if (status === "SCHL") return salaryCredit === 1 ? 1 : 0;
+  if (status === "Holiday") return salaryCredit === 0 ? 0 : 1; // 0 = operations worked it, paid via OT instead
   return STATUS_WEIGHT[status] ?? 0;
 }
 
-function dailySalary(salaryRate, status) {
-  return round2((Number(salaryRate) || 0) * dayWeight(status));
+function dailySalary(salaryRate, status, salaryCredit) {
+  return round2((Number(salaryRate) || 0) * dayWeight(status, salaryCredit));
 }
 
 function toNum(v) {

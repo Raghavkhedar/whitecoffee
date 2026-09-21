@@ -7,19 +7,21 @@ const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { google } = require("googleapis");
 // Attendance scoring rule — shared with the Android preview (see attendanceRules.js header).
-const {
-  OFFICE_START_MIN,
-  OFFICE_END_MIN,
-  classify,
-  resolveOpsWindow,
-  resolveRestDayType,
-} = require("./attendanceRules");
+// (The per-user window/classify/leave-status calls, the PL-decrement gate and the status-doc
+// builder moved out with the nightly body: see nightlyScoring.js and nightlyRunner.js.)
+const { resolveRestDayType } = require("./attendanceRules");
+// Whether a Holiday day still pays its +1 (operations who worked it are paid via OT instead).
+// resolveHolidayCredit freezes it at 23:59 from punches; effectiveHolidayCredit reconciles that
+// with approved OT at read time (a later manual-OT grant for a missed checkout).
+const { addApprovedOt, holidayAwareCredit } = require("./holidayCredit");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
 const { bannerFor, parseBlocks, monthLabelToKey, assembleTab, selectRebuildKeys } = require("./dashboardHistory");
 // PF / ESI / Imprest percentages of Salary Due MTD (see payrollDeductions.js).
-const { computeDeductions } = require("./payrollDeductions");
+const {
+  computeDeductions, computeDaysNP, newAttendanceTally, tallyAttendanceStatus,
+} = require("./payrollDeductions");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
   computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
@@ -37,7 +39,6 @@ const forecast = require("./forecastSpend");
 const {
   attendanceInTypes,
   attendanceOutTypes,
-  usesFixedWindow,
   usesOtShortageLedger,
   usesConveyance,
   inManpowerReports,
@@ -46,7 +47,17 @@ const {
 // Partial leave approval — which dates an approved leave actually grants (see
 // leaveCoverage.js). Missing/empty `approvedDates` = the whole range, so legacy
 // leaves and the Android approve action keep their current meaning.
-const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
+const { explicitGrantedDates, grantedDayCount } = require("./leaveCoverage");
+// Leave approved after its days have passed — scoreRetroactiveLeave delegates to this runner
+// (see retroLeaveRunner.js; its pure planner is retroLeaveScoring.js).
+const { runRetroLeaveScoring } = require("./retroLeaveRunner");
+// The nightly's scored date comes from the SCHEDULED time (not the wall clock, which a retry
+// after IST midnight would push to D+1), plus a started marker and a failure record on the run
+// summary doc — see nightlyClock.js / nightlyGuard.js.
+const { withNightlyGuard } = require("./nightlyGuard");
+// The nightly's whole read/score/write body — extracted so it can be exercised against a real
+// Firestore (emulator-tests/nightlyRunner.emulator.js) instead of only in production.
+const { runNightlyScoring } = require("./nightlyRunner");
 // Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
 // the legacy inline fields — see compensation.js for why the split exists.
 const { withPay } = require("./compensation");
@@ -315,259 +326,51 @@ exports.accrueMonthlyLeave = onSchedule(
 );
 
 // ── Daily Attendance Status — 23:59 IST, ALL users ──────────────────────────
+const nightlyGuard = withNightlyGuard({
+  getDb: () => admin.firestore(),
+  Timestamp: admin.firestore.Timestamp,
+  FieldValue: admin.firestore.FieldValue,
+  log: console,
+  now: Date.now,
+  jobName: "computeDailyAttendanceStatus",
+});
 exports.computeDailyAttendanceStatus = onSchedule(
-  // Retry-safe: status/daily_hours writes are `set` with deterministic doc IDs, and the
-  // PL decrement is gated on `priorStatus`, which a retry re-reads — so a re-run cannot
-  // double-deduct. Per-user failures are caught below and deliberately do NOT throw
-  // (retrying will not fix bad data); only infra failures reach the scheduler.
+  // Retry-safe: status/daily_hours writes are `set` with deterministic doc IDs, and the PL
+  // decrement is gated on the prior status doc re-read INSIDE the same transaction that writes
+  // it — so a re-run (or a duplicate delivery) cannot double-deduct. Per-user failures are caught
+  // in the runner and deliberately do NOT throw (retrying will not fix bad data); only infra
+  // failures reach the scheduler.
+  // The body lives in nightlyRunner.js; only the schedule, the guard and the admin handles are here.
   {
     schedule: "59 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
     retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
   },
-  async () => {
-    const db = admin.firestore();
-    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-    const today  = nowIST.toISOString().slice(0, 10);
+  nightlyGuard(async (event, { today, startedAt, clockSource }) => runNightlyScoring({
+    db: admin.firestore(),
+    Timestamp: admin.firestore.Timestamp,
+    FieldValue: admin.firestore.FieldValue,
+    today, startedAt, clockSource,
+  }))
+);
 
-    const usersSnap   = await db.collection("users").get();
-    // Offboarded users (active === false) are skipped entirely — no status doc, no
-    // Absent penalty. Legacy users have no `active` field (missing = active).
-    const allUsers    = usersSnap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((u) => u.active !== false);
-
-    const attendSnap = await db.collectionGroup("attendance").where("date", "==", today).get();
-    const eventsByUser = new Map();
-    attendSnap.docs.forEach((doc) => {
-      const d = doc.data();
-      if (!eventsByUser.has(d.userId)) eventsByUser.set(d.userId, []);
-      eventsByUser.get(d.userId).push(d);
-    });
-
-    const leavesSnap = await db.collectionGroup("leave_requests").get();
-    const leavesToday = new Map();
-    leavesSnap.docs.forEach((doc) => {
-      const d = doc.data();
-      // A partially-approved leave grants only its `approvedDates`. An ungranted
-      // date is simply absent from this map, so the day scores as a normal
-      // working day (→ Absent when unpunched) through the existing path.
-      if (leaveCoversDate(d, today)) leavesToday.set(d.userId, d);
-    });
-
-    // Skip users whose attendance_status was manually set by admin (regularization approvals)
-    // Read per-user docs directly to avoid needing a collectionGroup index on date.
-    const adminOverrides = new Set();
-    const priorStatus    = new Map(); // userId → status already recorded for today
-    const statusChecks = allUsers.map(async (user) => {
-      const statusDoc = await db.doc(`users/${user.id}/attendance_status/${today}`).get();
-      if (statusDoc.exists) {
-        if (statusDoc.data().markedBy === "admin") adminOverrides.add(user.id);
-        priorStatus.set(user.id, statusDoc.data().status);
-      }
-    });
-
-    // Operations have variable shifts: admin sets a planned start/end per day.
-    // Status is evaluated against that window. No plan → day left unmarked.
-    const plannedHours = new Map(); // userId → { startTime, endTime }
-    const planChecks = allUsers
-      .filter((u) => !usesFixedWindow(u.role)) // planned-shift roles (operations) only
-      .map(async (user) => {
-        const planDoc = await db.doc(`users/${user.id}/planned_hours/${today}`).get();
-        if (planDoc.exists) {
-          const p = planDoc.data();
-          if (p.startTime && p.endTime) plannedHours.set(user.id, p);
-        }
-      });
-
-    await Promise.all([...statusChecks, ...planChecks]);
-
-    // Sundays and company-wide holidays get a payroll-neutral Sunday/Holiday status
-    // instead of being left doc-less: same zero salary effect, but now visible in the
-    // portal and Sheets export instead of a blank cell. `today` is the IST date string;
-    // resolveRestDayType reads the weekday in UTC to avoid the runtime's UTC timezone
-    // shifting a "+05:30 midnight" back to the prior day (which made Mondays read as
-    // Sundays and vice-versa).
-    const holidayDoc = await db.doc(`holidays/${today}`).get();
-    const restDayType = resolveRestDayType(today, holidayDoc.exists);
-
-    if (restDayType) {
-      const restDayBatch = db.batch();
-      let restDayCount = 0;
-      for (const user of allUsers) {
-        if (priorStatus.has(user.id)) continue; // any existing doc (auto or admin) wins
-        restDayBatch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
-          status: restDayType,
-          markedBy: "auto",
-          date: today,
-          userId: user.id,
-          userName: user.name || "",
-          employeeId: user.employeeId || "",
-          role: user.role || "",
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        restDayCount++;
-      }
-      await restDayBatch.commit();
-      console.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc)`);
-      return;
-    }
-
-    const batch           = db.batch();
-    const plDeductions    = [];
-    // Per-user scoring failures. A single malformed user doc must NOT cost every other
-    // employee their day: all writes accumulate into ONE batch committed after the loop,
-    // so an uncaught throw here used to mean nobody got scored at all — and since this
-    // function only ever writes *today*, the following night would not repair it. That is
-    // the failure mode behind the 2026-07-17 backfill. Collect and continue instead.
-    const failures        = [];
-    let   scored          = 0;
-
-    for (const user of allUsers) {
-      if (adminOverrides.has(user.id)) continue;
-      try {
-        const events = (eventsByUser.get(user.id) || []).sort(
-          (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
-        );
-
-        const role        = user.role;
-        const fixedWindow = usesFixedWindow(role); // office/admin/sales: fixed 10–18; operations: planned shift
-        const plan  = plannedHours.get(user.id);
-        const leave = leavesToday.get(user.id);
-
-        // First check-in / last check-out across this role's event types. Operations:
-        // site + market. Office/admin: office. Sales (hybrid): office + site + market —
-        // scored against the same fixed window as office. Resolved BEFORE the skip below,
-        // which needs to know whether the user actually worked.
-        const inTypes  = attendanceInTypes(role);
-        const outTypes = attendanceOutTypes(role);
-        const checkIns  = events.filter((e) => inTypes.includes(e.type));
-        const checkOuts = events.filter((e) => outTypes.includes(e.type));
-        const worked = checkIns.length > 0 || checkOuts.length > 0;
-
-        // Every active user is scored on every working day, all roles alike. Sundays and
-        // holidays never reach this loop (both return above), offboarded users are filtered
-        // out of allUsers, and admin-marked days (WO / regularization) are skipped at the top.
-        // So an ops day reaching here with no plan, no leave and no punches is a no-show and
-        // scores Absent — days off must be marked WO or leave.
-
-        // Working window: fixed-window roles use 10:00–18:00; operations use the planned
-        // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
-        // fallback). Ops with no plan keeps the 10:00–18:00 default — matching the portal's
-        // otLedger DEFAULT_SHIFT_START_MIN/END_MIN, which already scored these days that way.
-        let startMin = OFFICE_START_MIN;
-        let endMin = OFFICE_END_MIN;
-        if (!fixedWindow) {
-          const window = resolveOpsWindow(plan?.startTime, plan?.endTime);
-          if (window) { startMin = window.startMin; endMin = window.endMin; }
-        }
-
-        let status;
-
-        if (checkIns.length > 0 && checkOuts.length > 0) {
-          const firstIn  = checkIns[0];
-          const lastOut  = checkOuts[checkOuts.length - 1];
-          const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-          const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-
-          // The off-minutes formula lives in attendanceRules.classify, not inline here — inline it
-          // had no test coverage, since the test suite graded its own copy of the arithmetic.
-          status = classify(inMinutes, outMinutes, startMin, endMin);
-        } else if (checkIns.length > 0 || checkOuts.length > 0) {
-          status = "LNF";
-        } else {
-          if (leave) {
-            const balance = user.plBalance || 0;
-            if (balance > 0) {
-              status = "PL";
-              // Only deduct when today wasn't already counted as PL, so a re-run
-              // (manual trigger / retry) doesn't decrement the balance twice.
-              if (priorStatus.get(user.id) !== "PL") plDeductions.push(user.id);
-            } else {
-              status = "LWP";
-            }
-          } else {
-            status = "Absent";
-          }
-        }
-
-        batch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
-          date: today, userId: user.id, userName: user.name || "",
-          employeeId: user.employeeId || "", role: user.role, status,
-          markedBy: "auto", updatedAt: admin.firestore.Timestamp.now(),
-        });
-
-        // Per-day worked hours → shortage (auto) and overtime (admin-approved later).
-        // Only on fully-worked days, and only for roles that run the OT/shortage ledger
-        // (operations). Fixed-window roles (office/admin/sales) have no OT/shortage.
-        if (usesOtShortageLedger(role) && checkIns.length > 0 && checkOuts.length > 0) {
-          const firstIn    = checkIns[0];
-          const lastOut     = checkOuts[checkOuts.length - 1];
-          const inMin       = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-          const outMin      = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-          const actualMins  = Math.max(0, outMin - inMin);
-          const plannedMins = Math.max(0, endMin - startMin);
-          // Shortage = late-in + early-out; OT = late-out only (arriving early never earns OT).
-          const shortageMins = Math.max(0, inMin - startMin) + Math.max(0, endMin - outMin);
-          const otMins       = Math.max(0, outMin - endMin);
-
-          // Per-day canonical record (the OT/shortage ledger reads this, not a lifetime counter).
-          batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
-            date: today, userId: user.id, role: user.role,
-            plannedMins, actualMins, shortageMins, otMins,
-            updatedAt: admin.firestore.Timestamp.now(),
-          });
-        }
-        scored++;
-      } catch (err) {
-        // Deterministic per-user data problem (malformed timestamp, unexpected null).
-        // Retrying the whole run will not fix it, so we do NOT rethrow — we record it,
-        // finish scoring everyone else, and surface it in the run summary below.
-        failures.push({ userId: user.id, employeeId: user.employeeId || "", message: String(err && err.message || err) });
-        console.error(`computeDailyAttendanceStatus: FAILED to score user ${user.id} (${user.employeeId || "no empId"}) for ${today}:`, err);
-      }
-    }
-
-    // Commit and PL deductions stay OUTSIDE the per-user guard: a failure here is
-    // infrastructural, not per-user, and SHOULD throw so Cloud Scheduler retries it.
-    await batch.commit();
-
-    // PL decrements are individual writes, so one failure must not strand the rest.
-    // Re-runs are safe: `priorStatus` is re-read each run and a user already recorded
-    // as PL today is never decremented twice.
-    const plFailures = [];
-    for (const uid of plDeductions) {
-      try {
-        await db.doc(`users/${uid}`).update({ plBalance: admin.firestore.FieldValue.increment(-1) });
-      } catch (err) {
-        plFailures.push({ userId: uid, message: String(err && err.message || err) });
-        console.error(`computeDailyAttendanceStatus: FAILED PL decrement for ${uid} on ${today}:`, err);
-      }
-    }
-
-    const expected = allUsers.length - adminOverrides.size;
-    console.log(
-      `computeDailyAttendanceStatus: ${today} — scored ${scored}/${expected} ` +
-      `(${allUsers.length} active, ${adminOverrides.size} admin-marked), ` +
-      `PL deducted ${plDeductions.length - plFailures.length}/${plDeductions.length}, ` +
-      `failures ${failures.length}`
-    );
-
-    // Run summary — makes a partial night DETECTABLE. Without this a silent shortfall
-    // only surfaces when an employee queries their payslip. Alert on `ok === false`.
-    await db.doc(`system/nightly_runs/computeDailyAttendanceStatus/${today}`).set({
-      date: today,
-      ranAt: admin.firestore.Timestamp.now(),
-      activeUsers: allUsers.length,
-      adminMarked: adminOverrides.size,
-      expected,
-      scored,
-      plDeducted: plDeductions.length - plFailures.length,
-      plAttempted: plDeductions.length,
-      failures,
-      plFailures,
-      ok: failures.length === 0 && plFailures.length === 0 && scored === expected,
-    });
-  }
+// ── Late-approved leave ──────────────────────────────────────────────────────────────────
+// The nightly run only ever writes today, so leave approved after its days have passed used
+// to leave those days Absent (−2). Score them as SCHL (paid or unpaid by the running
+// plBalance) and decrement plBalance, all in one transaction. Cloud Function rather than the
+// portal on purpose: plBalance writes are admin-only in firestore.rules and status writes are
+// tab-gated, so a client-side version would fail for a non-admin Leaves manager or need the
+// rules widened. The decision logic lives in retroLeaveScoring.js (unit-tested); the read/write
+// wrapper around it lives in retroLeaveRunner.js (tested against the Firestore emulator:
+// `npm run test:emulator`), together with the retry/idempotency note and the two races that used
+// to be open and are now closed (see nightlyRunner.js and admin/src/lib/firestore.ts).
+exports.scoreRetroactiveLeave = onDocumentWritten(
+  { document: "users/{userId}/leave_requests/{requestId}", retry: true },
+  (event) => runRetroLeaveScoring({
+    db: admin.firestore(),
+    FieldValue: admin.firestore.FieldValue,
+    Timestamp: admin.firestore.Timestamp,
+    event,
+  })
 );
 
 // Protocol 3 (docs/superpowers/specs/2026-09-14-ot-redesign-design.md): a WO debt not fully
@@ -906,10 +709,15 @@ exports.exportToSheets = onSchedule(
     });
     const approvalMap = new Map(); // `${uid}__${date}` → granted OT mins available for cash (approvedMins − settledMins; rejected → 0)
     const otDecisionMap = new Map(); // `${uid}__${date}` → { status, reason, approvedBy, requestedMins } (for the OT Exception Report)
+    // `${uid}__${date}` → approvedMins GROSS of settlement (rejected docs excluded). "Was OT granted
+    // that day" — NOT the net-of-settled cash above: a day whose minutes all went to settling a WO
+    // debt still had OT granted. Feeds effectiveHolidayCredit in the MTD tally below.
+    const otGrantedMap = new Map();
     const approvalSnap = await db.collectionGroup("ot_approvals").get();
     approvalSnap.docs.forEach((doc) => {
       const d = doc.data();
       const key = `${uidOf(doc)}__${d.date || ""}`;
+      addApprovedOt(otGrantedMap, { userId: uidOf(doc), date: d.date, status: d.status, approvedMins: d.approvedMins });
       approvalMap.set(key, Math.max(0, (Number(d.approvedMins) || 0) - (Number(d.settledMins) || 0)));
       // requestedMins is carried so "is this date fully decided" can be judged by how much
       // of the day's pending OT the decision actually covers, not merely by doc presence —
@@ -922,7 +730,7 @@ exports.exportToSheets = onSchedule(
 
     // ── MTD attendance summary per user (for Employee Dashboard) ──────
     // Re-use statusSnap (already fetched above) — filter to current month
-    const userAttendanceMTD = new Map(); // userId → {present, halfDay, pl, lwp, absent}
+    const userAttendanceMTD = new Map(); // userId → {present, halfDay, sl, slnf, schl, schlPaid, uschl, holiday, absent}
     statusSnap.docs.forEach((doc) => {
       const d = doc.data();
       if (d.date < monthStart || d.date > today) return;
@@ -930,19 +738,15 @@ exports.exportToSheets = onSchedule(
       // runtime's UTC timezone shifting a "+05:30 midnight" back to the prior day).
       const dayOfWeek = new Date(d.date + "T00:00:00Z").getUTCDay();
       if (dayOfWeek === 0) return;
-      if (!userAttendanceMTD.has(d.userId))
-        userAttendanceMTD.set(d.userId, { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, lwp: 0, absent: 0});
-      const ua = userAttendanceMTD.get(d.userId);
-      switch (d.status) {
-        case "Present":  ua.present++;  break;
-        case "HalfDay":  ua.halfDay++;  break;
-        case "SL":       ua.sl++;       break;
-        case "LNF":      ua.slnf++;     break; // "Log Not Found"
-        case "SLNF":     ua.slnf++;     break; // legacy value, same bucket
-        case "PL":       ua.pl++;       break;
-        case "LWP":      ua.lwp++;      break;
-        case "Absent":   ua.absent++;   break;
-      }
+      if (!userAttendanceMTD.has(d.userId)) userAttendanceMTD.set(d.userId, newAttendanceTally());
+      // Status → bucket mapping (incl. the legacy PL/LWP fold) lives in payrollDeductions.js.
+      // A Holiday's +1 is withdrawn for an ops employee who worked it (salaryCredit 0 from the
+      // nightly) OR who has approved OT that date (manual OT for a missed checkout) — reconcile both.
+      const credit = holidayAwareCredit({
+        status: d.status, salaryCredit: d.salaryCredit, role: userRoleMap.get(d.userId),
+        userId: d.userId, date: d.date, index: otGrantedMap,
+      });
+      tallyAttendanceStatus(userAttendanceMTD.get(d.userId), d.status, credit);
     });
 
     // Every attendance event ever recorded. Read ONCE and shared by the Attendance
@@ -1595,7 +1399,7 @@ exports.exportToSheets = onSchedule(
       });
       grouped.forEach((events) => events.sort((a, b) => a.timestamp.seconds - b.timestamp.seconds));
 
-      function buildRoute(events) {
+      const buildRoute = (events) => {
         const parts = [];
         events.forEach((e) => {
           let loc = "";
@@ -1605,14 +1409,14 @@ exports.exportToSheets = onSchedule(
           if (loc && parts[parts.length - 1] !== loc) parts.push(loc);
         });
         return parts.join(" → ");
-      }
+      };
 
-      function resolveCoords(event, user) {
+      const resolveCoords = (event, user) => {
         if ((event.type === "home_in" || event.type === "home_out") && user.homeLat && user.homeLng) {
           return { lat: user.homeLat, lng: user.homeLng };
         }
         return { lat: event.latitude, lng: event.longitude };
-      }
+      };
 
       const entries = [...grouped.entries()];
       const BATCH   = 20;
@@ -1783,7 +1587,8 @@ exports.exportToSheets = onSchedule(
 
       const header = [
         "Date", "EMP Name", "EMP ID", "Level", "Days Passed in Month",
-        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)", "PL (×1)", "LWP (×0)", "Absent (×-2)",
+        "Present (×1)", "SL (×0.75)", "Half Day (×0.5)", "LNF (×0.5)",
+        "SCHL (Paid) (×1)", "SCHL (Unpaid) (×0)", "USCHL (×0)", "Holiday (×1)", "Absent (×-2)", // Holiday ×1 unless withdrawn (ops who worked it, or approved OT that day)
         "Leaves", "Days NP",
         "Salary Rate", "Salary Due MTD",
         "Covy Due (approx avg)", "Imprest Due MTD", "OT/WO amount (₹)", "SA",
@@ -1801,11 +1606,15 @@ exports.exportToSheets = onSchedule(
 
       sortedUsers.forEach((user) => {
         const empId    = user.employeeId || "";
-        const ua       = userAttendanceMTD.get(user.id) || { present: 0, halfDay: 0, sl: 0, slnf: 0, pl: 0, lwp: 0, absent: 0};
+        const ua       = userAttendanceMTD.get(user.id) || newAttendanceTally();
 
-        // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. LWP = unpaid, contributes 0.
-        const daysNP   = ua.present + ua.sl * 0.75 + ua.halfDay * 0.5 + ua.slnf * 0.5 + ua.pl - ua.absent * 2;
-        const leaves   = ua.pl + ua.lwp; // all leave types shown together
+        // Absent = 2-day penalty (lose the day + a penalty day) → ×-2. Only the PAID slice of
+        // SCHL counts (schlPaid); USCHL never counts. Holiday is a paid day off, +1 unless withdrawn (ops who worked it, or approved OT that day).
+        const daysNP   = computeDaysNP({
+          present: ua.present, sl: ua.sl, halfDay: ua.halfDay, lnf: ua.slnf,
+          schlPaid: ua.schlPaid, holiday: ua.holiday, absent: ua.absent,
+        });
+        const leaves   = ua.schl + ua.uschl; // all leave types shown together
 
         const salaryRate = user.salaryRate || 0;
         const salaryDue  = parseFloat((daysNP * salaryRate).toFixed(2));
@@ -1840,7 +1649,7 @@ exports.exportToSheets = onSchedule(
           empId,
           user.level || "",
           daysPassed,
-          ua.present, ua.sl, ua.halfDay, ua.slnf, ua.pl, ua.lwp, ua.absent,
+          ua.present, ua.sl, ua.halfDay, ua.slnf, ua.schlPaid, (ua.schl - ua.schlPaid), ua.uschl, ua.holiday, ua.absent,
           leaves,
           daysNP,
           salaryRate,
@@ -2374,18 +2183,28 @@ exports.snapshotDailySpend = onSchedule(
     const earliest = windowMonths[0];
     const rangeStart = `${earliest}-01`;
 
-    // Per-day sources scoped to [rangeStart, today]. Module-scope uidOf resolves the owner
-    // (userId field if present, else the subcollection parent).
-    const inRange = (d) => d.date >= rangeStart && d.date <= today;
-
-    const statusDocs = (await db.collectionGroup("attendance_status").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
-    const eventDocs = (await db.collectionGroup("attendance").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
-    const plannedDocs = (await db.collectionGroup("planned_hours").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
-    const approvalDocs = (await db.collectionGroup("ot_approvals").get()).docs
-      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) })).filter(inRange);
+    // Per-day sources scoped to [rangeStart, today]. Date bounds are pushed into the query
+    // (not filtered in JS after a full collection-group read) so the read cost stays
+    // proportional to the window size, not all-time history. Requires the COLLECTION_GROUP
+    // index on each collection's `date` field (firestore.indexes.json).
+    const statusDocs = (await db.collectionGroup("attendance_status")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    const eventDocs = (await db.collectionGroup("attendance")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    const plannedDocs = (await db.collectionGroup("planned_hours")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    const approvalDocs = (await db.collectionGroup("ot_approvals")
+      .where("date", ">=", rangeStart).where("date", "<=", today).get()).docs
+      .map((doc) => ({ ...doc.data(), userId: uidOf(doc) }));
+    // `${uid}__${date}` → approvedMins GROSS of settlement (rejected excluded): "was OT granted
+    // that day", for effectiveHolidayCredit below. Not the net cash figure otMap carries.
+    const otGrantedByKey = new Map();
+    approvalDocs.forEach((a) => {
+      addApprovedOt(otGrantedByKey, { userId: a.userId, date: a.date, status: a.status, approvedMins: a.approvedMins });
+    });
 
     const holidaySnap = await db.collection("holidays")
       .where("date", ">=", rangeStart).where("date", "<=", today).get();
@@ -2459,9 +2278,16 @@ exports.snapshotDailySpend = onSchedule(
 
         const status = statusByDate.get(date); // may be undefined (OT/conveyance-only day)
         const sunday = isSunday(date);
-        // Sundays are not paid working days — matches the MTD summary, which skips only
-        // Sundays for salary (NOT holidays); an OT/conveyance-only day has no status → 0.
-        const salary = (status && !sunday) ? dailySalary(rate, status.status) : 0;
+        // Sundays are not paid working days — matches the MTD summary, which skips Sundays
+        // first (so a Sunday-dated Holiday credits 0). Holidays are NOT skipped: a Holiday
+        // status pays +1 unless withdrawn (ops who worked it, or approved OT that day — see
+        // effectiveHolidayCredit); SCHL pays only when its salaryCredit is 1; an OT/conveyance-only
+        // day has no status → 0.
+        const credit = status && holidayAwareCredit({
+          status: status.status, salaryCredit: status.salaryCredit, role: user.role,
+          userId: user.id, date, index: otGrantedByKey,
+        });
+        const salary = (status && !sunday) ? dailySalary(rate, status.status, credit) : 0;
         const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${date}`) || 0) : 0;
         const otWo = round2(otMap.get(date) || 0);
         // SA lands entirely on its one manager-picked date; every other day of the month is 0.

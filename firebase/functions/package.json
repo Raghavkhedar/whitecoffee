@@ -8,7 +8,8 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "node --test"
+    "test": "node --test",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-functions-test \"node --test --test-concurrency=1 emulator-tests/retroLeaveRunner.emulator.js emulator-tests/nightlyRunner.emulator.js\""
   },
   "engines": {
     "node": "24"

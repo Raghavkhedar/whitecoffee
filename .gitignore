@@ -41,3 +41,7 @@ firestore-debug.log
 
 # Graphify (regenerated at root)
 graphify-out/
+
+# Legacy-status migration plan/backup files (firebase/functions/scripts/migrateLegacyLeaveStatuses.js).
+# They hold full employee attendance docs — never commit them, wherever the script was run from.
+migration-out/

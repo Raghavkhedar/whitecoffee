@@ -11,6 +11,7 @@ import {
   leaveCancelledMessage,
 } from '@/lib/leaveDates';
 import { istTodayStr } from '@/lib/date';
+import { MAX_CANCEL_DATES } from '@/lib/leaveCancellation';
 import type { LeaveRequest } from '@/types';
 import { Avatar } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -157,12 +158,14 @@ export default function LeavesPage() {
     const revoked = [...selectedCancelDates].sort();
     setActioning(leave.id);
     try {
-      const { skippedDates, refundedDays } = await cancelLeave(
+      const { cancelled, skippedDates, refundedDays } = await cancelLeave(
         leave.userId, leave.id, adminName, revoked, cancelReason.trim(),
       );
       // Always notify: unlike a full approval, a cancellation is never good news the
       // employee can discover late — they think they have the day off.
-      const { title, body } = leaveCancelledMessage(leave, revoked);
+      // `cancelled` is the transaction's authoritative list (re-derived from the server copy of the leave),
+      // so a stale tab's already-cancelled days are not announced to the employee a second time.
+      const { title, body } = leaveCancelledMessage(leave, cancelled);
       try {
         await sendNotification([leave.userId], title, body, 'leave', adminName, 'specific');
       } catch { setError('Leave cancelled, but the employee notification failed to send.'); }
@@ -170,8 +173,8 @@ export default function LeavesPage() {
       if (skippedDates.length > 0) {
         setCancelNote(
           `Cancelled, but ${skippedDates.length === 1 ? 'one day was' : `${skippedDates.length} days were`} left as-is: ` +
-          `${formatDatesShort(skippedDates)}. ${skippedDates.length === 1 ? 'It was' : 'They were'} already corrected by an admin ` +
-          `(regularization), so that decision stands — adjust ${skippedDates.length === 1 ? 'it' : 'them'} on the Attendance page if needed.`
+          `${formatDatesShort(skippedDates)}. ${skippedDates.length === 1 ? 'It was' : 'They were'} not scored as leave (an admin decision ` +
+          `or another status already claims ${skippedDates.length === 1 ? 'it' : 'them'}), so that stands — adjust ${skippedDates.length === 1 ? 'it' : 'them'} on the Attendance page if needed.`
         );
       } else if (refundedDays > 0) {
         setCancelNote(`${refundedDays} paid-leave ${refundedDays === 1 ? 'day' : 'days'} returned to the employee's PL balance.`);
@@ -464,13 +467,20 @@ export default function LeavesPage() {
                 </p>
               )}
 
+              {/* One cancellation is one transaction, capped at MAX_CANCEL_DATES dates (cancelLeave). */}
+              {selectedCancelDates.length > MAX_CANCEL_DATES && (
+                <p className="text-[11.5px] text-[#8A6700] bg-[#FDF6E9] border border-[#EDD9B0] rounded-lg p-2.5 mb-3">
+                  At most {MAX_CANCEL_DATES} days can be cancelled at once. Untick some days, cancel, then cancel the rest in a second pass.
+                </p>
+              )}
+
               <label className="label">Reason <span className="text-[#C42B2B]">*</span></label>
               <textarea className="input min-h-[64px]" value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)} placeholder="Why is this leave being cancelled?" />
 
               <div className="flex gap-3 mt-4">
                 <button className="btn-danger flex-1" onClick={handleCancel}
-                  disabled={!!actioning || selectedCancelDates.length === 0 || !cancelReason.trim()}>
+                  disabled={!!actioning || selectedCancelDates.length === 0 || selectedCancelDates.length > MAX_CANCEL_DATES || !cancelReason.trim()}>
                   Cancel {selectedCancelDates.length} {selectedCancelDates.length === 1 ? 'day' : 'days'}
                 </button>
                 <button className="btn-outline flex-1" onClick={() => setCancelModal(null)}>Keep leave</button>

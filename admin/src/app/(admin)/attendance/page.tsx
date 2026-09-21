@@ -10,6 +10,8 @@ import { LAUNCH_DATE } from '@/lib/config';
 import { classify, resolveOpsWindow, OFFICE_START_MIN, OFFICE_END_MIN } from '@/lib/attendanceRules';
 import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger } from '@/lib/roleCapabilities';
 import { auth } from '@/lib/firebase';
+import { HOLIDAY_PAST_MESSAGE } from '@/lib/holidayGuard';
+import { isSunday } from '@/lib/leaveDates';
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -113,7 +115,7 @@ function deriveStatus(
   // Ops are scored every working day like everyone else (flipped 2026-07-17) — a day with no
   // plan and no punches is a no-show, not an unscheduled day. Callers guard Sundays/holidays,
   // matching the Cloud Function's function-level skips. (Approved leave isn't visible here;
-  // PL/LWP always arrive via the stored doc the nightly run writes.)
+  // SCHL/USCHL always arrive via the stored doc the nightly run writes.)
   if (!worked) return 'Absent';
 
   if (checkIns.length === 0 || checkOuts.length === 0) return 'LNF';
@@ -256,7 +258,7 @@ export default function AttendancePage() {
       else if (s.status === 'SL') sl++;
       else if (s.status === 'LNF' || s.status === 'SLNF') slnf++;
       else if (s.status === 'Absent')  absent++;
-      else if (s.status === 'PL' || s.status === 'LWP') leave++;
+      else if (s.status === 'SCHL' || s.status === 'USCHL' || s.status === 'PL' || s.status === 'LWP') leave++; // PL/LWP: legacy history
     });
     return { present, halfDay, sl, slnf, absent, leave };
   }
@@ -381,7 +383,7 @@ export default function AttendancePage() {
       setHolidaysByDate(prev => new Map(prev).set(selectedDate, saved));
       setHolidayForm(null);
     } catch (err) {
-      setHolidayError('Failed to save holiday. Please try again.');
+      setHolidayError(err instanceof Error && err.message === HOLIDAY_PAST_MESSAGE ? err.message : 'Failed to save holiday. Please try again.');
       console.error(err);
     }
     setHolidaySaving(false);
@@ -395,7 +397,7 @@ export default function AttendancePage() {
       setHolidaysByDate(prev => { const next = new Map(prev); next.delete(selectedDate); return next; });
       setHolidayForm(null);
     } catch (err) {
-      setHolidayError('Failed to remove holiday. Please try again.');
+      setHolidayError(err instanceof Error && err.message === HOLIDAY_PAST_MESSAGE ? err.message : 'Failed to remove holiday. Please try again.');
       console.error(err);
     }
     setHolidaySaving(false);
@@ -409,6 +411,8 @@ export default function AttendancePage() {
   const selectedDayMap   = statusByDate.get(selectedDate) || new Map<string, AttendanceStatus>();
   const selectedPlanMap  = plannedByDate.get(selectedDate) || new Map<string, PlannedHours>();
   const selectedHoliday  = holidaysByDate.get(selectedDate);
+  // A day before today is already scored — its holiday can't be added/edited/removed (Regularization instead).
+  const selectedIsPast   = selectedDate < todayStr;
   // The canonical predicate (same one setAttendanceStatus/markWo enforce server-adjacent),
   // reused rather than re-deriving "is this a rest day" a fourth time in this codebase.
   const selectedIsRestDay = isRestDay(selectedDate, holidaySet);
@@ -443,7 +447,7 @@ export default function AttendancePage() {
   const totalSL      = statusValues.filter(s => s === 'SL').length;
   const totalSLNF    = statusValues.filter(s => s === 'LNF' || s === 'SLNF').length;
   const totalAbsent  = statusValues.filter(s => s === 'Absent').length;
-  const totalLeave   = statusValues.filter(s => s === 'PL' || s === 'LWP').length;
+  const totalLeave   = statusValues.filter(s => s === 'SCHL' || s === 'USCHL' || s === 'PL' || s === 'LWP').length; // PL/LWP: legacy history
   const totalWo      = statusValues.filter(s => s === 'WO').length;
 
   const selectedDateDisplay = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', {
@@ -605,7 +609,7 @@ export default function AttendancePage() {
             { label: 'SL = Short Leave',  cls: 'bg-amber-100 text-amber-700' },
             { label: '? = Log Not Found', cls: 'bg-gray-100 text-gray-700' },
             { label: 'A = Absent',        cls: 'bg-red-100 text-red-700' },
-            { label: 'L = PL / LWP',     cls: 'bg-blue-100 text-blue-700' },
+            { label: 'L = SCHL / USCHL', cls: 'bg-blue-100 text-blue-700' },
             { label: 'Holiday',           cls: 'bg-purple-100 text-purple-700' },
           ].map(({ label, cls }) => (
             <span key={label} className={`text-xs px-2 py-0.5 rounded font-medium ${cls}`}>
@@ -655,11 +659,13 @@ export default function AttendancePage() {
                 {selectedHoliday.description && (
                   <p className="text-xs text-text-secondary mt-1">{selectedHoliday.description}</p>
                 )}
-                <p className="text-[11px] text-text-secondary/70 mt-1 italic">Skipped like a Sunday — no attendance or salary effect.</p>
+                <p className="text-[11px] text-text-secondary/70 mt-1 italic">Paid day off — credits 1 day of salary and is excluded from expected hours. Operations staff who work it are paid through OT approval instead (no day credit). A holiday that falls on a Sunday adds nothing extra.</p>
+                {holidayError && <p className="text-xs text-red-600 mt-1">{holidayError}</p>}
               </div>
+              {!selectedIsPast && (
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={() => setHolidayForm({ title: selectedHoliday.title, description: selectedHoliday.description || '' })}
+                  onClick={() => { setHolidayError(''); setHolidayForm({ title: selectedHoliday.title, description: selectedHoliday.description || '' }); }}
                   className="btn-outline !py-1 !px-3 !text-xs"
                 >
                   Edit
@@ -668,6 +674,7 @@ export default function AttendancePage() {
                   {holidaySaving ? '…' : 'Remove'}
                 </button>
               </div>
+              )}
             </div>
           ) : holidayForm ? (
             <div className="p-4 rounded-lg bg-purple-50 border border-purple-200 space-y-3">
@@ -702,10 +709,13 @@ export default function AttendancePage() {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : !selectedIsPast ? (
             <button onClick={() => setHolidayForm({ title: '', description: '' })} className="btn-outline !py-1.5 !px-3 !text-xs">
               + Mark as holiday
             </button>
+          ) : null}
+          {selectedIsPast && !isSunday(selectedDate) && (
+            <p className="text-[11px] text-text-secondary/70 mt-2 italic">Holidays can&apos;t be changed for past dates — fix a scored day through Regularization.</p>
           )}
         </div>
 
