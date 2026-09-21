@@ -285,11 +285,15 @@ console.log('\nPurity:');
 }
 
 // ── The per-transaction cap (design §6 Q2) ────────────────────────────────────────────────────
-// A Firestore transaction reads 2 docs per date and writes up to 1 per date + 2; the cap keeps a
-// pathological "cancel the whole year" call inside a sane read/write budget. The message must tell
-// the admin what to do about it (chunks of at most 200), because the UI shows it verbatim.
+// A cancellation transaction reads 2 docs per date (status + holiday). The client SDK sends every doc
+// it READ but did not write as a `verify` entry in the Commit, so the Commit carries ~2N + 2 entries
+// (N statuses written-or-verified, N holidays verified, + leave + user) against Firestore's 500-entry
+// limit: the ceiling is ~249 dates, NOT the 202 that "one write per date + 2" would suggest. The
+// emulator does not enforce that limit, so this arithmetic is the only pin on it.
+// The message must tell the admin what to do about it (chunks of at most 200), because the UI shows it verbatim.
 {
   eq('MAX_CANCEL_DATES is 200', MAX_CANCEL_DATES, 200);
+  eq('the cap keeps the Commit (2N + 2 write/verify entries) under the 500-entry limit', 2 * MAX_CANCEL_DATES + 2 < 500, true);
   eq('0 dates: no cap error (the empty case has its own error)', cancelCapError(0), null);
   eq('1 date: no cap error', cancelCapError(1), null);
   eq('exactly the cap: no cap error', cancelCapError(MAX_CANCEL_DATES), null);

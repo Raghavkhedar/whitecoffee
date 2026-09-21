@@ -398,9 +398,12 @@ export async function rejectLeave(
  *    used here. All reads happen before any write.
  *  - The callback RE-EXECUTES on contention (up to 5 attempts), so nothing it accumulates lives
  *    outside it and the result is the transaction's return value.
- *  - At most `MAX_CANCEL_DATES` (200) dates per call — a transaction reads 2 docs per date and
- *    writes up to 1 per date + 2. A longer selection is rejected with a message telling the admin
- *    to cancel in chunks of at most 200; the leaves page shows that error as-is.
+ *  - At most `MAX_CANCEL_DATES` (200) dates per call. The Commit carries ~2N + 2 write/verify
+ *    entries (the SDK verifies every doc that was read but not written: N holiday docs and any
+ *    unrevertible status docs) against Firestore's 500-entry limit, so the ceiling is ~249 and 200
+ *    is a modest margin, not 2.5x headroom (see the comment on `MAX_CANCEL_DATES`). A longer
+ *    selection is rejected with a message telling the admin to cancel in chunks of at most 200;
+ *    the leaves page disables its button past the cap and shows the error as-is otherwise.
  *  - Rules are unchanged: a transaction is evaluated like a batch — per-operation, atomic denial.
  *    A non-admin still cannot refund `plBalance`, and then the WHOLE cancellation is denied.
  */

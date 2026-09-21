@@ -59,11 +59,22 @@ export interface LeaveCancellationPlan {
 }
 
 /**
- * Most dates a single `cancelLeave` transaction will touch. A transaction reads two docs per
- * date (status + holiday) and writes up to one per date plus two more (user + leave), so 200
- * dates is ≤ 400 reads / ≤ 202 writes — comfortably inside Firestore's limits and quick enough
- * to retry on contention. A leave's `totalDays` is bounded 1–366 by the rules, so a very long
- * leave is cancelled in a few chunks. Design: docs/superpowers/specs/2026-09-21-transactional-nightly-and-cancel-design.md §6 Q2.
+ * Most dates a single `cancelLeave` transaction will touch.
+ *
+ * ⚠️ The limit that matters is the COMMIT SIZE, and it is about 2N, not N. A transaction reads two
+ * docs per date (`attendance_status/{date}` and `holidays/{date}`) plus the leave, and the client SDK
+ * appends one `verify` entry to the Commit for every doc that was read but NOT written. So the Commit
+ * carries roughly:
+ *     N status docs (each written, or verified if left alone)
+ *   + N holiday docs (always only verified)
+ *   + 1 leave update + 1 user update
+ *   = 2N + 2 entries      → 402 at N = 200, against Firestore's 500-entry limit per Commit.
+ * The hard ceiling is therefore N ≈ 249 (2·249 + 2 = 500), and 200 is a modest safety margin, NOT
+ * 2.5× headroom. Raising the cap above ~249 would make every long-leave cancellation fail at commit.
+ * The Firestore emulator does NOT enforce that limit, so no emulator test can catch a regression —
+ * the arithmetic is pinned by a unit test instead (leaveCancellation.test.ts). A leave's `totalDays`
+ * is bounded 1–366 by the rules, so a very long leave is cancelled in two chunks.
+ * Design: docs/superpowers/specs/2026-09-21-transactional-nightly-and-cancel-design.md §2 Option D, §6 Q2.
  */
 export const MAX_CANCEL_DATES = 200;
 
