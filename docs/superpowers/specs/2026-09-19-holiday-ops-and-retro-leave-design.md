@@ -39,5 +39,5 @@ Why a Cloud Function and not the portal: writing `plBalance` on the user doc is 
 
 ## Not covered / known limits
 
-- The trigger's I/O wrapper has no emulator test (the repo has no functions-emulator harness); the decision logic is a pure, unit-tested function.
+- The trigger's I/O wrapper (extracted to `firebase/functions/retroLeaveRunner.js`) is now covered by a Firestore-emulator suite, `npm run test:emulator` in `firebase/functions` (`emulator-tests/retroLeaveRunner.emulator.js`: scoring, idempotency, stale-event re-read, refusals, concurrent runs, error re-throw); the decision logic is also a pure, unit-tested function.
 - Holiday docs already written before deploy have no `salaryCredit` and will start paying +1 in the current month's live Sheets block (that is the requested Holiday = 1). Frozen past months are unchanged.
