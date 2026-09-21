@@ -158,12 +158,14 @@ export default function LeavesPage() {
     const revoked = [...selectedCancelDates].sort();
     setActioning(leave.id);
     try {
-      const { skippedDates, refundedDays } = await cancelLeave(
+      const { cancelled, skippedDates, refundedDays } = await cancelLeave(
         leave.userId, leave.id, adminName, revoked, cancelReason.trim(),
       );
       // Always notify: unlike a full approval, a cancellation is never good news the
       // employee can discover late — they think they have the day off.
-      const { title, body } = leaveCancelledMessage(leave, revoked);
+      // `cancelled` is the transaction's authoritative list (re-derived from the server copy of the leave),
+      // so a stale tab's already-cancelled days are not announced to the employee a second time.
+      const { title, body } = leaveCancelledMessage(leave, cancelled);
       try {
         await sendNotification([leave.userId], title, body, 'leave', adminName, 'specific');
       } catch { setError('Leave cancelled, but the employee notification failed to send.'); }
@@ -171,8 +173,8 @@ export default function LeavesPage() {
       if (skippedDates.length > 0) {
         setCancelNote(
           `Cancelled, but ${skippedDates.length === 1 ? 'one day was' : `${skippedDates.length} days were`} left as-is: ` +
-          `${formatDatesShort(skippedDates)}. ${skippedDates.length === 1 ? 'It was' : 'They were'} already corrected by an admin ` +
-          `(regularization), so that decision stands — adjust ${skippedDates.length === 1 ? 'it' : 'them'} on the Attendance page if needed.`
+          `${formatDatesShort(skippedDates)}. ${skippedDates.length === 1 ? 'It was' : 'They were'} not scored as leave (an admin decision ` +
+          `or another status already claims ${skippedDates.length === 1 ? 'it' : 'them'}), so that stands — adjust ${skippedDates.length === 1 ? 'it' : 'them'} on the Attendance page if needed.`
         );
       } else if (refundedDays > 0) {
         setCancelNote(`${refundedDays} paid-leave ${refundedDays === 1 ? 'day' : 'days'} returned to the employee's PL balance.`);
