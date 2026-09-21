@@ -7,15 +7,13 @@ const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { google } = require("googleapis");
 // Attendance scoring rule — shared with the Android preview (see attendanceRules.js header).
+// (The per-user window/classify/leave-status calls moved with the scoring into nightlyScoring.js.)
 const {
-  OFFICE_START_MIN,
-  OFFICE_END_MIN,
-  classify,
-  resolveOpsWindow,
   resolveRestDayType,
-  resolveLeaveStatus,
   shouldDecrementPlBalance,
 } = require("./attendanceRules");
+// Pure per-user nightly scoring + the attendance_status doc builder (see nightlyScoring.js).
+const { scoreUserDay, buildStatusDoc } = require("./nightlyScoring");
 // Whether a Holiday day still pays its +1 (operations who worked it are paid via OT instead).
 // resolveHolidayCredit freezes it at 23:59 from punches; effectiveHolidayCredit reconciles that
 // with approved OT at read time (a later manual-OT grant for a missed checkout).
@@ -458,97 +456,37 @@ exports.computeDailyAttendanceStatus = onSchedule(
     for (const user of allUsers) {
       if (adminOverrides.has(user.id)) continue;
       try {
-        const events = (eventsByUser.get(user.id) || []).sort(
-          (a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0)
-        );
-
-        const role        = user.role;
-        const fixedWindow = usesFixedWindow(role); // office/admin/sales: fixed 10–18; operations: planned shift
-        const plan  = plannedHours.get(user.id);
-        const leave = leavesToday.get(user.id);
-
-        // First check-in / last check-out across this role's event types. Operations:
-        // site + market. Office/admin: office. Sales (hybrid): office + site + market —
-        // scored against the same fixed window as office. Resolved BEFORE the skip below,
-        // which needs to know whether the user actually worked.
-        const inTypes  = attendanceInTypes(role);
-        const outTypes = attendanceOutTypes(role);
-        const checkIns  = events.filter((e) => inTypes.includes(e.type));
-        const checkOuts = events.filter((e) => outTypes.includes(e.type));
-        const worked = checkIns.length > 0 || checkOuts.length > 0;
-
-        // Every active user is scored on every working day, all roles alike. Sundays and
-        // holidays never reach this loop (both return above), offboarded users are filtered
-        // out of allUsers, and admin-marked days (WO / regularization) are skipped at the top.
-        // So an ops day reaching here with no plan, no leave and no punches is a no-show and
-        // scores Absent — days off must be marked WO or leave.
-
-        // Working window: fixed-window roles use 10:00–18:00; operations use the planned
-        // shift the admin entered (resolveOpsWindow handles the inverted/zero-window
-        // fallback). Ops with no plan keeps the 10:00–18:00 default — matching the portal's
-        // otLedger DEFAULT_SHIFT_START_MIN/END_MIN, which already scored these days that way.
-        let startMin = OFFICE_START_MIN;
-        let endMin = OFFICE_END_MIN;
-        if (!fixedWindow) {
-          const window = resolveOpsWindow(plan?.startTime, plan?.endTime);
-          if (window) { startMin = window.startMin; endMin = window.endMin; }
-        }
-
-        let status;
-        let salaryCredit; // only set for SCHL
-
-        if (checkIns.length > 0 && checkOuts.length > 0) {
-          const firstIn  = checkIns[0];
-          const lastOut  = checkOuts[checkOuts.length - 1];
-          const inMinutes  = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-          const outMinutes = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-
-          // The off-minutes formula lives in attendanceRules.classify, not inline here — inline it
-          // had no test coverage, since the test suite graded its own copy of the arithmetic.
-          status = classify(inMinutes, outMinutes, startMin, endMin);
-        } else if (checkIns.length > 0 || checkOuts.length > 0) {
-          status = "LNF";
-        } else {
-          if (leave) {
-            const balance = user.plBalance || 0;
-            const resolved = resolveLeaveStatus(balance);
-            status = resolved.status;
-            salaryCredit = resolved.salaryCredit;
-            // Only deduct when today wasn't already recorded as a paid day (SCHL credit 1, or a
-            // legacy PL doc), so a re-run (manual trigger / retry) doesn't decrement twice.
-            if (shouldDecrementPlBalance(salaryCredit, priorStatus.get(user.id))) {
-              plDeductions.push(user.id);
-            }
-          } else {
-            status = "Absent";
-          }
-        }
-
-        batch.set(db.doc(`users/${user.id}/attendance_status/${today}`), {
-          date: today, userId: user.id, userName: user.name || "",
-          employeeId: user.employeeId || "", role: user.role, status,
-          ...(salaryCredit !== undefined ? { salaryCredit } : {}),
-          markedBy: "auto", updatedAt: admin.firestore.Timestamp.now(),
+        // The classification is pure and lives in nightlyScoring.js (unit-tested there):
+        // first-in/last-out → Present/HalfDay/SL/LNF, unpunched + leave → SCHL, else Absent, plus
+        // the daily_hours numbers for roles that run the OT/shortage ledger. Everything with a
+        // side effect stays here.
+        const { status, salaryCredit, dailyHours } = scoreUserDay({
+          role: user.role,
+          events: eventsByUser.get(user.id) || [],
+          plan: plannedHours.get(user.id),
+          leave: leavesToday.get(user.id),
+          plBalance: user.plBalance,
         });
 
-        // Per-day worked hours → shortage (auto) and overtime (admin-approved later).
-        // Only on fully-worked days, and only for roles that run the OT/shortage ledger
-        // (operations). Fixed-window roles (office/admin/sales) have no OT/shortage.
-        if (usesOtShortageLedger(role) && checkIns.length > 0 && checkOuts.length > 0) {
-          const firstIn    = checkIns[0];
-          const lastOut     = checkOuts[checkOuts.length - 1];
-          const inMin       = getHourIST(firstIn.timestamp) * 60 + getMinuteIST(firstIn.timestamp);
-          const outMin      = getHourIST(lastOut.timestamp) * 60 + getMinuteIST(lastOut.timestamp);
-          const actualMins  = Math.max(0, outMin - inMin);
-          const plannedMins = Math.max(0, endMin - startMin);
-          // Shortage = late-in + early-out; OT = late-out only (arriving early never earns OT).
-          const shortageMins = Math.max(0, inMin - startMin) + Math.max(0, endMin - outMin);
-          const otMins       = Math.max(0, outMin - endMin);
+        // Only deduct when today wasn't already recorded as a paid day (SCHL credit 1, or a
+        // legacy PL doc), so a re-run (manual trigger / retry) doesn't decrement twice.
+        // `salaryCredit` is only ever defined for SCHL, so this is a no-op for every other day.
+        if (shouldDecrementPlBalance(salaryCredit, priorStatus.get(user.id))) {
+          plDeductions.push(user.id);
+        }
 
-          // Per-day canonical record (the OT/shortage ledger reads this, not a lifetime counter).
+        batch.set(
+          db.doc(`users/${user.id}/attendance_status/${today}`),
+          buildStatusDoc({ user, today, status, salaryCredit, now: () => admin.firestore.Timestamp.now() })
+        );
+
+        // Per-day worked hours (`dailyHours` is set only on fully-worked days of roles that
+        // run the OT/shortage ledger — operations). Per-day canonical record: the OT/shortage
+        // ledger reads this, not a lifetime counter.
+        if (dailyHours) {
           batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
             date: today, userId: user.id, role: user.role,
-            plannedMins, actualMins, shortageMins, otMins,
+            ...dailyHours, // plannedMins, actualMins, shortageMins, otMins
             updatedAt: admin.firestore.Timestamp.now(),
           });
         }
