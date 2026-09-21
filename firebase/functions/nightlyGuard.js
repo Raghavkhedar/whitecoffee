@@ -13,7 +13,8 @@
 //   2. write a `started` marker to system/nightly_runs/{jobName}/{today} BEFORE any work, so a run
 //      that dies mid-way is "a doc with startedAt but no completedAt" instead of "no doc at all" —
 //      the absence of a document was the state nothing could alarm on. It records the clock's
-//      source, the raw scheduleTime and driftMs. Best-effort: scoring outranks the marker, so a
+//      source, the raw scheduleTime and driftMs, and deletes any previous run's completedAt so a
+//      re-run of an already-completed date is judged afresh. Best-effort: scoring outranks the marker, so a
 //      failed marker write is logged and the run continues;
 //   3. run the handler with ({ today, startedAt, clockSource }) — the handler's final summary
 //      repeats startedAt/clockSource, so it stays self-describing if the marker write failed;
@@ -90,6 +91,10 @@ function withNightlyGuard({ getDb, Timestamp, FieldValue, log, now = Date.now, j
           clockSource,
           scheduleTime: typeof scheduleTime === "string" ? scheduleTime : null,
           driftMs,
+          // A re-run of an already-completed date (duplicate delivery / manual run) must not look
+          // finished while it is in flight or if it dies: drop the previous run's completedAt so
+          // "startedAt without completedAt" stays a true "unfinished" signal.
+          completedAt: FieldValue.delete(),
         },
         { merge: true }
       );

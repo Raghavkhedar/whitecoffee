@@ -207,7 +207,9 @@ test("an undefined event does not crash the wrapper", async () => {
 });
 
 // ── completedAt: written by the GUARD, so a Sunday/holiday run (early return, no summary) ends with it too
-const isCompleted = (c) => "completedAt" in c.data;
+// A real completion write — NOT the started marker, which also carries `completedAt` but as a delete.
+const isCompletedData = (d) => "completedAt" in d && d.completedAt !== DELETE;
+const isCompleted = (c) => isCompletedData(c.data);
 
 test("completedAt is written after a successful handler, on the same doc, with merge", async () => {
   const env = makeEnv({ nowMs: at("2026-09-21T18:29:05Z") });
@@ -230,6 +232,39 @@ test("completedAt is the time the run COMPLETED, not the time it started", async
   assert.deepEqual(doc.startedAt, { fakeTimestamp: at("2026-09-21T18:29:05Z") });
   assert.deepEqual(doc.completedAt, { fakeTimestamp: at("2026-09-21T18:31:40Z") });
   assert.notDeepEqual(doc.completedAt, doc.startedAt);
+});
+
+const COMPLETED_DOC = () => ({
+  date: "2026-09-21", startedAt: { fakeTimestamp: 1 }, completedAt: { fakeTimestamp: 2 }, ranAt: { fakeTimestamp: 2 }, ok: true,
+});
+
+test("re-running an already-completed date whose handler throws ends with NO completedAt (and failed:true)", async () => {
+  const p = markerPath("2026-09-21");
+  const env = makeEnv({ seed: { [p]: COMPLETED_DOC() } });
+  await assert.rejects(env.guard(async () => { throw new Error("re-run died"); })({ scheduleTime: SCHEDULED }));
+  const doc = env.docs.get(p);
+  assert.equal("completedAt" in doc, false, "the previous run's completedAt must not mask the unfinished re-run");
+  assert.equal(doc.failed, true);
+  assert.equal(doc.error, "re-run died");
+  assert.deepEqual(doc.startedAt, { fakeTimestamp: at("2026-09-21T18:29:05Z") }, "startedAt is the re-run's");
+});
+
+test("re-running an already-completed date that dies mid-way (no throw recorded) is startedAt-without-completedAt", async () => {
+  const p = markerPath("2026-09-21");
+  const env = makeEnv({ seed: { [p]: COMPLETED_DOC() } });
+  let seenDuringHandler;
+  await env.guard(async () => { seenDuringHandler = { ...env.docs.get(p) }; })({ scheduleTime: SCHEDULED });
+  assert.equal("completedAt" in seenDuringHandler, false, "cleared by the started marker, before any scoring");
+  assert.ok(seenDuringHandler.startedAt);
+});
+
+test("re-running an already-completed date that succeeds ends with a FRESH completedAt", async () => {
+  const p = markerPath("2026-09-21");
+  const env = makeEnv({ nowMs: at("2026-09-21T18:31:00Z"), seed: { [p]: COMPLETED_DOC() } });
+  await env.guard(async () => { env.state.nowMs = at("2026-09-21T18:33:00Z"); })({ scheduleTime: SCHEDULED });
+  const doc = env.docs.get(p);
+  assert.deepEqual(doc.completedAt, { fakeTimestamp: at("2026-09-21T18:33:00Z") }, "not the old { fakeTimestamp: 2 }");
+  assert.deepEqual(doc.startedAt, { fakeTimestamp: at("2026-09-21T18:31:00Z") });
 });
 
 test("a failed run then a successful rest-day-shaped retry (no summary write) ends with completedAt and NONE of failed/error/failedAt", async () => {
@@ -296,7 +331,7 @@ test("a throwing handler gets NO completedAt, and still gets the failure record"
 });
 
 test("a completedAt write that throws neither throws nor changes the returned value; it is logged", async () => {
-  const env = makeEnv({ failWhen: (_p, data) => "completedAt" in data });
+  const env = makeEnv({ failWhen: (_p, data) => isCompletedData(data) });
   const result = { scored: 12 };
   const out = await env.guard(async () => result)({ scheduleTime: SCHEDULED });
   assert.equal(out, result, "same object returned");
