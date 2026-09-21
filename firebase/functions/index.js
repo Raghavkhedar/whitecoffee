@@ -335,6 +335,7 @@ exports.accrueMonthlyLeave = onSchedule(
 const nightlyGuard = withNightlyGuard({
   getDb: () => admin.firestore(),
   Timestamp: admin.firestore.Timestamp,
+  FieldValue: admin.firestore.FieldValue,
   log: console,
   now: Date.now,
   jobName: "computeDailyAttendanceStatus",

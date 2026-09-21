@@ -14,8 +14,13 @@ const HOUR = 60 * 60 * 1000;
 const SCHEDULED = "2026-09-21T18:29:00Z"; // 23:59 IST on 2026-09-21
 const at = (iso) => Date.parse(iso);
 
-const makeEnv = ({ nowMs = at("2026-09-21T18:29:05Z"), failWhen = () => false } = {}) => {
+const DELETE = { fakeFieldValueDelete: true }; // the fake FieldValue.delete() sentinel
+
+// The fake db records every set() call AND models the stored doc (Firestore merge semantics, incl.
+// FieldValue.delete() removing a key), so a test can assert what a doc ENDS UP containing.
+const makeEnv = ({ nowMs = at("2026-09-21T18:29:05Z"), failWhen = () => false, seed = {} } = {}) => {
   const calls = [];
+  const docs = new Map(Object.entries(seed));
   const logs = { error: [], log: [] };
   const state = { nowMs };
   const db = {
@@ -23,16 +28,23 @@ const makeEnv = ({ nowMs = at("2026-09-21T18:29:05Z"), failWhen = () => false } 
       set: async (data, opts) => {
         if (failWhen(p, data, opts)) throw new Error("firestore write blew up");
         calls.push({ path: p, data, opts });
+        const next = opts && opts.merge ? { ...(docs.get(p) || {}) } : {};
+        for (const [k, v] of Object.entries(data)) {
+          if (v === DELETE) delete next[k]; else next[k] = v;
+        }
+        docs.set(p, next);
       },
     }),
   };
   const Timestamp = { now: () => ({ fakeTimestamp: state.nowMs }) };
+  const FieldValue = { delete: () => DELETE };
   const log = { error: (...a) => logs.error.push(a), log: (...a) => logs.log.push(a) };
-  const guard = withNightlyGuard({ getDb: () => db, Timestamp, log, now: () => state.nowMs, jobName: JOB });
-  return { guard, calls, logs, state, db };
+  const guard = withNightlyGuard({ getDb: () => db, Timestamp, FieldValue, log, now: () => state.nowMs, jobName: JOB });
+  return { guard, calls, logs, state, db, docs };
 };
 
 const markerPath = (date) => `system/nightly_runs/${JOB}/${date}`;
+const isFailure = (c) => c.data.failed === true;
 
 test("marker is written FIRST, before the handler, with startedAt/clockSource/scheduleTime and merge", async () => {
   const env = makeEnv();
@@ -65,7 +77,7 @@ test("on success it returns the handler's result and writes no failure record", 
   const out = await env.guard(async () => "the-result")({ scheduleTime: SCHEDULED });
   assert.equal(out, "the-result");
   assert.equal(env.calls.length, 2, "the started marker, then the completedAt marker");
-  assert.equal(env.calls.some((c) => c.data.ok === false), false);
+  assert.equal(env.calls.some(isFailure), false);
   assert.equal(env.logs.error.length, 0);
 });
 
@@ -77,7 +89,8 @@ test("a throwing handler: failure record written (merge), ORIGINAL error re-thro
   const f = env.calls[1];
   assert.equal(f.path, markerPath("2026-09-21"));
   assert.deepEqual(f.opts, { merge: true });
-  assert.equal(f.data.ok, false);
+  assert.equal(f.data.failed, true);
+  assert.equal("ok" in f.data, false, "the guard never borrows `ok` — that key belongs to the handler's summary");
   assert.equal(f.data.error, "batch commit exploded");
   assert.ok(f.data.failedAt, "failedAt is set");
   assert.ok(env.logs.error.length >= 1, "an error line is logged");
@@ -91,14 +104,14 @@ test("a non-Error throw is still recorded and re-thrown as-is", async () => {
 });
 
 test("if the failure-record write itself throws, the ORIGINAL error is still the one re-thrown", async () => {
-  const env = makeEnv({ failWhen: (_p, data) => data.ok === false });
+  const env = makeEnv({ failWhen: (_p, data) => data.failed === true });
   const boom = new Error("original");
   await assert.rejects(env.guard(async () => { throw boom; })({ scheduleTime: SCHEDULED }), (e) => e === boom);
   assert.ok(env.logs.error.length >= 2, "both the handler failure and the failed record write are logged");
 });
 
 test("a marker write that throws does not stop the handler (scoring beats the marker)", async () => {
-  const env = makeEnv({ failWhen: (_p, data) => "startedAt" in data && !("ok" in data) });
+  const env = makeEnv({ failWhen: (_p, data) => "startedAt" in data });
   let ran = false;
   const out = await env.guard(async (_ev, { today }) => { ran = true; return today; })({ scheduleTime: SCHEDULED });
   assert.equal(ran, true);
@@ -111,8 +124,9 @@ test("a refused clock writes a failure record, throws, and never runs the handle
   let ran = false;
   await assert.rejects(env.guard(async () => { ran = true; })({ scheduleTime: SCHEDULED }), /refus/i);
   assert.equal(ran, false);
-  const failure = env.calls.find((c) => c.data.ok === false);
+  const failure = env.calls.find(isFailure);
   assert.ok(failure, "a failure record is written");
+  assert.equal("ok" in failure.data, false);
   assert.deepEqual(failure.opts, { merge: true });
   assert.match(failure.data.error, /past/i);
   assert.ok(failure.data.failedAt);
@@ -162,7 +176,49 @@ test("completedAt is written after a successful handler, on the same doc, with m
   assert.equal(done.length, 1);
   assert.equal(done[0].path, markerPath("2026-09-21"));
   assert.deepEqual(done[0].opts, { merge: true });
-  assert.deepEqual(done[0].data, { completedAt: { fakeTimestamp: at("2026-09-21T18:29:05Z") } });
+  assert.deepEqual(done[0].data, {
+    completedAt: { fakeTimestamp: at("2026-09-21T18:29:05Z") },
+    failed: DELETE, error: DELETE, failedAt: DELETE,
+  }, "completedAt plus FieldValue.delete() for each failure key");
+  assert.equal("ok" in done[0].data, false, "success never touches `ok`");
+});
+
+test("a failed run then a successful rest-day-shaped retry (no summary write) ends with completedAt and NONE of failed/error/failedAt", async () => {
+  const path1 = markerPath("2026-09-21");
+  const env = makeEnv({
+    seed: { [path1]: { date: "2026-09-21", failed: true, error: "batch exploded", failedAt: { fakeTimestamp: 1 } } },
+  });
+  await env.guard(async () => { /* Sunday/holiday: early return, writes no summary */ })({ scheduleTime: SCHEDULED });
+  const doc = env.docs.get(path1);
+  assert.ok(doc.completedAt);
+  assert.equal("failed" in doc, false);
+  assert.equal("error" in doc, false);
+  assert.equal("failedAt" in doc, false);
+  assert.ok(doc.startedAt, "the retry's started marker is kept");
+});
+
+test("the failure keys are cleared by the write AFTER the handler, never before it", async () => {
+  const path1 = markerPath("2026-09-21");
+  const env = makeEnv({ seed: { [path1]: { failed: true, error: "old", failedAt: { fakeTimestamp: 1 } } } });
+  let duringHandler;
+  await env.guard(async () => { duringHandler = { ...env.docs.get(path1) }; })({ scheduleTime: SCHEDULED });
+  assert.equal(duringHandler.failed, true, "still failed while the retry is in flight");
+  assert.equal(duringHandler.error, "old");
+});
+
+test("a failed run writes failed:true / error / failedAt (merge) and a later success clears them", async () => {
+  const env = makeEnv();
+  await assert.rejects(env.guard(async () => { throw new Error("first attempt"); })({ scheduleTime: SCHEDULED }));
+  const p = markerPath("2026-09-21");
+  assert.equal(env.docs.get(p).failed, true);
+  assert.equal(env.docs.get(p).error, "first attempt");
+  env.state.nowMs = at("2026-09-21T18:31:00Z");
+  await env.guard(async () => {})({ scheduleTime: SCHEDULED });
+  const doc = env.docs.get(p);
+  assert.equal(doc.failed, undefined);
+  assert.equal(doc.error, undefined);
+  assert.equal(doc.failedAt, undefined);
+  assert.ok(doc.completedAt);
 });
 
 test("completedAt is written AFTER the handler's own summary write (that write is a full set and would wipe it)", async () => {
@@ -185,7 +241,7 @@ test("a throwing handler gets NO completedAt, and still gets the failure record"
   const boom = new Error("nope");
   await assert.rejects(env.guard(async () => { throw boom; })({ scheduleTime: SCHEDULED }), (e) => e === boom);
   assert.equal(env.calls.some(isCompleted), false);
-  const f = env.calls.find((c) => c.data.ok === false);
+  const f = env.calls.find(isFailure);
   assert.equal(f.data.error, "nope");
   assert.ok(f.data.failedAt);
 });
@@ -203,6 +259,7 @@ test("a refused run gets NO completedAt", async () => {
   const env = makeEnv({ nowMs: at("2026-09-30T00:00:00Z") });
   await assert.rejects(env.guard(async () => {})({ scheduleTime: SCHEDULED }), /refus/i);
   assert.equal(env.calls.some(isCompleted), false);
+  assert.ok(env.calls.some(isFailure), "the refusal is still recorded as failed:true");
 });
 
 // ── wiring guard: cheap protection against reverting index.js ───────────────────────────────
@@ -210,6 +267,7 @@ test("index.js wraps computeDailyAttendanceStatus in withNightlyGuard and no lon
   const src = fs.readFileSync(path.join(__dirname, "index.js"), "utf8");
   assert.match(src, /require\("\.\/nightlyGuard"\)/);
   assert.match(src, /withNightlyGuard\(\{/);
+  assert.match(src, /FieldValue:\s*admin\.firestore\.FieldValue/, "the guard is given FieldValue so success can clear the failure keys");
   const start = src.indexOf("exports.computeDailyAttendanceStatus = onSchedule(");
   const end = src.indexOf("exports.scoreRetroactiveLeave = ", start);
   assert.ok(start > 0 && end > start, "found the handler region");
