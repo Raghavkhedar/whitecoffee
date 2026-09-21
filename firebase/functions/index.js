@@ -60,6 +60,10 @@ const { leaveCoversDate, explicitGrantedDates, grantedDayCount } = require("./le
 // Leave approved after its days have passed — scoreRetroactiveLeave delegates to this runner
 // (see retroLeaveRunner.js; its pure planner is retroLeaveScoring.js).
 const { runRetroLeaveScoring } = require("./retroLeaveRunner");
+// The nightly's scored date comes from the SCHEDULED time (not the wall clock, which a retry
+// after IST midnight would push to D+1), plus a started marker and a failure record on the run
+// summary doc — see nightlyClock.js / nightlyGuard.js.
+const { withNightlyGuard } = require("./nightlyGuard");
 // Pay fields resolved from users/{uid}/compensation/current with per-field fallback to
 // the legacy inline fields — see compensation.js for why the split exists.
 const { withPay } = require("./compensation");
@@ -328,6 +332,13 @@ exports.accrueMonthlyLeave = onSchedule(
 );
 
 // ── Daily Attendance Status — 23:59 IST, ALL users ──────────────────────────
+const nightlyGuard = withNightlyGuard({
+  getDb: () => admin.firestore(),
+  Timestamp: admin.firestore.Timestamp,
+  log: console,
+  now: Date.now,
+  jobName: "computeDailyAttendanceStatus",
+});
 exports.computeDailyAttendanceStatus = onSchedule(
   // Retry-safe: status/daily_hours writes are `set` with deterministic doc IDs, and the
   // PL decrement is gated on `priorStatus`, which a retry re-reads — so a re-run cannot
@@ -337,10 +348,8 @@ exports.computeDailyAttendanceStatus = onSchedule(
     schedule: "59 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
     retryCount: 3, minBackoffSeconds: 60, maxDoublings: 2,
   },
-  async () => {
+  nightlyGuard(async (event, { today, startedAt, clockSource }) => {
     const db = admin.firestore();
-    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
-    const today  = nowIST.toISOString().slice(0, 10);
 
     const usersSnap   = await db.collection("users").get();
     // Offboarded users (active === false) are skipped entirely — no status doc, no
@@ -591,8 +600,10 @@ exports.computeDailyAttendanceStatus = onSchedule(
       failures,
       plFailures,
       ok: failures.length === 0 && plFailures.length === 0 && scored === expected,
+      startedAt,
+      clockSource,
     });
-  }
+  })
 );
 
 // ── Late-approved leave ──────────────────────────────────────────────────────────────────
