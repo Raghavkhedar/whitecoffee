@@ -163,5 +163,15 @@ eq('message reads only cancelledNow, not the stored field',
   leaveCancelledMessage({ ...APPROVED, cancelledDates: ['2026-07-23'] }, ['2026-07-23']).body,
   leaveCancelledMessage(APPROVED, ['2026-07-23']).body);
 
+// A SECOND cancellation on the same leave: days an earlier action already cancelled must not
+// be listed as still approved.
+eq('a second cancellation does not list earlier-cancelled days as remaining',
+  leaveCancelledMessage({ ...APPROVED, cancelledDates: ['2026-07-21'] }, ['2026-07-23']),
+  { title: 'Leave partially cancelled',
+    body: '1 approved leave day has been cancelled: 23 Jul. You are expected at work on that day. Your remaining approved leave: 22, 24, 25 Jul.' });
+eq('a second cancellation that removes the last days says nothing is left',
+  leaveCancelledMessage({ ...APPROVED, cancelledDates: ['2026-07-21', '2026-07-22', '2026-07-23'] }, ['2026-07-24', '2026-07-25']).title,
+  'Leave cancelled');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
