@@ -846,8 +846,9 @@ const countDocs = async (collectionId) => (await db.collectionGroup(collectionId
 
 test("450 fast users (600 writes) land in chunks of at most 400, all docs written", async () => {
   // 300 office (1 write each) + 150 operations with both punches (2 writes each) = 600 writes:
-  // over the 400 chunk limit AND over Firestore's own 500 cap, so the old single batch would have
-  // failed the entire night here.
+  // over the 400 chunk limit and over the 500 cap production Firestore enforces. NOTE: the
+  // emulator does NOT enforce that cap, so this test proves the CHUNKING (sizes counted through
+  // the db wrapper), not the rejection — an unchunked batch would pass here and fail in prod.
   const uids = await seedPunchedCrowd({ office: 300, ops: 150 });
 
   const { rec } = await run();
@@ -1074,4 +1075,94 @@ test("M1 a name/employeeId/role edited mid-run lands on the status doc, without 
   // cannot move a user out of the Absent/SCHL partition (which would need a daily_hours doc).
   assert.equal(s.status, "Absent");
   assert.equal(await readHours(uid), undefined);
+});
+
+// ── F5: the REST-DAY branch is chunked too ────────────────────────────────────────────────────
+//
+// Same 500-cap hazard as the fast partition: one status doc per doc-less employee in a single
+// batch, so every Sunday and every holiday would fail wholesale past a few hundred employees.
+// As above, the emulator does not enforce the cap — chunk sizes are asserted through the db
+// wrapper, which is what actually protects production.
+
+/** Seed `n` bare users in bulk (no punches). Returns their uids. */
+async function seedBareCrowd(n, over = {}) {
+  const uids = [];
+  for (let i = 0; i < n; i += 400) {
+    const b = db.batch();
+    for (let j = i; j < Math.min(i + 400, n); j++) {
+      const uid = newUid();
+      uids.push(uid);
+      b.set(db.doc(`users/${uid}`), {
+        name: `User ${uid}`, employeeId: `E-${uid}`, role: "office", plBalance: 0, ...over,
+      });
+    }
+    await b.commit();
+  }
+  return uids;
+}
+
+test("F5 450 doc-less users on a SUNDAY land in chunks of at most 400", async () => {
+  const uids = await seedBareCrowd(450);
+
+  const { rec } = await run({ today: SUNDAY });
+
+  const landed = (await db.collectionGroup("attendance_status").where("date", "==", SUNDAY).get()).size;
+  assert.equal(landed, 450, "every Sunday doc landed");
+  assert.ok(rec.batches.every((b) => b.writes <= 400), `chunk sizes: ${rec.batches.map((b) => b.writes)}`);
+  assert.deepEqual(rec.batches.map((b) => b.writes), [400, 50]);
+  assert.equal(rec.commits, 2);
+  assert.equal(rec.transactions, 0, "the rest-day branch returns before the scoring phases");
+  assert.equal((await readStatus(uids[0], SUNDAY)).status, "Sunday");
+  assert.equal((await readStatus(uids[449], SUNDAY)).status, "Sunday");
+  assert.equal(await readSummary(SUNDAY), undefined, "still no summary on a rest day");
+});
+
+test("F5 450 doc-less users on a HOLIDAY chunk the same way, credits intact", async () => {
+  const uids = await seedBareCrowd(450);
+  await db.doc(`holidays/${TODAY}`).set({ name: "Test Holiday" });
+
+  const { rec } = await run();
+
+  assert.equal((await db.collectionGroup("attendance_status").where("date", "==", TODAY).get()).size, 450);
+  assert.deepEqual(rec.batches.map((b) => b.writes), [400, 50]);
+  assert.equal((await readStatus(uids[0])).status, "Holiday");
+  assert.equal((await readStatus(uids[0])).salaryCredit, 1, "nobody worked it, so the +1 stands");
+  assert.equal((await readStatus(uids[449])).salaryCredit, 1);
+});
+
+test("F5 exactly 400 doc-less users is ONE chunk; 401 splits 400 + 1", async () => {
+  await seedBareCrowd(400);
+  const first = await run({ today: SUNDAY });
+  assert.deepEqual(first.rec.batches.map((b) => b.writes), [400]);
+  assert.equal(first.rec.commits, 1);
+
+  await seedBareCrowd(1); // 401st user, same emulator state
+  const second = await run({ today: SUNDAY });
+  // The 400 already-written users are skipped (any existing doc wins), so only the new one is
+  // written — which is itself the rest-day branch's own idempotency, asserted here for free.
+  assert.deepEqual(second.rec.batches.map((b) => b.writes), [1]);
+});
+
+test("F5 users who already have a doc are skipped, so a re-run of a rest day writes nothing", async () => {
+  const uids = await seedBareCrowd(5);
+
+  await run({ today: SUNDAY });
+  const { rec } = await run({ today: SUNDAY });
+
+  assert.deepEqual(rec.batches.map((b) => b.writes), [0], "the empty final chunk is still committed, as before");
+  assert.equal(rec.commits, 1);
+  for (const uid of uids) assert.equal((await readStatus(uid, SUNDAY)).status, "Sunday");
+});
+
+test("F5 a rest-day chunk commit failure THROWS and a retry converges", async () => {
+  await seedBareCrowd(450);
+
+  const wrapper = wrapDb({ failBatchCommit: 2 });
+  await assert.rejects(run({ today: SUNDAY, wrapper }), /injected batch commit failure #2/);
+
+  const partial = (await db.collectionGroup("attendance_status").where("date", "==", SUNDAY).get()).size;
+  assert.equal(partial, 400, "the first chunk landed, the second did not");
+
+  await run({ today: SUNDAY });
+  assert.equal((await db.collectionGroup("attendance_status").where("date", "==", SUNDAY).get()).size, 450);
 });

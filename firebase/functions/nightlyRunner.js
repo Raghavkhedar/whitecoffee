@@ -45,6 +45,16 @@
  * already recorded as a paid leave day is re-scored against an EFFECTIVE balance that adds back
  * the day this date already drew, so a retry cannot flip it to unpaid. See the `priorDrewBalance`
  * comment in the transaction.
+ *
+ * ── A deliberate asymmetry between the two partitions ──
+ * Only the Absent/SCHL partition re-checks `markedBy === "admin"` inside its transaction. The FAST
+ * partition still full-`set`s over an admin regularization that lands between Phase 1's status
+ * read and the batch commit — that day is punch-decided, so the nightly and the admin agree on it
+ * far more often, and protecting it would mean giving up the single bulk commit for the ~85 % of
+ * users it exists for. This is PRE-EXISTING and unchanged by this branch; it is called out so the
+ * asymmetry reads as a choice rather than an oversight. The transactional partition is exactly
+ * where an admin decision and the scorer can genuinely disagree about pay, which is why the
+ * re-check lives there.
  */
 
 const { resolveRestDayType, shouldDecrementPlBalance } = require("./attendanceRules");
@@ -52,6 +62,41 @@ const { scoreUserDay, buildStatusDoc, partitionUsers } = require("./nightlyScori
 const { resolveHolidayCredit } = require("./holidayCredit");
 const { usesFixedWindow } = require("./roleCapabilities");
 const { leaveCoversDate } = require("./leaveCoverage");
+
+// Firestore caps a batch at 500 WRITES. Both of this job's bulk paths — the rest-day branch and
+// the fast partition — write one document per employee, or two when an ops employee also gets a
+// `daily_hours` doc. A single company-wide batch therefore crosses the cap at a few hundred
+// employees, and the failure mode is the WHOLE night lost for everyone rather than a part of it.
+// 400 leaves headroom under the real limit.
+const BULK_BATCH_WRITE_LIMIT = 400;
+
+/**
+ * A bulk write stream, committed in chunks of at most `limit` writes.
+ *
+ * `reserve(n)` closes the current chunk when the next `n` writes would not fit, so a caller's
+ * related documents stay in the same chunk whenever they fit — but atomicity across them is NOT
+ * guaranteed at a boundary and nothing here relies on it. `flush()` always commits the final
+ * chunk, even when it is empty, exactly as the single batch always did.
+ *
+ * Failure semantics are deliberately unchanged from the single batch: a commit that fails THROWS
+ * out of the whole run, the guard records it and the scheduler retries the date. Chunks already
+ * committed are simply rewritten by the retry — every write is a `set` on a deterministic id.
+ */
+function makeChunkedBatch(db, limit) {
+  let batch = db.batch();
+  let writes = 0;
+  return {
+    async reserve(n) {
+      if (writes > 0 && writes + n > limit) {
+        await batch.commit();
+        batch = db.batch();
+        writes = 0;
+      }
+    },
+    set(ref, data) { batch.set(ref, data); writes++; },
+    flush() { return batch.commit(); },
+  };
+}
 
 async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, clockSource, log = console }) {
   const usersSnap   = await db.collection("users").get();
@@ -117,11 +162,15 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
   const restDayType = resolveRestDayType(today, holidayDoc.exists);
 
   if (restDayType) {
-    const restDayBatch = db.batch();
+    // Chunked for the same reason the fast partition is: one doc per doc-less employee in a single
+    // batch crosses Firestore's 500-write cap at a few hundred employees, and every rest day would
+    // then fail wholesale.
+    const restDayBatch = makeChunkedBatch(db, BULK_BATCH_WRITE_LIMIT);
     let restDayCount = 0;
     let holidayWithdrawn = 0;
     for (const user of allUsers) {
       if (priorStatus.has(user.id)) continue; // any existing doc (auto or admin) wins
+      await restDayBatch.reserve(1);
       // Holiday only: an operations employee who actually worked it is paid through the
       // OT-approval flow instead (all rest-day work is raised as pending OT), so the +1 day
       // is withdrawn (salaryCredit 0). A Sunday doc carries no credit field.
@@ -142,7 +191,7 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
       });
       restDayCount++;
     }
-    await restDayBatch.commit();
+    await restDayBatch.flush();
     log.log(`computeDailyAttendanceStatus: marked ${restDayType} for ${today} (${restDayCount}/${allUsers.length} users; ${allUsers.length - restDayCount} already had a doc)${restDayType === "Holiday" ? ` (${holidayWithdrawn} holiday +1 withdrawn: worked, paid via OT)` : ""}`);
     return;
   }
@@ -188,36 +237,21 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
   const { fast, txn } = partitionUsers(scoredItems);
 
   // ── Phase 6a: the fast partition, in bulk batches of at most 400 writes ────────────────────
-  // Firestore caps a batch at 500 WRITES. A fast user costs one status doc, plus a second write
-  // for the `daily_hours` doc of an ops user who worked a full day — so a single company-wide
-  // batch hits the cap at ~250 employees and would then fail the ENTIRE night, for everyone. The
-  // limit is counted in writes, not users, and the chunks are committed sequentially.
-  //
-  // A user's two documents go in the same chunk whenever they fit, but atomicity across them is
-  // NOT required and is not guaranteed at a boundary: they are separate documents with separate
-  // readers, and a re-run rewrites both deterministically from the same scored item.
-  //
-  // Failure semantics are unchanged: a commit that fails THROWS out of the whole run (the guard
-  // records it and the scheduler retries the date). Chunks already committed are simply rewritten
-  // by the retry — every write here is a `set` on a deterministic document id.
-  const FAST_BATCH_WRITE_LIMIT = 400;
-  let batch        = db.batch();
-  let batchWrites  = 0;
-  let scored       = 0;
+  // A fast user costs one status doc, plus a second write for the `daily_hours` doc of an ops user
+  // who worked a full day. The limit is counted in WRITES, not users; a user's two documents go in
+  // the same chunk whenever they fit, and nothing relies on them being atomic together (they are
+  // separate documents with separate readers, and a re-run rewrites both deterministically from
+  // the same scored item). See makeChunkedBatch for the cap and the failure semantics.
+  const batch  = makeChunkedBatch(db, BULK_BATCH_WRITE_LIMIT);
+  let   scored = 0;
   for (const item of fast) {
     const { user, status, salaryCredit, dailyHours } = item;
-    const writesForUser = dailyHours ? 2 : 1;
-    if (batchWrites > 0 && batchWrites + writesForUser > FAST_BATCH_WRITE_LIMIT) {
-      await batch.commit();
-      batch = db.batch();
-      batchWrites = 0;
-    }
+    await batch.reserve(dailyHours ? 2 : 1);
 
     batch.set(
       db.doc(`users/${user.id}/attendance_status/${today}`),
       buildStatusDoc({ user, today, status, salaryCredit, now: () => Timestamp.now() })
     );
-    batchWrites++;
 
     // Per-day worked hours (`dailyHours` is set only on fully-worked days of roles that
     // run the OT/shortage ledger — operations). Per-day canonical record: the OT/shortage
@@ -229,15 +263,13 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
         ...dailyHours, // plannedMins, actualMins, shortageMins, otMins
         updatedAt: Timestamp.now(),
       });
-      batchWrites++;
     }
     scored++;
   }
 
   // The commit stays OUTSIDE any per-user guard: a failure here is infrastructural, not
-  // per-user, and SHOULD throw so Cloud Scheduler retries the night. The last chunk is always
-  // committed, even when empty, exactly as the single batch always was.
-  await batch.commit();
+  // per-user, and SHOULD throw so Cloud Scheduler retries the night.
+  await batch.flush();
 
   // ── Phase 6b: one transaction per Absent/SCHL user (design §3.1 Phase 6) ───────────────────
   // Each transaction re-reads, INSIDE itself, the three things the snapshot can be stale about:
