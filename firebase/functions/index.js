@@ -603,7 +603,7 @@ exports.computeDailyAttendanceStatus = onSchedule(
       ok: failures.length === 0 && plFailures.length === 0 && scored === expected,
       startedAt,
       clockSource,
-    });
+    }, { merge: true });
   })
 );
 

@@ -87,11 +87,24 @@ test("refuses a scheduleTime more than 48 h in the past", () => {
   assert.equal(r.today, undefined);
 });
 
-test("refuses a scheduleTime more than 1 h in the future", () => {
+test("a scheduleTime more than 1 h in the FUTURE does NOT refuse — it falls back to the wall-clock date", () => {
   const nowMs = at("2026-09-21T00:00:00Z");
   const r = resolveNightlyClock({ scheduleTime: new Date(nowMs + 1 * HOUR + 1).toISOString(), nowMs });
-  assert.equal(r.refuse, true);
-  assert.match(r.reason, /future/i);
+  assert.equal(r.refuse, undefined, "a future header must never kill the nightly");
+  assert.equal(r.source, "future-drift-fallback");
+  assert.equal(r.today, oldWallClockToday(nowMs));
+  assert.equal(r.driftMs, -(1 * HOUR + 1), "the (negative) drift is still reported");
+});
+
+test("a header carrying IST local time misread as UTC (5.5 h ahead) still scores the wall-clock date every night", () => {
+  // 23:59 IST on 09-21 is 18:29 UTC. A header with the IST clock reading but read as UTC would say
+  // 2026-09-21T23:59Z, i.e. 5.5 h in the future. It used to refuse (killing the nightly every night).
+  const nowMs = at("2026-09-21T18:29:00Z");
+  const r = resolveNightlyClock({ scheduleTime: "2026-09-21T23:59:00Z", nowMs });
+  assert.equal(r.refuse, undefined);
+  assert.equal(r.source, "future-drift-fallback");
+  assert.equal(r.today, "2026-09-21");
+  assert.equal(r.driftMs, -5.5 * HOUR);
 });
 
 test("exactly 48 h in the past is accepted", () => {
