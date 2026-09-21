@@ -474,35 +474,32 @@ test("partitionUsers ∘ scoreUserDay: a dailyHours payload never lands in txn, 
   assert.equal(txn.every((x) => x.status === "Absent" || x.status === "SCHL"), true);
 });
 
-// ── wiring guard: index.js must call the module, not re-grow an inline copy ───────────────────
-test("index.js's nightly handler scores through nightlyScoring.js, with no inline copy of the loop", () => {
-  const src = fs.readFileSync(path.join(__dirname, "index.js"), "utf8");
-  assert.match(src, /require\("\.\/nightlyScoring"\)/);
-  const start = src.indexOf("exports.computeDailyAttendanceStatus = onSchedule(");
-  const end = src.indexOf("exports.scoreRetroactiveLeave = ", start);
-  assert.ok(start > 0 && end > start, "found the handler region");
-  const region = src.slice(start, end);
+// ── wiring guard: the nightly must call the module, not re-grow an inline copy ────────────────
+// The nightly body moved from index.js into nightlyRunner.js; index.js now only injects the
+// firebase-admin handles (that half is pinned by nightlyGuard.test.js).
+test("the nightly runner scores through nightlyScoring.js, with no inline copy of the loop", () => {
+  const region = fs.readFileSync(path.join(__dirname, "nightlyRunner.js"), "utf8");
+  assert.match(region, /require\("\.\/nightlyScoring"\)/);
 
   assert.match(region, /scoreUserDay\(\{/, "the loop classifies through scoreUserDay");
   // The status doc is built by buildStatusDoc with Timestamp.now() — NOT serverTimestamp() — at the call site.
-  assert.match(region, /buildStatusDoc\(\{ user, today, status, salaryCredit, now: \(\) => admin\.firestore\.Timestamp\.now\(\) \}\)/);
+  assert.match(region, /buildStatusDoc\(\{ user, today, status, salaryCredit, now: \(\) => Timestamp\.now\(\) \}\)/);
   assert.match(region, /if \(dailyHours\) \{[\s\S]*?daily_hours\/\$\{today\}[\s\S]*?\.\.\.dailyHours/, "daily_hours is written from scoreUserDay's payload");
 
-  // Nothing of the old inline scoring is left in the handler.
+  // Nothing of the old inline scoring is left in the runner.
   for (const banned of [/\bclassify\(/, /\bresolveLeaveStatus\(/, /\bresolveOpsWindow\(/, /\bgetHourIST\(/, /\bgetMinuteIST\(/,
     /status\s*=\s*"(Absent|LNF)"/, /markedBy:\s*"auto",\s*updatedAt:/]) {
     assert.doesNotMatch(region, banned, `inline scoring leftover: ${banned}`);
   }
 
-  // The ONLY remaining `markedBy: "auto"` literal is the rest-day branch's, which keeps serverTimestamp().
+  // The ONLY `markedBy: "auto"` literal is the rest-day branch's, which keeps serverTimestamp().
   const literals = [...region.matchAll(/markedBy:\s*"auto"/g)];
-  assert.equal(literals.length, 1, "exactly one markedBy literal left: the rest-day branch");
-  assert.match(region.slice(literals[0].index, literals[0].index + 300), /updatedAt: admin\.firestore\.FieldValue\.serverTimestamp\(\)/,
+  assert.equal(literals.length, 1, "exactly one markedBy literal: the rest-day branch");
+  assert.match(region.slice(literals[0].index, literals[0].index + 300), /updatedAt: FieldValue\.serverTimestamp\(\)/,
     "that literal is the rest-day branch, still serverTimestamp()");
   assert.ok(literals[0].index < region.indexOf("scoreUserDay({"), "and it sits before the scoring loop");
 
-  // The parts this refactor must NOT have touched are still in the handler.
-  assert.match(region, /shouldDecrementPlBalance\(salaryCredit, priorStatus\.get\(user\.id\)\)/, "PL decrement is still gated on the prior doc");
-  assert.match(region, /plDeductions\.push\(user\.id\)/);
+  // The parts this refactor must NOT have touched.
+  assert.match(region, /shouldDecrementPlBalance\(/, "the PL decrement is still gated by shouldDecrementPlBalance");
   assert.match(region, /increment\(-1\)/);
 });

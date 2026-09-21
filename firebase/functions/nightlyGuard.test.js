@@ -361,9 +361,24 @@ test("index.js wraps computeDailyAttendanceStatus in withNightlyGuard and no lon
   assert.doesNotMatch(region, /new\s+Date\s*\(/, "no bare `new Date(` in the handler — every date derives from the guard's `today`");
   assert.doesNotMatch(region, /const today\s*=/, "`today` comes from the guard, not a local const");
   assert.doesNotMatch(region, /nowIST/, "no leftover wall-clock derivation");
-  assert.match(region, /startedAt/, "the final summary carries the marker's startedAt");
-  assert.match(region, /clockSource/, "the final summary carries the clockSource");
-  assert.match(region, /startedAt,\s*clockSource,\s*\}, \{ merge: true \}\);/,
+  // The body now lives in nightlyRunner.js; index.js only injects the admin handles into it.
+  assert.match(region, /runNightlyScoring\(\{/, "the handler delegates to the extracted runner");
+  assert.match(region, /today, startedAt, clockSource,/, "the guard's date AND marker fields are handed to the runner");
+  assert.match(src, /require\("\.\/nightlyRunner"\)/);
+});
+
+// Same tripwire, on the file the body moved to: the runner must stay clock-free and keep the
+// summary contract the guard's marker depends on (both writes merge onto the same doc).
+test("nightlyRunner.js derives every date from the injected `today` and keeps the summary a merge", () => {
+  const src = fs.readFileSync(path.join(__dirname, "nightlyRunner.js"), "utf8");
+  assert.doesNotMatch(src, /Date\.now\s*\(/, "the runner must not read the wall clock");
+  assert.doesNotMatch(src, /new\s+Date\s*\(/, "no bare `new Date(` — every date derives from the guard's `today`");
+  assert.doesNotMatch(src, /const today\s*=/, "`today` is a parameter, not a local const");
+  assert.doesNotMatch(src, /nowIST/, "no leftover wall-clock derivation");
+  assert.doesNotMatch(src, /require\("firebase-(admin|functions)/, "no firebase-admin/-functions require: everything environmental is injected");
+  assert.match(src, /startedAt/, "the final summary carries the marker's startedAt");
+  assert.match(src, /clockSource/, "the final summary carries the clockSource");
+  assert.match(src, /startedAt,\s*clockSource,\s*\}, \{ merge: true \}\);/,
     "the summary is a MERGE so the marker's scheduleTime/driftMs survive on working days");
-  assert.match(region, /where\("date", "==", today\)/, "the punch query is keyed on the guard's `today`");
+  assert.match(src, /where\("date", "==", today\)/, "the punch query is keyed on the guard's `today`");
 });
