@@ -20,7 +20,14 @@
  *   - --restore <backup.jsonl> puts docs back to their backed-up `before` state, but only those
  *     still exactly as the migration left them (a later edit is never reverted; it is listed).
  *   - --project <id> is REQUIRED and is what firebase-admin is initialised with, so the script
- *     cannot silently run against whatever project the shell happens to be logged into.
+ *     cannot silently run against whatever project the shell happens to be logged into. (It is not
+ *     cross-checked against anything else: the operator must type the right id.)
+ *   - A set FIRESTORE_EMULATOR_HOST with a non-demo-* project is REFUSED in every mode (exit 2):
+ *     it would otherwise make a green run against a local emulator look like a real one.
+ *   - Every run prints a STATUS HISTOGRAM of all attendance docs. `remaining: 0` cannot see
+ *     near-miss statuses ("pl", "PL ", "Lwp"); those are reported loudly and exit non-zero.
+ *   - Plan/backup files start with a meta line; --restore refuses a dry-run file, a foreign file
+ *     or a different project. Restore exits non-zero if it had to leave a changed doc alone.
  *
  * Auth: Application Default Credentials (`gcloud auth application-default login`) or
  * GOOGLE_APPLICATION_CREDENTIALS=<service-account key>. Never commit a key.
@@ -35,6 +42,8 @@ const ACTOR = "system:migrateLegacyLeaveStatuses";
 const LEGACY_STATUSES = ["PL", "LWP"];
 const BATCH_LIMIT = 400; // Firestore allows 500 ops per batch; stay well inside it.
 const ATTENDANCE_PATH = /^users\/[^/]+\/attendance_status\/[^/]+$/;
+const META_TOOL = "migrateLegacyLeaveStatuses";
+const META_VERSION = 1;
 
 // ───────────────────────────────── the mapping ─────────────────────────────────
 
@@ -133,14 +142,27 @@ function loadAdmin() {
   return require("firebase-admin");
 }
 
-/** Write `content` to a NEW file (never overwrites), 0600, and fsync it before returning. */
-function writeFileDurably(file, content) {
-  const fd = fs.openSync(file, "wx", 0o600);
+/**
+ * Write `content` to a NEW file (never overwrites), 0600. fs.writeSync may write fewer bytes than
+ * asked, so loop until the whole buffer is out (a short write must not leave a truncated last
+ * line), then fsync the file and, best-effort, its directory so the new entry itself is durable.
+ * `io` is injectable so a test can force short writes.
+ */
+function writeFileDurably(file, content, io = fs) {
+  const buf = Buffer.from(content, "utf8");
+  const fd = io.openSync(file, "wx", 0o600);
   try {
-    fs.writeSync(fd, content);
-    fs.fsyncSync(fd);
+    let off = 0;
+    while (off < buf.length) off += io.writeSync(fd, buf, off, buf.length - off);
+    io.fsyncSync(fd);
   } finally {
-    fs.closeSync(fd);
+    io.closeSync(fd);
+  }
+  try {
+    const dirFd = io.openSync(path.dirname(file), "r");
+    try { io.fsyncSync(dirFd); } finally { io.closeSync(dirFd); }
+  } catch {
+    // Best effort: some platforms cannot fsync a directory.
   }
 }
 
@@ -176,6 +198,63 @@ async function scanUser(userRef) {
   return snap.docs;
 }
 
+// ───────────────────────────── status histogram ("did we miss any?") ─────────────────────────────
+//
+// `REMAINING: 0` only proves no doc with status EXACTLY "PL"/"LWP" is left. A near-miss such as
+// "pl", "PL " or "Lwp" is invisible to it (and to the migration, which is exact on purpose), yet the
+// legacy readers must stay until those are dealt with. So every run also tallies the raw `status`
+// of EVERY attendance doc and reports anything outside the known set.
+
+const KNOWN_STATUSES = new Set([
+  "Present", "HalfDay", "SL", "LNF", "SLNF", "Absent", "SCHL", "USCHL", "WO", "Sunday", "Holiday",
+  ...LEGACY_STATUSES, // known until the apply has run; PL/LWP left AFTER it are caught by `remaining`
+]);
+const NEAR_MISS_LEGACY = /^\s*(pl|lwp)\s*$/i;
+const MAX_EXAMPLES = 3;
+
+/** A raw `status` value as a histogram key. Real strings are used verbatim ("PL " stays distinct). */
+function statusLabel(v) {
+  if (typeof v === "string") return v;
+  if (v === undefined) return "(no status field)";
+  return `<${v === null ? "null" : typeof v}:${JSON.stringify(v)}>`;
+}
+
+/**
+ * PURE. statusCounts: { rawStatus: count }, examples: { rawStatus: [paths] } (optional).
+ *   -> { total, histogram: [{status,count}] (by count desc, then name),
+ *        unrecognised: [{status,count,examples<=3}], nearMiss: [same] }
+ * `nearMiss` = unrecognised statuses that look like PL/LWP (any case / surrounding whitespace) but
+ * are not exactly PL/LWP: the tool will NOT change them.
+ */
+function summariseStatuses(statusCounts, examples = {}) {
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const histogram = Object.entries(statusCounts)
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count || (a.status < b.status ? -1 : a.status > b.status ? 1 : 0));
+  const unrecognised = histogram
+    .filter((h) => !KNOWN_STATUSES.has(h.status))
+    .map((h) => ({ ...h, examples: has(examples, h.status) ? examples[h.status].slice(0, MAX_EXAMPLES) : [] }));
+  return {
+    total: histogram.reduce((n, h) => n + h.count, 0),
+    histogram,
+    unrecognised,
+    nearMiss: unrecognised.filter((u) => NEAR_MISS_LEGACY.test(u.status)),
+  };
+}
+
+/** Field-masked read (`select("status")`) of a user's WHOLE attendance_status, tallied into the accumulators. */
+async function tallyStatuses(userRef, counts, examples) {
+  const snap = await userRef.collection("attendance_status").select("status").get();
+  for (const doc of snap.docs) {
+    const label = statusLabel(doc.data().status);
+    counts[label] = (counts[label] || 0) + 1;
+    if (!KNOWN_STATUSES.has(label)) {
+      const ex = (examples[label] = examples[label] || []);
+      if (ex.length < MAX_EXAMPLES) ex.push(doc.ref.path);
+    }
+  }
+}
+
 // ─────────────────────────────────── migration ───────────────────────────────────
 
 /**
@@ -197,9 +276,12 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
   const found = { PL: 0, LWP_auto: 0, LWP_admin: 0 };
   const byMonth = {};
   const entries = [];
-  const migratedAt = Timestamp.fromDate(now);
+  const migratedAt = Timestamp.fromDate(now); // = the scan-start time, the same for every doc
+  const statusCounts = Object.create(null);
+  const statusExamples = Object.create(null);
   for (const userRef of userRefs) {
     const docs = await scanUser(userRef);
+    await tallyStatuses(userRef, statusCounts, statusExamples);
     let n = 0;
     for (const doc of docs) {
       const before = doc.data();
@@ -233,14 +315,18 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
   const summary = {
     apply: !!apply, projectId, users: userRefs.length, found, byMonth,
     planned: entries.length, written: 0, skippedChanged: [], remaining: entries.length, backupFile: null, errors: [],
+    statuses: summariseStatuses(statusCounts, statusExamples), statusesAfter: null,
   };
 
-  // 2. PLAN / BACKUP FILE — always, and durably on disk before any write.
+  // 2. PLAN / BACKUP FILE — always, and durably on disk before any write. The first line is a meta
+  // record so restore can refuse a dry-run file, a foreign file, or one from another project.
   fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
+  const mode = apply ? "apply" : "dry-run";
   const stamp = now.toISOString().replace(/[:.]/g, "-");
   const safeProject = String(projectId || "unknown").replace(/[^A-Za-z0-9._-]/g, "_");
-  summary.backupFile = path.join(outDir, `legacy-leave-migration_${safeProject}_${stamp}_${apply ? "apply" : "dry-run"}.jsonl`);
-  writeFileDurably(summary.backupFile, entries.map((e) => `${e.line}\n`).join(""));
+  summary.backupFile = path.join(outDir, `legacy-leave-migration_${safeProject}_${stamp}_${mode}.jsonl`);
+  const meta = { __meta: { tool: META_TOOL, mode, project: projectId, createdAt: now.toISOString(), version: META_VERSION } };
+  writeFileDurably(summary.backupFile, `${JSON.stringify(meta)}\n${entries.map((e) => `${e.line}\n`).join("")}`);
 
   if (!apply) return summary;
 
@@ -278,11 +364,17 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
     }
   }
 
-  // 4. RE-SCAN: how many legacy docs are still there? (expected 0)
+  // 4. RE-SCAN: how many legacy docs are still there (expected 0), and the final status distribution.
   try {
     let remaining = 0;
-    for (const userRef of userRefs) remaining += (await scanUser(userRef)).length;
+    const afterCounts = Object.create(null);
+    const afterExamples = Object.create(null);
+    for (const userRef of userRefs) {
+      remaining += (await scanUser(userRef)).length;
+      await tallyStatuses(userRef, afterCounts, afterExamples);
+    }
     summary.remaining = remaining;
+    summary.statusesAfter = summariseStatuses(afterCounts, afterExamples);
   } catch (err) {
     summary.remaining = null;
     summary.errors.push(`re-scan failed: ${firstLine(err)}`);
@@ -292,8 +384,27 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
 
 // ───────────────────────────────────── restore ─────────────────────────────────────
 
+/** Line 1 of every plan/backup file. Refuses anything restore must not act on. Throws on refusal. */
+function checkBackupMeta(firstLineText, projectId) {
+  let meta;
+  try { meta = JSON.parse(firstLineText || ""); } catch { meta = null; }
+  meta = meta && meta.__meta;
+  if (!isPlainObject(meta)) {
+    throw new Error("not a plan/backup file written by this tool: no meta line at the top (restore only accepts the *_apply.jsonl file from a real --apply run)");
+  }
+  if (meta.tool !== META_TOOL) throw new Error(`refusing: the meta line says tool ${JSON.stringify(meta.tool)}, expected ${META_TOOL}`);
+  if (meta.version !== META_VERSION) throw new Error(`refusing: unsupported backup format version ${JSON.stringify(meta.version)} (this script reads version ${META_VERSION})`);
+  if (meta.mode === "dry-run") {
+    throw new Error("refusing: this is a DRY-RUN plan file, nothing was ever written under it. Restore from the *_apply.jsonl file of the real --apply run instead.");
+  }
+  if (meta.mode !== "apply") throw new Error(`refusing: unknown mode ${JSON.stringify(meta.mode)} in the meta line`);
+  if (meta.project !== projectId) {
+    throw new Error(`refusing: this backup was taken from project ${JSON.stringify(meta.project)} but --project is ${JSON.stringify(projectId)}`);
+  }
+}
+
 /**
- * runRestore({ db, Timestamp, file, apply, log })
+ * runRestore({ db, Timestamp, file, apply, log, projectId })
  *   -> { apply, file, entries, toRestore, alreadyOriginal, skippedChanged, restored, errors }
  *
  * Puts docs in the backup back to their `before` state with a FULL set() (no merge), so fields the
@@ -306,13 +417,15 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
  * is listed in `skippedChanged`: restore must never silently revert a later legitimate change.
  * Each write chunk is a transaction that re-reads and re-checks, like the migration itself.
  */
-async function runRestore({ db, Timestamp, file, apply = false, log = console.log }) {
+async function runRestore({ db, Timestamp, file, apply = false, log = console.log, projectId }) {
+  if (!projectId) throw new Error("runRestore needs projectId (to check it against the backup's meta line)");
   if (!Timestamp) Timestamp = loadAdmin().firestore.Timestamp;
-  const raw = fs.readFileSync(file, "utf8");
+  const lines = fs.readFileSync(file, "utf8").split("\n");
+  checkBackupMeta(lines[0], projectId);
   const items = [];
   const seen = new Set();
-  raw.split("\n").forEach((text, idx) => {
-    if (text.trim() === "") return;
+  lines.forEach((text, idx) => {
+    if (idx === 0 || text.trim() === "") return; // line 1 is the meta record, already checked
     let row;
     try { row = JSON.parse(text); } catch { throw new Error(`backup line ${idx + 1} is not valid JSON`); }
     const p = row && row.path;
@@ -484,65 +597,143 @@ function bannerLines({ apply, emulator, projectId, restore }) {
   return lines;
 }
 
+/**
+ * FIRESTORE_EMULATOR_HOST makes firebase-admin talk to a local emulator regardless of --project,
+ * so a stale value in the shell turns `--apply` against the real project id into a fully green
+ * run against nothing (the emulator has no legacy docs). Refuse that in EVERY mode; a real run
+ * must have it unset. Only demo-* project ids may target an emulator.
+ * PURE. -> { emulator: boolean } | { error }
+ */
+function checkTarget({ project, env }) {
+  const host = env && env.FIRESTORE_EMULATOR_HOST;
+  if (!host) return { emulator: false };
+  if (project.startsWith("demo-")) return { emulator: true };
+  return {
+    error: `FIRESTORE_EMULATOR_HOST is set, so this would talk to a local emulator, not the real project '${project}'. Unset it (\`unset FIRESTORE_EMULATOR_HOST\`) or use a demo-* project id to test.`,
+  };
+}
+
 function exitCodeForMigration(summary) {
   if (summary.errors && summary.errors.length > 0) return 1;
   if (summary.apply && summary.remaining !== 0) return 1;
+  // Near-miss legacy statuses ("pl", "PL ", "Lwp") fail the run in every mode: the tool does not
+  // change them, and the legacy readers must not be deleted while they exist.
+  const nearMiss = (st) => !!st && st.nearMiss.length > 0;
+  if (nearMiss(summary.statuses) || nearMiss(summary.statusesAfter)) return 1;
   return 0;
 }
 
+/** A restore that left docs alone as "changed since the migration" is incomplete -> non-zero. */
 function exitCodeForRestore(result) {
-  return result.errors && result.errors.length > 0 ? 1 : 0;
+  if (result.errors && result.errors.length > 0) return 1;
+  if (result.skippedChanged && result.skippedChanged.length > 0) return 1;
+  return 0;
 }
 
-function printMigrationSummary(s, log) {
-  log("");
-  log(`Users scanned:        ${s.users}`);
-  log(`Legacy docs found:    ${s.planned}`);
-  log(`  PL   -> SCHL (credit 1):             ${s.found.PL}`);
-  log(`  LWP  -> SCHL (credit 0, non-admin):  ${s.found.LWP_auto}`);
-  log(`  LWP  -> USCHL (admin-marked):        ${s.found.LWP_admin}`);
+const EMULATOR_FOOTER = "*** EMULATOR *** everything above came from a local emulator, NOT production. ***";
+
+function statusLines(st, title) {
+  const lines = [`STATUS HISTOGRAM${title ? ` ${title}` : ""} (${st.total} attendance doc(s) in total):`];
+  const width = Math.max(0, ...st.histogram.map((h) => JSON.stringify(h.status).length));
+  st.histogram.forEach((h) => lines.push(`  ${JSON.stringify(h.status).padEnd(width)}  ${h.count}${h.status === "PL" || h.status === "LWP" ? "   (legacy)" : ""}`));
+  if (st.unrecognised.length) {
+    lines.push("UNRECOGNISED statuses (not in the known set; this tool never changes them):");
+    st.unrecognised.forEach((u) => lines.push(`  ${JSON.stringify(u.status)}  x${u.count}   e.g. ${u.examples.join(", ")}`));
+  }
+  return lines;
+}
+
+function nearMissWarning(st) {
+  if (!st || st.nearMiss.length === 0) return [];
+  const n = st.nearMiss.reduce((sum, u) => sum + u.count, 0);
+  return [
+    "",
+    `WARNING: ${n} doc(s) have a status that LOOKS like a legacy PL/LWP status but is not exactly "PL"/"LWP": ${st.nearMiss.map((u) => `${JSON.stringify(u.status)} x${u.count}`).join(", ")}.`,
+    "         This tool will NOT change them. Do NOT delete the legacy readers (the PL/LWP handling) until they are dealt with.",
+    "         This run exits non-zero because of them.",
+  ];
+}
+
+/** PURE. The whole human-readable summary of a migration run, as lines. */
+function migrationSummaryLines(s, { emulator = false } = {}) {
+  const L = [""];
+  L.push(emulator
+    ? "Data source:        this data came from an EMULATOR (FIRESTORE_EMULATOR_HOST), NOT production."
+    : `Data source:        Firestore project ${s.projectId}`);
+  L.push(`Users scanned:        ${s.users}`);
+  L.push(`Legacy docs found:    ${s.planned}`);
+  L.push(`  PL   -> SCHL (credit 1):             ${s.found.PL}`);
+  L.push(`  LWP  -> SCHL (credit 0, non-admin):  ${s.found.LWP_auto}`);
+  L.push(`  LWP  -> USCHL (admin-marked):        ${s.found.LWP_admin}`);
   const months = Object.keys(s.byMonth).sort();
   if (months.length) {
-    log("Per month (PL / LWP):");
-    months.forEach((m) => log(`  ${m}: ${s.byMonth[m].PL} / ${s.byMonth[m].LWP}`));
+    L.push("Per month (PL / LWP):");
+    months.forEach((m) => L.push(`  ${m}: ${s.byMonth[m].PL} / ${s.byMonth[m].LWP}`));
   }
-  log(`Plan/backup file:     ${s.backupFile}`);
+  L.push(`Plan/backup file:     ${s.backupFile}`);
   if (s.apply) {
-    log(`Written:              ${s.written} of ${s.planned}`);
-    log(`Skipped (changed since the scan): ${s.skippedChanged.length}`);
-    s.skippedChanged.forEach((p) => log(`  ${p}`));
-    if (s.skippedChanged.length) log("  These docs were edited or deleted while the script ran and were NOT written. Re-run --apply to pick them up.");
-    log(`Legacy docs REMAINING: ${s.remaining === null ? "unknown (re-scan failed)" : s.remaining}   (expected 0)`);
-  } else {
-    log("");
-    log("DRY RUN complete — NOTHING was written to Firestore. Inspect the file above, then re-run with --apply.");
+    L.push(`Written:              ${s.written} of ${s.planned}`);
+    L.push(`Skipped (changed since the scan): ${s.skippedChanged.length}`);
+    s.skippedChanged.forEach((p) => L.push(`  ${p}`));
+    if (s.skippedChanged.length) L.push("  These docs were edited or deleted while the script ran and were NOT written. Re-run --apply to pick them up.");
+    L.push(`Legacy docs REMAINING: ${s.remaining === null ? "unknown (re-scan failed)" : s.remaining}   (expected 0; this cannot see near-miss statuses, read the histogram)`);
   }
-  (s.errors || []).forEach((e) => log(`ERROR: ${e}`));
+  L.push("");
+  if (s.statuses) L.push(...statusLines(s.statuses, s.apply ? "BEFORE the writes" : ""));
+  if (s.apply) {
+    L.push("");
+    L.push(...(s.statusesAfter ? statusLines(s.statusesAfter, "AFTER the writes") : ["STATUS HISTOGRAM AFTER the writes: unavailable (the re-scan failed)"]));
+  }
+  L.push(...nearMissWarning(s.statusesAfter || s.statuses));
+  if (!s.apply) {
+    L.push("");
+    L.push("DRY RUN complete — NOTHING was written to Firestore. Inspect the file above, then re-run with --apply.");
+  }
+  (s.errors || []).forEach((e) => L.push(`ERROR: ${e}`));
+  if (emulator) L.push("", EMULATOR_FOOTER);
+  return L;
 }
 
-async function main(argv, env = process.env, log = console.log) {
+/** PURE. The summary of a restore run, as lines. */
+function restoreSummaryLines(r, { emulator = false } = {}) {
+  const L = [];
+  L.push(r.apply ? `Restored ${r.restored} of ${r.toRestore} doc(s).` : "DRY RUN complete — NOTHING was written to Firestore.");
+  if (r.skippedChanged.length) {
+    L.push(`${r.skippedChanged.length} doc(s) were edited or deleted since the migration and were LEFT ALONE (listed above). Exiting non-zero: the restore is incomplete.`);
+  }
+  (r.errors || []).forEach((e) => L.push(`ERROR: ${e}`));
+  if (emulator) L.push("", EMULATOR_FOOTER);
+  return L;
+}
+
+async function main(argv, env = process.env, log = console.log, errLog = console.error) {
   const parsed = parseArgs(argv);
   if (parsed.help) { log(USAGE); return 0; }
-  if (parsed.error) { console.error(`error: ${parsed.error}\n\n${USAGE}`); return 2; }
+  if (parsed.error) { errLog(`error: ${parsed.error}\n\n${USAGE}`); return 2; }
   const { project, apply, user, out, restore } = parsed.options;
 
+  // Before ANYTHING else (no banner, no SDK, no files): a stale emulator target is refused.
+  const target = checkTarget({ project, env });
+  if (target.error) { errLog(`error: ${target.error}`); return 2; }
+  const emulator = target.emulator;
+
   const admin = loadAdmin();
-  bannerLines({ apply, emulator: !!env.FIRESTORE_EMULATOR_HOST, projectId: project, restore: !!restore }).forEach((l) => log(l));
+  bannerLines({ apply, emulator, projectId: project, restore: !!restore }).forEach((l) => log(l));
   admin.initializeApp({ projectId: project });
   try {
     const db = admin.firestore();
     if (restore) {
-      const result = await runRestore({ db, Timestamp: admin.firestore.Timestamp, file: path.resolve(process.cwd(), restore), apply, log });
-      log(apply ? `Restored ${result.restored} of ${result.toRestore} doc(s).` : "DRY RUN complete — NOTHING was written to Firestore.");
-      if (result.skippedChanged.length) log(`${result.skippedChanged.length} doc(s) were edited or deleted since the migration and were LEFT ALONE (listed above).`);
-      result.errors.forEach((e) => log(`ERROR: ${e}`));
+      const result = await runRestore({
+        db, Timestamp: admin.firestore.Timestamp, file: path.resolve(process.cwd(), restore), apply, log, projectId: project,
+      });
+      restoreSummaryLines(result, { emulator }).forEach((l) => log(l));
       return exitCodeForRestore(result);
     }
     const summary = await runMigration({
       db, FieldValue: admin.firestore.FieldValue, Timestamp: admin.firestore.Timestamp, now: new Date(),
       projectId: project, apply, outDir: path.resolve(process.cwd(), out), userId: user || undefined, log,
     });
-    printMigrationSummary(summary, log);
+    migrationSummaryLines(summary, { emulator }).forEach((l) => log(l));
     return exitCodeForMigration(summary);
   } finally {
     await admin.app().delete().catch(() => {});
@@ -566,5 +757,6 @@ if (require.main === module) {
 
 module.exports = {
   planLegacyStatusMigration, runMigration, runRestore, parseArgs, exitCodeForMigration, exitCodeForRestore,
-  bannerLines, encodeValue, decodeValue,
+  bannerLines, encodeValue, decodeValue, checkTarget, summariseStatuses, migrationSummaryLines,
+  restoreSummaryLines, writeFileDurably, main,
 };
