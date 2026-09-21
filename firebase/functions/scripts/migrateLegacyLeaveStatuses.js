@@ -153,7 +153,11 @@ function writeFileDurably(file, content, io = fs) {
   const fd = io.openSync(file, "wx", 0o600);
   try {
     let off = 0;
-    while (off < buf.length) off += io.writeSync(fd, buf, off, buf.length - off);
+    while (off < buf.length) {
+      const n = io.writeSync(fd, buf, off, buf.length - off);
+      if (!(n > 0)) throw new Error(`wrote 0 bytes to ${file} (${off} of ${buf.length} done), refusing to spin`);
+      off += n;
+    }
     io.fsyncSync(fd);
   } finally {
     io.closeSync(fd);
@@ -313,7 +317,7 @@ async function runMigration({ db, FieldValue, Timestamp, now = new Date(), proje
   }
 
   const summary = {
-    apply: !!apply, projectId, users: userRefs.length, found, byMonth,
+    apply: !!apply, projectId, userId: userId || null, users: userRefs.length, found, byMonth,
     planned: entries.length, written: 0, skippedChanged: [], remaining: entries.length, backupFile: null, errors: [],
     statuses: summariseStatuses(statusCounts, statusExamples), statusesAfter: null,
   };
@@ -632,8 +636,12 @@ function exitCodeForRestore(result) {
 
 const EMULATOR_FOOTER = "*** EMULATOR *** everything above came from a local emulator, NOT production. ***";
 
-function statusLines(st, title) {
-  const lines = [`STATUS HISTOGRAM${title ? ` ${title}` : ""} (${st.total} attendance doc(s) in total):`];
+function statusLines(st, title, scopedUser) {
+  const name = `STATUS HISTOGRAM${title ? ` ${title}` : ""}`;
+  // A --user run only looked at one employee: never present that as a company-wide total.
+  const lines = [scopedUser
+    ? `${name} — scoped to user ${scopedUser} ONLY (${st.total} attendance doc(s) of that user; other users were not scanned, run without --user for the full picture):`
+    : `${name} (${st.total} attendance doc(s) in total):`];
   const width = Math.max(0, ...st.histogram.map((h) => JSON.stringify(h.status).length));
   st.histogram.forEach((h) => lines.push(`  ${JSON.stringify(h.status).padEnd(width)}  ${h.count}${h.status === "PL" || h.status === "LWP" ? "   (legacy)" : ""}`));
   if (st.unrecognised.length) {
@@ -679,10 +687,10 @@ function migrationSummaryLines(s, { emulator = false } = {}) {
     L.push(`Legacy docs REMAINING: ${s.remaining === null ? "unknown (re-scan failed)" : s.remaining}   (expected 0; this cannot see near-miss statuses, read the histogram)`);
   }
   L.push("");
-  if (s.statuses) L.push(...statusLines(s.statuses, s.apply ? "BEFORE the writes" : ""));
+  if (s.statuses) L.push(...statusLines(s.statuses, s.apply ? "BEFORE the writes" : "", s.userId));
   if (s.apply) {
     L.push("");
-    L.push(...(s.statusesAfter ? statusLines(s.statusesAfter, "AFTER the writes") : ["STATUS HISTOGRAM AFTER the writes: unavailable (the re-scan failed)"]));
+    L.push(...(s.statusesAfter ? statusLines(s.statusesAfter, "AFTER the writes", s.userId) : ["STATUS HISTOGRAM AFTER the writes: unavailable (the re-scan failed)"]));
   }
   L.push(...nearMissWarning(s.statusesAfter || s.statuses));
   if (!s.apply) {

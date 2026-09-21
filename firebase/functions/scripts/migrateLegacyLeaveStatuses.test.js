@@ -1220,3 +1220,33 @@ test("plan/backup files start with a meta line (tool, mode, project, createdAt, 
   assert.ok(first.startsWith('{"__meta"'), "meta is the FIRST line");
   assert.equal(readJsonl(apply.backupFile).length, 7, "the meta line is not counted as a doc line");
 });
+
+test("writeFileDurably refuses to spin when a write makes no progress", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "legacy-write-zero-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  let writes = 0;
+  const io = {
+    openSync: (p, f, m) => fs.openSync(p, f, m),
+    writeSync: () => { writes += 1; if (writes > 1000) throw new Error("spun forever"); return 0; },
+    fsyncSync: (fd) => fs.fsyncSync(fd),
+    closeSync: (fd) => fs.closeSync(fd),
+  };
+  assert.throws(() => writeFileDurably(path.join(dir, "z.jsonl"), "some content\n", io), /wrote 0 bytes/);
+  assert.equal(writes, 1, "gave up on the first zero-byte write");
+});
+
+test("--user: the histogram is labelled as scoped to that employee only; a full run is not", async (t) => {
+  const db = new FakeDb(seed());
+  const scoped = await runMigration(opts(db, tmpDir(t), { userId: "u2" }));
+  assert.equal(scoped.userId, "u2");
+  const text = migrationSummaryLines(scoped, { emulator: false }).join("\n");
+  assert.match(text, /scoped to user u2 ONLY/);
+  assert.match(text, /other users were not scanned/);
+  assert.match(text, /run without --user for the full picture/);
+  assert.doesNotMatch(text, /in total/, "must not claim a company-wide total");
+  const full = await runMigration(opts(db, tmpDir(t)));
+  assert.equal(full.userId, null);
+  const fullText = migrationSummaryLines(full, { emulator: false }).join("\n");
+  assert.match(fullText, /attendance doc\(s\) in total/);
+  assert.doesNotMatch(fullText, /scoped to user/);
+});
