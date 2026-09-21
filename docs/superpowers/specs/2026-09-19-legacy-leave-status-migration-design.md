@@ -35,7 +35,7 @@ Why the pay is unchanged: `tallyAttendanceStatus`, `dayWeight` and `cancelLeave`
 
 ## After it has been run
 
-Once the requester confirms a clean run (0 remaining), the legacy handling can be deleted in a separate change: the `PL`/`LWP` cases in `tallyAttendanceStatus`, `dayWeight` and `cancelLeave`, and the legacy badges and type members in the admin portal. Until then it must stay. `regularization_requests.approvedStatus` values of `PL`/`LWP` are historical request records, not attendance days, and are left as they are.
+Once the requester confirms a clean run (0 remaining) AND a full dry run (without `--user`) whose STATUS HISTOGRAM shows no UNRECOGNISED statuses (the script exits non-zero on near-miss spellings such as `"pl"` or `"PL "`, and `REMAINING: 0` alone cannot see them), the legacy handling can be deleted in a separate change: the `PL`/`LWP` cases in `tallyAttendanceStatus`, `dayWeight` and `cancelLeave`, and the legacy badges and type members in the admin portal. Until then it must stay. `regularization_requests.approvedStatus` values of `PL`/`LWP` are historical request records, not attendance days, and are left as they are.
 
 ## Not covered
 
@@ -75,7 +75,7 @@ Read the histogram. Anything outside the known set (`Present`, `HalfDay`, `SL`, 
 node scripts/migrateLegacyLeaveStatuses.js --project white-coffee-92c27 --apply --user <one employee uid>
 ```
 
-Then open that employee in the portal for a month that had `PL`/`LWP` days and confirm their Days NP and Salary Due are unchanged. Only then run the full apply.
+Then open that employee in the portal for a month that had `PL`/`LWP` days and confirm their Days NP and Salary Due are unchanged. Only then run the full apply. A `--user` run's status histogram is labelled as scoped to that employee (other users are not scanned) and is NOT a substitute for the full dry run's: near-misses elsewhere will not show up in it.
 
 **2. Apply:**
 
