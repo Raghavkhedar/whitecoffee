@@ -739,3 +739,114 @@ test("KNOWN BUG (pinned, pre-existing): a re-run whose draw emptied the balance 
     "run 2 rewrites the SAME day unpaid — the balance that paid for it is already spent");
   assert.equal(await readBalance(uid), 0, "at least the balance is not drawn twice (that part IS fixed)");
 });
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// The 400-write chunking of the fast batch (Firestore's cap is 500 per batch, and a fast user
+// costs 1 write, or 2 when they also get a daily_hours doc — so one bulk batch used to fail the
+// WHOLE night at ~250 employees).
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Seed `n` punched users in bulk (raw batches, not the runner's). Returns their uids. */
+async function seedPunchedCrowd({ office, ops }) {
+  const uids = [];
+  const writes = [];
+  for (let i = 0; i < office + ops; i++) {
+    const isOps = i >= office;
+    const uid = newUid();
+    uids.push(uid);
+    writes.push([db.doc(`users/${uid}`), {
+      name: `User ${uid}`, employeeId: `E-${uid}`, role: isOps ? "operations" : "office", plBalance: 0,
+    }]);
+    for (const [type, hhmm] of [[isOps ? "site_in" : "office_in", "10:00"], [isOps ? "site_out" : "office_out", "18:00"]]) {
+      const [h, m] = hhmm.split(":").map(Number);
+      writes.push([db.collection(`users/${uid}/attendance`).doc(), {
+        userId: uid, date: TODAY, type, timestamp: Timestamp.fromMillis(Date.parse(`${TODAY}T00:00:00+05:30`) + (h * 60 + m) * 60000),
+      }]);
+    }
+  }
+  for (let i = 0; i < writes.length; i += 400) {
+    const b = db.batch();
+    writes.slice(i, i + 400).forEach(([ref, data]) => b.set(ref, data));
+    await b.commit();
+  }
+  return uids;
+}
+
+const countDocs = async (collectionId) => (await db.collectionGroup(collectionId).where("date", "==", TODAY).get()).size;
+
+test("450 fast users (600 writes) land in chunks of at most 400, all docs written", async () => {
+  // 300 office (1 write each) + 150 operations with both punches (2 writes each) = 600 writes:
+  // over the 400 chunk limit AND over Firestore's own 500 cap, so the old single batch would have
+  // failed the entire night here.
+  const uids = await seedPunchedCrowd({ office: 300, ops: 150 });
+
+  const { rec } = await run();
+
+  assert.equal(await countDocs("attendance_status"), 450, "every status doc landed");
+  assert.equal(await countDocs("daily_hours"), 150, "every ops daily_hours doc landed");
+
+  const totalWrites = rec.batches.reduce((n, b) => n + b.writes, 0);
+  assert.equal(totalWrites, 600);
+  assert.ok(rec.batches.every((b) => b.writes <= 400), `every chunk is <= 400 writes: ${rec.batches.map((b) => b.writes)}`);
+  assert.equal(rec.commits, rec.batches.length, "every chunk is committed exactly once");
+  assert.equal(rec.commits, 2, "600 writes at a 400 limit = 2 chunks");
+  assert.equal(rec.transactions, 0, "punched users never enter a transaction");
+
+  // A user's two documents are never split across chunks by this packing: the boundary check
+  // reserves room for both before opening the user.
+  const statusOwners = new Set();
+  rec.batches.forEach((b) => b.paths.forEach((p) => {
+    if (p.includes("/attendance_status/")) statusOwners.add(p.split("/")[1]);
+  }));
+  assert.equal(statusOwners.size, 450);
+
+  const s = await readSummary();
+  assert.equal(s.scored, 450);
+  assert.equal(s.expected, 450);
+  assert.equal(s.ok, true);
+  assert.equal((await readStatus(uids[0])).status, "Present");
+  assert.equal((await readStatus(uids[449])).status, "Present");
+});
+
+test("exactly 400 writes still commits as ONE chunk (the limit is inclusive)", async () => {
+  await seedPunchedCrowd({ office: 400, ops: 0 });
+
+  const { rec } = await run();
+
+  assert.equal(rec.commits, 1);
+  assert.equal(rec.batches[0].writes, 400);
+  assert.equal(await countDocs("attendance_status"), 400);
+});
+
+test("401 writes split 400 + 1", async () => {
+  await seedPunchedCrowd({ office: 401, ops: 0 });
+
+  const { rec } = await run();
+
+  assert.equal(rec.commits, 2);
+  assert.deepEqual(rec.batches.map((b) => b.writes), [400, 1]);
+  assert.equal(await countDocs("attendance_status"), 401);
+});
+
+test("a mid-way chunk commit failure THROWS (nothing swallowed) and a retry converges", async () => {
+  await seedPunchedCrowd({ office: 300, ops: 150 });
+
+  // The SECOND chunk fails: the first has already landed, so this is the genuinely partial case.
+  const wrapper = wrapDb({ failBatchCommit: 2 });
+  await assert.rejects(run({ wrapper }), /injected batch commit failure #2/,
+    "an infra failure on any chunk aborts the run so the scheduler retries the date");
+
+  const partial = await countDocs("attendance_status");
+  assert.ok(partial > 0 && partial < 450, `the first chunk landed and the second did not (${partial})`);
+  assert.equal(await readSummary(), undefined, "no summary is written for a run that threw");
+
+  // The retry: every write is a `set` on a deterministic id, so the already-committed chunk is
+  // simply rewritten.
+  const { rec } = await run();
+  assert.equal(await countDocs("attendance_status"), 450);
+  assert.equal(await countDocs("daily_hours"), 150);
+  assert.equal(rec.commits, 2);
+  const s = await readSummary();
+  assert.equal(s.scored, 450);
+  assert.equal(s.ok, true);
+});

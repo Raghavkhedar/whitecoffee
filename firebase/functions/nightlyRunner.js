@@ -182,15 +182,37 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
   // the only ones that draw a balance day, so each gets its own transaction below.
   const { fast, txn } = partitionUsers(scoredItems);
 
-  // ── Phase 6a: the fast partition, one bulk batch, committed exactly as before ───────────────
-  const batch  = db.batch();
-  let   scored = 0;
+  // ── Phase 6a: the fast partition, in bulk batches of at most 400 writes ────────────────────
+  // Firestore caps a batch at 500 WRITES. A fast user costs one status doc, plus a second write
+  // for the `daily_hours` doc of an ops user who worked a full day — so a single company-wide
+  // batch hits the cap at ~250 employees and would then fail the ENTIRE night, for everyone. The
+  // limit is counted in writes, not users, and the chunks are committed sequentially.
+  //
+  // A user's two documents go in the same chunk whenever they fit, but atomicity across them is
+  // NOT required and is not guaranteed at a boundary: they are separate documents with separate
+  // readers, and a re-run rewrites both deterministically from the same scored item.
+  //
+  // Failure semantics are unchanged: a commit that fails THROWS out of the whole run (the guard
+  // records it and the scheduler retries the date). Chunks already committed are simply rewritten
+  // by the retry — every write here is a `set` on a deterministic document id.
+  const FAST_BATCH_WRITE_LIMIT = 400;
+  let batch        = db.batch();
+  let batchWrites  = 0;
+  let scored       = 0;
   for (const item of fast) {
     const { user, status, salaryCredit, dailyHours } = item;
+    const writesForUser = dailyHours ? 2 : 1;
+    if (batchWrites > 0 && batchWrites + writesForUser > FAST_BATCH_WRITE_LIMIT) {
+      await batch.commit();
+      batch = db.batch();
+      batchWrites = 0;
+    }
+
     batch.set(
       db.doc(`users/${user.id}/attendance_status/${today}`),
       buildStatusDoc({ user, today, status, salaryCredit, now: () => Timestamp.now() })
     );
+    batchWrites++;
 
     // Per-day worked hours (`dailyHours` is set only on fully-worked days of roles that
     // run the OT/shortage ledger — operations). Per-day canonical record: the OT/shortage
@@ -202,12 +224,14 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
         ...dailyHours, // plannedMins, actualMins, shortageMins, otMins
         updatedAt: Timestamp.now(),
       });
+      batchWrites++;
     }
     scored++;
   }
 
   // The commit stays OUTSIDE any per-user guard: a failure here is infrastructural, not
-  // per-user, and SHOULD throw so Cloud Scheduler retries the night.
+  // per-user, and SHOULD throw so Cloud Scheduler retries the night. The last chunk is always
+  // committed, even when empty, exactly as the single batch always was.
   await batch.commit();
 
   // ── Phase 6b: one transaction per Absent/SCHL user (design §3.1 Phase 6) ───────────────────
