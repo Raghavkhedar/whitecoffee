@@ -437,13 +437,9 @@ test("(c) a trigger-written SCHL landing mid-run is READ by the transaction — 
   assert.equal(s.status, "SCHL");
   assert.equal(await readBalance(uid), 0, "decremented exactly ONCE overall — the nightly did not draw it again");
   assert.equal((await readSummary()).plDeducted, 0);
-  // ⚠ PRE-EXISTING SCORING BUG, pinned here rather than fixed (it is a payroll policy decision,
-  // not part of this change): `salaryCredit` is re-derived from the balance as it is NOW, and the
-  // balance that funded THIS day has already been spent — so a day that is already recorded paid
-  // is rewritten unpaid. See the dedicated test at the end of this file for the plain (no-race)
-  // reproduction and the reasoning. The old code had the identical rule; it just reached it less
-  // often, because it was busy double-drawing the balance instead (this was race (b)).
-  assert.equal(s.salaryCredit, 0, "PINNED, NOT ENDORSED: the already-paid day is rewritten unpaid");
+  // The day the trigger already paid for stays PAID: the transaction scores against an effective
+  // balance that adds back the day this date has already drawn, so the spend is not counted twice.
+  assert.equal(s.salaryCredit, 1, "the already-paid day is left paid, not silently rewritten unpaid");
 });
 
 test("(c-contention) two concurrent full runs of the same date draw the balance exactly once", async () => {
@@ -707,24 +703,16 @@ test("a second full run of the same date is idempotent: identical statuses, one 
   assert.equal(s.ok, true);
 });
 
-// ── A PRE-EXISTING scoring bug this work surfaced. PINNED, NOT FIXED. ─────────────────────────
+// ── Re-scoring a date is IDEMPOTENT, including the paid/unpaid decision ───────────────────────
 //
-// `scoreUserDay` derives `salaryCredit` from the balance it is handed, and the nightly writes the
-// status doc with a FULL set. On a re-run of a date that has ALREADY been scored as a paid leave
-// day, the balance that funded that day is already gone, so the day is re-derived as UNPAID and
-// the full set overwrites `salaryCredit: 1` with `salaryCredit: 0`. The employee silently loses a
-// day of pay that their balance genuinely paid for, and the balance day is not returned.
-//
-// This is NOT introduced here — the rule is identical in the pre-transaction code (verify:
-// `scoreUserDay({role:'office', events:[], leave:{}, plBalance:0})` → `salaryCredit: 0`, and the
-// batch write was already a full `set`). This change makes it slightly more reachable, because the
-// same-date re-run that used to corrupt the balance to −1 (race (b)) now lands here instead.
-//
-// The fix is a payroll policy decision and deliberately out of scope: the natural candidate is to
-// score with `plBalance + 1` when `prior` already recorded this date as paid (exactly the
-// condition `shouldDecrementPlBalance` tests), which would make the rescoring exactly idempotent.
-// Raised for the owner rather than taken unilaterally.
-test("KNOWN BUG (pinned, pre-existing): a re-run whose draw emptied the balance rewrites the paid day UNPAID", async () => {
+// `scoreUserDay` derives `salaryCredit` from the balance it is handed. On a re-run of a date that
+// was ALREADY scored as a paid leave day, the balance day that funded it is already spent, so
+// re-deriving from the live balance would count that spend twice and the full `set` would rewrite
+// the day UNPAID — a silent pay cut on a scheduler retry, which Step A made a real scenario
+// (a retry now re-scores the SAME date D). The transaction therefore scores against an EFFECTIVE
+// balance that adds the drawn day back, keyed on the same predicate that guards the decrement.
+
+test("(a) balance 1: a same-date re-run keeps the paid day PAID and draws nothing more", async () => {
   const uid = await seedUser({ plBalance: 1 });
   await seedLeave(uid);
 
@@ -735,9 +723,91 @@ test("KNOWN BUG (pinned, pre-existing): a re-run whose draw emptied the balance 
   await run();
 
   assert.equal((await readStatus(uid)).status, "SCHL");
-  assert.equal((await readStatus(uid)).salaryCredit, 0,
-    "run 2 rewrites the SAME day unpaid — the balance that paid for it is already spent");
-  assert.equal(await readBalance(uid), 0, "at least the balance is not drawn twice (that part IS fixed)");
+  assert.equal((await readStatus(uid)).salaryCredit, 1, "run 2 re-scores the SAME decision, it does not reverse it");
+  assert.equal(await readBalance(uid), 0, "and draws nothing more");
+  assert.equal((await readSummary()).plDeducted, 0);
+});
+
+test("(b) balance 2: two consecutive same-date runs leave credit 1 and exactly one day drawn", async () => {
+  const uid = await seedUser({ plBalance: 2 });
+  await seedLeave(uid);
+
+  await run();
+  await run();
+
+  assert.equal((await readStatus(uid)).status, "SCHL");
+  assert.equal((await readStatus(uid)).salaryCredit, 1);
+  assert.equal(await readBalance(uid), 1, "one draw in total across both runs");
+});
+
+test("(c) an UNPAID prior SCHL stays unpaid while the balance is still 0", async () => {
+  const uid = await seedUser({ plBalance: 0 });
+  await seedLeave(uid);
+
+  await run();
+  assert.equal((await readStatus(uid)).salaryCredit, 0);
+
+  await run();
+
+  assert.equal((await readStatus(uid)).status, "SCHL");
+  assert.equal((await readStatus(uid)).salaryCredit, 0, "nothing funded it, so nothing is added back");
+  assert.equal(await readBalance(uid), 0);
+});
+
+// INTENDED, and a deliberate DIVERGENCE from scoreRetroactiveLeave — see the report note.
+// The day was unpaid only for want of balance; once balance exists, a re-score of that date pays
+// it and draws exactly one day. The retro-leave trigger would NOT do this: planRetroLeaveScoring
+// only converts `Absent` + `auto` days (retroLeaveScoring.js: `existing.status !== "Absent"` →
+// continue), so it never upgrades an existing unpaid SCHL. Pinned here, not reconciled.
+test("(c2) an UNPAID prior SCHL is UPGRADED to paid once the balance is topped up, drawing once", async () => {
+  const uid = await seedUser({ plBalance: 0 });
+  await seedLeave(uid);
+
+  await run();
+  assert.equal((await readStatus(uid)).salaryCredit, 0);
+
+  // e.g. accrueMonthlyLeave lands between the two attempts.
+  await db.doc(`users/${uid}`).update({ plBalance: 1 });
+  await run();
+
+  assert.equal((await readStatus(uid)).status, "SCHL");
+  assert.equal((await readStatus(uid)).salaryCredit, 1);
+  assert.equal(await readBalance(uid), 0, "drawn exactly once");
+  assert.equal((await readSummary()).plDeducted, 1);
+});
+
+// The nightly never refunds: `cancelLeave` owns the refund, and it does it in its own transaction
+// (admin/src/lib/firestore.ts). If the nightly added a day back here it would double-refund a
+// cancellation that already refunded. So the day is rewritten Absent and the balance is left alone.
+test("(d) a paid prior SCHL whose leave no longer covers the date becomes Absent, with NO refund here", async () => {
+  const uid = await seedUser({ plBalance: 2 });
+  await seedLeave(uid);
+
+  await run();
+  assert.equal((await readStatus(uid)).salaryCredit, 1);
+  assert.equal(await readBalance(uid), 1);
+
+  await db.doc(`users/${uid}/leave_requests/L1`).update({ cancelledDates: [TODAY] });
+  await run();
+
+  const s = await readStatus(uid);
+  assert.equal(s.status, "Absent");
+  assert.equal("salaryCredit" in s, false, "the full set clears the stale credit");
+  assert.equal(await readBalance(uid), 1, "the nightly does not refund — cancelLeave owns that");
+});
+
+test("(e) a legacy `PL` prior doc with a ZERO balance stays PAID and draws nothing", async () => {
+  const uid = await seedUser({ plBalance: 0 });
+  await seedLeave(uid);
+  await seedStatus(uid, TODAY, { status: "PL", markedBy: "auto", date: TODAY, userId: uid });
+
+  await run();
+
+  const s = await readStatus(uid);
+  assert.equal(s.status, "SCHL");
+  assert.equal(s.salaryCredit, 1, "a legacy PL day already drew its balance day, so it stays paid");
+  assert.equal(await readBalance(uid), 0, "and it is not drawn again");
+  assert.equal((await readSummary()).plDeducted, 0);
 });
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════

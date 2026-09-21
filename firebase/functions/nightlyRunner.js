@@ -40,6 +40,11 @@
  * There is NO non-transactional fallback when a transaction fails (§6 Q3): it is retried once, and
  * then recorded in the summary's `failures` so `ok` goes false. A missing doc surfaced by an alarm
  * beats a wrong doc written silently.
+ *
+ * Re-scoring the same date is IDEMPOTENT in the pay decision too, not just the arithmetic: a day
+ * already recorded as a paid leave day is re-scored against an EFFECTIVE balance that adds back
+ * the day this date already drew, so a retry cannot flip it to unpaid. See the `priorDrewBalance`
+ * comment in the transaction.
  */
 
 const { resolveRestDayType, shouldDecrementPlBalance } = require("./attendanceRules");
@@ -261,13 +266,34 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
 
     const live  = userSnap.data();
     const leave = leaveSnap.docs.map((d) => d.data()).find((l) => leaveCoversDate(l, today));
+
+    // Re-scoring a date must reach the SAME paid/unpaid decision it reached the first time —
+    // §3.5's "a same-date re-run is now safe" is a promise about the pay decision, not only about
+    // the arithmetic. If this date is already recorded as a paid leave day, the balance day that
+    // funded it is already spent, so re-deriving `salaryCredit` from the live balance would count
+    // that spend twice and the full `set` would silently rewrite the day UNPAID. Step A made that
+    // reachable for real: a scheduler retry now re-scores the SAME date D, so a retry after a
+    // partial first attempt would cut an employee's pay for a day their balance genuinely bought.
+    // Add the drawn day back for the scoring decision only — nothing is written to the balance.
+    //
+    // `priorDrewBalance` is DERIVED from the decrement guard rather than restating its condition,
+    // so the two can never drift: `shouldDecrementPlBalance(1, prior)` answers "would a paid day
+    // draw balance given this prior doc?", and its negation is exactly "this date has already
+    // drawn one" — covering both a `salaryCredit: 1` SCHL doc and a legacy `PL` doc with no
+    // credit field at all. attendanceRules.js is untouched.
+    //
+    // Note what this deliberately does NOT do: it never adds a day back to the stored balance.
+    // A cancellation refunds through `cancelLeave`'s own transaction; if the leave no longer
+    // covers the date, the day is rewritten Absent with no credit and the balance is left alone.
+    const priorDrewBalance = !shouldDecrementPlBalance(1, prior);
+    const effectiveBalance = priorDrewBalance ? (Number(live.plBalance) || 0) + 1 : live.plBalance;
     // Punches are NOT re-read: `events`/`plan`/`role` stay the snapshot's, so this rescoring can
     // only ever land back in {Absent, SCHL} — the partition invariant holds, and a transactional
     // user therefore never has a daily_hours doc (that needs both punches). Only the two things
     // the snapshot can be stale about come from inside the transaction: the live leave set and
-    // the live plBalance.
+    // the live plBalance (as the effective balance above).
     const { status, salaryCredit } = scoreUserDay({
-      role: item.user.role, events: item.events, plan: item.plan, leave, plBalance: live.plBalance,
+      role: item.user.role, events: item.events, plan: item.plan, leave, plBalance: effectiveBalance,
     });
 
     // ── writes ──
