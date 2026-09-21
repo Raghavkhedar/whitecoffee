@@ -68,4 +68,47 @@ function effectiveHolidayCredit(salaryCredit, role, approvedOtMins) {
   return 1;
 }
 
-module.exports = { resolveHolidayCredit, effectiveHolidayCredit, istMinuteOfDay };
+/**
+ * The ONE place the "approved OT that day" lookup key is produced. index.js builds the index
+ * (addApprovedOt) and reads it (holidayAwareCredit) at two sites; both go through here, so the
+ * key can never drift between the writer and the reader.
+ */
+function approvedOtKey(userId, date) {
+  return `${userId}__${date}`;
+}
+
+/**
+ * Record one ot_approvals doc in an "approved OT minutes" index (a Map, mutated in place).
+ * Rejected docs are skipped; anything else (including no status) counts as granted. Stores
+ * `Number(approvedMins) || 0` — GROSS of settlement: "was OT granted that day", so a day whose
+ * minutes all went to settling a WO debt still counts. The settled figure is deliberately not an
+ * input. A missing userId/date is ignored (never throws). The last doc for a key wins.
+ *
+ * @param {Map<string, number>} index
+ * @param {{userId?: string, date?: string, status?: string, approvedMins?: number | string}} approval
+ */
+function addApprovedOt(index, { userId, date, status, approvedMins } = {}) {
+  if (!userId || !date) return;
+  if (status === "rejected") return;
+  index.set(approvedOtKey(userId, date), Number(approvedMins) || 0);
+}
+
+/**
+ * The salaryCredit a reader should hand to tallyAttendanceStatus / dailySalary. For a Holiday
+ * status it reconciles the frozen credit with approved OT (effectiveHolidayCredit); for EVERY
+ * other status it returns `salaryCredit` untouched (including undefined). A missing / non-Map
+ * `index` means "no approvals".
+ *
+ * @param {{status: string, salaryCredit: number | undefined, role: string, userId: string,
+ *          date: string, index: Map<string, number> | undefined}} args
+ */
+function holidayAwareCredit({ status, salaryCredit, role, userId, date, index } = {}) {
+  if (status !== "Holiday") return salaryCredit;
+  const approved = index instanceof Map ? index.get(approvedOtKey(userId, date)) : undefined;
+  return effectiveHolidayCredit(salaryCredit, role, approved);
+}
+
+module.exports = {
+  resolveHolidayCredit, effectiveHolidayCredit, istMinuteOfDay,
+  approvedOtKey, addApprovedOt, holidayAwareCredit,
+};

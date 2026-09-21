@@ -19,7 +19,9 @@ const {
 // Whether a Holiday day still pays its +1 (operations who worked it are paid via OT instead).
 // resolveHolidayCredit freezes it at 23:59 from punches; effectiveHolidayCredit reconciles that
 // with approved OT at read time (a later manual-OT grant for a missed checkout).
-const { resolveHolidayCredit, effectiveHolidayCredit } = require("./holidayCredit");
+const {
+  resolveHolidayCredit, effectiveHolidayCredit, addApprovedOt, holidayAwareCredit,
+} = require("./holidayCredit");
 // Site Manpower Time Utilisation — pure visit builder (see manpowerVisits.js).
 const { buildManpowerVisits } = require("./manpowerVisits");
 // Month-history helpers for the Employee Dashboard tab (see dashboardHistory.js).
@@ -1045,7 +1047,7 @@ exports.exportToSheets = onSchedule(
     approvalSnap.docs.forEach((doc) => {
       const d = doc.data();
       const key = `${uidOf(doc)}__${d.date || ""}`;
-      if (d.status !== "rejected") otGrantedMap.set(key, Number(d.approvedMins) || 0);
+      addApprovedOt(otGrantedMap, { userId: uidOf(doc), date: d.date, status: d.status, approvedMins: d.approvedMins });
       approvalMap.set(key, Math.max(0, (Number(d.approvedMins) || 0) - (Number(d.settledMins) || 0)));
       // requestedMins is carried so "is this date fully decided" can be judged by how much
       // of the day's pending OT the decision actually covers, not merely by doc presence —
@@ -1070,9 +1072,10 @@ exports.exportToSheets = onSchedule(
       // Status → bucket mapping (incl. the legacy PL/LWP fold) lives in payrollDeductions.js.
       // A Holiday's +1 is withdrawn for an ops employee who worked it (salaryCredit 0 from the
       // nightly) OR who has approved OT that date (manual OT for a missed checkout) — reconcile both.
-      const credit = d.status === "Holiday"
-        ? effectiveHolidayCredit(d.salaryCredit, userRoleMap.get(d.userId), otGrantedMap.get(`${d.userId}__${d.date}`))
-        : d.salaryCredit;
+      const credit = holidayAwareCredit({
+        status: d.status, salaryCredit: d.salaryCredit, role: userRoleMap.get(d.userId),
+        userId: d.userId, date: d.date, index: otGrantedMap,
+      });
       tallyAttendanceStatus(userAttendanceMTD.get(d.userId), d.status, credit);
     });
 
@@ -2526,7 +2529,7 @@ exports.snapshotDailySpend = onSchedule(
     // that day", for effectiveHolidayCredit below. Not the net cash figure otMap carries.
     const otGrantedByKey = new Map();
     approvalDocs.forEach((a) => {
-      if (a.status !== "rejected") otGrantedByKey.set(`${a.userId}__${a.date}`, Number(a.approvedMins) || 0);
+      addApprovedOt(otGrantedByKey, { userId: a.userId, date: a.date, status: a.status, approvedMins: a.approvedMins });
     });
 
     const holidaySnap = await db.collection("holidays")
@@ -2606,9 +2609,10 @@ exports.snapshotDailySpend = onSchedule(
         // status pays +1 unless withdrawn (ops who worked it, or approved OT that day — see
         // effectiveHolidayCredit); SCHL pays only when its salaryCredit is 1; an OT/conveyance-only
         // day has no status → 0.
-        const credit = (status && status.status === "Holiday")
-          ? effectiveHolidayCredit(status.salaryCredit, user.role, otGrantedByKey.get(`${user.id}__${date}`))
-          : (status && status.salaryCredit);
+        const credit = status && holidayAwareCredit({
+          status: status.status, salaryCredit: status.salaryCredit, role: user.role,
+          userId: user.id, date, index: otGrantedByKey,
+        });
         const salary = (status && !sunday) ? dailySalary(rate, status.status, credit) : 0;
         const conveyance = usesConveyance(user.role) ? (convByKey.get(`${user.id}__${date}`) || 0) : 0;
         const otWo = round2(otMap.get(date) || 0);
