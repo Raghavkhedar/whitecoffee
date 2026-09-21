@@ -2,13 +2,13 @@
 
 import {
   collection, collectionGroup, doc, getDocs, getDoc,
-  setDoc, updateDoc, deleteDoc, deleteField, writeBatch, increment,
+  setDoc, updateDoc, deleteDoc, deleteField, writeBatch, increment, runTransaction,
   Timestamp, where, query, orderBy, limit,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from './firebase';
 import { istTodayStr, istDaysAgoStr } from './date';
-import { planLeaveCancellation, resolveCancellingDates, type StatusDocLike } from './leaveCancellation';
+import { runCancelLeaveTransaction } from './cancelLeaveTransaction';
 import { PAY_FIELDS, type Pay } from './compensation';
 import { usesConveyance, usesOtShortageLedger } from './roleCapabilities';
 import { WO_DEBIT_MINS } from './otLedger';
@@ -328,8 +328,8 @@ export async function rejectLeave(
  * Two things happen per cancelled date, and only one of them is automatic:
  *
  *  - **Future / never-scored dates** need no attendance write at all. A future date has
- *    no `attendance_status` doc (except a Sunday/Holiday, which does — see the guard a
- *    few lines below), and the nightly scorer will simply stop seeing leave for that day.
+ *    no `attendance_status` doc (except a Sunday/Holiday, which does — see the rest-day
+ *    paragraph below), and the nightly scorer will simply stop seeing leave for that day.
  *    This is why there is no past-vs-future branch here.
  *  - **Already-scored dates** are reverted to `Absent` — a leave-scored day has zero
  *    punches by construction, so with the leave gone it is exactly the scorer's own
@@ -357,19 +357,19 @@ export async function rejectLeave(
  * `markedBy: 'admin'`, so the guard above rejects it and no second refund happens.
  *
  * ⚠️ **Rest days (Protocol 1) are skipped by DATE, not by the doc's `status` field** — added
- * after a review caught that this function wrote `attendance_status` directly via
- * `batch.set`, bypassing `setAttendanceStatus`/`assertNotRestDay` exactly like
+ * after a review caught that this function wrote `attendance_status` directly with a raw
+ * batched `set`, bypassing `setAttendanceStatus`/`assertNotRestDay` exactly like
  * `approveRegularization` does. Firestore batches are atomic: under the current
- * `firestore.rules` (`!isRestDate(date)`), a batch that touches even one Sunday/holiday date
- * is denied WHOLESALE — taking down the cancellation AND the `plBalance` refund for every
+ * `firestore.rules` (`!isRestDate(date)`), a batch — and a transaction, which is denied the same
+ * atomic way — that touches even one Sunday/holiday date is denied WHOLESALE — taking down the cancellation AND the `plBalance` refund for every
  * *other*, perfectly legal date in the same range. Nightly scoring writes only
  * `Sunday`/`Holiday` status docs on those dates (never leave docs), so a real collision with a
- * leave-cancel batch still needs a stale/legacy leave doc on a rest date — but a cancellation
+ * leave-cancel write still needs a stale/legacy leave doc on a rest date — but a cancellation
  * spanning a Sunday is completely ordinary (leave ranges are calendar-day spans), so the *reachability* of that legacy doc is not the point;
- * the blast radius if it exists is. The status-field check two lines below (`'Sunday' ||
- * 'Holiday'`) is NOT a guard against this — it tests what the doc SAYS, not what the DATE
- * IS, so a legacy PL/LWP (or SCHL) doc sitting on a rest date sails straight past it into the batch.
- * The fix here checks the date itself, mirroring `isRestDay`'s Sunday+holiday precedence, and
+ * the blast radius if it exists is. The status-field check in the planner (`'Sunday' ||
+ * 'Holiday'`, leaveCancellation.ts) is NOT a guard against this — it tests what the doc SAYS, not what the DATE
+ * IS, so a legacy PL/LWP (or SCHL) doc sitting on a rest date sails straight past it into the write.
+ * The fix (the planner's date check) tests the date itself, mirroring `isRestDay`'s Sunday+holiday precedence, and
  * SKIPS silently (like the "no doc" branch above) rather than reporting it in `skippedDates`
  * or throwing: throwing would revive the exact all-or-nothing failure this fix exists to
  * remove, and `skippedDates` means "something else already claimed this day" (an admin
@@ -378,10 +378,31 @@ export async function rejectLeave(
  * per-date write (and any refund tied to it) is skipped; every other date in the same call
  * still cancels, writes, and refunds normally.
  *
- * Known, unfixed race: this reads the day statuses BEFORE opening its batch (it is not a
- * transaction), so a cancel that lands while the `scoreRetroactiveLeave` Cloud Function is
- * mid-flight can leave a cancelled day scored as paid SCHL and a PL day burned (window ≈ one
- * trigger invocation).
+ * **Transactional — closes the race with `scoreRetroactiveLeave`.** The whole cancellation runs as
+ * ONE client-SDK `runTransaction` (`runCancelLeaveTransaction`, cancelLeaveTransaction.ts), reading
+ * AND writing the same documents the `scoreRetroactiveLeave` Cloud Function transacts on: the leave,
+ * the day's `attendance_status` doc, and `users/{uid}`. Whichever of the two commits second is
+ * aborted and re-runs against fresh data — if the trigger scored a day paid SCHL a moment before,
+ * this retries, sees `{SCHL, salaryCredit: 1}`, reverts it and refunds the balance day; if this
+ * committed first, the trigger re-reads the leave, sees the date in `cancelledDates` and scores
+ * nothing. (This used to read the statuses and holidays with plain reads BEFORE an unconditional
+ * batch, so a cancel landing mid-trigger could leave a cancelled day paid and burn a PL day.)
+ * Design: docs/superpowers/specs/2026-09-21-transactional-nightly-and-cancel-design.md §1.1, §3.4.
+ *
+ * What that costs, and why the code looks the way it does:
+ *  - Argument validation (reason, empty list) stays here, OUTSIDE the transaction — it needs no reads.
+ *  - Everything that needs a read is inside: the leave is re-read (a concurrent cancellation by
+ *    another admin is seen on the retry, so nothing is double-refunded), then each date's
+ *    `attendance_status/{date}` AND `holidays/{date}` is read per date. A client transaction cannot
+ *    run queries, so `getHolidaysForDateRange` (a range query, kept for its other callers) cannot be
+ *    used here. All reads happen before any write.
+ *  - The callback RE-EXECUTES on contention (up to 5 attempts), so nothing it accumulates lives
+ *    outside it and the result is the transaction's return value.
+ *  - At most `MAX_CANCEL_DATES` (200) dates per call — a transaction reads 2 docs per date and
+ *    writes up to 1 per date + 2. A longer selection is rejected with a message telling the admin
+ *    to cancel in chunks of at most 200; the leaves page shows that error as-is.
+ *  - Rules are unchanged: a transaction is evaluated like a batch — per-operation, atomic denial.
+ *    A non-admin still cannot refund `plBalance`, and then the WHOLE cancellation is denied.
  */
 export async function cancelLeave(
   userId: string, requestId: string, cancellerName: string,
@@ -393,69 +414,11 @@ export async function cancelLeave(
   if (!trimmedReason) throw new Error('cancelLeave: a reason is required.');
   if (datesToCancel.length === 0) throw new Error('cancelLeave: no dates selected — nothing to cancel.');
 
-  const leaveRef  = doc(db, 'users', userId, 'leave_requests', requestId);
-  const leaveSnap = await getDoc(leaveRef);
-  if (!leaveSnap.exists()) throw new Error('cancelLeave: leave request not found.');
-  const leave = { id: leaveSnap.id, ...leaveSnap.data() } as LeaveRequest;
-  if (leave.status !== 'approved') {
-    throw new Error('cancelLeave: only an approved leave can be cancelled.');
-  }
-
-  // Re-derive what is still granted from the SERVER copy rather than trusting the
-  // caller's list: a stale tab could otherwise "cancel" a day another admin already
-  // cancelled and double-refund it.
-  // (Pure — see leaveCancellation.ts.)
-  const cancelling = resolveCancellingDates(leave, datesToCancel);
-  if (cancelling.length === 0) {
-    throw new Error('cancelLeave: none of those dates are currently granted by this leave.');
-  }
-
-  // Every read resolves BEFORE the batch opens — a Firestore batch cannot read.
-  const statusRefs  = cancelling.map(d => doc(db, 'users', userId, 'attendance_status', d));
-  const statusSnaps = await Promise.all(statusRefs.map(r => getDoc(r)));
-  // Holidays across the whole cancelled range (cancelling is sorted), so the planner can
-  // check rest days by DATE for every date — see the doc comment above.
-  const holidaysInRange = await getHolidaysForDateRange(cancelling[0], cancelling[cancelling.length - 1]);
-  const holidaySet = new Set(holidaysInRange.map(h => h.id));
-
-  // Every per-date decision — the rest-date skip (silent, by DATE), no doc, a Sunday/Holiday
-  // doc, a non-leave status, the `markedBy === 'auto'` gate, the refund rule — lives in the
-  // pure planner (leaveCancellation.ts, unit-tested); this function only does the I/O around
-  // it. A date with no doc has no entry in `statusByDate`.
-  const statusByDate = new Map<string, StatusDocLike>();
-  statusSnaps.forEach((snap, i) => {
-    if (snap.exists()) statusByDate.set(cancelling[i], snap.data() as AttendanceStatus);
-  });
-  const plan = planLeaveCancellation({ leave, datesToCancel, statusByDate, holidaySet });
-  const { skippedDates, refundedDays } = plan;
-
-  const batch = writeBatch(db);
-  const revertDates = new Set(plan.reverts);
-  cancelling.forEach((date, i) => {
-    if (!revertDates.has(date)) return;
-    batch.set(
-      statusRefs[i],
-      // salaryCredit is cleared with the revert (no stale credit left on an Absent doc). The
-      // planner decided the refund from the snapshot taken BEFORE this write.
-      stamped({ status: 'Absent', markedBy: 'admin', salaryCredit: deleteField(), updatedAt: Timestamp.now() }),
-      { merge: true },
-    );
-  });
-
-  if (refundedDays > 0) {
-    batch.update(doc(db, 'users', userId), stamped({ plBalance: increment(refundedDays) }));
-  }
-
-  // Union, never overwrite — a second cancellation must not un-cancel the first.
-  batch.update(leaveRef, stamped({
-    cancelledDates:  plan.mergedCancelledDates,
-    cancelledBy:     cancellerName,
-    cancelComment:   trimmedReason,
-    lastCancelledAt: Timestamp.now(),
-  }));
-
-  await batch.commit();
-  return { cancelled: cancelling, skippedDates, refundedDays };
+  // Every read, every decision and every write — see the doc comment above.
+  return runCancelLeaveTransaction(
+    { db, fns: { doc, runTransaction, increment, deleteField, Timestamp }, stamp: stamped },
+    { userId, leaveId: requestId, datesToCancel, cancelledBy: cancellerName, cancelComment: trimmedReason },
+  );
 }
 
 // ── Regularization Requests ───────────────────────────────────────────────
