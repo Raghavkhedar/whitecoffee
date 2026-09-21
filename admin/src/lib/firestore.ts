@@ -8,7 +8,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from './firebase';
 import { istTodayStr, istDaysAgoStr } from './date';
-import { effectiveGrantedDates } from './leaveDates';
+import { planLeaveCancellation, resolveCancellingDates, type StatusDocLike } from './leaveCancellation';
 import { PAY_FIELDS, type Pay } from './compensation';
 import { usesConveyance, usesOtShortageLedger } from './roleCapabilities';
 import { WO_DEBIT_MINS } from './otLedger';
@@ -404,8 +404,8 @@ export async function cancelLeave(
   // Re-derive what is still granted from the SERVER copy rather than trusting the
   // caller's list: a stale tab could otherwise "cancel" a day another admin already
   // cancelled and double-refund it.
-  const stillGranted = new Set(effectiveGrantedDates(leave));
-  const cancelling   = Array.from(new Set(datesToCancel)).filter(d => stillGranted.has(d)).sort();
+  // (Pure — see leaveCancellation.ts.)
+  const cancelling = resolveCancellingDates(leave, datesToCancel);
   if (cancelling.length === 0) {
     throw new Error('cancelLeave: none of those dates are currently granted by this leave.');
   }
@@ -413,45 +413,33 @@ export async function cancelLeave(
   // Every read resolves BEFORE the batch opens — a Firestore batch cannot read.
   const statusRefs  = cancelling.map(d => doc(db, 'users', userId, 'attendance_status', d));
   const statusSnaps = await Promise.all(statusRefs.map(r => getDoc(r)));
-  // Holidays across the whole cancelled range (cancelling is sorted), so isRestDay can be
-  // checked by DATE for every date in the loop below — see the doc comment above.
+  // Holidays across the whole cancelled range (cancelling is sorted), so the planner can
+  // check rest days by DATE for every date — see the doc comment above.
   const holidaysInRange = await getHolidaysForDateRange(cancelling[0], cancelling[cancelling.length - 1]);
   const holidaySet = new Set(holidaysInRange.map(h => h.id));
 
-  const batch = writeBatch(db);
-  const skippedDates: string[] = [];
-  let refundedDays = 0;
-
+  // Every per-date decision — the rest-date skip (silent, by DATE), no doc, a Sunday/Holiday
+  // doc, a non-leave status, the `markedBy === 'auto'` gate, the refund rule — lives in the
+  // pure planner (leaveCancellation.ts, unit-tested); this function only does the I/O around
+  // it. A date with no doc has no entry in `statusByDate`.
+  const statusByDate = new Map<string, StatusDocLike>();
   statusSnaps.forEach((snap, i) => {
-    const date = cancelling[i];
-    // Rest days (Protocol 1) are immutable at the attendance_status layer regardless of
-    // what a (legacy) doc there says — see the doc comment above for why this is a silent
-    // skip, not a thrown error and not a reported skippedDate.
-    if (isRestDay(date, holidaySet)) return;
-    // No doc = never scored (a future date, or a Sunday/holiday before this feature's
-    // deploy date). Nothing to undo, and NOT a skip — the cancellation lands cleanly.
-    if (!snap.exists()) return;
-    const data = snap.data() as AttendanceStatus;
-    // A Sunday/Holiday doc is never a leave day either — same "nothing to undo" case as
-    // no doc at all, just now backed by a real record instead of an absent one. (Catches a
-    // doc scored on a date that WAS a rest day but no longer resolves as one above — e.g.
-    // the holiday was later unmarked — which the date-based check can't see.)
-    if (data.status === 'Sunday' || data.status === 'Holiday') return;
-    // SCHL is the current leave status; PL/LWP are LEGACY docs scored before the SCHL change
-    // (kept as-is, never migrated) — a leave approved back then must still cancel cleanly.
-    const scoredAsLeave = data.status === 'SCHL' || data.status === 'PL' || data.status === 'LWP';
-    if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(date); return; }
+    if (snap.exists()) statusByDate.set(cancelling[i], snap.data() as AttendanceStatus);
+  });
+  const plan = planLeaveCancellation({ leave, datesToCancel, statusByDate, holidaySet });
+  const { skippedDates, refundedDays } = plan;
 
+  const batch = writeBatch(db);
+  const revertDates = new Set(plan.reverts);
+  cancelling.forEach((date, i) => {
+    if (!revertDates.has(date)) return;
     batch.set(
       statusRefs[i],
-      // salaryCredit is cleared with the revert (no stale credit left on an Absent doc). The refund
-      // decision below reads `data.salaryCredit` from the snapshot taken BEFORE this write.
+      // salaryCredit is cleared with the revert (no stale credit left on an Absent doc). The
+      // planner decided the refund from the snapshot taken BEFORE this write.
       stamped({ status: 'Absent', markedBy: 'admin', salaryCredit: deleteField(), updatedAt: Timestamp.now() }),
       { merge: true },
     );
-    // Refund only a day that actually drew from plBalance: paid SCHL (salaryCredit 1) or legacy
-    // PL. Unpaid SCHL (salaryCredit 0/missing) and legacy LWP never decremented — see the note above.
-    if ((data.status === 'SCHL' && data.salaryCredit === 1) || data.status === 'PL') refundedDays += 1;
   });
 
   if (refundedDays > 0) {
@@ -459,9 +447,8 @@ export async function cancelLeave(
   }
 
   // Union, never overwrite — a second cancellation must not un-cancel the first.
-  const merged = Array.from(new Set([...(leave.cancelledDates ?? []), ...cancelling])).sort();
   batch.update(leaveRef, stamped({
-    cancelledDates:  merged,
+    cancelledDates:  plan.mergedCancelledDates,
     cancelledBy:     cancellerName,
     cancelComment:   trimmedReason,
     lastCancelledAt: Timestamp.now(),

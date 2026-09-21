@@ -78,13 +78,19 @@ export function planLeaveCancellation(input: LeaveCancellationInput): LeaveCance
 
   for (const date of cancelling) {
     // Rest days (Protocol 1) are immutable at the attendance_status layer regardless of what a
-    // (legacy) doc there says — a silent skip by DATE (Holiday wins/Sunday, mirrors `isRestDay`
-    // in firestore.ts), not a thrown error and not a reported skippedDate.
+    // (legacy) doc there says — a silent skip by DATE (holiday OR Sunday; mirrors `isRestDay` in
+    // firestore.ts, which this module cannot import because it pulls in the firebase SDK), not a
+    // thrown error and not a reported skippedDate. `isSunday` differs from `isRestDay` only on a
+    // malformed date string, which cannot reach here: `cancelling` ⊆ `effectiveGrantedDates`,
+    // which are all produced by `expandDateRange` (validated yyyy-mm-dd).
     if (holidaySet.has(date) || isSunday(date)) continue;
     // No doc = never scored (a future date, or a Sunday/holiday before Protocol 1). Not a skip.
     const data = statusByDate.get(date);
     if (!data) continue;
-    // A Sunday/Holiday doc is never a leave day either — same "nothing to undo" case.
+    // A Sunday/Holiday doc is never a leave day either — same "nothing to undo" case as no doc,
+    // just backed by a real record. (Catches a doc scored on a date that WAS a rest day but no
+    // longer resolves as one above — e.g. the holiday was later unmarked — which the date-based
+    // check cannot see.)
     if (data.status === 'Sunday' || data.status === 'Holiday') continue;
     // SCHL is the current leave status; PL/LWP are LEGACY docs scored before the SCHL change.
     const scoredAsLeave = data.status === 'SCHL' || data.status === 'PL' || data.status === 'LWP';
