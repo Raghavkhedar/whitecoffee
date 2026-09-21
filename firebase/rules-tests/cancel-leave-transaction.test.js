@@ -24,7 +24,7 @@
  * read-version preconditions, so it aborts and the callback re-executes.
  *
  * Test dates (2031 — no other suite in this directory touches that year; verified weekdays):
- *   2031-03-03 Mon … 2031-03-08 Sat, 2031-03-09 Sun
+ *   2031-03-03 Mon … 2031-03-08 Sat, 2031-03-09 Sun, 2031-03-10 Mon
  *   2031-04-04 Fri, 04-05 Sat, 04-06 Sun, 04-07 Mon (seeded HOLIDAY), 04-08 Tue
  *   2031-05-05 Mon, 05-06 Tue, 05-07 Wed
  * Every test uses its own users (unique uid), because `node --test` runs the suite files
@@ -130,21 +130,26 @@ async function triggerScoresPaidSchl(emp, date) {
 
 test("reverts scored leave days, refunds only the days that drew from plBalance, merges cancelledDates", async () => {
   const f = await fixture({ plBalance: 5 });
-  const [D1, D2, D3, D4, D5, D6] = ["2031-03-03", "2031-03-04", "2031-03-05", "2031-03-06", "2031-03-07", "2031-03-08"];
-  await seedLeave(f.emp, f.leave, { fromDate: D1, toDate: D6, cancelledDates: [D6] });
+  // D7 = Mon 2031-03-10 (03-09 is a Sunday: in the leave's range, not selected).
+  const [D1, D2, D3, D4, D5, D6, D7] = ["2031-03-03", "2031-03-04", "2031-03-05", "2031-03-06", "2031-03-07", "2031-03-08", "2031-03-10"];
+  await seedLeave(f.emp, f.leave, { fromDate: D1, toDate: D7, cancelledDates: [D6] });
   await seedDocs(env, {
     [statusPath(f.emp, D1)]: autoDoc(f.emp, D1, "SCHL", 1),   // paid    -> revert + refund
     [statusPath(f.emp, D2)]: autoDoc(f.emp, D2, "SCHL", 1),   // paid    -> revert + refund
     [statusPath(f.emp, D3)]: autoDoc(f.emp, D3, "SCHL", 0),   // unpaid  -> revert, NO refund
     [statusPath(f.emp, D4)]: { ...autoDoc(f.emp, D4, "Absent"), markedBy: "admin" }, // admin-claimed -> skipped
     // D5: no doc at all (never scored) -> silent no-op
+    // D7: a LEAVE-scored doc (paid SCHL) that an admin regularized afterwards -> the markedBy === 'auto'
+    // gate must skip it: no revert, no refund, reported in skippedDates. (Without the gate this would
+    // be reverted AND refunded, overwriting an admin decision.)
+    [statusPath(f.emp, D7)]: { ...autoDoc(f.emp, D7, "SCHL", 1), markedBy: "admin" },
   });
 
   let hookCalls = 0;
-  const res = await cancel(f.admin, f, [D1, D2, D3, D4, D5], { onAfterReads: () => { hookCalls++; } });
+  const res = await cancel(f.admin, f, [D1, D2, D3, D4, D5, D7], { onAfterReads: () => { hookCalls++; } });
 
   assert.deepEqual(res, {
-    cancelled: [D1, D2, D3, D4, D5], skippedDates: [D4], refundedDays: 2,
+    cancelled: [D1, D2, D3, D4, D5, D7], skippedDates: [D4, D7], refundedDays: 2,
   });
   assert.equal(hookCalls, 1, "no contention -> exactly one attempt");
 
@@ -160,13 +165,17 @@ test("reverts scored leave days, refunds only the days that drew from plBalance,
   assert.deepEqual([d4.status, d4.markedBy], ["Absent", "admin"], "the admin-claimed day is left as it was");
   assert.equal("lastModifiedBy" in d4, false, "and was not written at all");
   assert.equal(await read(statusPath(f.emp, D5)), undefined, "a never-scored day stays doc-less");
+  const d7 = await read(statusPath(f.emp, D7));
+  assert.deepEqual([d7.status, d7.markedBy, d7.salaryCredit], ["SCHL", "admin", 1],
+    "an admin-regularized leave-status day is left exactly as seeded");
+  assert.equal("lastModifiedBy" in d7, false, "and was not written at all");
 
   const user = await read(`users/${f.emp}`);
-  assert.equal(user.plBalance, 7, "5 + 2 refunded (paid days only)");
+  assert.equal(user.plBalance, 7, "5 + 2 refunded (auto paid days only; the admin-marked paid SCHL day D7 is not refunded)");
   assert.equal(user.lastModifiedBy, f.admin, "user update stamped");
 
   const leave = await read(leavePath(f.emp, f.leave));
-  assert.deepEqual(leave.cancelledDates, [D1, D2, D3, D4, D5, D6], "union with the earlier cancellation, sorted");
+  assert.deepEqual(leave.cancelledDates, [D1, D2, D3, D4, D5, D6, D7], "union with the earlier cancellation, sorted");
   assert.equal(leave.cancelledBy, "Ada Admin");
   assert.equal(leave.cancelComment, "plans changed");
   assert.ok(leave.lastCancelledAt, "lastCancelledAt written");
