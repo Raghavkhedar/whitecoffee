@@ -8,15 +8,19 @@
 //   1. resolve the date from event.scheduleTime (refuse a stale/future one — write a failure
 //      record and throw, the handler never runs);
 //   2. write a `started` marker to system/nightly_runs/{jobName}/{today} BEFORE any work, so a run
-//      that dies mid-way is "a doc with startedAt but no ranAt" instead of "no doc at all" — the
-//      absence of a document was the state nothing could alarm on. Best-effort: scoring outranks
-//      the marker, so a failed marker write is logged and the run continues;
+//      that dies mid-way is "a doc with startedAt but no completedAt" instead of "no doc at all" —
+//      the absence of a document was the state nothing could alarm on. Best-effort: scoring
+//      outranks the marker, so a failed marker write is logged and the run continues;
 //   3. run the handler with ({ today, startedAt, clockSource }) — the handler's final summary
 //      reuses startedAt/clockSource;
 //   4. if the handler throws, write { ok:false, error, failedAt } (best-effort, never masks the
-//      original error) and RE-THROW the original so the scheduler retries.
+//      original error) and RE-THROW the original so the scheduler retries;
+//   5. if the handler succeeds, write { completedAt } (best-effort, after the handler's own summary
+//      write) and return the handler's result. `completedAt` — NOT `ranAt` — is the completion
+//      signal: a Sunday/holiday run returns early with no summary, so it has no `ranAt` at all.
 //
-// All writes use merge:true, so they add to (never replace) whatever the run already recorded.
+// Alert on: startedAt present with no completedAt, or ok === false.
+// All guard writes use merge:true, so they add to whatever the run already recorded.
 
 const { resolveNightlyClock } = require("./nightlyClock");
 
@@ -68,13 +72,26 @@ function withNightlyGuard({ getDb, Timestamp, log, now = Date.now, jobName }) {
       log.error(`${jobName}: could not write the started marker for ${today} (continuing — scoring outranks the marker):`, markerErr);
     }
 
+    let result;
     try {
-      return await handler(event, { today, startedAt, clockSource });
+      result = await handler(event, { today, startedAt, clockSource });
     } catch (err) {
       log.error(`${jobName}: run for ${today} FAILED — the scheduler will retry it:`, err);
       await recordFailure(today, errorMessage(err));
       throw err;
     }
+
+    // Completion marker, written by the guard so it exists for EVERY successful run — including a
+    // Sunday/holiday run whose handler returns early and writes no summary (so no `ranAt`). It must
+    // come AFTER the handler's own summary write, which is a full (non-merge) set and would wipe it.
+    // Best-effort and outside the handler's try/catch: the run already succeeded, so a failed write
+    // is logged and can neither throw nor change what the handler returned.
+    try {
+      await getDb().doc(docPath(today)).set({ completedAt: Timestamp.now() }, { merge: true });
+    } catch (completeErr) {
+      log.error(`${jobName}: could not write the completedAt marker for ${today} (the run itself succeeded):`, completeErr);
+    }
+    return result;
   };
 }
 

@@ -29,7 +29,7 @@ const makeEnv = ({ nowMs = at("2026-09-21T18:29:05Z"), failWhen = () => false } 
   const Timestamp = { now: () => ({ fakeTimestamp: state.nowMs }) };
   const log = { error: (...a) => logs.error.push(a), log: (...a) => logs.log.push(a) };
   const guard = withNightlyGuard({ getDb: () => db, Timestamp, log, now: () => state.nowMs, jobName: JOB });
-  return { guard, calls, logs, state };
+  return { guard, calls, logs, state, db };
 };
 
 const markerPath = (date) => `system/nightly_runs/${JOB}/${date}`;
@@ -64,7 +64,7 @@ test("on success it returns the handler's result and writes no failure record", 
   const env = makeEnv();
   const out = await env.guard(async () => "the-result")({ scheduleTime: SCHEDULED });
   assert.equal(out, "the-result");
-  assert.equal(env.calls.length, 1);
+  assert.equal(env.calls.length, 2, "the started marker, then the completedAt marker");
   assert.equal(env.calls.some((c) => c.data.ok === false), false);
   assert.equal(env.logs.error.length, 0);
 });
@@ -150,6 +150,59 @@ test("an undefined event does not crash the wrapper", async () => {
   const env = makeEnv();
   await env.guard(async () => {})(undefined);
   assert.equal(env.calls[0].data.clockSource, "wall-clock");
+});
+
+// ── completedAt: written by the GUARD, so a Sunday/holiday run (early return, no summary) ends with it too
+const isCompleted = (c) => "completedAt" in c.data;
+
+test("completedAt is written after a successful handler, on the same doc, with merge", async () => {
+  const env = makeEnv({ nowMs: at("2026-09-21T18:29:05Z") });
+  await env.guard(async () => "done")({ scheduleTime: SCHEDULED });
+  const done = env.calls.filter(isCompleted);
+  assert.equal(done.length, 1);
+  assert.equal(done[0].path, markerPath("2026-09-21"));
+  assert.deepEqual(done[0].opts, { merge: true });
+  assert.deepEqual(done[0].data, { completedAt: { fakeTimestamp: at("2026-09-21T18:29:05Z") } });
+});
+
+test("completedAt is written AFTER the handler's own summary write (that write is a full set and would wipe it)", async () => {
+  const env = makeEnv();
+  await env.guard(async (_e, { today }) => {
+    await env.db.doc(markerPath(today)).set({ date: today, ranAt: "summary", ok: true }); // the handler's summary
+  })({ scheduleTime: SCHEDULED });
+  const order = env.calls.map((c) => (isCompleted(c) ? "completed" : "ranAt" in c.data ? "summary" : "startedAt" in c.data ? "marker" : "?"));
+  assert.deepEqual(order, ["marker", "summary", "completed"]);
+});
+
+test("a handler that returns early (Sunday/holiday, no summary) still ends with completedAt", async () => {
+  const env = makeEnv();
+  await env.guard(async () => { /* early return, writes nothing */ })({ scheduleTime: SCHEDULED });
+  assert.equal(env.calls.filter(isCompleted).length, 1);
+});
+
+test("a throwing handler gets NO completedAt, and still gets the failure record", async () => {
+  const env = makeEnv();
+  const boom = new Error("nope");
+  await assert.rejects(env.guard(async () => { throw boom; })({ scheduleTime: SCHEDULED }), (e) => e === boom);
+  assert.equal(env.calls.some(isCompleted), false);
+  const f = env.calls.find((c) => c.data.ok === false);
+  assert.equal(f.data.error, "nope");
+  assert.ok(f.data.failedAt);
+});
+
+test("a completedAt write that throws neither throws nor changes the returned value; it is logged", async () => {
+  const env = makeEnv({ failWhen: (_p, data) => "completedAt" in data });
+  const result = { scored: 12 };
+  const out = await env.guard(async () => result)({ scheduleTime: SCHEDULED });
+  assert.equal(out, result, "same object returned");
+  assert.ok(env.logs.error.length >= 1, "the failed completedAt write is logged");
+  assert.equal(env.calls.some(isCompleted), false);
+});
+
+test("a refused run gets NO completedAt", async () => {
+  const env = makeEnv({ nowMs: at("2026-09-30T00:00:00Z") });
+  await assert.rejects(env.guard(async () => {})({ scheduleTime: SCHEDULED }), /refus/i);
+  assert.equal(env.calls.some(isCompleted), false);
 });
 
 // ── wiring guard: cheap protection against reverting index.js ───────────────────────────────
