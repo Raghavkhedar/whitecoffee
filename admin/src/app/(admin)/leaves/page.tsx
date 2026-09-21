@@ -11,6 +11,7 @@ import {
   leaveCancelledMessage,
 } from '@/lib/leaveDates';
 import { istTodayStr } from '@/lib/date';
+import { MAX_CANCEL_DATES } from '@/lib/leaveCancellation';
 import type { LeaveRequest } from '@/types';
 import { Avatar } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -464,13 +465,20 @@ export default function LeavesPage() {
                 </p>
               )}
 
+              {/* One cancellation is one transaction, capped at MAX_CANCEL_DATES dates (cancelLeave). */}
+              {selectedCancelDates.length > MAX_CANCEL_DATES && (
+                <p className="text-[11.5px] text-[#8A6700] bg-[#FDF6E9] border border-[#EDD9B0] rounded-lg p-2.5 mb-3">
+                  At most {MAX_CANCEL_DATES} days can be cancelled at once. Untick some days, cancel, then cancel the rest in a second pass.
+                </p>
+              )}
+
               <label className="label">Reason <span className="text-[#C42B2B]">*</span></label>
               <textarea className="input min-h-[64px]" value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)} placeholder="Why is this leave being cancelled?" />
 
               <div className="flex gap-3 mt-4">
                 <button className="btn-danger flex-1" onClick={handleCancel}
-                  disabled={!!actioning || selectedCancelDates.length === 0 || !cancelReason.trim()}>
+                  disabled={!!actioning || selectedCancelDates.length === 0 || selectedCancelDates.length > MAX_CANCEL_DATES || !cancelReason.trim()}>
                   Cancel {selectedCancelDates.length} {selectedCancelDates.length === 1 ? 'day' : 'days'}
                 </button>
                 <button className="btn-outline flex-1" onClick={() => setCancelModal(null)}>Keep leave</button>
