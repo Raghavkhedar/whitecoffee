@@ -616,7 +616,39 @@ test("11b. a redelivery after a failed attempt converges to the right state", as
   assert.equal(await readBalance(uid), 0);
 });
 
-test("11c. refusal paths never reject, even when the transaction machinery is broken", async () => {
+test("11c. atomic: when the balance write cannot be made by any route, no day is rewritten", async () => {
+  // Kills a decrement-outside-the-transaction implementation: the status merges would commit and
+  // the failed balance write would leave paid-looking SCHL days with the balance never drawn (and a
+  // redelivery would then find no Absent day left to charge).
+  const { uid, rid, leaveData } = await seed({
+    user: { plBalance: 2 }, statuses: [["2026-09-14", "Absent"], ["2026-09-15", "Absent"]],
+  });
+  const boom = new Error("balance write refused");
+  const userPath = `users/${uid}`;
+  const hostileDb = {
+    doc: (p) => {
+      const ref = db.doc(p);
+      if (p === userPath) ref.update = () => { throw boom; }; // the non-transactional route
+      return ref;
+    },
+    runTransaction: (fn) => db.runTransaction((tx) => fn({
+      getAll: (...refs) => tx.getAll(...refs),
+      set: (ref, data, options) => tx.set(ref, data, options),
+      update: (ref, data) => { if (ref.path === userPath) throw boom; return tx.update(ref, data); }, // the transactional route
+    })),
+  };
+  const log = spyLog();
+  await assert.rejects(
+    runRetroLeaveScoring({ db: hostileDb, FieldValue, Timestamp, event: eventFor(uid, rid, leaveData), now: () => NOW_MS, log }),
+    (e) => e === boom,
+  );
+  const s = await readStatuses(uid);
+  assert.equal(s["2026-09-14"].status, "Absent", "no status rewritten without the balance draw");
+  assert.equal(s["2026-09-15"].status, "Absent");
+  assert.equal(await readBalance(uid), 2);
+});
+
+test("11d. refusal paths never reject, even when the transaction machinery is broken", async () => {
   const brokenDb = { doc: () => { throw new Error("must not be used"); }, runTransaction: () => { throw new Error("must not be used"); } };
   const { uid, rid } = await seed({ user: { plBalance: 2 } });
   const cases = [
