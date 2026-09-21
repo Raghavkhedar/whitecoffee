@@ -502,4 +502,25 @@ test("the nightly runner scores through nightlyScoring.js, with no inline copy o
   // The parts this refactor must NOT have touched.
   assert.match(region, /shouldDecrementPlBalance\(/, "the PL decrement is still gated by shouldDecrementPlBalance");
   assert.match(region, /increment\(-1\)/);
+
+  // The hybrid (design §3.1): the fast batch is partitioned by the module, and the Absent/SCHL
+  // users go through a transaction, not the batch.
+  assert.match(region, /partitionUsers\(scoredItems\)/, "the partition comes from the module, not a second inline copy of TXN_STATUSES");
+  assert.match(region, /db\.runTransaction\(/, "Absent/SCHL users are scored in a transaction");
+  // Every accumulator is derived from the transaction's RETURN value. The callback re-executes on
+  // contention, so a `++` inside it would double-count (the index.js:664 lesson).
+  const body = region.slice(region.indexOf("const runUserTxn"), region.indexOf("// Counts for the summary"));
+  for (const banned of [/scored\+\+/, /plDeducted\+\+/, /txnAdminMarked\+\+/, /failures\.push/]) {
+    assert.doesNotMatch(body, banned, `accumulator mutated INSIDE the transaction callback: ${banned}`);
+  }
+  // Reads before writes, and the leave set is the LIVE one, not the start-of-run snapshot.
+  assert.ok(body.indexOf("tx.getAll(") < body.indexOf("tx.set("), "reads precede writes");
+  assert.ok(body.indexOf("tx.get(userRef.collection(\"leave_requests\")") < body.indexOf("tx.set("), "the live leave query precedes the write");
+  assert.doesNotMatch(body, /leavesToday/, "the transaction must NOT use the stale leave snapshot");
+  assert.doesNotMatch(body, /priorStatus/, "the transaction must NOT use the stale prior-status snapshot");
+  assert.doesNotMatch(body, /\{\s*merge:\s*true\s*\}/, "the status write inside the transaction is a FULL set (§3.3)");
+
+  // The post-commit, non-transactional PL loop is gone.
+  assert.doesNotMatch(region, /plDeductions/, "the post-commit plDeductions loop is deleted");
+  assert.match(region, /const plFailures = \[\];/, "plFailures is retained in the summary as an empty array for compatibility");
 });

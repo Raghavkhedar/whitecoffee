@@ -24,18 +24,22 @@ const { pastGrantedDates, planRetroLeaveScoring, leaveSpanTooLong, leaveDatesInv
 // doc is skipped). The planner never throws on a malformed leave doc (it returns nothing), so a
 // deterministic failure cannot turn retry into a storm.
 //
-// Two KNOWN, deliberately-unfixed races (each needs another write to land within one invocation):
-//  (a) `cancelLeave` (admin/src/lib/firestore.ts) reads day statuses BEFORE its batch, so a
-//      cancel landing while this trigger is mid-flight can leave a cancelled day scored as
-//      paid SCHL and a PL day burned (window ≈ one invocation). Re-reading the leave inside
-//      the transaction NARROWS this — a cancel whose `cancelledDates` write commits before this
-//      transaction commits makes the transaction retry and see the cancel — but does NOT close
-//      it: `cancelLeave`'s batch is unconditional, so a cancel whose batch commits AFTER this
-//      transaction still leaves the day scored.
-//  (b) At ~23:59–00:00 IST the nightly run reads plBalance up front and decrements it
-//      non-transactionally, so an approval landing in that window can score two paid days
-//      against one day of balance and leave plBalance at −1 (self-heals at the next monthly
-//      accrual).
+// The two races this comment used to list as deliberately unfixed are now BOTH CLOSED — every
+// writer of `attendance_status/{date}` + `plBalance` is a transaction that reads and writes the
+// same documents, so they serialize instead of racing (design
+// docs/superpowers/specs/2026-09-21-transactional-nightly-and-cancel-design.md §3.1, §3.4):
+//  (a) `cancelLeave` (admin/src/lib/firestore.ts) used to read day statuses BEFORE an
+//      unconditional batch, so a cancel landing while this trigger was mid-flight could leave a
+//      cancelled day scored as paid SCHL with a PL day burned. It is now a client-SDK
+//      `runTransaction` that reads the leave, the day's status docs and the user doc inside
+//      itself, so whichever of the two commits second aborts and re-runs against fresh data:
+//      trigger first → the cancel reverts the SCHL day and refunds; cancel first → this
+//      transaction's own live re-read of the leave (below) sees `cancelledDates` and scores nothing.
+//  (b) `computeDailyAttendanceStatus` used to read plBalance up front and decrement it after its
+//      bulk batch, so an approval landing during the run could score two paid days against one
+//      balance day (plBalance −1). Every Absent/SCHL user is now scored in a per-user transaction
+//      that re-reads the user doc, so this trigger and the nightly serialize on `users/{uid}`
+//      (nightlyRunner.js).
 async function runRetroLeaveScoring({ db, FieldValue, Timestamp, event, now = Date.now, log = console }) {
   const userId = event.params.userId;
   const requestId = event.params.requestId;

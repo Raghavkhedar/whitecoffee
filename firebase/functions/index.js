@@ -335,10 +335,11 @@ const nightlyGuard = withNightlyGuard({
   jobName: "computeDailyAttendanceStatus",
 });
 exports.computeDailyAttendanceStatus = onSchedule(
-  // Retry-safe: status/daily_hours writes are `set` with deterministic doc IDs, and the
-  // PL decrement is gated on the prior status doc, which a retry re-reads — so a re-run cannot
-  // double-deduct. Per-user failures are caught in the runner and deliberately do NOT throw
-  // (retrying will not fix bad data); only infra failures reach the scheduler.
+  // Retry-safe: status/daily_hours writes are `set` with deterministic doc IDs, and the PL
+  // decrement is gated on the prior status doc re-read INSIDE the same transaction that writes
+  // it — so a re-run (or a duplicate delivery) cannot double-deduct. Per-user failures are caught
+  // in the runner and deliberately do NOT throw (retrying will not fix bad data); only infra
+  // failures reach the scheduler.
   // The body lives in nightlyRunner.js; only the schedule, the guard and the admin handles are here.
   {
     schedule: "59 23 * * *", timeZone: "Asia/Kolkata", timeoutSeconds: 300,
@@ -360,8 +361,8 @@ exports.computeDailyAttendanceStatus = onSchedule(
 // tab-gated, so a client-side version would fail for a non-admin Leaves manager or need the
 // rules widened. The decision logic lives in retroLeaveScoring.js (unit-tested); the read/write
 // wrapper around it lives in retroLeaveRunner.js (tested against the Firestore emulator:
-// `npm run test:emulator`), together with the retry/idempotency note and the two known,
-// deliberately-unfixed races.
+// `npm run test:emulator`), together with the retry/idempotency note and the two races that used
+// to be open and are now closed (see nightlyRunner.js and admin/src/lib/firestore.ts).
 exports.scoreRetroactiveLeave = onDocumentWritten(
   { document: "users/{userId}/leave_requests/{requestId}", retry: true },
   (event) => runRetroLeaveScoring({

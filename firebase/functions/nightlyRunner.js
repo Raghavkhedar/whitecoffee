@@ -21,10 +21,29 @@
  * The pure per-user scoring (Present/HalfDay/SL/LNF/SCHL/Absent + the daily_hours numbers) and the
  * attendance_status document builder live in nightlyScoring.js; this file is the read/write
  * wrapper around them.
+ *
+ * ── Writes: a HYBRID, on purpose (design §2 Option B, §3.1) ──
+ * A day decided by punches cannot be changed by anything outside the start-of-run snapshot, and it
+ * never touches `plBalance`, so every such user is still written by ONE bulk batch — the cheap,
+ * all-or-nothing path, ~85 % of the company on a normal night.
+ *
+ * A day that scores `Absent` or `SCHL` is the opposite: it is exactly the day a leave approved
+ * DURING the run can flip, and the only kind that draws a balance day. Each of those gets its own
+ * Admin-SDK transaction that re-reads the user doc, the day's status doc and the user's approved
+ * leave requests inside itself, then writes the status doc and the `plBalance` decrement together.
+ * That closes the four verified races the old code had:
+ *   (b) `plBalance` read at the top of the run and decremented after the commit — a concurrent
+ *       `scoreRetroactiveLeave` could draw the same day, leaving two paid days on one balance day;
+ *   (c) an un-merged bulk `set` clobbering a status doc another writer produced mid-run;
+ *   (d) a leave approved after IST midnight for a past day, invisible to the stale leave snapshot;
+ *   (1.5) a leave approved for TODAY during the run, likewise invisible.
+ * There is NO non-transactional fallback when a transaction fails (§6 Q3): it is retried once, and
+ * then recorded in the summary's `failures` so `ok` goes false. A missing doc surfaced by an alarm
+ * beats a wrong doc written silently.
  */
 
 const { resolveRestDayType, shouldDecrementPlBalance } = require("./attendanceRules");
-const { scoreUserDay, buildStatusDoc } = require("./nightlyScoring");
+const { scoreUserDay, buildStatusDoc, partitionUsers } = require("./nightlyScoring");
 const { resolveHolidayCredit } = require("./holidayCredit");
 const { usesFixedWindow } = require("./roleCapabilities");
 const { leaveCoversDate } = require("./leaveCoverage");
@@ -123,15 +142,13 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
     return;
   }
 
-  const batch           = db.batch();
-  const plDeductions    = [];
+  // ── Phase 4: classify every user from the start-of-run snapshot ────────────────────────────
   // Per-user scoring failures. A single malformed user doc must NOT cost every other
-  // employee their day: all writes accumulate into ONE batch committed after the loop,
-  // so an uncaught throw here used to mean nobody got scored at all — and since this
-  // function only ever writes *today*, the following night would not repair it. That is
+  // employee their day: an uncaught throw here used to mean nobody got scored at all — and since
+  // this function only ever writes *today*, the following night would not repair it. That is
   // the failure mode behind the 2026-07-17 backfill. Collect and continue instead.
-  const failures        = [];
-  let   scored          = 0;
+  const failures = [];
+  const scoredItems = [];
 
   for (const user of allUsers) {
     if (adminOverrides.has(user.id)) continue;
@@ -140,37 +157,14 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
       // first-in/last-out → Present/HalfDay/SL/LNF, unpunched + leave → SCHL, else Absent, plus
       // the daily_hours numbers for roles that run the OT/shortage ledger. Everything with a
       // side effect stays here.
+      const events = eventsByUser.get(user.id) || [];
+      const plan   = plannedHours.get(user.id);
       const { status, salaryCredit, dailyHours } = scoreUserDay({
-        role: user.role,
-        events: eventsByUser.get(user.id) || [],
-        plan: plannedHours.get(user.id),
+        role: user.role, events, plan,
         leave: leavesToday.get(user.id),
         plBalance: user.plBalance,
       });
-
-      // Only deduct when today wasn't already recorded as a paid day (SCHL credit 1, or a
-      // legacy PL doc), so a re-run (manual trigger / retry) doesn't decrement twice.
-      // `salaryCredit` is only ever defined for SCHL, so this is a no-op for every other day.
-      if (shouldDecrementPlBalance(salaryCredit, priorStatus.get(user.id))) {
-        plDeductions.push(user.id);
-      }
-
-      batch.set(
-        db.doc(`users/${user.id}/attendance_status/${today}`),
-        buildStatusDoc({ user, today, status, salaryCredit, now: () => Timestamp.now() })
-      );
-
-      // Per-day worked hours (`dailyHours` is set only on fully-worked days of roles that
-      // run the OT/shortage ledger — operations). Per-day canonical record: the OT/shortage
-      // ledger reads this, not a lifetime counter.
-      if (dailyHours) {
-        batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
-          date: today, userId: user.id, role: user.role,
-          ...dailyHours, // plannedMins, actualMins, shortageMins, otMins
-          updatedAt: Timestamp.now(),
-        });
-      }
-      scored++;
+      scoredItems.push({ user, events, plan, status, salaryCredit, dailyHours });
     } catch (err) {
       // Deterministic per-user data problem (malformed timestamp, unexpected null).
       // Retrying the whole run will not fix it, so we do NOT rethrow — we record it,
@@ -180,28 +174,162 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
     }
   }
 
-  // Commit and PL deductions stay OUTSIDE the per-user guard: a failure here is
-  // infrastructural, not per-user, and SHOULD throw so Cloud Scheduler retries it.
+  // ── Phase 5: partition (design §3.1) ───────────────────────────────────────────────────────
+  // `fast`: the day is decided entirely by punches. Nothing outside this snapshot can change it —
+  // leave never overrides punches (the leave branch is only reached with zero punches) and these
+  // days never touch plBalance — so one bulk batch is both correct and the cheapest thing to do.
+  // `txn`: Absent / SCHL. These are exactly the days a leave approved DURING the run can flip and
+  // the only ones that draw a balance day, so each gets its own transaction below.
+  const { fast, txn } = partitionUsers(scoredItems);
+
+  // ── Phase 6a: the fast partition, one bulk batch, committed exactly as before ───────────────
+  const batch  = db.batch();
+  let   scored = 0;
+  for (const item of fast) {
+    const { user, status, salaryCredit, dailyHours } = item;
+    batch.set(
+      db.doc(`users/${user.id}/attendance_status/${today}`),
+      buildStatusDoc({ user, today, status, salaryCredit, now: () => Timestamp.now() })
+    );
+
+    // Per-day worked hours (`dailyHours` is set only on fully-worked days of roles that
+    // run the OT/shortage ledger — operations). Per-day canonical record: the OT/shortage
+    // ledger reads this, not a lifetime counter. It can only ever appear in this partition:
+    // it needs both punches, and any day with punches is decided by them.
+    if (dailyHours) {
+      batch.set(db.doc(`users/${user.id}/daily_hours/${today}`), {
+        date: today, userId: user.id, role: user.role,
+        ...dailyHours, // plannedMins, actualMins, shortageMins, otMins
+        updatedAt: Timestamp.now(),
+      });
+    }
+    scored++;
+  }
+
+  // The commit stays OUTSIDE any per-user guard: a failure here is infrastructural, not
+  // per-user, and SHOULD throw so Cloud Scheduler retries the night.
   await batch.commit();
 
-  // PL decrements are individual writes, so one failure must not strand the rest.
-  // Re-runs are safe: `priorStatus` is re-read each run and a user already recorded
-  // as PL today is never decremented twice.
-  const plFailures = [];
-  for (const uid of plDeductions) {
-    try {
-      await db.doc(`users/${uid}`).update({ plBalance: FieldValue.increment(-1) });
-    } catch (err) {
-      plFailures.push({ userId: uid, message: String(err && err.message || err) });
-      log.error(`computeDailyAttendanceStatus: FAILED PL decrement for ${uid} on ${today}:`, err);
+  // ── Phase 6b: one transaction per Absent/SCHL user (design §3.1 Phase 6) ───────────────────
+  // Each transaction re-reads, INSIDE itself, the three things the snapshot can be stale about:
+  // the user doc (plBalance), the day's status doc (a regularization or a trigger-written SCHL
+  // that landed after Phase 1) and the user's approved leave requests (an approval that landed
+  // after Phase 1 — races (d) and §1.5). Because the status doc is read in the same transaction,
+  // the full `set` below is safe: a writer that beats us to it aborts and re-runs this callback
+  // against its document. Full set, NOT merge — it is what clears a stale `salaryCredit` when a
+  // day is rewritten from SCHL to Absent (§3.3).
+  //
+  // NOTHING is accumulated inside the callback: Firestore re-executes it on contention, so every
+  // count below is derived from the transaction's RETURN VALUE, outside it.
+  const runUserTxn = (item) => db.runTransaction(async (tx) => {
+    const userRef   = db.doc(`users/${item.user.id}`);
+    const statusRef = db.doc(`users/${item.user.id}/attendance_status/${today}`);
+
+    // ── every read first (Firestore transaction rule) ──
+    const [userSnap, statusSnap] = await tx.getAll(userRef, statusRef);
+    const leaveSnap = await tx.get(userRef.collection("leave_requests").where("status", "==", "approved"));
+    if (!userSnap.exists) return { skipped: "no-user" };
+
+    const prior = statusSnap.exists ? statusSnap.data() : undefined;
+    // Re-check the admin gate inside the transaction: a regularization approved after Phase 1's
+    // read used to be clobbered by the batch. An admin decision is never silently rewritten.
+    if (prior && prior.markedBy === "admin") return { skipped: "admin" };
+
+    const live  = userSnap.data();
+    const leave = leaveSnap.docs.map((d) => d.data()).find((l) => leaveCoversDate(l, today));
+    // Punches are NOT re-read: `events`/`plan`/`role` stay the snapshot's, so this rescoring can
+    // only ever land back in {Absent, SCHL} — the partition invariant holds, and a transactional
+    // user therefore never has a daily_hours doc (that needs both punches). Only the two things
+    // the snapshot can be stale about come from inside the transaction: the live leave set and
+    // the live plBalance.
+    const { status, salaryCredit } = scoreUserDay({
+      role: item.user.role, events: item.events, plan: item.plan, leave, plBalance: live.plBalance,
+    });
+
+    // ── writes ──
+    // Identity fields come from the in-transaction user doc (a name/employeeId edited during the
+    // run should land), with the doc id from the snapshot — `live` has no `id` field of its own.
+    tx.set(statusRef, buildStatusDoc({
+      user: { ...item.user, ...live, id: item.user.id },
+      today, status, salaryCredit, now: () => Timestamp.now(),
+    }));
+    // Same single decision point as before — but `prior` was read in THIS transaction, so it is
+    // no longer advisory: a concurrent scoreRetroactiveLeave that drew the same day is now
+    // serialized against us instead of racing us (race (b)).
+    if (shouldDecrementPlBalance(salaryCredit, prior)) {
+      tx.update(userRef, { plBalance: FieldValue.increment(-1) });
+      return { status, decremented: true };
+    }
+    return { status, decremented: false };
+  });
+
+  // Counts for the summary, all derived from return values.
+  //
+  // RULING on the two in-transaction skips, so `ok` stays meaningful:
+  //  • `admin` — an admin marked the day BETWEEN Phase 1's read and this transaction. The user is
+  //    counted into `adminMarked` and therefore REMOVED from `expected`, exactly as if the admin's
+  //    write had landed two seconds earlier (before Phase 1). `ok` stays true: the day is not
+  //    unscored, it is scored by a human, which is the one decision this job must never overrule.
+  //  • `no-user` — the user doc disappeared mid-run (a deletion during the run). The user is NOT
+  //    counted as admin-marked and stays in `expected`, so `scored !== expected` and `ok` goes
+  //    FALSE. Somebody who should have been scored was not, and that must alarm.
+  let txnAdminMarked = 0;
+  let plDeducted     = 0;
+  const CHUNK = 10; // bounds the pathological night (everyone absent) without serializing it
+
+  for (let i = 0; i < txn.length; i += CHUNK) {
+    const outcomes = await Promise.all(txn.slice(i, i + CHUNK).map(async (item) => {
+      try {
+        return { item, result: await runUserTxn(item) };
+      } catch (firstErr) {
+        // Retry ONCE. Firestore ABORTED under contention is the expected failure here, and one
+        // retry turns it into a scored employee instead of a day with no document. There is
+        // deliberately NO non-transactional fallback (design §6 Q3): it would reintroduce the
+        // unguarded write this whole change removes, and it would fire precisely when another
+        // writer is mid-flight.
+        try {
+          return { item, result: await runUserTxn(item) };
+        } catch (err) {
+          return { item, error: err, firstErr };
+        }
+      }
+    }));
+
+    for (const outcome of outcomes) {
+      const { user } = outcome.item;
+      if (outcome.error) {
+        // A per-user failure NEVER throws — the rest of the company still gets scored, and the
+        // summary's ok:false is the signal. Same failure shape as before.
+        failures.push({ userId: user.id, employeeId: user.employeeId || "", message: String(outcome.error && outcome.error.message || outcome.error) });
+        log.error(`computeDailyAttendanceStatus: FAILED to score user ${user.id} (${user.employeeId || "no empId"}) for ${today} after one retry (first attempt: ${String(outcome.firstErr && outcome.firstErr.message || outcome.firstErr)}):`, outcome.error);
+        continue;
+      }
+      if (outcome.result.skipped === "admin") { txnAdminMarked++; continue; }
+      if (outcome.result.skipped === "no-user") {
+        log.error(`computeDailyAttendanceStatus: user ${user.id} (${user.employeeId || "no empId"}) disappeared during the run for ${today} — NOT scored`);
+        continue;
+      }
+      scored++;
+      if (outcome.result.decremented) plDeducted++;
     }
   }
 
-  const expected = allUsers.length - adminOverrides.size;
+  const adminMarked = adminOverrides.size + txnAdminMarked;
+  const expected    = allUsers.length - adminMarked;
+  // `plAttempted` is counted at the decision point INSIDE the transaction and read off its return
+  // value, so it only ever counts decrements that actually committed — which makes it equal to
+  // `plDeducted` by construction. That is the point: status and balance now move together, so the
+  // old "status written but the balance update failed" gap no longer exists. Both keys are kept
+  // because the summary's key set is a contract (§3.2).
+  const plAttempted = plDeducted;
+  // Retained for compatibility only: a PL decrement can no longer fail on its own (it is part of
+  // the user's transaction, and a failed transaction is recorded in `failures` instead).
+  const plFailures = [];
+
   log.log(
     `computeDailyAttendanceStatus: ${today} — scored ${scored}/${expected} ` +
-    `(${allUsers.length} active, ${adminOverrides.size} admin-marked), ` +
-    `PL deducted ${plDeductions.length - plFailures.length}/${plDeductions.length}, ` +
+    `(${allUsers.length} active, ${adminMarked} admin-marked), ` +
+    `${txn.length} in transactions, PL deducted ${plDeducted}/${plAttempted}, ` +
     `failures ${failures.length}`
   );
 
@@ -211,11 +339,11 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
     date: today,
     ranAt: Timestamp.now(),
     activeUsers: allUsers.length,
-    adminMarked: adminOverrides.size,
+    adminMarked,
     expected,
     scored,
-    plDeducted: plDeductions.length - plFailures.length,
-    plAttempted: plDeductions.length,
+    plDeducted,
+    plAttempted,
     failures,
     plFailures,
     ok: failures.length === 0 && plFailures.length === 0 && scored === expected,
