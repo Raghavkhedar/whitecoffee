@@ -3,7 +3,8 @@
 import {
   collection, collectionGroup, doc, getDocs, getDoc,
   setDoc, updateDoc, deleteDoc, deleteField, writeBatch, increment, runTransaction,
-  Timestamp, where, query, orderBy, limit,
+  Timestamp, where, query, orderBy, limit, documentId, startAfter,
+  type QueryDocumentSnapshot, type DocumentData,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from './firebase';
@@ -1330,4 +1331,51 @@ export async function getAuditLog(fromMillis: number, toMillis: number, max = 50
     limit(max),
   ));
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditEntry));
+}
+
+// ── Superadmin generic document access ────────────────────────────────────
+// Raw, path-based Firestore operations for the /superadmin editor (see
+// docs/superpowers/specs/2026-09-22-superadmin-portal-editor-design.md). Unlike every
+// other function in this file, these operate on an arbitrary slash-separated path rather
+// than a typed domain object — firestore.rules' isSuperAdmin() catch-all is what actually
+// authorizes the caller; nothing here narrows what can be read or written, EXCEPT that
+// the /superadmin page itself never offers audit_log as a write target (see
+// superadminCollections.ts) — these functions would not stop a caller who tried anyway;
+// firestore.rules is what actually denies that write.
+
+export interface DocListPage {
+  docs: { id: string; data: Record<string, unknown> }[];
+  cursor: QueryDocumentSnapshot<DocumentData> | null; // pass as `after` for the next page; null = no more pages
+}
+
+/** One page of document IDs (and their data) in `collectionPath`, ordered by document ID. */
+export async function listDocumentsPage(
+  collectionPath: string,
+  pageSize: number,
+  after: QueryDocumentSnapshot<DocumentData> | null,
+): Promise<DocListPage> {
+  const base = collection(db, collectionPath);
+  const q = after
+    ? query(base, orderBy(documentId()), startAfter(after), limit(pageSize))
+    : query(base, orderBy(documentId()), limit(pageSize));
+  const snap = await getDocs(q);
+  return {
+    docs: snap.docs.map((d) => ({ id: d.id, data: d.data() })),
+    cursor: snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null,
+  };
+}
+
+/** A single document's raw data, or null if it doesn't exist. */
+export async function getDocumentRaw(docPath: string): Promise<Record<string, unknown> | null> {
+  const snap = await getDoc(doc(db, docPath));
+  return snap.exists() ? snap.data() : null;
+}
+
+/** Full-document overwrite (not merge) — the editor always writes the complete JSON it shows. */
+export async function setDocumentRaw(docPath: string, data: Record<string, unknown>): Promise<void> {
+  await setDoc(doc(db, docPath), data);
+}
+
+export async function deleteDocumentRaw(docPath: string): Promise<void> {
+  await deleteDoc(doc(db, docPath));
 }
