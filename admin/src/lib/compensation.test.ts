@@ -3,7 +3,7 @@
  * Run: npx tsx src/lib/compensation.test.ts
  */
 
-import { resolvePay, withPay, PAY_FIELDS, type Pay } from './compensation';
+import { resolvePay, withPay, PAY_FIELDS, type Pay, type Source } from './compensation';
 
 let passed = 0, failed = 0;
 function check(name: string, cond: boolean) {
@@ -17,7 +17,8 @@ const compDoc: Pay = { salaryRate: 1000, pfPercent: 12, esiPercent: 0.75, impres
 
 console.log('Migration source combinations:');
 check('pre-migration: inline only', eq(resolvePay(legacyUser, null), compDoc));
-check('post-migration: compensation only', eq(resolvePay({ name: 'A' }, compDoc), compDoc));
+const userNoInlinePay: Source = { name: 'A' } as Record<string, unknown>;
+check('post-migration: compensation only', eq(resolvePay(userNoInlinePay, compDoc), compDoc));
 check('mid-migration: both present, compensation wins',
   resolvePay({ ...legacyUser, salaryRate: 1 }, compDoc).salaryRate === 1000);
 

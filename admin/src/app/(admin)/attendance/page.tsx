@@ -63,7 +63,8 @@ function buildVisits(events: AttendanceRecord[], role: string): Visit[] {
 }
 
 function visitLocation(v: Visit): string {
-  return v.in?.siteName || v.in?.marketName || v.out?.siteName || v.out?.marketName || '';
+  return v.in?.siteName || v.in?.marketName || v.in?.locationName
+    || v.out?.siteName || v.out?.marketName || v.out?.locationName || '';
 }
 
 function VisitCell({ visit }: { visit?: Visit | null }) {

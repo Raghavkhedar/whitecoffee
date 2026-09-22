@@ -285,6 +285,9 @@ export interface AttendanceRecord {
   workDoneCategories?: string[];
   siteName: string;
   marketName: string;
+  /** Free-text location the employee typed for an office_in/office_out punch
+   *  (e.g. "Head Office", a client site). Empty/absent falls back to "Office". */
+  locationName?: string;
   autoLogout?: boolean;
 }
 

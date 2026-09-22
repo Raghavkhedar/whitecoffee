@@ -83,7 +83,7 @@ export default function DashboardPage() {
             : 'Not in';
           const location = state.kind === 'SiteCheckedIn' ? (state.lastEvent?.siteName || '—')
             : state.kind === 'MarketCheckedIn' ? (state.lastEvent?.marketName || '—')
-            : state.kind === 'AtOffice' ? 'Office'
+            : state.kind === 'AtOffice' ? (state.lastEvent?.locationName || 'Office')
             : '';
           return {
             user,

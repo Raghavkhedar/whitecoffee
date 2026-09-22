@@ -219,7 +219,7 @@ export default function DailyActivityPage() {
                 <ol className="relative border-l border-border ml-1.5">
                   {timeline.map((e, idx) => {
                     const canRestore = isToday && idx < timeline.length - 1;
-                    const place = e.siteName || e.marketName || '';
+                    const place = e.siteName || e.marketName || e.locationName || '';
                     return (
                       <li key={e.id} className="ml-4 pb-3 last:pb-0">
                         <span className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-primary/60" />
@@ -255,7 +255,7 @@ export default function DailyActivityPage() {
                           {c.removedEvents.map((e, i) => (
                             <span key={e.id} className="text-text-primary">
                               {i > 0 && ', '}
-                              {eventLabel(e.type)}{(e.siteName || e.marketName) ? ` · ${e.siteName || e.marketName}` : ''} ({formatTime(e.timestamp as Parameters<typeof formatTime>[0])})
+                              {eventLabel(e.type)}{(e.siteName || e.marketName || e.locationName) ? ` · ${e.siteName || e.marketName || e.locationName}` : ''} ({formatTime(e.timestamp as Parameters<typeof formatTime>[0])})
                             </span>
                           ))}
                           {' — by '}<span className="text-text-primary">{c.correctedBy}</span>
@@ -290,7 +290,7 @@ export default function DailyActivityPage() {
               <ul className="space-y-1">
                 {pending.removed.map(e => (
                   <li key={e.id} className="text-sm text-text-primary flex justify-between gap-3">
-                    <span>{eventLabel(e.type)}{(e.siteName || e.marketName) ? ` · ${e.siteName || e.marketName}` : ''}</span>
+                    <span>{eventLabel(e.type)}{(e.siteName || e.marketName || e.locationName) ? ` · ${e.siteName || e.marketName || e.locationName}` : ''}</span>
                     <span className="text-text-secondary whitespace-nowrap">{formatTime(e.timestamp as Parameters<typeof formatTime>[0])}</span>
                   </li>
                 ))}

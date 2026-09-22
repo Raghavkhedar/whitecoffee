@@ -46,7 +46,7 @@ export function deriveState(events: AttendanceRecord[]): DerivedState {
     case 'market_in':
       return { kind: 'MarketCheckedIn', label: `At Market: ${last.marketName || '—'}`, lastEvent: last };
     case 'office_in':
-      return { kind: 'AtOffice', label: 'At Office', lastEvent: last };
+      return { kind: 'AtOffice', label: last.locationName ? `At Office: ${last.locationName}` : 'At Office', lastEvent: last };
     case 'home_out':
     case 'office_out':
       return { kind: 'DayComplete', label: 'Day complete', lastEvent: last };

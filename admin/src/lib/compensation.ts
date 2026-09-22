@@ -27,7 +27,7 @@ export interface Pay {
 
 export const PAY_FIELDS: (keyof Pay)[] = ['salaryRate', 'pfPercent', 'esiPercent', 'imprestPercent'];
 
-type Source = Partial<Record<keyof Pay, unknown>> | null | undefined;
+export type Source = Partial<Record<keyof Pay, unknown>> | null | undefined;
 
 /** Return obj[field] when it is a finite number, else `fallback`. */
 function pick(obj: Source, field: keyof Pay, fallback: number): number {
