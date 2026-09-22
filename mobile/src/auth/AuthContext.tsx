@@ -26,14 +26,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      const profileSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
-      const profile = profileSnap.data();
-      setUser({
-        uid: firebaseUser.uid,
-        employeeId: profile?.employeeId ?? '',
-        name: profile?.name ?? '',
-      });
-      setLoading(false);
+      try {
+        const profileSnap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        const profile = profileSnap.data();
+        setUser({
+          uid: firebaseUser.uid,
+          employeeId: profile?.employeeId ?? '',
+          name: profile?.name ?? '',
+        });
+      } catch (e) {
+        console.error('Failed to load user profile', e);
+        setUser({ uid: firebaseUser.uid, employeeId: '', name: '' });
+      } finally {
+        setLoading(false);
+      }
     });
   }, []);
 
