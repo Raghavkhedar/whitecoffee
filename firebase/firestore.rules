@@ -20,6 +20,17 @@ service cloud.firestore {
       return userRole() == 'admin';
     }
 
+    // Defense-in-depth for account suspension (admin's setUserActive Cloud Function writes
+    // `active: false` on users/{uid}). The Android app already live-blocks a suspended
+    // employee's UI (MainViewModel/AccountBlockScreen), but that is client-side only — per this
+    // repo's security model (see CLAUDE.md), the rules are the real boundary, and anything they
+    // permit an employee can do directly against the API with their own login. Defaults to
+    // `true` so a doc predating the `active` field (or one where it was never set) is never
+    // blocked. Same get() as userRole()/userTabs() — cached, no extra billed read.
+    function isActive() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('active', true) != false;
+    }
+
     // Portal access is an explicit per-user list of allowed tab PATHS
     // (`tabAccess: string[]` on the user doc; see admin/src/lib/portalAccess.ts).
     // The get() here hits the same user doc as userRole(), so it's cached — no extra
@@ -296,7 +307,7 @@ service cloud.firestore {
         // rules have no timezone arithmetic, and the scorer queries by `date`, so a
         // mismatch would be a backdating bypass. The onPunchWritten trigger recomputes
         // `date` from the trusted timestamp server-side and corrects it.
-        allow create: if isLoggedIn() && isOwner(userId) && isValidPunch(request.resource.data);
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && isValidPunch(request.resource.data);
         // Events are immutable once recorded EXCEPT the admin-filled Site ID, Visit
         // Type, and Work Done categories: ops type a free-text site name at check-in
         // and an admin (or a manager holding Attendance / Manpower Utilisation Input)
@@ -343,7 +354,7 @@ service cloud.firestore {
       // ── /material_requests/{docId} ────────────────────────────────────
       match /material_requests/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
         // Owner may ONLY patch photoUrls (post-upload); admin / a Submissions manager can
         // update status etc. Without this restriction an owner could flip their own status.
         // notSelf: a Submissions manager must not approve their own submitted work.
@@ -358,7 +369,7 @@ service cloud.firestore {
       // ── /material_purchases/{docId} ───────────────────────────────────
       match /material_purchases/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
         // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
@@ -371,7 +382,7 @@ service cloud.firestore {
       // ── /material_transfers/{docId} ───────────────────────────────────
       match /material_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
         // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
@@ -384,7 +395,7 @@ service cloud.firestore {
       // ── /tool_transfers/{docId} ───────────────────────────────────────
       match /tool_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
         // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
@@ -397,7 +408,7 @@ service cloud.firestore {
       // ── /work_progress/{docId} ────────────────────────────────────────
       match /work_progress/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && createdUnreviewed();
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
         // notSelf: a Submissions manager must not approve their own submitted work.
         allow update: if isLoggedIn() && (
           isAdmin() ||
@@ -417,7 +428,7 @@ service cloud.firestore {
         // decade-long request or a 5-day range claiming 500 days was accepted and only a
         // mis-click away from being approved. Dates are "yyyy-mm-dd" strings, so a
         // lexicographic compare is chronological.
-        allow create: if isLoggedIn() && isOwner(userId)
+        allow create: if isLoggedIn() && isOwner(userId) && isActive()
                       && request.resource.data.status == 'pending'
                       && isValidLeaveDates(request.resource.data);
         // Admin / a Leaves manager updates status (approved/rejected); the owner
@@ -555,7 +566,7 @@ service cloud.firestore {
         // window (config/regularizationWindow) open AND this employee's own month not already
         // Settle & Locked. A FUTURE date is never allowed. See
         // docs/superpowers/specs/2026-09-05-regularization-window-design.md.
-        allow create: if isLoggedIn() && isOwner(userId)
+        allow create: if isLoggedIn() && isOwner(userId) && isActive()
                       && request.resource.data.userId == userId
                       && request.resource.data.status == 'pending'
                       && request.resource.data.date <= todayIST()
