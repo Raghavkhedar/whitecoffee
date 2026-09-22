@@ -20,6 +20,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "WhiteCoffee needs your location to record attendance check-ins."
+        }
+      ]
+    ]
   }
 }
