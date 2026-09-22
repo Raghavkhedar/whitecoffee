@@ -1,5 +1,7 @@
 package com.raghav.whitecoffee.ui.home
 
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,12 +24,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -137,7 +142,37 @@ fun HomeScreen(
                     }
                 }
             }
+
+            InstalledVersionLabel()
         }
+    }
+}
+
+// Reads the installed app's versionName from PackageManager at runtime — BuildConfig generation
+// isn't enabled for this module, so this is the only source that can't drift from what's
+// actually installed on the device.
+@Composable
+private fun InstalledVersionLabel() {
+    val context = LocalContext.current
+    val versionName = remember {
+        runCatching {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            info.versionName
+        }.getOrNull()
+    }
+    if (!versionName.isNullOrBlank()) {
+        Text(
+            "v$versionName",
+            color = WcTheme.colors.TextMuted,
+            fontSize = 11.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+        )
     }
 }
 
