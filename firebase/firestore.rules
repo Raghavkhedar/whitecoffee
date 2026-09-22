@@ -20,6 +20,18 @@ service cloud.firestore {
       return userRole() == 'admin';
     }
 
+    // Superadmin — the single top privilege tier, bypasses every wall below except
+    // audit_log (docs/superpowers/specs/2026-09-22-superadmin-role-design.md). Provisioned
+    // ONLY via Firebase Console or firebase/functions/scripts/setSuperAdmin.js — never
+    // exposed in the portal UI, because isAdmin() already has unrestricted field-level
+    // write on users/{uid} (no notSelf guard there), so a UI toggle would let any admin
+    // one-click promote themselves.
+    function isSuperAdmin() {
+      return isLoggedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid))
+             .data.get('superAdmin', false) == true;
+    }
+
     // Defense-in-depth for account suspension (admin's setUserActive Cloud Function writes
     // `active: false` on users/{uid}). The Android app already live-blocks a suspended
     // employee's UI (MainViewModel/AccountBlockScreen), but that is client-side only — per this
@@ -667,6 +679,19 @@ service cloud.firestore {
     match /{path=**}/regularization_requests/{docId} {
       allow read:   if isLoggedIn() && (isAdmin() || canAccessRegularization());
       allow update: if isLoggedIn() && (isAdmin() || (canAccessRegularization() && notSelfDoc()));
+    }
+
+    // ── Superadmin bypass — must stay physically adjacent to audit_log below ─────
+    // Firestore ORs every matching rule for a given path, so this is purely additive: it
+    // does not touch any of the ~30 per-collection match blocks above, and a superadmin
+    // gets extra access without any of them changing. audit_log is excluded by path so
+    // `allow write: if false` on it (immediately below) still applies to superadmin —
+    // every other write a superadmin makes is still recorded there as evidence. A typo
+    // here (e.g. dropping the `!=`) would silently open audit_log writes to superadmin —
+    // see superadmin.test.js's audit_log-denial case, which exists specifically to catch
+    // that.
+    match /{document=**} {
+      allow read, write: if isSuperAdmin() && document[0] != 'audit_log';
     }
 
     // ── /audit_log/{docId} — before/after record of every write ─────────

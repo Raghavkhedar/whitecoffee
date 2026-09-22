@@ -70,6 +70,7 @@ async function seedUsers(env, users) {
         active: data.active !== false,
         salaryRate: data.salaryRate ?? 1000,
         ...(data.tabAccess ? { tabAccess: data.tabAccess } : {}),
+        ...(data.superAdmin !== undefined ? { superAdmin: data.superAdmin } : {}),
       });
     }
   });

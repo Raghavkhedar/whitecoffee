@@ -24,6 +24,12 @@ export interface User {
   /** Append-only log of every suspend/reactivate action on this employee, oldest first. */
   suspensionHistory?: SuspensionEvent[];
   role: 'operations' | 'office' | 'admin' | 'sales';
+  /** Top privilege tier, orthogonal to `role`. Bypasses every firestore.rules wall except
+   *  audit_log. Console/script-provisioned ONLY (firebase/functions/scripts/
+   *  setSuperAdmin.js) — there is deliberately no portal UI to grant or revoke this.
+   *  See docs/superpowers/specs/2026-09-22-superadmin-role-design.md. Nothing in the
+   *  portal currently reads this field. */
+  superAdmin?: boolean;
   /** Explicit portal tab paths this non-admin user may access; ignored for role==='admin'
    *  (superuser). Managed on /access. See src/lib/portalAccess.ts */
   tabAccess?: string[];
