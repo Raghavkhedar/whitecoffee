@@ -19,6 +19,10 @@ export interface TabDef {
   group?: string;        // sidebar section header; undefined = top (Dashboard)
   badgeKey?: 'pending';  // shows the pending-leaves count badge
   adminOnly?: boolean;   // only admins ever see it; never a grantable matrix column
+  // Visible ONLY to a user whose own doc has superAdmin === true — a third tier, distinct
+  // from adminOnly: an ordinary admin (role==='admin', no superAdmin flag) does NOT see
+  // this tab. See docs/superpowers/specs/2026-09-22-superadmin-portal-editor-design.md.
+  superAdminOnly?: boolean;
 }
 
 // Every portal tab, in sidebar order. This is the ONLY place the nav list lives.
@@ -43,22 +47,32 @@ export const TABS: TabDef[] = [
   // ONLY, because entries carry full document snapshots including pay. Granting this tab
   // to a manager would show them an empty page, not an audit trail.
   { path: '/audit',              label: 'Audit Trail',    icon: 'search',     group: 'Records', adminOnly: true },
+  // superAdminOnly, not adminOnly: an ordinary admin must not see this even though they
+  // pass isAdminUser() — only a user with superAdmin === true on their own doc does.
+  { path: '/superadmin',         label: 'Superadmin',     icon: 'doc',        group: 'Records', superAdminOnly: true },
 ];
 
-// Set of tab paths a non-admin can be granted (everything not adminOnly).
-const GRANTABLE_PATHS = new Set(TABS.filter((t) => !t.adminOnly).map((t) => t.path));
+// Set of tab paths a non-admin can be granted (everything not adminOnly or superAdminOnly).
+const GRANTABLE_PATHS = new Set(TABS.filter((t) => !t.adminOnly && !t.superAdminOnly).map((t) => t.path));
 
-type AccessUser = Pick<User, 'role' | 'tabAccess'>;
+type AccessUser = Pick<User, 'role' | 'tabAccess' | 'superAdmin'>;
 
 export function isAdminUser(user: AccessUser | null | undefined): boolean {
   return user?.role === 'admin';
+}
+
+export function isSuperAdminUser(user: AccessUser | null | undefined): boolean {
+  return user?.superAdmin === true;
 }
 
 // Tab paths this user may access. Admin → every tab (including admin-only); otherwise
 // their tabAccess entries intersected with the grantable tabs, returned in TABS order.
 // Stray admin-only or unknown paths are ignored (defensive). No tabAccess → [].
 export function allowedPaths(user: AccessUser | null | undefined): string[] {
-  if (isAdminUser(user)) return TABS.map((t) => t.path);
+  if (isAdminUser(user)) {
+    // superAdminOnly tabs are hidden from an ordinary admin — only a superadmin sees them.
+    return TABS.filter((t) => !t.superAdminOnly || isSuperAdminUser(user)).map((t) => t.path);
+  }
   const granted = new Set((user?.tabAccess ?? []).filter((p) => GRANTABLE_PATHS.has(p)));
   return TABS.map((t) => t.path).filter((p) => granted.has(p));
 }
