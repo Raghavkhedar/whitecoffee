@@ -82,18 +82,21 @@ test("idempotent: once the days are PAID SCHL, planning again changes nothing ev
   assert.equal(r.paidDays, 0);
 });
 
-test("an UNPAID SCHL day with the balance still exhausted re-plans to the same UNPAID SCHL (no-op, not decremented)", () => {
+test("an UNPAID SCHL day with the balance still exhausted produces NO write — a still-0 credit is not a real change", () => {
   const unpaid = new Map(D4.map((d) => [d, { status: "SCHL", salaryCredit: 0, markedBy: "auto" }]));
   const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: unpaid, plBalance: 0 });
-  assert.deepEqual(r.updates.map((u) => [u.date, u.status, u.salaryCredit]), D4.map((d) => [d, "SCHL", 0]));
+  assert.equal(r.updates.length, 0);
   assert.equal(r.paidDays, 0);
 });
 
-test("an UNPAID SCHL day is upgraded to paid once the balance frees up (matches the nightly job's willingness to re-decide from live balance)", () => {
+test("an UNPAID SCHL day is upgraded to paid once the balance frees up — only the days that actually change get a write", () => {
   const unpaid = new Map(D4.map((d) => [d, { status: "SCHL", salaryCredit: 0, markedBy: "auto" }]));
   const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: unpaid, plBalance: 2 });
+  // Only the two days that flip 0 -> 1 are written; the two that stay unpaid produce no write —
+  // a real Firestore transaction retry must never re-touch a day whose value did not change
+  // (verified against real contention in emulator-tests/retroLeaveRunner.emulator.js, test 10b).
   assert.deepEqual(r.updates.map((u) => [u.date, u.status, u.salaryCredit]), [
-    ["2026-09-14", "SCHL", 1], ["2026-09-15", "SCHL", 1], ["2026-09-16", "SCHL", 0], ["2026-09-17", "SCHL", 0],
+    ["2026-09-14", "SCHL", 1], ["2026-09-15", "SCHL", 1],
   ]);
   assert.equal(r.paidDays, 2);
 });

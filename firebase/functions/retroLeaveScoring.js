@@ -111,9 +111,16 @@ function planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance } = {}
   for (const date of pastGrantedDates(leave, todayIST)) {
     const existing = statusByDate && statusByDate.get(date);
     if (!existing || existing.markedBy !== "auto") continue;
-    const reconsider = existing.status === "Absent" || (existing.status === "SCHL" && existing.salaryCredit === 0);
-    if (!reconsider) continue;
+    const isUnpaidSchl = existing.status === "SCHL" && existing.salaryCredit === 0;
+    if (existing.status !== "Absent" && !isUnpaidSchl) continue;
     const resolved = resolveLeaveStatus(balance);
+    // An unpaid SCHL day that is STILL unpaid is not a real change — skip the write. A retry that
+    // lands after a concurrent attempt already wrote this exact day (real Firestore contention,
+    // not a hypothetical) must not re-touch it: a no-op value written again is still a write, and
+    // this is a per-user transaction other writers can retry against, so a spurious extra write
+    // here is a spurious extra transaction attempt for them too. An Absent day is always a real
+    // transition (Absent → SCHL, paid or not) and is always written.
+    if (isUnpaidSchl && resolved.salaryCredit === 0) continue;
     updates.push({ date, status: resolved.status, salaryCredit: resolved.salaryCredit });
     if (resolved.salaryCredit === 1) {
       balance -= 1;
