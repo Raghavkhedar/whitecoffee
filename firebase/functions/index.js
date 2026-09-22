@@ -76,6 +76,7 @@ const { buildEntry } = require("./auditLog");
 // underlying value instead of the formatted cell — sorting a "10/08/2026" string
 // orders by day-of-month. See dateFormat.js.
 const { dmy, tsIST, millisOf, byKeys } = require("./dateFormat");
+const { effectiveConveyanceAmount, isFrozenConveyance } = require("./conveyanceApproval");
 
 admin.initializeApp();
 setGlobalOptions({ maxInstances: 10 });
@@ -1355,7 +1356,7 @@ exports.exportToSheets = onSchedule(
     }
 
     // ── 8. Conveyance — also builds conveyanceByUserId for Employee Dashboard
-    let conveyanceByUserId = new Map(); // userId → total ₹ conveyance this month
+    let conveyanceByUserId = new Map(); // userId → total ₹ REVIEWED conveyance this month (pending excluded)
     {
       const mapsKey    = MAPS_KEY.value();
 
@@ -1369,13 +1370,15 @@ exports.exportToSheets = onSchedule(
       const convUsers   = new Map(convUsersSnap.docs.map((d) => [d.id, d.data()]));
 
       const monthStr = monthStart.slice(0, 7);
-      // Protocol 2: an admin-corrected conveyance day overrides the raw-computed figure entirely,
-      // for the Employee Dashboard total AND the Sheets tab AND the Firestore persist step below —
-      // not just the last of the three. Read before building rows so all three can use it.
+      // Conveyance manual approval: a doc already reviewed (approved/rejected) — or a legacy
+      // Protocol 2 admin regularization override, which predates the status field and is
+      // frozen the same way — overrides the raw-computed figure entirely, for the Employee
+      // Dashboard total AND the Sheets tab AND the Firestore persist step below — not just the
+      // last of the three. Read before building rows so all three can use it.
       const existingConvSnap = await db.collection("conveyance").where("month", "==", monthStr).get();
-      const adminMarkedConv = new Map(
+      const frozenConv = new Map(
         existingConvSnap.docs
-          .filter((d) => d.data().markedBy === "admin")
+          .filter((d) => isFrozenConveyance(d.data()))
           .map((d) => [d.id, d.data()])
       );
 
@@ -1426,13 +1429,14 @@ exports.exportToSheets = onSchedule(
         const batch   = entries.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ([key, events]) => {
           const userId = key.split("__")[0];
-          // Protocol 2: an admin already corrected this date via regularization approval —
-          // use the stored figure verbatim instead of recomputing from raw GPS events.
-          const override = adminMarkedConv.get(key);
+          // A reviewed (or legacy admin-overridden) day is frozen — use the stored figure
+          // verbatim instead of recomputing from raw GPS events.
+          const override = frozenConv.get(key);
           if (override) {
-            conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + override.conveyance);
+            const amount = effectiveConveyanceAmount(override);
+            conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + amount);
             return [override.date, override.userName, override.employeeId, override.route,
-                    override.totalKm.toFixed(2), override.conveyance.toFixed(2),
+                    override.totalKm.toFixed(2), amount.toFixed(2),
                     `₹${override.ratePerKm}/km`, userId, override.ratePerKm];
           }
           const user   = convUsers.get(userId) || {};
@@ -1444,21 +1448,23 @@ exports.exportToSheets = onSchedule(
             totalKm += await getRoadKm(a.lat, a.lng, b.lat, b.lng, mapsKey);
           }
           const conveyance = totalKm * ratePerKm;
-          conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + conveyance);
+          // Pending until an admin/office reviewer approves it — NOT added to conveyanceByUserId
+          // (payroll-facing totals only count reviewed money).
           return [events[0].date, user.name || user.userName || "", user.employeeId || "", buildRoute(events), totalKm.toFixed(2), conveyance.toFixed(2), `₹${ratePerKm}/km`, userId, ratePerKm];
         }));
         allRows.push(...results);
       }
 
-      // A whole missed day (zero attendance events) never appears in `grouped`, so its admin
-      // correction needs its own row here — otherwise it's invisible to the dashboard and Sheets
-      // tab even though a real, corrected Firestore doc exists for it.
-      for (const [key, override] of adminMarkedConv) {
+      // A whole missed day (zero attendance events) never appears in `grouped`, so its frozen
+      // (reviewed or legacy admin-corrected) record needs its own row here — otherwise it's
+      // invisible to the dashboard and Sheets tab even though a real Firestore doc exists for it.
+      for (const [key, override] of frozenConv) {
         if (grouped.has(key)) continue; // already produced a row above
         const userId = key.split("__")[0];
-        conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + override.conveyance);
+        const amount = effectiveConveyanceAmount(override);
+        conveyanceByUserId.set(userId, (conveyanceByUserId.get(userId) || 0) + amount);
         allRows.push([override.date, override.userName, override.employeeId, override.route,
-                      override.totalKm.toFixed(2), override.conveyance.toFixed(2),
+                      override.totalKm.toFixed(2), amount.toFixed(2),
                       `₹${override.ratePerKm}/km`, userId, override.ratePerKm]);
       }
 
@@ -1470,20 +1476,23 @@ exports.exportToSheets = onSchedule(
         let fbBatch = db.batch();
         let opCount = 0;
 
-        // Skip any date an admin already set via regularization approval (Protocol 2) — without
-        // this, the very next nightly run silently overwrites it back to the (wrong) raw-event
-        // figure. Mirrors the markedBy:'admin' skip already used for attendance_status.
-        // (monthStr/adminMarkedConv are computed earlier in this section, before row-building,
-        // so the Employee Dashboard total and Sheets tab can honor the same override.)
+        // Skip any date already frozen (reviewed, or a legacy admin regularization override) —
+        // without this, the very next nightly run silently overwrites a manual approval decision
+        // (or the pre-existing markedBy:'admin' figure) back to a fresh raw-event recompute.
+        // (monthStr/frozenConv are computed earlier in this section, before row-building, so the
+        // Employee Dashboard total and Sheets tab can honor the same override.) A doc that isn't
+        // frozen is written/rewritten as `pending` — a manual reviewer must approve it before it
+        // counts toward payroll.
         for (const row of allRows) {
           const [date, userName, employeeId, route, totalKmStr, conveyanceStr, , odUserId, ratePerKm] = row;
           const docId = `${odUserId}__${date}`;
-          if (adminMarkedConv.has(docId)) continue;
+          if (frozenConv.has(docId)) continue;
           const docRef = db.collection("conveyance").doc(docId);
           fbBatch.set(docRef, {
             userId: odUserId, userName, employeeId, date, month: monthStr,
             route, totalKm: parseFloat(totalKmStr), ratePerKm,
             conveyance: parseFloat(conveyanceStr),
+            status: "pending",
             computedAt: admin.firestore.Timestamp.now(),
           });
           opCount++;
@@ -2216,7 +2225,8 @@ exports.snapshotDailySpend = onSchedule(
     const convDatesByUser = new Map(); // uid → Set<date> (conveyance can fall on Sundays)
     convSnap.docs.forEach((d) => {
       const c = d.data();
-      convByKey.set(`${c.userId}__${c.date}`, Number(c.conveyance) || 0);
+      // Pending/rejected conveyance is not payroll-facing money yet — see conveyanceApproval.js.
+      convByKey.set(`${c.userId}__${c.date}`, effectiveConveyanceAmount(c));
       if (!convDatesByUser.has(c.userId)) convDatesByUser.set(c.userId, new Set());
       convDatesByUser.get(c.userId).add(c.date);
     });

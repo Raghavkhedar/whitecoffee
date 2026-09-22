@@ -324,10 +324,20 @@ export interface ConveyanceRecord {
   route: string;
   totalKm: number;
   ratePerKm: number;
-  conveyance: number;
+  conveyance: number;         // formula-computed figure (totalKm × ratePerKm) — never edited directly
   markedBy?: string; // 'admin' when set via a regularization approval (Protocol 2) — the
                       // nightly exportToSheets computation skips a doc stamped this way
   computedAt?: Timestamp;
+  // Manual approval (added 2026-09-22). Absent `status` = a legacy doc written before this
+  // feature existed — grandfathered as approved, same as a `markedBy: 'admin'` doc with no
+  // status. Only `status === 'approved'` (or absent, for legacy) counts toward payroll totals;
+  // `pending` and `rejected` contribute ₹0 until reviewed. See conveyanceApproval.js (functions)
+  // for the mirrored logic.
+  status?: 'pending' | 'approved' | 'rejected';
+  approvedAmount?: number;    // editable by the approver; defaults to `conveyance` if untouched
+  approvedBy?: string;
+  approverComment?: string;
+  reviewedAt?: Timestamp;
 }
 
 // One outstanding-or-settled WO debit. Doc id = date (the WO's own date), stored at

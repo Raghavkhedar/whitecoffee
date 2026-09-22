@@ -526,12 +526,17 @@ export async function approveRegularization(
       // rateType is a legacy string "2" (fails the strict === check).
       const rates = { 1: rate1 || 2.5, 2: rate2 || 2.5 };
       const ratePerKm = rates[Number(rateType) as 1 | 2] || rates[1];
+      const conveyance = km * ratePerKm;
+      // This IS a human review — the admin is setting the figure themselves — so it's written
+      // already `approved` (with approvedAmount == the entered figure), not `pending`. Otherwise
+      // it would sit in the pending-approval queue for a second, redundant review.
       batch.set(
         doc(db, 'conveyance', `${userId}__${date}`),
         stamped({
           userId, userName, employeeId, date, month: date.slice(0, 7),
           route: 'Regularized (manual entry)', totalKm: km, ratePerKm,
-          conveyance: km * ratePerKm, markedBy: 'admin', computedAt: Timestamp.now(),
+          conveyance, markedBy: 'admin', computedAt: Timestamp.now(),
+          status: 'approved', approvedAmount: conveyance, approvedBy: approverName, reviewedAt: Timestamp.now(),
         }),
         { merge: true },
       );
@@ -1246,6 +1251,30 @@ export async function updateAttendanceSiteId(
 export async function getConveyanceForMonth(month: string): Promise<ConveyanceRecord[]> {
   const snap = await getDocs(query(collection(db, 'conveyance'), where('month', '==', month)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as ConveyanceRecord));
+}
+
+// Approve a pending conveyance day, with the approver's own (possibly edited) amount — the
+// nightly exportToSheets recompute treats any `status: 'approved'` doc as frozen and will never
+// overwrite it (see firebase/functions/conveyanceApproval.js). Reason required for the audit
+// trail, matching the OT/Regularization approval pattern.
+export async function approveConveyance(
+  docId: string, approvedAmount: number, approverName: string, comment: string,
+): Promise<void> {
+  await updateDoc(
+    doc(db, 'conveyance', docId),
+    stamped({ status: 'approved', approvedAmount, approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }),
+  );
+}
+
+// Reject a pending conveyance day — it stops counting toward payroll and stays frozen (the
+// nightly recompute will never overwrite it). Reason required.
+export async function rejectConveyance(
+  docId: string, approverName: string, comment: string,
+): Promise<void> {
+  await updateDoc(
+    doc(db, 'conveyance', docId),
+    stamped({ status: 'rejected', approvedBy: approverName, approverComment: comment, reviewedAt: Timestamp.now() }),
+  );
 }
 
 // ── Dashboard Stats ───────────────────────────────────────────────────────
