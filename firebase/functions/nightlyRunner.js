@@ -326,12 +326,12 @@ async function runNightlyScoring({ db, Timestamp, FieldValue, today, startedAt, 
     // `priorDrewBalance` is then DERIVED from the guard rather than restating its condition, so
     // the two can never drift: `shouldDecrementPlBalance(1, leavePrior)` answers "would a paid day
     // draw balance given this prior?", and its negation is exactly "this date already drew one" —
-    // covering an SCHL doc with `salaryCredit: 1` and a legacy `PL` doc with no credit field.
+    // an SCHL doc with `salaryCredit: 1`.
     //
     // Note what this deliberately does NOT do: it never adds a day back to the stored balance.
     // A cancellation refunds through `cancelLeave`'s own transaction; if the leave no longer
     // covers the date, the day is rewritten Absent with no credit and the balance is left alone.
-    const leavePrior = prior && (prior.status === "SCHL" || prior.status === "PL") ? prior : undefined;
+    const leavePrior = prior && prior.status === "SCHL" ? prior : undefined;
     const priorDrewBalance = !shouldDecrementPlBalance(1, leavePrior);
     const effectiveBalance = priorDrewBalance ? (Number(live.plBalance) || 0) + 1 : live.plBalance;
     // Punches are NOT re-read: `events`/`plan`/`role` stay the snapshot's, so this rescoring can

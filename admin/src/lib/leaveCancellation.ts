@@ -119,14 +119,15 @@ export function planLeaveCancellation(input: LeaveCancellationInput): LeaveCance
     // longer resolves as one above — e.g. the holiday was later unmarked — which the date-based
     // check cannot see.)
     if (data.status === 'Sunday' || data.status === 'Holiday') continue;
-    // SCHL is the current leave status; PL/LWP are LEGACY docs scored before the SCHL change.
-    const scoredAsLeave = data.status === 'SCHL' || data.status === 'PL' || data.status === 'LWP';
+    // PL/LWP were retired at the SCHL/USCHL cutover; the 2026-09-21 migration confirmed zero
+    // such docs remain system-wide, so SCHL is the only auto-written leave status left to revert.
+    const scoredAsLeave = data.status === 'SCHL';
     if (!scoredAsLeave || data.markedBy !== 'auto') { skippedDates.push(date); continue; }
 
     reverts.push(date);
-    // Refund only a day that actually drew from plBalance: paid SCHL (salaryCredit 1) or legacy
-    // PL. Unpaid SCHL (salaryCredit 0/missing) and legacy LWP never decremented anything.
-    if ((data.status === 'SCHL' && data.salaryCredit === 1) || data.status === 'PL') refundedDays += 1;
+    // Refund only a day that actually drew from plBalance: paid SCHL (salaryCredit 1). Unpaid
+    // SCHL (salaryCredit 0/missing) never decremented anything.
+    if (data.status === 'SCHL' && data.salaryCredit === 1) refundedDays += 1;
   }
 
   // Union, never overwrite — a second cancellation must not un-cancel the first.

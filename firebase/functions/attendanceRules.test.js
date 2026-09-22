@@ -127,18 +127,17 @@ test("shouldDecrementPlBalance: prior SCHL that drew NO credit does not block", 
   assert.equal(shouldDecrementPlBalance(1, { status: "SCHL", salaryCredit: 0 }), true);
 });
 
-test("shouldDecrementPlBalance: a LEGACY prior PL doc (no salaryCredit) blocks a second decrement", () => {
-  assert.equal(shouldDecrementPlBalance(1, { status: "PL" }), false);
-  assert.equal(shouldDecrementPlBalance(1, { status: "PL", salaryCredit: undefined }), false);
-});
-
-test("shouldDecrementPlBalance: a legacy prior LWP never drew a balance, so it does not block", () => {
+// PL/LWP were retired at the SCHL/USCHL cutover and the 2026-09-21 migration confirmed zero
+// remaining docs system-wide, so a prior PL/LWP doc can no longer occur; a stray one is now
+// treated like any other non-SCHL status (does not block a decrement).
+test("shouldDecrementPlBalance: a stray PL/LWP-shaped prior does not block (retired statuses, treated as ordinary)", () => {
+  assert.equal(shouldDecrementPlBalance(1, { status: "PL" }), true);
   assert.equal(shouldDecrementPlBalance(1, { status: "LWP" }), true);
 });
 
 test("shouldDecrementPlBalance: no credit today (0 / undefined) never decrements, whatever the prior", () => {
   const priors = [undefined, { status: "SCHL", salaryCredit: 1 }, { status: "SCHL", salaryCredit: 0 },
-    { status: "PL" }, { status: "LWP" }, { status: "Absent" }];
+    { status: "Absent" }];
   for (const prior of priors) {
     assert.equal(shouldDecrementPlBalance(0, prior), false);
     assert.equal(shouldDecrementPlBalance(undefined, prior), false);

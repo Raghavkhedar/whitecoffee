@@ -8,15 +8,17 @@
 // Holiday ×1 (unless its `salaryCredit` is exactly 0: an operations employee who worked it is
 // paid through OT approval instead — see dayWeight), USCHL ×0, Absent ×−2 (the −2 penalty). SCHL is NOT in this map: it pays 1 only
 // when the day's `salaryCredit` is exactly 1 (drew a day from plBalance), else 0 — see
-// dayWeight. PL ×1 / LWP ×0 are LEGACY (retired for new writes, but old docs still sit inside
-// the snapshot's open window); PL behaved like salaryCredit 1, LWP like 0.
+// dayWeight. PL/LWP (retired for new writes at the SCHL/USCHL cutover) no longer have entries:
+// the 2026-09-21 migration relabelled every such doc system-wide and confirmed zero remaining
+// via the status histogram, so a stray one now falls through to the `?? 0` default like any
+// other unrecognized status.
 // These weights are mirrored in payrollDeductions.js — change them together.
 // Callers pre-reconcile the Holiday credit with `effectiveHolidayCredit` (holidayCredit.js) before
 // calling dayWeight/dailySalary, so an operations employee with approved OT that date is passed a
 // salaryCredit of 0 here; this module reads the credit it is handed and does not re-reconcile.
 const STATUS_WEIGHT = {
   Present: 1, SL: 0.75, HalfDay: 0.5, LNF: 0.5, SLNF: 0.5, Holiday: 1, USCHL: 0,
-  PL: 1, LWP: 0, Absent: -2,
+  Absent: -2,
 };
 
 function round2(n) {
