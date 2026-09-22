@@ -70,8 +70,8 @@ const table: Array<[string, StatusDocLike | null, Verdict]> = [
   // the markedBy gate: an admin decision is never silently rewritten, whatever the status
   ['SCHL credit 1, admin', { status: 'SCHL', markedBy: 'admin', salaryCredit: 1 }, 'skip'],
   ['SCHL credit 0, admin', { status: 'SCHL', markedBy: 'admin', salaryCredit: 0 }, 'skip'],
-  ['PL, admin', { status: 'PL', markedBy: 'admin' }, 'skip'],
-  ['LWP, admin', { status: 'LWP', markedBy: 'admin' }, 'skip'],
+  ['PL, admin (retired status)', { status: 'PL', markedBy: 'admin' }, 'skip'],
+  ['LWP, admin (retired status)', { status: 'LWP', markedBy: 'admin' }, 'skip'],
   ['SCHL, markedBy missing', { status: 'SCHL', salaryCredit: 1 }, 'skip'],
   ['SCHL, markedBy "backfill"', { status: 'SCHL', markedBy: 'backfill', salaryCredit: 1 }, 'skip'],
   // SCHL: refund ONLY when salaryCredit is exactly 1
@@ -79,11 +79,13 @@ const table: Array<[string, StatusDocLike | null, Verdict]> = [
   ['SCHL credit 0, auto (unpaid)', { status: 'SCHL', markedBy: 'auto', salaryCredit: 0 }, 'revert'],
   ['SCHL credit missing, auto', { status: 'SCHL', markedBy: 'auto' }, 'revert'],
   ['SCHL credit 2 (not 1), auto', { status: 'SCHL', markedBy: 'auto', salaryCredit: 2 }, 'revert'],
-  // legacy PL always refunds (regardless of credit), legacy LWP never does
-  ['legacy PL, auto', { status: 'PL', markedBy: 'auto' }, 'revert+refund'],
-  ['legacy PL, auto, salaryCredit 0', { status: 'PL', markedBy: 'auto', salaryCredit: 0 }, 'revert+refund'],
-  ['legacy LWP, auto', { status: 'LWP', markedBy: 'auto' }, 'revert'],
-  ['legacy LWP, auto, salaryCredit 1 (still no refund)', { status: 'LWP', markedBy: 'auto', salaryCredit: 1 }, 'revert'],
+  // PL/LWP were retired at the SCHL/USCHL cutover; the 2026-09-21 migration confirmed zero such
+  // docs remain system-wide, so `scoredAsLeave` no longer recognizes them — a stray one (even
+  // auto-marked) is now "already claimed", same as a Present or unknown status.
+  ['legacy PL, auto (retired status, no longer scoredAsLeave)', { status: 'PL', markedBy: 'auto' }, 'skip'],
+  ['legacy PL, auto, salaryCredit 0 (retired status)', { status: 'PL', markedBy: 'auto', salaryCredit: 0 }, 'skip'],
+  ['legacy LWP, auto (retired status)', { status: 'LWP', markedBy: 'auto' }, 'skip'],
+  ['legacy LWP, auto, salaryCredit 1 (retired status)', { status: 'LWP', markedBy: 'auto', salaryCredit: 1 }, 'skip'],
 ];
 
 console.log('Single-date branch table:');
@@ -109,7 +111,7 @@ eq('Sunday with a non-leave auto doc: silent too',
 eq('Sunday with no doc',
   plan(RANGE_WITH_SUN, [SUN], {}),
   outcome([SUN], [], [], 0, [SUN]));
-eq('a holiday on a working day with a legacy PL auto doc is silent-skipped (refund withheld)',
+eq('a holiday on a working day is silent-skipped BY DATE regardless of the doc status (even a retired PL one)',
   plan(LEAVE, [WED], { [WED]: { status: 'PL', markedBy: 'auto' } }, [WED]),
   outcome([WED], [], [], 0, [WED]));
 eq('a holiday with a paid-SCHL auto doc: silent-skipped',
@@ -138,18 +140,18 @@ const WEEK: LeaveLike = { fromDate: '2026-07-21', toDate: '2026-07-27', status: 
   const statuses: Record<string, StatusDocLike> = {
     '2026-07-21': { status: 'SCHL', markedBy: 'auto', salaryCredit: 1 },   // revert + refund
     '2026-07-22': { status: 'SCHL', markedBy: 'auto', salaryCredit: 0 },   // revert
-    '2026-07-23': { status: 'PL',   markedBy: 'auto' },                    // holiday BY DATE → silent skip
+    '2026-07-23': { status: 'PL',   markedBy: 'auto' },                    // holiday BY DATE → silent skip (retired status, irrelevant here)
     '2026-07-24': { status: 'Present', markedBy: 'auto' },                 // skipped
     // 25 Sat: no doc                                                       // no-op
     '2026-07-26': { status: 'SCHL', markedBy: 'auto', salaryCredit: 1 },   // Sunday → silent skip
-    '2026-07-27': { status: 'LWP',  markedBy: 'auto' },                    // revert, no refund
+    '2026-07-27': { status: 'LWP',  markedBy: 'auto' },                    // retired status: not scoredAsLeave → skipped
   };
   eq('every date of a week, one per branch',
     plan(WEEK, ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27'], statuses, ['2026-07-23']),
     outcome(
       ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27'],
-      ['2026-07-21', '2026-07-22', '2026-07-27'],
-      ['2026-07-24'],
+      ['2026-07-21', '2026-07-22'],
+      ['2026-07-24', '2026-07-27'],
       1,
       ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27'],
     ));
@@ -157,13 +159,13 @@ const WEEK: LeaveLike = { fromDate: '2026-07-21', toDate: '2026-07-27', status: 
     plan(WEEK, ['2026-07-27', '2026-07-21', '2026-07-24', '2026-07-21', '2026-07-22', '2026-07-27', '2026-07-23', '2026-07-26', '2026-07-25'], statuses, ['2026-07-23']),
     outcome(
       ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27'],
-      ['2026-07-21', '2026-07-22', '2026-07-27'],
-      ['2026-07-24'],
+      ['2026-07-21', '2026-07-22'],
+      ['2026-07-24', '2026-07-27'],
       1,
       ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26', '2026-07-27'],
     ));
 }
-eq('refunds add up: 3 paid SCHL + 1 legacy PL = 4; unpaid SCHL and LWP add none',
+eq('refunds add up: 3 paid SCHL = 3; unpaid SCHL adds none, retired PL/LWP are skipped (not scoredAsLeave)',
   plan(WEEK, ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-27'], {
     '2026-07-21': { status: 'SCHL', markedBy: 'auto', salaryCredit: 1 },
     '2026-07-22': { status: 'SCHL', markedBy: 'auto', salaryCredit: 1 },
@@ -174,8 +176,8 @@ eq('refunds add up: 3 paid SCHL + 1 legacy PL = 4; unpaid SCHL and LWP add none'
   }),
   outcome(
     ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-27'],
-    ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-27'],
-    [], 4,
+    ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-25'],
+    ['2026-07-24', '2026-07-27'], 3,
     ['2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-27'],
   ));
 eq('several skipped dates come back ascending',
@@ -218,9 +220,9 @@ eq('a partial approval bounds what can be cancelled (ungranted 22 dropped)',
 eq('empty approvedDates means the whole range is granted',
   plan({ ...LEAVE, approvedDates: [] }, ['2026-07-21', '2026-07-25']),
   outcome(['2026-07-21', '2026-07-25'], [], [], 0, ['2026-07-21', '2026-07-25']));
-eq('single-day leave (toDate absent)',
+eq('single-day leave (toDate absent), with a retired PL doc (not scoredAsLeave, so skipped)',
   plan({ fromDate: WED, status: 'approved' }, [WED], { [WED]: { status: 'PL', markedBy: 'auto' } }),
-  outcome([WED], [WED], [], 1, [WED]));
+  outcome([WED], [], [WED], 0, [WED]));
 eq('empty selection: nothing cancelling, merged list is just the existing (sorted) cancellations',
   plan({ ...LEAVE, cancelledDates: ['2026-07-25', '2026-07-21'] }, []),
   outcome([], [], [], 0, ['2026-07-21', '2026-07-25']));

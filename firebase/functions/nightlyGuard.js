@@ -62,6 +62,17 @@ function withNightlyGuard({ getDb, Timestamp, FieldValue, log, now = Date.now, j
     const scheduleTime = event && event.scheduleTime;
     const clock = resolveNightlyClock({ scheduleTime, nowMs: now() });
 
+    // Unconditional, on EVERY invocation (including a scheduler retry): the raw scheduleTime the
+    // platform actually sent, plus what the clock resolved it to. This is the only record that
+    // survives a retry to compare against — the started marker below is a `merge:true` write keyed
+    // on the resolved date, so a retry overwrites its own scheduleTime field with its own value and
+    // the ORIGINAL fire's raw scheduleTime is gone from Firestore by the time anyone looks. The open
+    // question (admin/CLAUDE.md: "unconfirmed assumption that Cloud Scheduler resends the original
+    // scheduleTime on a retry") can only be answered by diffing this log line across two invocations
+    // for the same date the next time a real failure actually retries — nothing here can force that,
+    // and deliberately breaking the nightly to manufacture one is not worth the payroll risk.
+    log.log(`${jobName}: invoked with scheduleTime=${JSON.stringify(scheduleTime)} -> resolved ${clock.refuse ? `REFUSED (${clock.reason})` : `date=${clock.today} source=${clock.source} driftMs=${clock.driftMs}`}`);
+
     if (clock.refuse) {
       // A refused run has no trustworthy scheduled date to key a record on, so it is keyed on the
       // WALL-CLOCK IST date, on a doc of its own (`refused-<date>`) rather than the date doc:

@@ -51,11 +51,11 @@ test("an admin-marked Absent is a decision and is never rewritten", () => {
   assert.deepEqual(r.updates.map((u) => u.date), ["2026-09-15", "2026-09-16", "2026-09-17"]);
 });
 
-test("Sunday / Holiday / SCHL / USCHL / WO docs are left alone, and a date with no doc is skipped", () => {
+test("Sunday / Holiday / paid SCHL / USCHL / WO docs are left alone, and a date with no doc is skipped", () => {
   const map = new Map([
     ["2026-09-14", { status: "Sunday", markedBy: "auto" }],
     ["2026-09-15", { status: "Holiday", markedBy: "auto" }],
-    ["2026-09-16", { status: "SCHL", markedBy: "auto" }],
+    ["2026-09-16", { status: "SCHL", salaryCredit: 1, markedBy: "auto" }],
     // 2026-09-17 has no doc at all
   ]);
   const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: map, plBalance: 9 });
@@ -75,11 +75,36 @@ test("a leave that is not approved scores nothing", () => {
   }
 });
 
-test("idempotent: once the days are SCHL, planning again changes nothing", () => {
-  const scored = new Map(D4.map((d) => [d, { status: "SCHL", markedBy: "auto" }]));
-  const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: scored, plBalance: 0 });
+test("idempotent: once the days are PAID SCHL, planning again changes nothing even with balance available", () => {
+  const scored = new Map(D4.map((d) => [d, { status: "SCHL", salaryCredit: 1, markedBy: "auto" }]));
+  const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: scored, plBalance: 9 });
   assert.equal(r.updates.length, 0);
   assert.equal(r.paidDays, 0);
+});
+
+test("an UNPAID SCHL day with the balance still exhausted produces NO write — a still-0 credit is not a real change", () => {
+  const unpaid = new Map(D4.map((d) => [d, { status: "SCHL", salaryCredit: 0, markedBy: "auto" }]));
+  const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: unpaid, plBalance: 0 });
+  assert.equal(r.updates.length, 0);
+  assert.equal(r.paidDays, 0);
+});
+
+test("an UNPAID SCHL day is upgraded to paid once the balance frees up — only the days that actually change get a write", () => {
+  const unpaid = new Map(D4.map((d) => [d, { status: "SCHL", salaryCredit: 0, markedBy: "auto" }]));
+  const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: unpaid, plBalance: 2 });
+  // Only the two days that flip 0 -> 1 are written; the two that stay unpaid produce no write —
+  // a real Firestore transaction retry must never re-touch a day whose value did not change
+  // (verified against real contention in emulator-tests/retroLeaveRunner.emulator.js, test 10b).
+  assert.deepEqual(r.updates.map((u) => [u.date, u.status, u.salaryCredit]), [
+    ["2026-09-14", "SCHL", 1], ["2026-09-15", "SCHL", 1],
+  ]);
+  assert.equal(r.paidDays, 2);
+});
+
+test("an admin-marked UNPAID SCHL is a decision and is never reconsidered even when balance frees up", () => {
+  const map = statuses(D4, { status: "SCHL", salaryCredit: 0, markedBy: "admin" });
+  const r = planRetroLeaveScoring({ leave: leave(), todayIST: TODAY, statusByDate: map, plBalance: 9 });
+  assert.equal(r.updates.length, 0);
 });
 
 test("malformed input never throws", () => {

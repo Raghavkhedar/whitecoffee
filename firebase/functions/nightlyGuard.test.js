@@ -346,6 +346,38 @@ test("a refused run gets NO completedAt", async () => {
   assert.ok(env.calls.some(isFailure), "the refusal is still recorded as failed:true");
 });
 
+// ── invocation log: the only record that survives a retry to verify the scheduleTime assumption ──
+// admin/CLAUDE.md: "unconfirmed assumption that Cloud Scheduler resends the original scheduleTime
+// on a retry" — the started marker is a merge:true write keyed on the resolved date, so a retry
+// overwrites its own scheduleTime over the original's. This log line is written on every single
+// invocation regardless of outcome, so the raw scheduleTime survives in Cloud Logging for a human
+// to diff across two invocations the next time a real failure actually retries.
+test("every invocation logs its raw scheduleTime and resolved date/source/driftMs", async () => {
+  const env = makeEnv();
+  await env.guard(async () => {})({ scheduleTime: SCHEDULED });
+  assert.equal(env.logs.log.length, 1);
+  const [line] = env.logs.log[0];
+  assert.match(line, /computeDailyAttendanceStatus: invoked with scheduleTime="2026-09-21T18:29:00Z"/);
+  assert.match(line, /date=2026-09-21/);
+  assert.match(line, /source=schedule/);
+  assert.match(line, /driftMs=/);
+});
+
+test("a refused invocation still logs its raw scheduleTime, tagged REFUSED with the reason", async () => {
+  const env = makeEnv({ nowMs: at("2026-09-30T00:00:00Z") });
+  await assert.rejects(env.guard(async () => {})({ scheduleTime: SCHEDULED }));
+  const [line] = env.logs.log[0];
+  assert.match(line, /scheduleTime="2026-09-21T18:29:00Z"/);
+  assert.match(line, /REFUSED/);
+});
+
+test("a missing scheduleTime is logged as such, not silently omitted", async () => {
+  const env = makeEnv();
+  await env.guard(async () => {})({});
+  const [line] = env.logs.log[0];
+  assert.match(line, /scheduleTime=(undefined|null)/);
+});
+
 // ── wiring guard: cheap protection against reverting index.js ───────────────────────────────
 test("index.js wraps computeDailyAttendanceStatus in withNightlyGuard and no longer reads Date.now() for `today`", () => {
   const src = fs.readFileSync(path.join(__dirname, "index.js"), "utf8");

@@ -215,12 +215,11 @@ test("tallyAttendanceStatus: SCHL counts as leave; only salaryCredit === 1 count
   assert.deepEqual(tallyOf("SCHL", "1"), { ...ZERO_TALLY, schl: 1 }); // strict equality
 });
 
-test("tallyAttendanceStatus: legacy PL folds into paid SCHL, legacy LWP into unpaid SCHL", () => {
-  assert.deepEqual(tallyOf("PL"), { ...ZERO_TALLY, schl: 1, schlPaid: 1 });
-  assert.deepEqual(tallyOf("LWP"), { ...ZERO_TALLY, schl: 1 });
-  // a legacy doc has no salaryCredit, and a stray one must not change the fold
-  assert.deepEqual(tallyOf("PL", 0), { ...ZERO_TALLY, schl: 1, schlPaid: 1 });
-  assert.deepEqual(tallyOf("LWP", 1), { ...ZERO_TALLY, schl: 1 });
+test("tallyAttendanceStatus: PL/LWP are retired — the 2026-09-21 migration left zero such docs, so they now fall through unrecognized like any other unknown status", () => {
+  assert.deepEqual(tallyOf("PL"), ZERO_TALLY);
+  assert.deepEqual(tallyOf("LWP"), ZERO_TALLY);
+  assert.deepEqual(tallyOf("PL", 1), ZERO_TALLY);
+  assert.deepEqual(tallyOf("LWP", 0), ZERO_TALLY);
 });
 
 test("tallyAttendanceStatus: Sunday / WO / unknown / empty leave the tally unchanged", () => {
@@ -230,17 +229,17 @@ test("tallyAttendanceStatus: Sunday / WO / unknown / empty leave the tally uncha
   }
 });
 
-test("tallyAttendanceStatus: mixed mid-month deploy [PL, LWP, SCHL(1), SCHL(0), USCHL, Holiday, Absent]", () => {
+test("tallyAttendanceStatus: a month's mix [SCHL(1), SCHL(0), USCHL, Holiday, Absent]", () => {
   const t = newAttendanceTally();
-  [["PL"], ["LWP"], ["SCHL", 1], ["SCHL", 0], ["USCHL"], ["Holiday"], ["Absent"]]
+  [["SCHL", 1], ["SCHL", 0], ["USCHL"], ["Holiday"], ["Absent"]]
     .forEach(([status, credit]) => tallyAttendanceStatus(t, status, credit));
-  assert.deepEqual(t, { ...ZERO_TALLY, schl: 4, schlPaid: 2, uschl: 1, holiday: 1, absent: 1 });
-  // 2 paid leave + 1 holiday - 2 (absent penalty) = 1
+  assert.deepEqual(t, { ...ZERO_TALLY, schl: 2, schlPaid: 1, uschl: 1, holiday: 1, absent: 1 });
+  // 1 paid leave + 1 holiday - 2 (absent penalty) = 0
   const daysNP = computeDaysNP({
     present: t.present, sl: t.sl, halfDay: t.halfDay, lnf: t.slnf,
     schlPaid: t.schlPaid, holiday: t.holiday, absent: t.absent,
   });
-  assert.equal(daysNP, 1);
+  assert.equal(daysNP, 0);
 });
 
 // ── Holiday credit (operations who worked the holiday are paid through OT instead) ──────────

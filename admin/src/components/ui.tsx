@@ -43,8 +43,6 @@ const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> =
   SLNF:      { label: 'Log Not Found', bg: '#F2EEFB', color: '#6D40C9' }, // legacy alias
   SCHL:      { label: 'SCHL',          bg: '#E3EEFB', color: '#1A5FAF' },
   USCHL:     { label: 'USCHL',         bg: '#F2EFEC', color: '#6B5E54' },
-  PL:        { label: 'Paid Leave',    bg: '#EDF2FD', color: '#2456C7' }, // legacy: pre-SCHL history
-  LWP:       { label: 'LWP',           bg: '#F2EFEC', color: '#6B5E54' }, // legacy: pre-USCHL history
   Absent:    { label: 'Absent',        bg: '#FBEAEA', color: '#C42B2B' },
   WO:        { label: 'WO',            bg: '#E7F0FA', color: '#1A5FAF' },
   Sunday:    { label: 'Sunday',        bg: '#F2F0ED', color: '#8A817A' },

@@ -119,10 +119,9 @@ function newAttendanceTally() {
  * A Holiday counts unless salaryCredit is exactly 0 (an operations employee who worked it is
  * paid through OT approval instead); a legacy Holiday doc with no salaryCredit counts.
  *
- * Legacy PL/LWP: this tally covers the CURRENT month and is rebuilt live every run, so a
- * mid-month deploy leaves early-month days still scored "PL"/"LWP" beside "SCHL" days. They
- * fold onto SCHL's buckets — PL behaved exactly like salaryCredit 1, LWP like 0 — so Days NP
- * keeps the credit for leave already taken. (A past month's docs never reach this.)
+ * PL/LWP (retired for new writes at the SCHL/USCHL cutover) no longer have a branch here: the
+ * 2026-09-21 migration relabelled every such doc system-wide to SCHL/USCHL and confirmed zero
+ * remaining via the status histogram, so no doc anywhere can still carry them.
  *
  * The Days-NP weights are mirrored in dailySpend.js (STATUS_WEIGHT / dayWeight) — change
  * both together.
@@ -138,8 +137,6 @@ function tallyAttendanceStatus(tally, status, salaryCredit) {
       tally.schl++;
       if (salaryCredit === 1) tally.schlPaid++;
       break;
-    case "PL":       tally.schl++; tally.schlPaid++; break; // legacy ≡ salaryCredit 1
-    case "LWP":      tally.schl++;                   break; // legacy ≡ salaryCredit 0
     case "USCHL":    tally.uschl++;   break;
     case "Holiday":  if (salaryCredit !== 0) tally.holiday++; break; // 0 = operations worked it, paid via OT instead
     case "Absent":   tally.absent++;  break;

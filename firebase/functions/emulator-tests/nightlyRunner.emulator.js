@@ -360,14 +360,18 @@ test("6a. a re-run over a paid SCHL doc does not decrement again", async () => {
   assert.equal((await readSummary()).plAttempted, 0, "the second run attempts nothing");
 });
 
-test("6b. a LEGACY `PL` prior doc (no salaryCredit field) also blocks the decrement", async () => {
+// PL was retired at the SCHL/USCHL cutover and the 2026-09-21 migration confirmed zero
+// remaining docs system-wide, so this scenario (a leftover legacy PL doc racing a retry) can no
+// longer occur — the special-case guard for it was removed from shouldDecrementPlBalance. A
+// stray PL-shaped prior is now just an ordinary non-SCHL prior: it does not block the decrement.
+test("6b. a stray PL-shaped prior (retired status, cannot occur post-migration) no longer blocks the decrement", async () => {
   const uid = await seedUser({ plBalance: 2 });
   await seedLeave(uid);
   await seedStatus(uid, TODAY, { status: "PL", markedBy: "auto", date: TODAY, userId: uid });
 
   await run();
 
-  assert.equal(await readBalance(uid), 2, "a legacy PL day already drew its balance day");
+  assert.equal(await readBalance(uid), 1, "treated as an ordinary prior, so the day draws a balance day");
   assert.equal((await readStatus(uid)).status, "SCHL");
 });
 
@@ -796,7 +800,9 @@ test("(d) a paid prior SCHL whose leave no longer covers the date becomes Absent
   assert.equal(await readBalance(uid), 1, "the nightly does not refund — cancelLeave owns that");
 });
 
-test("(e) a legacy `PL` prior doc with a ZERO balance stays PAID and draws nothing", async () => {
+// PL is retired (see 6b above): a stray PL-shaped prior is now an ordinary non-SCHL prior, so it
+// gets no special "already paid" treatment — with a zero balance it scores like any fresh SCHL day.
+test("(e) a stray PL-shaped prior (retired status) with a ZERO balance scores ordinary UNPAID SCHL", async () => {
   const uid = await seedUser({ plBalance: 0 });
   await seedLeave(uid);
   await seedStatus(uid, TODAY, { status: "PL", markedBy: "auto", date: TODAY, userId: uid });
@@ -805,8 +811,8 @@ test("(e) a legacy `PL` prior doc with a ZERO balance stays PAID and draws nothi
 
   const s = await readStatus(uid);
   assert.equal(s.status, "SCHL");
-  assert.equal(s.salaryCredit, 1, "a legacy PL day already drew its balance day, so it stays paid");
-  assert.equal(await readBalance(uid), 0, "and it is not drawn again");
+  assert.equal(s.salaryCredit, 0);
+  assert.equal(await readBalance(uid), 0);
   assert.equal((await readSummary()).plDeducted, 0);
 });
 

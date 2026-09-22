@@ -9,10 +9,16 @@
  * plBalance, exactly as the nightly run would have decided — and reports how many paid days
  * were drawn so the caller can decrement plBalance in the same transaction.
  *
- * Only an Absent day written by the auto scorer is rewritten. Days with punches, admin-marked
- * days (a regularization or a cancelLeave revert is a decision), Sunday/Holiday docs, days
- * with no doc, and cancelled/ungranted dates are all left alone. Idempotent by construction:
- * once a day is SCHL it is no longer Absent.
+ * Only an Absent day written by the auto scorer, or an UNPAID SCHL day written by the auto
+ * scorer, is rewritten — the latter so a balance freed up after the first pass (e.g. a
+ * cancelled leave elsewhere, or an accrual) can still turn that day paid on the next write to
+ * this leave doc, matching the nightly run's willingness to re-decide salaryCredit from the
+ * live balance on every invocation. A PAID SCHL day is terminal: it is never revisited, so pay
+ * already granted can never be clawed back by a later run seeing a lower balance. Days with
+ * punches, admin-marked days (a regularization or a cancelLeave revert is a decision),
+ * Sunday/Holiday docs, days with no doc, and cancelled/ungranted dates are all left alone.
+ * Idempotent by construction: once a day is PAID SCHL it is never rewritten again; an UNPAID
+ * SCHL day re-plans to the same UNPAID SCHL when the balance is still exhausted.
  *
  * Order caveat: when two late leaves are approved out of date order, WHICH days carry
  * salaryCredit 1 may differ from the chronological order the nightly would have produced, but
@@ -104,8 +110,17 @@ function planRetroLeaveScoring({ leave, todayIST, statusByDate, plBalance } = {}
   let paidDays = 0;
   for (const date of pastGrantedDates(leave, todayIST)) {
     const existing = statusByDate && statusByDate.get(date);
-    if (!existing || existing.status !== "Absent" || existing.markedBy !== "auto") continue;
+    if (!existing || existing.markedBy !== "auto") continue;
+    const isUnpaidSchl = existing.status === "SCHL" && existing.salaryCredit === 0;
+    if (existing.status !== "Absent" && !isUnpaidSchl) continue;
     const resolved = resolveLeaveStatus(balance);
+    // An unpaid SCHL day that is STILL unpaid is not a real change — skip the write. A retry that
+    // lands after a concurrent attempt already wrote this exact day (real Firestore contention,
+    // not a hypothetical) must not re-touch it: a no-op value written again is still a write, and
+    // this is a per-user transaction other writers can retry against, so a spurious extra write
+    // here is a spurious extra transaction attempt for them too. An Absent day is always a real
+    // transition (Absent → SCHL, paid or not) and is always written.
+    if (isUnpaidSchl && resolved.salaryCredit === 0) continue;
     updates.push({ date, status: resolved.status, salaryCredit: resolved.salaryCredit });
     if (resolved.salaryCredit === 1) {
       balance -= 1;
