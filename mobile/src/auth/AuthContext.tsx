@@ -33,10 +33,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           uid: firebaseUser.uid,
           employeeId: profile?.employeeId ?? '',
           name: profile?.name ?? '',
+          // No default role: an unknown role must not enable the office flow, because
+          // office-shaped punches are invisible to another role's payroll scoring.
+          role: profile?.role ?? '',
         });
       } catch (e) {
         console.error('Failed to load user profile', e);
-        setUser({ uid: firebaseUser.uid, employeeId: '', name: '' });
+        // Fail closed — the profile fetch failing is not evidence of an office role.
+        setUser({ uid: firebaseUser.uid, employeeId: '', name: '', role: '' });
       } finally {
         setLoading(false);
       }

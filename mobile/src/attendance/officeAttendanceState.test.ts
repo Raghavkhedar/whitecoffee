@@ -39,6 +39,18 @@ describe('deriveOfficeState', () => {
       deriveOfficeState([ev('home_in', 1), ev('office_in', 2), ev('office_out', 3), ev('home_out', 4)]),
     ).toBe('DayEnded');
   });
+
+  it('stays DayEnded even if a stray event follows home_out (terminal guard)', () => {
+    expect(
+      deriveOfficeState([
+        ev('home_in', 1),
+        ev('office_in', 2),
+        ev('office_out', 3),
+        ev('home_out', 4),
+        ev('office_in', 5), // stray/out-of-order event — must not reopen the day
+      ]),
+    ).toBe('DayEnded');
+  });
 });
 
 describe('isOfficeEventAllowed', () => {

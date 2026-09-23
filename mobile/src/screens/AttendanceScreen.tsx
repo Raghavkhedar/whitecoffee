@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, TextInput, Modal } from 'react-native';
+import { AppState, View, Text, Pressable, StyleSheet, Alert, TextInput, Modal } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import {
   deriveOfficeState,
@@ -7,7 +7,7 @@ import {
   type OfficeAttendanceEvent,
   type OfficeEventType,
 } from '../attendance/officeAttendanceState';
-import { subscribeTodayOfficeEvents, recordOfficeEvent } from '../attendance/attendanceApi';
+import { subscribeTodayOfficeEvents, recordOfficeEvent, todayDateString } from '../attendance/attendanceApi';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 
 export default function AttendanceScreen() {
@@ -18,18 +18,50 @@ export default function AttendanceScreen() {
   const [locationPromptVisible, setLocationPromptVisible] = useState(false);
   const [locationText, setLocationText] = useState('');
   const [confirmHomeOutVisible, setConfirmHomeOutVisible] = useState(false);
+  // The calendar date the currently-held `events` were fetched for. The Firestore query
+  // bakes in `where('date', '==', ...)` at subscribe time, so a subscription left running
+  // overnight keeps serving YESTERDAY's events for today's UI. Deriving state from those
+  // and writing an event stamped with today's date is exactly the S338 incident documented
+  // in firebase/functions/punchSequence.js — yesterday left unclosed (scored LNF), today
+  // corrupted. Nothing downstream prevents it; the server only detects it afterwards.
+  const [subscribedDate, setSubscribedDate] = useState(todayDateString());
 
+  // Layer 1: re-subscribe whenever the date we subscribed for changes.
   useEffect(() => {
     if (!user) return;
     return subscribeTodayOfficeEvents(user.uid, (newEvents) => {
       setEvents(newEvents);
       setEventsLoaded(true);
     });
-  }, [user]);
+  }, [user, subscribedDate]);
+
+  // Layer 1 (cont.): the app spends the rollover suspended, so nothing re-renders at
+  // midnight — the date check has to happen when it wakes back up.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        const current = todayDateString();
+        if (current !== subscribedDate) {
+          setEventsLoaded(false);
+          setSubscribedDate(current);
+        }
+      }
+    });
+    return () => subscription.remove();
+  }, [subscribedDate]);
 
   const state = deriveOfficeState(events);
 
   async function submitEvent(type: OfficeEventType, locationName?: string) {
+    // Layer 2, write-time backstop: the AppState listener may not have fired yet (the day
+    // can roll over with the app in the foreground). Never write an event whose `date` would
+    // differ from the date the state we just validated against was derived from — refresh
+    // instead and make the user re-tap once the UI is current.
+    if (todayDateString() !== subscribedDate) {
+      setEventsLoaded(false);
+      setSubscribedDate(todayDateString());
+      return;
+    }
     if (!user || submitting) return;
     if (!isOfficeEventAllowed(state, type)) return;
     setSubmitting(true);
@@ -108,6 +140,11 @@ export default function AttendanceScreen() {
             />
             <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmOfficeIn}>
               <Text style={styles.buttonText}>Confirm</Text>
+            </Pressable>
+            {/* iOS has no hardware back and this overlay isn't tap-dismissible — without a
+                Cancel, a mis-tap traps the user into writing an office_in they didn't want. */}
+            <Pressable style={styles.buttonSecondary} onPress={() => setLocationPromptVisible(false)}>
+              <Text style={styles.buttonText}>Cancel</Text>
             </Pressable>
           </View>
         </View>

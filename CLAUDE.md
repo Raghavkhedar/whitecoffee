@@ -1,9 +1,10 @@
 # WhiteCoffee Monorepo — Root Context
 
-Two products for Senken Engineering, one Firebase project (`white-coffee-92c27`):
+Three products for Senken Engineering, one Firebase project (`white-coffee-92c27`):
 
 - **`android/`** — Android app (Kotlin, Jetpack Compose, Gradle). Authoritative context: `android/CLAUDE.md`. Build: `cd android && ./gradlew :app:compileDebugKotlin`.
 - **`admin/`** — Next.js admin portal. Authoritative context: `admin/CLAUDE.md`. Build: `cd admin && npm run build`.
+- **`mobile/`** — iOS client (Expo/React Native, TypeScript), Phase 1: office-role attendance only. Authoritative context: `mobile/AGENTS.md` (`mobile/CLAUDE.md` just includes it). Build/typecheck: `cd mobile && npx tsc --noEmit`. Test: `cd mobile && npm test`. Requires `mobile/.env` (gitignored, real Firebase web config — copy the six values from `admin/.env.local`, renamed `EXPO_PUBLIC_FIREBASE_*`).
 - **`firebase/`** — SINGLE source of truth for backend: `firestore.rules`, `storage.rules`, `functions/`. Deploy from repo root: `firebase deploy` (may need `firebase login --reauth` if the CLI token expired). Functions have a `npm test` (`node --test`, no deps) boundary suite in `firebase/functions/` (and `npm run test:emulator` for the late-leave trigger, which needs the Firestore emulator via the firebase CLI); `npm run lint` works (0 errors; a few unused-var warnings remain), but `node --check` + `npm test` are still the real gate. Cloud functions run on a **UTC** clock — compute IST dates by shifting `+05:30` and reading `getUTC*` / `getUTCDay()` on a `"yyyy-mm-ddT00:00:00Z"` string; never use bare `new Date()`/`getDay()` for an IST date.
 
 ## Security boundary — read before touching `firestore.rules`
@@ -21,8 +22,8 @@ Two traps it exists to catch:
 Full audit, rationale, and deployment runbook: `docs/security-hardening-2026-07-20.md`.
 
 ## Rules of the monorepo
-- Firestore/Storage rules live ONLY in `firebase/`. Never re-add a `firestore.rules` inside `android/` or `admin/` — that duplication is exactly what this monorepo removed.
-- Each side builds independently; there is no shared JS build graph (no Nx/Turborepo).
+- Firestore/Storage rules live ONLY in `firebase/`. Never re-add a `firestore.rules` inside `android/`, `admin/` or `mobile/` — that duplication is exactly what this monorepo removed.
+- Each of the three clients (`android/`, `admin/`, `mobile/`) builds independently; `admin/` and `mobile/` are separate npm projects with no shared JS build graph (no Nx/Turborepo) — install and run each from its own directory.
 - Deploy backend from root via the single root `firebase.json`.
 
 ## Roles — read before touching any `role` check

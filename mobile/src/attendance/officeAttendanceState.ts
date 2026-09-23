@@ -9,6 +9,11 @@ export type OfficeState = 'NotStarted' | 'DayStarted' | 'InOffice' | 'DayEnded';
 
 export function deriveOfficeState(events: OfficeAttendanceEvent[]): OfficeState {
   if (events.length === 0) return 'NotStarted';
+  // `home_out` is TERMINAL, and terminal means terminal — checked across the whole day, not
+  // just at the tail. An out-of-order sync, a second device, or a duplicate event could
+  // otherwise land after the day's `home_out` and silently reopen a closed day (mirrors the
+  // guard the Android client already has).
+  if (events.some((e) => e.type === 'home_out')) return 'DayEnded';
   const last = events[events.length - 1];
   switch (last.type) {
     case 'home_out':

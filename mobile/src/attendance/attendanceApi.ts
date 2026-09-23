@@ -6,6 +6,7 @@ export interface UserProfile {
   uid: string;
   employeeId: string;
   name: string;
+  role: string;
 }
 
 export interface RecordEventInput {
@@ -15,7 +16,13 @@ export interface RecordEventInput {
   locationName?: string;
 }
 
-function todayDateString(): string {
+/**
+ * The device-local calendar date, `yyyy-MM-dd` — the single definition of "today" for
+ * both the `date` field written on every event and the `where('date', '==', ...)` filter
+ * the day's subscription is built from. Exported so callers (AttendanceScreen) can detect
+ * a day rollover against the exact same notion of a day, rather than duplicating date math.
+ */
+export function todayDateString(): string {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
