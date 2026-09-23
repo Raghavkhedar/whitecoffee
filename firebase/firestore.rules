@@ -690,8 +690,22 @@ service cloud.firestore {
     // here (e.g. dropping the `!=`) would silently open audit_log writes to superadmin —
     // see superadmin.test.js's audit_log-denial case, which exists specifically to catch
     // that.
-    match /{document=**} {
-      allow read, write: if isSuperAdmin() && document[0] != 'audit_log';
+    //
+    // `{collectionId}/{document=**}` — NOT a bare `{document=**}` with `document[0]`
+    // indexing. That original form (PR #45) worked for get/set/delete (a concrete path
+    // is known), but throws "Variable is not bound in path template" for LIST/collection
+    // queries, where Firestore evaluates the rule against the query itself before any
+    // concrete document path exists — array-indexing an unresolved recursive wildcard
+    // fails there. A plain (non-recursive) `{collectionId}` first segment plus a
+    // recursive `{document=**}` tail binds cleanly for both get and list. Caught during
+    // /superadmin manual QA: browsing a collection with no OTHER rule granting access
+    // (e.g. an arbitrary/uncatalogued subcollection) failed outright; every other
+    // "successful" browse in that QA pass was actually served by isAdmin() on that
+    // collection's own specific rule, masking this bug (a superadmin here is also
+    // role:'admin'). superadmin.test.js only ever covered get/set/delete, never list —
+    // that gap is why this shipped in PR #45 unnoticed.
+    match /{collectionId}/{document=**} {
+      allow read, write: if isSuperAdmin() && collectionId != 'audit_log';
     }
 
     // ── /audit_log/{docId} — before/after record of every write ─────────

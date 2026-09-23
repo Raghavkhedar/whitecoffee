@@ -13,8 +13,9 @@ function eq(name: string, got: unknown, want: unknown) {
   else { failed++; console.log(`  ✗ ${name}: got ${g}, want ${w}`); }
 }
 
-const ALL       = TABS.map(t => t.path);
-const GRANTABLE  = TABS.filter(t => !t.adminOnly).map(t => t.path);
+// What an ORDINARY admin sees — every tab except superAdminOnly ones (a separate, third tier).
+const ALL_FOR_ADMIN = TABS.filter(t => !t.superAdminOnly).map(t => t.path);
+const GRANTABLE  = TABS.filter(t => !t.adminOnly && !t.superAdminOnly).map(t => t.path);
 
 const admin    = { role: 'admin' as const };
 // A scoped manager granted a subset of grantable tabs (order deliberately scrambled).
@@ -26,7 +27,7 @@ const emptyArr = { role: 'office' as const, tabAccess: [] };
 const strayAcc = { role: 'office' as const, tabAccess: ['/users', '/access', '/made-up', '/leaves'] };
 
 console.log('Admin (superuser):');
-eq('sees every tab (incl. admin-only)', allowedPaths(admin), ALL);
+eq('sees every tab (incl. admin-only, excl. superAdminOnly)', allowedPaths(admin), ALL_FOR_ADMIN);
 eq('has portal access', hasPortalAccess(admin), true);
 eq('can access a random tab', canAccess(admin, '/notifications'), true);
 eq('can access /access', canAccess(admin, '/access'), true);
@@ -58,6 +59,15 @@ eq('has access from the one real grant', hasPortalAccess(strayAcc), true);
 eq('still cannot access /users', canAccess(strayAcc, '/users'), false);
 eq('still cannot access /access', canAccess(strayAcc, '/access'), false);
 
+console.log('Superadmin tier (visible ONLY with superAdmin === true, not just role==="admin"):');
+const superadmin = { role: 'admin' as const, superAdmin: true };
+eq('superadmin sees /superadmin', allowedPaths(superadmin).includes('/superadmin'), true);
+eq('ordinary admin does NOT see /superadmin', allowedPaths(admin).includes('/superadmin'), false);
+eq('superadmin can access /superadmin', canAccess(superadmin, '/superadmin'), true);
+eq('ordinary admin cannot access /superadmin', canAccess(admin, '/superadmin'), false);
+eq('a non-admin with a stray superAdmin flag still sees nothing extra (no tabAccess)',
+  allowedPaths({ role: 'office' as const, superAdmin: true }), []);
+
 console.log('Config integrity:');
 // /audit is admin-only because firestore.rules grants audit_log reads to admin ONLY —
 // entries carry full document snapshots including pay. If this list and the rules ever
@@ -66,6 +76,8 @@ eq('exactly 5 admin-only tabs', TABS.filter(t => t.adminOnly).map(t => t.path),
   ['/dashboard', '/users', '/access', '/daily-activity', '/audit']);
 eq('10 grantable tabs', GRANTABLE.length, 10);
 eq('/audit is never grantable', GRANTABLE.includes('/audit'), false);
+eq('/superadmin is never grantable', GRANTABLE.includes('/superadmin'), false);
+eq('exactly 1 superAdminOnly tab', TABS.filter(t => t.superAdminOnly).map(t => t.path), ['/superadmin']);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
