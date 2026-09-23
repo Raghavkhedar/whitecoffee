@@ -42,6 +42,11 @@ firestore-debug.log
 # Graphify (regenerated at root)
 graphify-out/
 
+# Claude Code local session state — worktrees and dev-server launch config,
+# never part of the project itself.
+.claude/worktrees/
+.claude/launch.json
+
 # Legacy-status migration plan/backup files (firebase/functions/scripts/migrateLegacyLeaveStatuses.js).
 # They hold full employee attendance docs — never commit them, wherever the script was run from.
 migration-out/
