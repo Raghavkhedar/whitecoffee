@@ -13,6 +13,7 @@ import { requestLocationPermission, getCurrentCoordinates } from '../location/us
 export default function AttendanceScreen() {
   const { user } = useAuth();
   const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [locationPromptVisible, setLocationPromptVisible] = useState(false);
   const [locationText, setLocationText] = useState('');
@@ -20,7 +21,10 @@ export default function AttendanceScreen() {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeTodayOfficeEvents(user.uid, setEvents);
+    return subscribeTodayOfficeEvents(user.uid, (newEvents) => {
+      setEvents(newEvents);
+      setEventsLoaded(true);
+    });
   }, [user]);
 
   const state = deriveOfficeState(events);
@@ -68,24 +72,24 @@ export default function AttendanceScreen() {
       <Text style={styles.state}>Status: {state}</Text>
 
       {state === 'NotStarted' && (
-        <Pressable style={styles.button} disabled={submitting} onPress={() => submitEvent('home_in')}>
+        <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('home_in')}>
           <Text style={styles.buttonText}>Start Day — Home In</Text>
         </Pressable>
       )}
 
       {state === 'DayStarted' && (
         <>
-          <Pressable style={styles.button} disabled={submitting} onPress={handleOfficeIn}>
+          <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleOfficeIn}>
             <Text style={styles.buttonText}>Office Check In</Text>
           </Pressable>
-          <Pressable style={styles.button} disabled={submitting} onPress={handleHomeOut}>
+          <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleHomeOut}>
             <Text style={styles.buttonText}>End Day — Home Out</Text>
           </Pressable>
         </>
       )}
 
       {state === 'InOffice' && (
-        <Pressable style={styles.button} disabled={submitting} onPress={() => submitEvent('office_out')}>
+        <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('office_out')}>
           <Text style={styles.buttonText}>Office Check Out</Text>
         </Pressable>
       )}
@@ -102,7 +106,7 @@ export default function AttendanceScreen() {
               onChangeText={setLocationText}
               placeholder="e.g. Head Office"
             />
-            <Pressable style={styles.button} onPress={confirmOfficeIn}>
+            <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmOfficeIn}>
               <Text style={styles.buttonText}>Confirm</Text>
             </Pressable>
           </View>
@@ -114,7 +118,7 @@ export default function AttendanceScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>End your day?</Text>
             <Text>This closes today's attendance and cannot be undone from the app.</Text>
-            <Pressable style={styles.button} onPress={confirmHomeOut}>
+            <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmHomeOut}>
               <Text style={styles.buttonText}>Yes, Home Out</Text>
             </Pressable>
             <Pressable style={styles.buttonSecondary} onPress={() => setConfirmHomeOutVisible(false)}>
