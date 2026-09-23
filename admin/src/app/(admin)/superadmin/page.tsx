@@ -277,7 +277,7 @@ export default function SuperadminPage() {
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
                   <div className="label">Before</div>
-                  <pre className="text-xs bg-white border border-border rounded-lg p-2 max-h-[240px] overflow-auto">{JSON.stringify(original, null, 2)}</pre>
+                  <pre className="text-xs bg-white border border-border rounded-lg p-2 max-h-[240px] overflow-auto">{original ? docToEditableJson(original) : 'null'}</pre>
                 </div>
                 <div>
                   <div className="label">After</div>
