@@ -30,6 +30,12 @@ before(async () => {
   env = await setup();
   await seedUsers(env, {
     superadmin: { role: "admin", name: "Superadmin", superAdmin: true },
+    // role: 'office', NOT 'admin' — isolates the catch-all's OWN behavior from isAdmin()'s
+    // pre-existing grants. Every LIST test below originally passed against a buggy rule
+    // because `superadmin` above is ALSO role:'admin', and isAdmin() already grants list
+    // access to most of these collections independently — that masking is exactly how the
+    // list bug shipped in PR #45 unnoticed. This fixture has no admin-role fallback.
+    pureSuperadmin: { role: "office", name: "Pure Superadmin", superAdmin: true },
     plainAdmin: { role: "admin", name: "Plain Admin" },
     plainEmp:   { role: "operations", name: "Plain Employee" },
   });
@@ -95,6 +101,37 @@ test("superadmin can write attendance_status on a Sunday (Protocol 1 rest-day gu
     asUser(env, "superadmin").doc(`users/saEmp/attendance_status/${SUNDAY}`)
       .set({ date: SUNDAY, userId: "saEmp", status: "Present", markedBy: "admin" })
   );
+});
+
+// ── LIST (collection-query) access — the bug this file's original version missed ──
+// The original catch-all (`match /{document=**} { ... document[0] != 'audit_log' ... }`)
+// worked for get/set/delete (a concrete document path) but threw "Variable is not bound
+// in path template" for LIST/collection-query requests, where Firestore evaluates the
+// rule against the query itself before any concrete path exists. Fixed by switching to
+// `match /{collectionId}/{document=**}` — a plain (non-recursive) first-segment wildcard
+// plus a recursive tail, which binds cleanly for both get and list. Every case below uses
+// pureSuperadmin (role:'office') specifically so isAdmin() can't mask a still-broken list.
+
+test("pureSuperadmin can LIST a collection with no other rule granting access (the exact bug scenario)", async () => {
+  // An arbitrary, uncatalogued subcollection under a real document — precisely what the
+  // /superadmin page's "browse a subcollection of this document" control reaches for.
+  await assertSucceeds(
+    asUser(env, "pureSuperadmin")
+      .collection("users/saEmp/attendance_status/2026-09-16/arbitrarySubcollection")
+      .get()
+  );
+});
+
+test("pureSuperadmin can LIST a top-level collection that isAdmin() alone would also grant (system)", async () => {
+  await assertSucceeds(asUser(env, "pureSuperadmin").collection("system").get());
+});
+
+test("pureSuperadmin can LIST a nested employee subcollection (attendance_status)", async () => {
+  await assertSucceeds(asUser(env, "pureSuperadmin").collection("users/saEmp/attendance_status").get());
+});
+
+test("pureSuperadmin CANNOT list audit_log — the catch-all's own exclusion holds for LIST too, not just get/set", async () => {
+  await assertFails(asUser(env, "pureSuperadmin").collection("audit_log").get());
 });
 
 // ── audit_log — the one wall that stays closed, even for superadmin ─────
