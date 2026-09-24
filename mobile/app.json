@@ -27,7 +27,8 @@
         {
           "locationWhenInUsePermission": "WhiteCoffee needs your location to record attendance check-ins."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }
