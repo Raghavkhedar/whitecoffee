@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, StyleSheet, ScrollView, Platform } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
@@ -42,6 +42,7 @@ export default function RegularizationScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
   const [windowOpen, setWindowOpen] = useState(false);
+  const modalScrollRef = useRef<ScrollView>(null);
 
   const [pastPickerVisible, setPastPickerVisible] = useState(false);
   const [pickedDate, setPickedDate] = useState<Date>(yesterday());
@@ -181,7 +182,12 @@ export default function RegularizationScreen({ navigation }: Props) {
       </ScrollView>
 
       <AnimatedModalCard visible={modalVisible} style={styles.modalCard}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          ref={modalScrollRef}
+          contentContainerStyle={styles.modalContent}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+        >
           <Text style={styles.modalTitle}>Request Correction</Text>
           <Text style={styles.modalBody}>
             {modalDate} — {STATUS_LABEL[modalOriginalStatus] ?? modalOriginalStatus}
@@ -194,6 +200,11 @@ export default function RegularizationScreen({ navigation }: Props) {
             numberOfLines={3}
             value={reason}
             onChangeText={setReason}
+            // Same fix as LeaveScreen's Reason field: automaticallyAdjustKeyboardInsets only
+            // guarantees the cursor is visible, not the whole field, and this is the last
+            // field before Submit/Cancel — scroll to the end so the keyboard never strands
+            // the buttons below it.
+            onFocus={() => modalScrollRef.current?.scrollToEnd({ animated: true })}
           />
           {formError && <Text style={styles.error}>{formError}</Text>}
           <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
@@ -202,7 +213,7 @@ export default function RegularizationScreen({ navigation }: Props) {
           <AnimatedPressable style={styles.buttonSecondary} onPress={() => setModalVisible(false)}>
             <Text style={styles.buttonText}>Cancel</Text>
           </AnimatedPressable>
-        </KeyboardAvoidingView>
+        </ScrollView>
       </AnimatedModalCard>
     </View>
   );
@@ -241,6 +252,10 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
   modalBody: { fontSize: 14, color: Colors.textSecondary },
+  // Short modal (title, one status line, one input, error, two buttons) — a small buffer
+  // below Cancel is enough once scrolled to the end; no need for Leave's large paddingBottom
+  // tuning, which exists there for a much longer multi-field form.
+  modalContent: { paddingBottom: 12 },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,
