@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, Platform } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -35,6 +35,7 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 export default function LeaveScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [tab, setTab] = useState<'apply' | 'history'>('apply');
+  const applyScrollRef = useRef<ScrollView>(null);
 
   const [fromDate, setFromDate] = useState(new Date());
   const [toDate, setToDate] = useState(new Date());
@@ -112,8 +113,13 @@ export default function LeaveScreen({ navigation }: Props) {
       </View>
 
       {tab === 'apply' ? (
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <FadeInView style={styles.card}>
+        <ScrollView
+          ref={applyScrollRef}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
+        >
+            <FadeInView style={styles.card}>
             <Text style={styles.label}>Leave Start Date</Text>
             <DateTimePicker
               value={fromDate}
@@ -172,6 +178,11 @@ export default function LeaveScreen({ navigation }: Props) {
               numberOfLines={3}
               value={reason}
               onChangeText={setReason}
+              // automaticallyAdjustKeyboardInsets only guarantees the cursor is visible, which
+              // for an empty/short multiline field can leave its bottom half under the keyboard.
+              // It's also the last field before Submit, so scrolling to the end (with the extra
+              // bottom padding on `content`) reliably clears the whole box plus the button.
+              onFocus={() => applyScrollRef.current?.scrollToEnd({ animated: true })}
             />
 
             {formError && <Text style={styles.error}>{formError}</Text>}
@@ -232,7 +243,10 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   tabText: { color: Colors.textSecondary, fontWeight: '600' },
   tabTextActive: { color: 'white' },
-  content: { padding: 24, gap: 16 },
+  // Small extra bottom padding for breathing room below the Submit button once scrolled to
+  // the end — automaticallyAdjustKeyboardInsets already accounts for the keyboard itself, so
+  // this only needs to be a little slack, not enough to compensate for the keyboard again.
+  content: { padding: 24, paddingBottom: 40, gap: 16 },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
