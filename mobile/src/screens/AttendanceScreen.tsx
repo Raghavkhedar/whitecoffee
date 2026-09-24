@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, View, Text, Pressable, StyleSheet, Alert, TextInput, Modal } from 'react-native';
+import { AppState, View, Text, StyleSheet, Alert, TextInput } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -12,6 +12,9 @@ import { subscribeTodayOfficeEvents, recordOfficeEvent, todayDateString } from '
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 import { Colors } from '../theme/colors';
 import TopBar from '../components/TopBar';
+import FadeInView from '../components/FadeInView';
+import AnimatedPressable from '../components/AnimatedPressable';
+import AnimatedModalCard from '../components/AnimatedModalCard';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Attendance'>;
@@ -109,71 +112,65 @@ export default function AttendanceScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <TopBar title="Attendance" onBack={() => navigation.goBack()} />
       <View style={styles.container}>
-      <Text style={styles.state}>Status: {state}</Text>
+        <FadeInView style={styles.content}>
+          <Text style={styles.state}>Status: {state}</Text>
 
-      {state === 'NotStarted' && (
-        <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('home_in')}>
-          <Text style={styles.buttonText}>Start Day — Home In</Text>
-        </Pressable>
-      )}
+          {state === 'NotStarted' && (
+            <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('home_in')}>
+              <Text style={styles.buttonText}>Start Day — Home In</Text>
+            </AnimatedPressable>
+          )}
 
-      {state === 'DayStarted' && (
-        <>
-          <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleOfficeIn}>
-            <Text style={styles.buttonText}>Office Check In</Text>
-          </Pressable>
-          <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleHomeOut}>
-            <Text style={styles.buttonText}>End Day — Home Out</Text>
-          </Pressable>
-        </>
-      )}
+          {state === 'DayStarted' && (
+            <>
+              <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleOfficeIn}>
+                <Text style={styles.buttonText}>Office Check In</Text>
+              </AnimatedPressable>
+              <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleHomeOut}>
+                <Text style={styles.buttonText}>End Day — Home Out</Text>
+              </AnimatedPressable>
+            </>
+          )}
 
-      {state === 'InOffice' && (
-        <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('office_out')}>
-          <Text style={styles.buttonText}>Office Check Out</Text>
-        </Pressable>
-      )}
+          {state === 'InOffice' && (
+            <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('office_out')}>
+              <Text style={styles.buttonText}>Office Check Out</Text>
+            </AnimatedPressable>
+          )}
 
-      {state === 'DayEnded' && <Text style={styles.state}>Day complete</Text>}
+          {state === 'DayEnded' && <Text style={styles.state}>Day complete</Text>}
+        </FadeInView>
 
-      <Modal visible={locationPromptVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Where are you?</Text>
-            <TextInput
-              style={styles.input}
-              value={locationText}
-              onChangeText={setLocationText}
-              placeholder="e.g. Head Office"
-            />
-            <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmOfficeIn}>
-              <Text style={styles.buttonText}>Confirm</Text>
-            </Pressable>
-            {/* iOS has no hardware back and this overlay isn't tap-dismissible — without a
-                Cancel, a mis-tap traps the user into writing an office_in they didn't want. */}
-            <Pressable style={styles.buttonSecondary} onPress={() => setLocationPromptVisible(false)}>
-              <Text style={styles.buttonText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        <AnimatedModalCard visible={locationPromptVisible} style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Where are you?</Text>
+          <TextInput
+            style={styles.input}
+            value={locationText}
+            onChangeText={setLocationText}
+            placeholder="e.g. Head Office"
+          />
+          <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmOfficeIn}>
+            <Text style={styles.buttonText}>Confirm</Text>
+          </AnimatedPressable>
+          {/* iOS has no hardware back and this overlay isn't tap-dismissible — without a
+              Cancel, a mis-tap traps the user into writing an office_in they didn't want. */}
+          <AnimatedPressable style={styles.buttonSecondary} onPress={() => setLocationPromptVisible(false)}>
+            <Text style={styles.buttonText}>Cancel</Text>
+          </AnimatedPressable>
+        </AnimatedModalCard>
 
-      <Modal visible={confirmHomeOutVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>End your day?</Text>
-            <Text style={styles.modalBody}>
-              This closes today's attendance and cannot be undone from the app.
-            </Text>
-            <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmHomeOut}>
-              <Text style={styles.buttonText}>Yes, Home Out</Text>
-            </Pressable>
-            <Pressable style={styles.buttonSecondary} onPress={() => setConfirmHomeOutVisible(false)}>
-              <Text style={styles.buttonText}>Cancel</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        <AnimatedModalCard visible={confirmHomeOutVisible} style={styles.modalCard}>
+          <Text style={styles.modalTitle}>End your day?</Text>
+          <Text style={styles.modalBody}>
+            This closes today's attendance and cannot be undone from the app.
+          </Text>
+          <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmHomeOut}>
+            <Text style={styles.buttonText}>Yes, Home Out</Text>
+          </AnimatedPressable>
+          <AnimatedPressable style={styles.buttonSecondary} onPress={() => setConfirmHomeOutVisible(false)}>
+            <Text style={styles.buttonText}>Cancel</Text>
+          </AnimatedPressable>
+        </AnimatedModalCard>
       </View>
     </View>
   );
@@ -181,12 +178,12 @@ export default function AttendanceScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.screenBg },
-  container: { flex: 1, padding: 24, gap: 16 },
+  container: { flex: 1 },
+  content: { flex: 1, padding: 24, gap: 16 },
   state: { fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
   button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonSecondary: { backgroundColor: Colors.textMuted, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonText: { color: 'white', fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(16,20,20,0.5)', justifyContent: 'center', padding: 24 },
   modalCard: {
     backgroundColor: Colors.surface,
     borderRadius: 20,

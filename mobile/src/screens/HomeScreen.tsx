@@ -1,11 +1,13 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors } from '../theme/colors';
 import TopBar from '../components/TopBar';
+import FadeInView from '../components/FadeInView';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -22,23 +24,24 @@ export default function HomeScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <TopBar />
       <View style={styles.container}>
-        <Text style={styles.greeting}>Hi, {user?.name || 'there'}</Text>
-        {canUseOfficeAttendance ? (
-          <Pressable style={styles.card} onPress={() => navigation.navigate('Attendance')}>
-            <View style={styles.cardIcon}>
-              <Ionicons name="time-outline" size={22} color={Colors.primary} />
-            </View>
-            <Text style={styles.cardText}>Attendance</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
-          </Pressable>
-        ) : (
-          <Text style={styles.unavailable}>
-            Attendance isn't available for your role on this app yet.
-          </Text>
-        )}
-        <Pressable style={styles.logout} onPress={logout}>
+        <FadeInView>
+          {canUseOfficeAttendance ? (
+            <AnimatedPressable style={styles.card} onPress={() => navigation.navigate('Attendance')}>
+              <View style={styles.cardIcon}>
+                <Ionicons name="time-outline" size={22} color={Colors.primary} />
+              </View>
+              <Text style={styles.cardText}>Attendance</Text>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            </AnimatedPressable>
+          ) : (
+            <Text style={styles.unavailable}>
+              Attendance isn't available for your role on this app yet.
+            </Text>
+          )}
+        </FadeInView>
+        <AnimatedPressable style={styles.logout} onPress={logout}>
           <Text style={styles.logoutText}>Log Out</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
     </View>
   );
@@ -47,7 +50,6 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.screenBg },
   container: { flex: 1, padding: 24, gap: 16 },
-  greeting: { fontSize: 22, fontWeight: '600', marginBottom: 8, color: Colors.textPrimary },
   card: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   View,
   TextInput,
-  Pressable,
   Text,
   StyleSheet,
   ActivityIndicator,
@@ -12,6 +11,8 @@ import {
 } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { Colors } from '../theme/colors';
+import FadeInView from '../components/FadeInView';
+import AnimatedPressable from '../components/AnimatedPressable';
 
 export default function LoginScreen() {
   const { login, error } = useAuth();
@@ -41,7 +42,7 @@ export default function LoginScreen() {
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.brand}>
+        <FadeInView style={styles.brand}>
           <View style={styles.badge}>
             <Text style={styles.badgeLetter}>W</Text>
           </View>
@@ -49,9 +50,9 @@ export default function LoginScreen() {
             White<Text style={styles.wordmarkAccent}>Coffee</Text>
           </Text>
           <Text style={styles.subtitle}>Field Operations</Text>
-        </View>
+        </FadeInView>
 
-        <View style={styles.card}>
+        <FadeInView delay={120} style={styles.card}>
           <TextInput
             style={styles.input}
             placeholder="Email or Employee ID"
@@ -69,10 +70,10 @@ export default function LoginScreen() {
             onChangeText={setPassword}
           />
           {error && <Text style={styles.error}>{error}</Text>}
-          <Pressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
+          <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
             {submitting ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Log In</Text>}
-          </Pressable>
-        </View>
+          </AnimatedPressable>
+        </FadeInView>
       </ScrollView>
     </KeyboardAvoidingView>
   );
