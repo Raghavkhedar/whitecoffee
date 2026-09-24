@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AppState, View, Text, Pressable, StyleSheet, Alert, TextInput, Modal } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import {
   deriveOfficeState,
@@ -10,8 +11,12 @@ import {
 import { subscribeTodayOfficeEvents, recordOfficeEvent, todayDateString } from '../attendance/attendanceApi';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 import { Colors } from '../theme/colors';
+import TopBar from '../components/TopBar';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 
-export default function AttendanceScreen() {
+type Props = NativeStackScreenProps<RootStackParamList, 'Attendance'>;
+
+export default function AttendanceScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
@@ -101,7 +106,9 @@ export default function AttendanceScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.screen}>
+      <TopBar title="Attendance" onBack={() => navigation.goBack()} />
+      <View style={styles.container}>
       <Text style={styles.state}>Status: {state}</Text>
 
       {state === 'NotStarted' && (
@@ -167,12 +174,14 @@ export default function AttendanceScreen() {
           </View>
         </View>
       </Modal>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, gap: 16, backgroundColor: Colors.screenBg },
+  screen: { flex: 1, backgroundColor: Colors.screenBg },
+  container: { flex: 1, padding: 24, gap: 16 },
   state: { fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
   button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonSecondary: { backgroundColor: Colors.textMuted, padding: 16, borderRadius: 12, alignItems: 'center' },
