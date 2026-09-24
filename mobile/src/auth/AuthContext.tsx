@@ -14,6 +14,16 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+// Mirrors Android's FirebaseAuthRepository.resolveLoginEmail: employees can log in with
+// either a real email or their Employee ID, which the admin portal mints into a
+// synthetic "<employeeId>@whitecoffee.internal" address at account-creation time.
+const LOGIN_EMAIL_DOMAIN = 'whitecoffee.internal';
+
+function resolveLoginEmail(identifier: string): string {
+  const trimmed = identifier.trim().toLowerCase();
+  return trimmed.includes('@') ? trimmed : `${trimmed}@${LOGIN_EMAIL_DOMAIN}`;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login(email: string, password: string) {
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      await signInWithEmailAndPassword(auth, resolveLoginEmail(email), password);
     } catch (e) {
       console.error('Login failed', e);
       setError('Login failed. Check your email and password.');

@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { View, TextInput, Pressable, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  TextInput,
+  Pressable,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 
 export default function LoginScreen() {
@@ -21,33 +31,42 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>WhiteCoffee</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error && <Text style={styles.error}>{error}</Text>}
-      <Pressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
-        {submitting ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Log In</Text>}
-      </Pressable>
-    </View>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+    >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>WhiteCoffee</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Email or Employee ID"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Password"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+        {error && <Text style={styles.error}>{error}</Text>}
+        <Pressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
+          {submitting ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Log In</Text>}
+        </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
+  flex: { flex: 1 },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 12 },
   title: { fontSize: 28, fontWeight: '700', marginBottom: 24, textAlign: 'center' },
   input: { borderWidth: 1, borderColor: '#E2E9E9', borderRadius: 8, padding: 12 },
   button: { backgroundColor: '#006A71', padding: 16, borderRadius: 8, alignItems: 'center' },
