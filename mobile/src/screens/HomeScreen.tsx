@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { Colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -35,17 +36,22 @@ export default function HomeScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, gap: 16 },
-  greeting: { fontSize: 22, fontWeight: '600', marginBottom: 8 },
+  container: { flex: 1, padding: 24, gap: 16, backgroundColor: Colors.screenBg },
+  greeting: { fontSize: 22, fontWeight: '600', marginBottom: 8, color: Colors.textPrimary },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#E2E9E9',
-    borderRadius: 12,
+    borderColor: Colors.border,
+    borderRadius: 16,
     padding: 24,
+    shadowColor: Colors.primaryDark,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  cardText: { fontSize: 18, fontWeight: '600', color: '#006A71' },
-  unavailable: { fontSize: 15, color: '#8591A0', lineHeight: 22 },
+  cardText: { fontSize: 18, fontWeight: '600', color: Colors.primary },
+  unavailable: { fontSize: 15, color: Colors.textMuted, lineHeight: 22 },
   logout: { marginTop: 'auto', padding: 16, alignItems: 'center' },
-  logoutText: { color: '#8591A0' },
+  logoutText: { color: Colors.textMuted },
 });

@@ -9,6 +9,7 @@ import {
 } from '../attendance/officeAttendanceState';
 import { subscribeTodayOfficeEvents, recordOfficeEvent, todayDateString } from '../attendance/attendanceApi';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
+import { Colors } from '../theme/colors';
 
 export default function AttendanceScreen() {
   const { user } = useAuth();
@@ -154,7 +155,9 @@ export default function AttendanceScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>End your day?</Text>
-            <Text>This closes today's attendance and cannot be undone from the app.</Text>
+            <Text style={styles.modalBody}>
+              This closes today's attendance and cannot be undone from the app.
+            </Text>
             <Pressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmHomeOut}>
               <Text style={styles.buttonText}>Yes, Home Out</Text>
             </Pressable>
@@ -169,13 +172,31 @@ export default function AttendanceScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, gap: 16 },
-  state: { fontSize: 18, fontWeight: '600' },
-  button: { backgroundColor: '#006A71', padding: 16, borderRadius: 8, alignItems: 'center' },
-  buttonSecondary: { backgroundColor: '#8591A0', padding: 16, borderRadius: 8, alignItems: 'center' },
+  container: { flex: 1, padding: 24, gap: 16, backgroundColor: Colors.screenBg },
+  state: { fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
+  button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
+  buttonSecondary: { backgroundColor: Colors.textMuted, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonText: { color: 'white', fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
-  modalCard: { backgroundColor: 'white', borderRadius: 12, padding: 24, gap: 12 },
-  modalTitle: { fontSize: 18, fontWeight: '700' },
-  input: { borderWidth: 1, borderColor: '#E2E9E9', borderRadius: 8, padding: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(16,20,20,0.5)', justifyContent: 'center', padding: 24 },
+  modalCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    gap: 12,
+    shadowColor: Colors.primaryDark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 6,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
+  modalBody: { fontSize: 14, color: Colors.textSecondary, lineHeight: 20 },
+  input: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.screenBg,
+    borderRadius: 12,
+    padding: 14,
+    color: Colors.textPrimary,
+  },
 });
