@@ -6,10 +6,12 @@ import { useAuth } from '../auth/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
+import LeaveScreen from '../screens/LeaveScreen';
 
 export type RootStackParamList = {
   Home: undefined;
   Attendance: undefined;
+  Leave: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -31,6 +33,7 @@ export default function RootNavigator() {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Attendance" component={AttendanceScreen} />
+          <Stack.Screen name="Leave" component={LeaveScreen} />
         </Stack.Navigator>
       ) : (
         <LoginScreen />
