@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Platform } from 'react-native';
+import { AppState, View, Text, TextInput, StyleSheet, ScrollView, Platform } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
@@ -43,6 +43,11 @@ export default function RegularizationScreen({ navigation }: Props) {
   const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
   const [windowOpen, setWindowOpen] = useState(false);
   const modalScrollRef = useRef<ScrollView>(null);
+  // Same rollover guard as AttendanceScreen.tsx: the Firestore query behind
+  // subscribeTodayOfficeEvents bakes in `where('date', '==', ...)` at subscribe time, so a
+  // subscription left running across midnight keeps serving yesterday's events. Re-key the
+  // subscription on this and re-check it on AppState 'active' (see below).
+  const [subscribedDate, setSubscribedDate] = useState(todayDateString());
 
   const [pastPickerVisible, setPastPickerVisible] = useState(false);
   const [pickedDate, setPickedDate] = useState<Date>(yesterday());
@@ -56,10 +61,25 @@ export default function RegularizationScreen({ navigation }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Re-subscribe whenever the date we subscribed for changes.
   useEffect(() => {
     if (!user) return;
     return subscribeTodayOfficeEvents(user.uid, setEvents);
-  }, [user]);
+  }, [user, subscribedDate]);
+
+  // The app spends the rollover suspended, so nothing re-renders at midnight — the date
+  // check has to happen when it wakes back up.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        const current = todayDateString();
+        if (current !== subscribedDate) {
+          setSubscribedDate(current);
+        }
+      }
+    });
+    return () => subscription.remove();
+  }, [subscribedDate]);
 
   useEffect(() => {
     return subscribeRegularizationWindow(setWindowOpen);
@@ -68,6 +88,14 @@ export default function RegularizationScreen({ navigation }: Props) {
   const todayLiveStatus = deriveTodayLiveStatus(events);
 
   function openTodayModal() {
+    // Write-time backstop, mirroring Attendance's submitEvent: the AppState listener may
+    // not have fired yet (the day can roll over with the app in the foreground). Never open
+    // the modal against a `todayLiveStatus` derived from a stale day's events — refresh and
+    // make the user re-tap once the UI is current.
+    if (todayDateString() !== subscribedDate) {
+      setSubscribedDate(todayDateString());
+      return;
+    }
     if (!todayLiveStatus) return;
     setFormError(null);
     setReason('');
@@ -76,17 +104,40 @@ export default function RegularizationScreen({ navigation }: Props) {
     setModalVisible(true);
   }
 
-  async function handlePickPastDate(_: DateTimePickerEvent, date?: Date) {
-    if (!date || !user) return;
-    setPickedDate(date);
+  async function loadPastStatus(date: Date) {
+    if (!user) return;
     setPastStatusLoading(true);
+    setFormError(null);
     try {
       const status = await getAttendanceStatusForDate(user.uid, formatDateString(date));
       setPastStatus(status ?? 'Unmarked');
+    } catch {
+      setPastStatus(null);
+      setFormError('Could not check this date — check your connection and try again.');
     } finally {
       setPastStatusLoading(false);
     }
   }
+
+  async function handlePickPastDate(_: DateTimePickerEvent, date?: Date) {
+    if (!date) return;
+    setPickedDate(date);
+    await loadPastStatus(date);
+  }
+
+  // A compact iOS DateTimePicker only fires onChange when the user actually moves the value
+  // away from what's shown — picking up yesterday (the default `pickedDate`, and the single
+  // most likely date to correct) would otherwise never trigger handlePickPastDate, leaving
+  // pastStatus null and the "Request Correction" button permanently hidden. Load the status
+  // for whatever's already shown as soon as the section opens.
+  useEffect(() => {
+    if (pastPickerVisible) {
+      loadPastStatus(pickedDate);
+    }
+    // Only re-run when the section is opened/closed — handlePickPastDate covers the
+    // already-open case where the user actively changes the date.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastPickerVisible]);
 
   function openPastModal() {
     if (!pastStatus) return;
@@ -106,11 +157,24 @@ export default function RegularizationScreen({ navigation }: Props) {
     if (!user || submitting) return;
     setSubmitting(true);
     try {
-      if (await hasPendingOrApprovedRequest(user.uid, modalDate)) {
+      let duplicate: boolean;
+      let holiday: boolean;
+      try {
+        // Both are direct Firestore reads (unlike submitRegularizationRequest below, which
+        // is fire-and-forget and never rejects) — offline, these reject, so they need their
+        // own error handling rather than surfacing as an unhandled rejection with the UI
+        // silently falling back to idle.
+        duplicate = await hasPendingOrApprovedRequest(user.uid, modalDate);
+        holiday = await checkIsHoliday(modalDate);
+      } catch {
+        setFormError('Could not check this date — check your connection and try again.');
+        return;
+      }
+      if (duplicate) {
         setFormError('You already have a pending or approved request for this date.');
         return;
       }
-      if (isRestDay(modalDate, await checkIsHoliday(modalDate))) {
+      if (isRestDay(modalDate, holiday)) {
         setFormError('This date is a rest day and cannot be regularized.');
         return;
       }
@@ -161,6 +225,9 @@ export default function RegularizationScreen({ navigation }: Props) {
                   onChange={handlePickPastDate}
                 />
                 {pastStatusLoading && <Text style={styles.muted}>Checking that date…</Text>}
+                {!pastStatusLoading && !pastStatus && formError && (
+                  <Text style={styles.error}>{formError}</Text>
+                )}
                 {!pastStatusLoading && pastStatus && (
                   <>
                     <Text style={styles.state}>
