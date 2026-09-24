@@ -52,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
     } catch (e) {
+      console.error('Login failed', e);
       setError('Login failed. Check your email and password.');
       throw e;
     }
