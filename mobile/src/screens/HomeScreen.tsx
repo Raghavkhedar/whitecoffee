@@ -18,6 +18,8 @@ export default function HomeScreen({ navigation }: Props) {
   // event types (see firebase/functions/roleCapabilities.js); operations and sales punch
   // site_in/market_in, so office-shaped punches from this app would be invisible to their
   // payroll scoring. Anything else — including an unknown role — is gated out.
+  // Regularization derives its live status from these same office_in/office_out events
+  // (see regularizationStatus.ts), so it shares this exact gate.
   const canUseOfficeAttendance = user?.role === 'office' || user?.role === 'admin';
 
   return (
@@ -26,7 +28,14 @@ export default function HomeScreen({ navigation }: Props) {
       <View style={styles.container}>
         <FadeInView style={styles.cards}>
           {canUseOfficeAttendance ? (
-            <HomeCard icon="time-outline" label="Attendance" onPress={() => navigation.navigate('Attendance')} />
+            <>
+              <HomeCard icon="time-outline" label="Attendance" onPress={() => navigation.navigate('Attendance')} />
+              <HomeCard
+                icon="alert-circle-outline"
+                label="Regularization"
+                onPress={() => navigation.navigate('Regularization')}
+              />
+            </>
           ) : (
             <Text style={styles.unavailable}>
               Attendance isn't available for your role on this app yet.
