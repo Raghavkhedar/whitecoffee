@@ -6,8 +6,15 @@ interface AnimatedPressableProps extends Omit<PressableProps, 'style'> {
   children: React.ReactNode;
 }
 
+const AnimatedPressableBase = Animated.createAnimatedComponent(Pressable);
+
 // A drop-in Pressable that scales down slightly on touch, giving buttons and cards a
-// tactile, premium feel instead of the flat instant-toggle default.
+// tactile, premium feel instead of the flat instant-toggle default. The animated
+// component IS the Pressable — no extra wrapping View — so a caller's `style` does both
+// jobs a plain Pressable's would: arranging `children` (flexDirection/gap/alignItems) AND
+// participating in the parent's own layout (e.g. `flex: 1` in a row). Splitting those two
+// jobs across a wrapper and an inner View (an earlier version of this file did) breaks
+// whichever usage needs the one `style` didn't reach.
 export default function AnimatedPressable({
   style,
   children,
@@ -29,14 +36,14 @@ export default function AnimatedPressable({
   }
 
   return (
-    // `style` lives on Pressable, not the inner Animated.View: a shrink-wrapped child (every
-    // existing usage) looks identical either way, but a caller relying on flex/width layout
-    // (e.g. `flex: 1` tabs in a row) needs the OUTER element sized — the inner View can't hand
-    // that back up.
-    <Pressable disabled={disabled} onPressIn={handlePressIn} onPressOut={handlePressOut} style={style} {...rest}>
-      <Animated.View style={[{ transform: [{ scale }] }, disabled ? { opacity: 0.6 } : null]}>
-        {children}
-      </Animated.View>
-    </Pressable>
+    <AnimatedPressableBase
+      disabled={disabled}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[style, { transform: [{ scale }] }, disabled ? { opacity: 0.6 } : null]}
+      {...rest}
+    >
+      {children}
+    </AnimatedPressableBase>
   );
 }
