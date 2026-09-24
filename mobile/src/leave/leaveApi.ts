@@ -52,8 +52,6 @@ export async function submitLeaveRequest(user: UserProfile, input: SubmitLeaveIn
     placeOfVisit: input.placeOfVisit,
     reason: input.reason,
     status: 'pending',
-    approvedDates: [],
-    cancelledDates: [],
     submittedAt: Timestamp.now(),
   }).catch((error) => {
     console.error('Failed to sync leave request to server', error);
