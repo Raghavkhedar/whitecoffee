@@ -29,8 +29,12 @@ export default function AnimatedPressable({
   }
 
   return (
-    <Pressable disabled={disabled} onPressIn={handlePressIn} onPressOut={handlePressOut} {...rest}>
-      <Animated.View style={[style, { transform: [{ scale }] }, disabled ? { opacity: 0.6 } : null]}>
+    // `style` lives on Pressable, not the inner Animated.View: a shrink-wrapped child (every
+    // existing usage) looks identical either way, but a caller relying on flex/width layout
+    // (e.g. `flex: 1` tabs in a row) needs the OUTER element sized — the inner View can't hand
+    // that back up.
+    <Pressable disabled={disabled} onPressIn={handlePressIn} onPressOut={handlePressOut} style={style} {...rest}>
+      <Animated.View style={[{ transform: [{ scale }] }, disabled ? { opacity: 0.6 } : null]}>
         {children}
       </Animated.View>
     </Pressable>
