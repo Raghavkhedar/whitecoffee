@@ -60,6 +60,12 @@ export default function LeaveScreen({ navigation }: Props) {
       setFormError('End date must be on or after start date.');
       return;
     }
+    // Mirrors firebase/firestore.rules's isValidLeaveDates ceiling (d.totalDays <= 366) —
+    // keep this in sync with that rule, not a magic number to "clean up".
+    if (dayCount > 366) {
+      setFormError('Leave range cannot exceed 366 days — check your selected dates.');
+      return;
+    }
     if (!emergencyContact.trim() || !placeOfVisit.trim() || !reason.trim()) {
       setFormError('Emergency contact, place of visit, and reason are all required.');
       return;
