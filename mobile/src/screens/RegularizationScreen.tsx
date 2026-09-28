@@ -248,38 +248,38 @@ export default function RegularizationScreen({ navigation }: Props) {
         )}
       </ScrollView>
 
-      <AnimatedModalCard visible={modalVisible} style={styles.modalCard}>
+      <AnimatedModalCard visible={modalVisible} style={styles.modalCard} onDismiss={() => setModalVisible(false)}>
         <ScrollView
           ref={modalScrollRef}
           contentContainerStyle={styles.modalContent}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
           automaticallyAdjustKeyboardInsets
         >
-          <Text style={styles.modalTitle}>Request Correction</Text>
-          <Text style={styles.modalBody}>
-            {modalDate} — {STATUS_LABEL[modalOriginalStatus] ?? modalOriginalStatus}
-          </Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            placeholder="Reason"
-            placeholderTextColor={Colors.textMuted}
-            multiline
-            numberOfLines={3}
-            value={reason}
-            onChangeText={setReason}
-            // Same fix as LeaveScreen's Reason field: automaticallyAdjustKeyboardInsets only
-            // guarantees the cursor is visible, not the whole field, and this is the last
-            // field before Submit/Cancel — scroll to the end so the keyboard never strands
-            // the buttons below it.
-            onFocus={() => modalScrollRef.current?.scrollToEnd({ animated: true })}
-          />
-          {formError && <Text style={styles.error}>{formError}</Text>}
-          <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
-            <Text style={styles.buttonText}>{submitting ? 'Submitting…' : 'Submit Request'}</Text>
-          </AnimatedPressable>
-          <AnimatedPressable style={styles.buttonSecondary} onPress={() => setModalVisible(false)}>
-            <Text style={styles.buttonText}>Cancel</Text>
-          </AnimatedPressable>
+            <Text style={styles.modalTitle}>Request Correction</Text>
+            <Text style={styles.modalBody}>
+              {modalDate} — {STATUS_LABEL[modalOriginalStatus] ?? modalOriginalStatus}
+            </Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Reason"
+              placeholderTextColor={Colors.textMuted}
+              multiline
+              numberOfLines={3}
+              value={reason}
+              onChangeText={setReason}
+              // Same fix as LeaveScreen's Reason field: automaticallyAdjustKeyboardInsets only
+              // guarantees the cursor is visible, not the whole field, and this is the last
+              // field before Submit/Cancel — scroll to the end so the keyboard never strands
+              // the buttons below it.
+              onFocus={() => modalScrollRef.current?.scrollToEnd({ animated: true })}
+            />
+            {formError && <Text style={styles.error}>{formError}</Text>}
+            <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
+              <Text style={styles.buttonText}>{submitting ? 'Submitting…' : 'Submit Request'}</Text>
+            </AnimatedPressable>
+            <AnimatedPressable style={styles.buttonSecondary} onPress={() => setModalVisible(false)}>
+              <Text style={styles.buttonText}>Cancel</Text>
+            </AnimatedPressable>
         </ScrollView>
       </AnimatedModalCard>
     </View>
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
   // Short modal (title, one status line, one input, error, two buttons) — a small buffer
   // below Cancel is enough once scrolled to the end; no need for Leave's large paddingBottom
   // tuning, which exists there for a much longer multi-field form.
-  modalContent: { paddingBottom: 12 },
+  modalContent: { paddingBottom: 12, gap: 12 },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,

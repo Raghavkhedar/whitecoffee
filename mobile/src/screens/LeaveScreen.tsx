@@ -14,6 +14,7 @@ import { Colors } from '../theme/colors';
 import TopBar from '../components/TopBar';
 import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
+import DismissKeyboardView from '../components/DismissKeyboardView';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Leave'>;
@@ -116,9 +117,13 @@ export default function LeaveScreen({ navigation }: Props) {
         <ScrollView
           ref={applyScrollRef}
           contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
+          // 'always', not 'handled' — see RegularizationScreen.tsx for why: 'always' is what
+          // the docs guarantee lets DismissKeyboardView's Pressable reliably catch a
+          // background tap to dismiss the keyboard.
+          keyboardShouldPersistTaps="always"
           automaticallyAdjustKeyboardInsets
         >
+          <DismissKeyboardView style={styles.dismissFill}>
             <FadeInView style={styles.card}>
             <Text style={styles.label}>Leave Start Date</Text>
             <DateTimePicker
@@ -191,6 +196,7 @@ export default function LeaveScreen({ navigation }: Props) {
               <Text style={styles.buttonText}>{submitting ? 'Submitting…' : 'Submit Request'}</Text>
             </AnimatedPressable>
           </FadeInView>
+          </DismissKeyboardView>
         </ScrollView>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
@@ -246,7 +252,12 @@ const styles = StyleSheet.create({
   // Small extra bottom padding for breathing room below the Submit button once scrolled to
   // the end — automaticallyAdjustKeyboardInsets already accounts for the keyboard itself, so
   // this only needs to be a little slack, not enough to compensate for the keyboard again.
-  content: { padding: 24, paddingBottom: 40, gap: 16 },
+  content: { flexGrow: 1, padding: 24, paddingBottom: 40, gap: 16 },
+  // DismissKeyboardView needs its own flex:1 to actually fill the ScrollView's (flexGrow:1)
+  // content area — otherwise it shrink-wraps to the card and a tap below/beside it (still on
+  // screen, but outside that tight box) never reaches the Pressable that dismisses the
+  // keyboard.
+  dismissFill: { flex: 1 },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 16,
