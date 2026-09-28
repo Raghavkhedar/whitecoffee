@@ -189,7 +189,7 @@ export default function MaterialBuyScreen({ navigation }: Props) {
           )}
 
           <FadeInView style={styles.card}>
-            <Text style={styles.label}>Site Name</Text>
+            <Text style={styles.label}>Site Name (optional)</Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. Skyline Tower B"
@@ -265,6 +265,13 @@ export default function MaterialBuyScreen({ navigation }: Props) {
                     onChangeText={(text) => updateItem(index, { spec2: text })}
                   />
                 </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Item notes (optional)"
+                  placeholderTextColor={Colors.textMuted}
+                  value={item.notes}
+                  onChangeText={(text) => updateItem(index, { notes: text })}
+                />
                 <Text style={styles.itemRowTotal}>Total: {itemTotal(item).toFixed(2)}</Text>
               </View>
             ))}
