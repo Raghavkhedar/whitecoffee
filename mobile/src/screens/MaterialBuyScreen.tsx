@@ -50,6 +50,7 @@ export default function MaterialBuyScreen({ navigation }: Props) {
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [pendingDocId, setPendingDocId] = useState<string | null>(null);
   const [pendingUris, setPendingUris] = useState<string[]>([]);
+  const [pendingUploadedUrls, setPendingUploadedUrls] = useState<string[]>([]);
 
   const grandTotal = items.reduce((sum, item) => sum + itemTotal(item), 0);
 
@@ -84,36 +85,45 @@ export default function MaterialBuyScreen({ navigation }: Props) {
     setPhotoUris([]);
   }
 
-  async function uploadPendingPhotos(docId: string, uris: string[]) {
+  // `alreadyUploaded` carries URLs from a prior attempt on this same docId (a retry after a
+  // partial failure) so a retry only re-uploads the URIs that didn't succeed yet — never the
+  // ones already sitting in Storage.
+  async function uploadPendingPhotos(docId: string, uris: string[], alreadyUploaded: string[] = []) {
     if (!user) return;
     setPendingDocId(docId);
     setPendingUris(uris);
+    setPendingUploadedUrls(alreadyUploaded);
     setUploadState('uploading');
+    const uploaded: string[] = [...alreadyUploaded];
     try {
-      const urls: string[] = [];
       for (let i = 0; i < uris.length; i++) {
         const url = await uploadPhoto(uris[i], `requests/${user.uid}/material_purchases/${docId}/${Date.now()}_${i}.jpg`);
-        urls.push(url);
+        uploaded.push(url);
       }
-      await updatePurchasePhotoUrls(user.uid, docId, urls);
+      await updatePurchasePhotoUrls(user.uid, docId, uploaded);
       setUploadState('idle');
       setPendingDocId(null);
       setPendingUris([]);
+      setPendingUploadedUrls([]);
     } catch (error) {
       console.error('Photo upload failed', error);
+      const succeededThisPass = uploaded.length - alreadyUploaded.length;
+      setPendingUris(uris.slice(succeededThisPass));
+      setPendingUploadedUrls(uploaded);
       setUploadState('failed');
     }
   }
 
   function handleRetryUpload() {
     if (!pendingDocId) return;
-    uploadPendingPhotos(pendingDocId, pendingUris);
+    uploadPendingPhotos(pendingDocId, pendingUris, pendingUploadedUrls);
   }
 
   function handleDismissUploadBanner() {
     setUploadState('idle');
     setPendingDocId(null);
     setPendingUris([]);
+    setPendingUploadedUrls([]);
   }
 
   async function handleSubmit() {
@@ -149,11 +159,23 @@ export default function MaterialBuyScreen({ navigation }: Props) {
       notes: notes.trim(),
     });
     const uris = photoUris;
+    const priorUploadPending = uploadState !== 'idle';
     resetForm();
     setSubmitting(false);
     Alert.alert('Submitted', 'Purchase recorded.');
     if (uris.length > 0) {
-      uploadPendingPhotos(docId, uris);
+      if (priorUploadPending) {
+        // A previous submission's photo upload is still in flight or awaiting retry/dismiss.
+        // The shared upload-banner state can only track one submission at a time, so queuing
+        // this one's photos would silently corrupt or lose track of the previous ones. The
+        // purchase record itself is never blocked — only its photos are skipped.
+        Alert.alert(
+          'Previous upload pending',
+          "Your previous purchase's photos are still uploading — this purchase's photos couldn't be queued. Please wait for the previous upload to finish (or retry/dismiss it) before adding photos to a new entry."
+        );
+      } else {
+        uploadPendingPhotos(docId, uris);
+      }
     }
   }
 
@@ -297,7 +319,7 @@ export default function MaterialBuyScreen({ navigation }: Props) {
             <Text style={styles.label}>Photos (optional, up to {MAX_PHOTOS})</Text>
             <View style={styles.photoStrip}>
               {photoUris.map((uri, index) => (
-                <View key={uri} style={styles.photoThumbWrap}>
+                <View key={`${uri}-${index}`} style={styles.photoThumbWrap}>
                   <Image source={{ uri }} style={styles.photoThumb} />
                   <AnimatedPressable style={styles.photoRemoveBadge} onPress={() => removePhoto(index)}>
                     <Text style={styles.photoRemoveText}>×</Text>
