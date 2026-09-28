@@ -28,7 +28,15 @@
           "locationWhenInUsePermission": "WhiteCoffee needs your location to record attendance check-ins."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "WhiteCoffee needs access to your photos to attach them to a purchase, request, or transfer record.",
+          "cameraPermission": "WhiteCoffee needs camera access to take a photo for a purchase, request, or transfer record.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }
