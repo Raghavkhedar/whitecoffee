@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { Colors } from '../theme/colors';
+import HeroHeader from '../components/HeroHeader';
 import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import DismissKeyboardView from '../components/DismissKeyboardView';
@@ -46,17 +47,8 @@ export default function LoginScreen() {
         // background tap to dismiss the keyboard.
         keyboardShouldPersistTaps="always"
       >
-        <DismissKeyboardView style={styles.container}>
-          <FadeInView style={styles.brand}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeLetter}>W</Text>
-            </View>
-            <Text style={styles.wordmark}>
-              White<Text style={styles.wordmarkAccent}>Coffee</Text>
-            </Text>
-            <Text style={styles.subtitle}>Field Operations</Text>
-          </FadeInView>
-
+        <HeroHeader subtitle="Field Operations" />
+        <DismissKeyboardView style={styles.sheet}>
           <FadeInView delay={120} style={styles.card}>
             <TextInput
               style={styles.input}
@@ -86,27 +78,18 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: Colors.screenBg },
+  flex: { flex: 1, backgroundColor: Colors.headerGradientEnd },
   scrollContent: { flexGrow: 1 },
-  // On DismissKeyboardView's wrapper View, not the ScrollView's contentContainerStyle —
-  // that view now sits between the ScrollView and these two FadeInViews, so it's the one
-  // that needs to grow and arrange them (see AnimatedPressable's history for this exact
-  // "style split across two nesting levels" mistake, now avoided here on purpose).
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 32 },
-  brand: { alignItems: 'center', gap: 8 },
-  badge: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
+  sheet: {
+    flex: 1,
+    backgroundColor: Colors.screenBg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -20,
+    padding: 24,
+    paddingTop: 40,
     justifyContent: 'center',
-    marginBottom: 4,
   },
-  badgeLetter: { color: 'white', fontSize: 28, fontWeight: '700' },
-  wordmark: { fontSize: 26, fontWeight: '600', color: Colors.textPrimary, letterSpacing: 0.2 },
-  wordmarkAccent: { fontWeight: '800', color: Colors.primary },
-  subtitle: { fontSize: 13, color: Colors.textMuted, letterSpacing: 1.2, textTransform: 'uppercase' },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 20,
