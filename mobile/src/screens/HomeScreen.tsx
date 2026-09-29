@@ -42,18 +42,26 @@ interface ModuleDef {
 export default function HomeScreen({ navigation }: Props) {
   const { user, logout } = useAuth();
 
-  // Phase 1 ships the OFFICE attendance flow only. `admin` shares office's attendance
-  // event types (see firebase/functions/roleCapabilities.js); operations and sales punch
-  // site_in/market_in, so office-shaped punches from this app would be invisible to their
-  // payroll scoring. Anything else — including an unknown role — is gated out.
-  // Regularization derives its live status from these same office_in/office_out events
-  // (see regularizationStatus.ts), so it shares this exact gate.
+  // Phase 4a adds operations/site attendance and the sales office/site chooser (see
+  // docs/superpowers/specs/2026-09-29-mobile-ops-sales-attendance-design.md) — every known
+  // role now has an Attendance route. Regularization's live status still derives ONLY from
+  // office_in/office_out events (see regularizationStatus.ts), so it keeps the office/admin
+  // gate on its own; extending it to ops/sales is explicitly deferred (see that spec's
+  // "Scope decisions"). Same for TodayStatusCard below — office/admin only, for now.
+  const attendanceRoute: 'Attendance' | 'OperationsAttendance' | 'SalesAttendance' | undefined =
+    user?.role === 'operations'
+      ? 'OperationsAttendance'
+      : user?.role === 'sales'
+        ? 'SalesAttendance'
+        : user?.role === 'office' || user?.role === 'admin'
+          ? 'Attendance'
+          : undefined;
   const canUseOfficeAttendance = user?.role === 'office' || user?.role === 'admin';
   const roleLabel = user?.role ? ROLE_LABELS[user.role] ?? user.role : null;
 
   const modules: ModuleDef[] = [
-    ...(canUseOfficeAttendance
-      ? [{ key: 'attendance', icon: 'time-outline' as const, label: 'Attendance', subtitle: 'Mark your day', route: 'Attendance' as const }]
+    ...(attendanceRoute
+      ? [{ key: 'attendance', icon: 'time-outline' as const, label: 'Attendance', subtitle: 'Mark your day', route: attendanceRoute }]
       : []),
     { key: 'mtBuy', icon: 'cart-outline', label: 'M&T Buy', subtitle: 'Log purchases', route: 'MaterialBuy' },
     { key: 'mtRequest', icon: 'construct-outline', label: 'M&T Request', subtitle: 'Request materials', route: 'MaterialRequest' },
@@ -86,8 +94,11 @@ export default function HomeScreen({ navigation }: Props) {
 
           <FadeInView delay={80} style={styles.section}>
             <View style={styles.quickActions}>
-              {canUseOfficeAttendance && (
-                <AnimatedPressable style={[styles.quickAction, styles.quickActionSolid]} onPress={() => navigation.navigate('Attendance')}>
+              {attendanceRoute && (
+                <AnimatedPressable
+                  style={[styles.quickAction, styles.quickActionSolid]}
+                  onPress={() => navigation.navigate(attendanceRoute)}
+                >
                   <Ionicons name="time-outline" size={17} color="white" />
                   <Text style={styles.quickActionTextSolid}>Check In</Text>
                 </AnimatedPressable>
