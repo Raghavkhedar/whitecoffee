@@ -77,6 +77,8 @@ export default function LoginScreen() {
   const brandAnim = useEntrance(0);
   const cardAnim = useEntrance(180);
 
+  const canSubmit = email.trim().length > 0 && password.trim().length > 0;
+
   // A slow breathing pulse on the button while the sign-in request is in flight, instead of
   // just swapping its label for a spinner.
   const pulse = useSharedValue(1);
@@ -87,7 +89,18 @@ export default function LoginScreen() {
       pulse.value = withTiming(1, { duration: 200 });
     }
   }, [submitting, pulse]);
-  const buttonStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
+
+  // The button only appears once both fields have something in them — fades and scales in
+  // rather than just popping into existence.
+  const revealed = useSharedValue(0);
+  useEffect(() => {
+    revealed.value = withTiming(canSubmit ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
+  }, [canSubmit, revealed]);
+
+  const buttonStyle = useAnimatedStyle(() => ({
+    opacity: revealed.value,
+    transform: [{ scale: pulse.value * (0.85 + revealed.value * 0.15) }],
+  }));
 
   async function handleSubmit() {
     if (submitting) return;
@@ -139,9 +152,16 @@ export default function LoginScreen() {
                 <AnimatedField value={email} onChangeText={setEmail} placeholder="Email or Employee ID" autoCapitalize="none" />
                 <AnimatedField value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
                 {error && <Text style={styles.error}>{error}</Text>}
-                <AnimatedPressable disabled={submitting} onPress={handleSubmit}>
-                  <Animated.View style={[styles.button, buttonStyle]}>
-                    <Text style={styles.buttonText}>{submitting ? 'Signing in…' : 'Log In'}</Text>
+                <AnimatedPressable disabled={submitting || !canSubmit} onPress={handleSubmit} pointerEvents={canSubmit ? 'auto' : 'none'}>
+                  <Animated.View style={buttonStyle}>
+                    <LinearGradient
+                      colors={[Colors.primary, Colors.primaryDark]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.button}
+                    >
+                      <Text style={styles.buttonText}>{submitting ? 'Signing in…' : 'Log In'}</Text>
+                    </LinearGradient>
                   </Animated.View>
                 </AnimatedPressable>
               </BlurView>
@@ -196,7 +216,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   inputText: { padding: 14, fontSize: 15, color: Colors.textPrimary, fontFamily: Fonts.semiBold },
-  button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
+  button: {
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
   buttonText: { color: 'white', fontFamily: Fonts.semiBold, fontSize: 15 },
   error: { color: Colors.statusRejectedFg, textAlign: 'center', fontSize: 13, fontFamily: Fonts.medium },
 });
