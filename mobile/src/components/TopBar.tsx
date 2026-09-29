@@ -1,44 +1,38 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
-import appConfig from '../../app.json';
-
-const APP_VERSION = appConfig.expo.version;
 
 interface TopBarProps {
-  /** Shown next to the back button instead of the brand mark, when `onBack` is set. */
-  title?: string;
-  /** Renders a back chevron and switches the left side to `title` instead of the brand mark. */
-  onBack?: () => void;
+  title: string;
+  onBack: () => void;
 }
 
+// Compact gradient header for every screen below Home/Login — same gradient family as
+// HeroHeader (Colors.headerGradientStart/End) so the app reads as one visual language, but
+// sized for a form screen rather than a full-bleed moment: the content below still needs to
+// be the star here.
 export default function TopBar({ title, onBack }: TopBarProps) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.left}>
-        {onBack ? (
-          <>
-            <Pressable onPress={onBack} hitSlop={8} style={styles.backButton}>
-              <Ionicons name="chevron-back" size={22} color={Colors.textPrimary} />
-            </Pressable>
-            <Text style={styles.screenTitle}>{title}</Text>
-          </>
-        ) : (
-          <View style={styles.brand}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeLetter}>W</Text>
-            </View>
-            <Text style={styles.wordmark}>
-              White<Text style={styles.wordmarkAccent}>Coffee</Text>
-            </Text>
-          </View>
-        )}
-      </View>
-      <Text style={styles.version}>v{APP_VERSION}</Text>
-    </View>
+    <LinearGradient
+      colors={[Colors.headerGradientStart, Colors.headerGradientEnd]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.bar, { paddingTop: insets.top + 8 }]}
+    >
+      <Pressable onPress={onBack} hitSlop={8} style={styles.backButton} accessibilityLabel="Go back">
+        <Ionicons name="chevron-back" size={22} color="white" />
+      </Pressable>
+      <Text style={styles.screenTitle} numberOfLines={1}>
+        {title}
+      </Text>
+      {/* Invisible spacer matching the back button's width, keeping the title centered. */}
+      <View style={styles.backButton} />
+
+    </LinearGradient>
   );
 }
 
@@ -47,26 +41,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 12,
     paddingBottom: 14,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
-  left: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
-  backButton: { padding: 4, marginRight: 2 },
-  screenTitle: { fontSize: 17, fontWeight: '600', color: Colors.textPrimary },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  badge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeLetter: { color: 'white', fontSize: 13, fontWeight: '700' },
-  wordmark: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary },
-  wordmarkAccent: { fontWeight: '800', color: Colors.primary },
-  version: { fontSize: 12, color: Colors.textMuted },
+  backButton: { padding: 8, width: 38 },
+  screenTitle: { flex: 1, fontSize: 17, fontWeight: '600', color: 'white', textAlign: 'center' },
 });

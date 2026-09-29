@@ -1,15 +1,21 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import { Colors } from '../theme/colors';
-import TopBar from '../components/TopBar';
+import HeroHeader from '../components/HeroHeader';
 import FadeInView from '../components/FadeInView';
-import AnimatedPressable from '../components/AnimatedPressable';
 import HomeCard from '../components/HomeCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
+
+const ROLE_LABELS: Record<string, string> = {
+  office: 'Office',
+  admin: 'Admin',
+  operations: 'Operations',
+  sales: 'Sales',
+};
 
 export default function HomeScreen({ navigation }: Props) {
   const { user, logout } = useAuth();
@@ -21,49 +27,74 @@ export default function HomeScreen({ navigation }: Props) {
   // Regularization derives its live status from these same office_in/office_out events
   // (see regularizationStatus.ts), so it shares this exact gate.
   const canUseOfficeAttendance = user?.role === 'office' || user?.role === 'admin';
+  const roleLabel = user?.role ? ROLE_LABELS[user.role] ?? user.role : null;
+  const firstName = user?.name?.trim().split(' ')[0] || 'there';
 
   return (
     <View style={styles.screen}>
-      <TopBar />
-      <View style={styles.container}>
-        <FadeInView style={styles.cards}>
-          {canUseOfficeAttendance ? (
-            <>
-              <HomeCard icon="time-outline" label="Attendance" onPress={() => navigation.navigate('Attendance')} />
-              <HomeCard
-                icon="alert-circle-outline"
-                label="Regularization"
-                onPress={() => navigation.navigate('Regularization')}
-              />
-            </>
-          ) : (
-            <Text style={styles.unavailable}>
-              Attendance isn't available for your role on this app yet.
-            </Text>
-          )}
-          <HomeCard icon="calendar-outline" label="Leave" onPress={() => navigation.navigate('Leave')} />
-          <HomeCard icon="cart-outline" label="M&T Buy" onPress={() => navigation.navigate('MaterialBuy')} />
-          <HomeCard icon="construct-outline" label="M&T Request" onPress={() => navigation.navigate('MaterialRequest')} />
-          <HomeCard
-            icon="swap-horizontal-outline"
-            label="Material Transfer"
-            onPress={() => navigation.navigate('MaterialTransfer')}
-          />
-          <HomeCard icon="hammer-outline" label="Tool Transfer" onPress={() => navigation.navigate('ToolTransfer')} />
-        </FadeInView>
-        <AnimatedPressable style={styles.logout} onPress={logout}>
-          <Text style={styles.logoutText}>Log Out</Text>
-        </AnimatedPressable>
-      </View>
+      <HeroHeader subtitle="Field Operations" onLogout={logout} showVersion>
+        <Text style={styles.greeting}>Hi, {firstName}</Text>
+        {roleLabel && (
+          <View style={styles.rolePill}>
+            <Text style={styles.rolePillText}>{roleLabel}</Text>
+          </View>
+        )}
+      </HeroHeader>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.sheet}>
+          <FadeInView style={styles.cards}>
+            {canUseOfficeAttendance ? (
+              <>
+                <HomeCard icon="time-outline" label="Attendance" onPress={() => navigation.navigate('Attendance')} />
+                <HomeCard
+                  icon="alert-circle-outline"
+                  label="Regularization"
+                  onPress={() => navigation.navigate('Regularization')}
+                />
+              </>
+            ) : (
+              <Text style={styles.unavailable}>
+                Attendance isn't available for your role on this app yet.
+              </Text>
+            )}
+            <HomeCard icon="calendar-outline" label="Leave" onPress={() => navigation.navigate('Leave')} />
+            <HomeCard icon="cart-outline" label="M&T Buy" onPress={() => navigation.navigate('MaterialBuy')} />
+            <HomeCard icon="construct-outline" label="M&T Request" onPress={() => navigation.navigate('MaterialRequest')} />
+            <HomeCard
+              icon="swap-horizontal-outline"
+              label="Material Transfer"
+              onPress={() => navigation.navigate('MaterialTransfer')}
+            />
+            <HomeCard icon="hammer-outline" label="Tool Transfer" onPress={() => navigation.navigate('ToolTransfer')} />
+          </FadeInView>
+        </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Colors.screenBg },
-  container: { flex: 1, padding: 24 },
+  screen: { flex: 1, backgroundColor: Colors.headerGradientEnd },
+  scrollContent: { flexGrow: 1 },
+  greeting: { fontSize: 22, fontWeight: '700', color: 'white', marginTop: 14 },
+  rolePill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 8,
+  },
+  rolePillText: { color: 'white', fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
+  sheet: {
+    flex: 1,
+    backgroundColor: Colors.screenBg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -20,
+    padding: 24,
+    paddingTop: 28,
+  },
   cards: { gap: 16 },
   unavailable: { fontSize: 15, color: Colors.textMuted, lineHeight: 22 },
-  logout: { marginTop: 'auto', padding: 16, alignItems: 'center' },
-  logoutText: { color: Colors.textMuted },
 });

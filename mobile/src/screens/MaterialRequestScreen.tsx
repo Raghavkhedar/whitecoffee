@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, Image, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, TextInput, StyleSheet, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../auth/AuthContext';
 import { submitMaterialRequest, updateRequestPhotoUrls, type RequestItem } from '../materialRequest/materialRequestApi';
 import { pickPhotos, uploadPhoto, remainingPhotoSlots, MAX_PHOTOS } from '../photos/photoUpload';
@@ -28,6 +29,17 @@ function blankItem(): ItemDraft {
 
 type UploadState = 'idle' | 'uploading' | 'failed';
 
+// Small icon+label row used for every field group in this screen, giving each section a
+// visual anchor instead of relying on bold text alone.
+function SectionLabel({ icon, children }: { icon: keyof typeof Ionicons.glyphMap; children: React.ReactNode }) {
+  return (
+    <View style={styles.sectionLabelRow}>
+      <Ionicons name={icon} size={15} color={Colors.textSecondary} />
+      <Text style={styles.label}>{children}</Text>
+    </View>
+  );
+}
+
 export default function MaterialRequestScreen({ navigation }: Props) {
   const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
@@ -39,11 +51,25 @@ export default function MaterialRequestScreen({ navigation }: Props) {
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [pendingDocId, setPendingDocId] = useState<string | null>(null);
   const [pendingUris, setPendingUris] = useState<string[]>([]);
   const [pendingUploadedUrls, setPendingUploadedUrls] = useState<string[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
+  function showSuccess(message: string) {
+    if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    setSuccessMessage(message);
+    successTimeoutRef.current = setTimeout(() => setSuccessMessage(null), 2500);
+  }
 
   function addItem() {
     setItems((prev) => [...prev, blankItem()]);
@@ -146,7 +172,7 @@ export default function MaterialRequestScreen({ navigation }: Props) {
     const priorUploadPending = uploadState !== 'idle';
     resetForm();
     setSubmitting(false);
-    Alert.alert('Submitted', 'Request recorded.');
+    showSuccess('Request recorded.');
     if (uris.length > 0) {
       if (priorUploadPending) {
         Alert.alert(
@@ -169,6 +195,12 @@ export default function MaterialRequestScreen({ navigation }: Props) {
         automaticallyAdjustKeyboardInsets
       >
         <DismissKeyboardView style={styles.dismissFill}>
+          {successMessage && (
+            <FadeInView style={[styles.banner, styles.bannerSuccess]}>
+              <Ionicons name="checkmark-circle" size={18} color={Colors.statusPresentFg} />
+              <Text style={[styles.bannerText, styles.bannerTextSuccess]}>{successMessage}</Text>
+            </FadeInView>
+          )}
           {uploadState === 'uploading' && (
             <FadeInView style={styles.banner}>
               <Text style={styles.bannerText}>
@@ -191,7 +223,7 @@ export default function MaterialRequestScreen({ navigation }: Props) {
           )}
 
           <FadeInView style={styles.card}>
-            <Text style={styles.label}>Site Name (optional)</Text>
+            <SectionLabel icon="location-outline">Site Name (optional)</SectionLabel>
             <TextInput
               style={styles.input}
               placeholder="e.g. Skyline Tower B"
@@ -199,7 +231,7 @@ export default function MaterialRequestScreen({ navigation }: Props) {
               value={siteName}
               onChangeText={setSiteName}
             />
-            <Text style={styles.label}>Site ID (optional)</Text>
+            <SectionLabel icon="pricetag-outline">Site ID (optional)</SectionLabel>
             <TextInput
               style={styles.input}
               placeholder="e.g. Site-001"
@@ -210,7 +242,21 @@ export default function MaterialRequestScreen({ navigation }: Props) {
           </FadeInView>
 
           <FadeInView style={styles.card}>
-            <Text style={styles.label}>Items</Text>
+            <View style={styles.itemsHeaderRow}>
+              <SectionLabel icon="cube-outline">Items</SectionLabel>
+              {items.length > 0 && (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeText}>{items.length}</Text>
+                </View>
+              )}
+            </View>
+            {items.length === 0 && (
+              <View style={styles.emptyState}>
+                <Ionicons name="cube-outline" size={22} color={Colors.textMuted} />
+                <Text style={styles.emptyStateText}>No items yet</Text>
+                <Text style={styles.emptyStateSubtext}>Tap "+ Add Item" below to get started</Text>
+              </View>
+            )}
             {items.map((item, index) => (
               <View key={index} style={styles.itemRow}>
                 <View style={styles.itemRowHeader}>
@@ -274,7 +320,7 @@ export default function MaterialRequestScreen({ navigation }: Props) {
           </FadeInView>
 
           <FadeInView style={styles.card}>
-            <Text style={styles.label}>Notes (optional)</Text>
+            <SectionLabel icon="document-text-outline">Notes (optional)</SectionLabel>
             <TextInput
               style={[styles.input, styles.multiline]}
               placeholder="Anything else worth noting"
@@ -286,7 +332,7 @@ export default function MaterialRequestScreen({ navigation }: Props) {
               onFocus={() => scrollRef.current?.scrollToEnd({ animated: true })}
             />
 
-            <Text style={styles.label}>Photos (optional, up to {MAX_PHOTOS})</Text>
+            <SectionLabel icon="camera-outline">Photos (optional, up to {MAX_PHOTOS})</SectionLabel>
             <View style={styles.photoStrip}>
               {photoUris.map((uri, index) => (
                 <View key={`${uri}-${index}`} style={styles.photoThumbWrap}>
@@ -303,9 +349,21 @@ export default function MaterialRequestScreen({ navigation }: Props) {
               )}
             </View>
 
-            {formError && <Text style={styles.error}>{formError}</Text>}
+            {formError && (
+              <FadeInView style={[styles.banner, styles.bannerError]}>
+                <Ionicons name="alert-circle" size={18} color={Colors.statusRejectedFg} />
+                <Text style={[styles.bannerText, styles.bannerTextError]}>{formError}</Text>
+              </FadeInView>
+            )}
             <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
-              <Text style={styles.buttonText}>{submitting ? 'Submitting…' : 'Submit Request'}</Text>
+              {submitting ? (
+                <View style={styles.buttonRow}>
+                  <ActivityIndicator color="white" size="small" />
+                  <Text style={styles.buttonText}>Submitting…</Text>
+                </View>
+              ) : (
+                <Text style={styles.buttonText}>Submit Request</Text>
+              )}
             </AnimatedPressable>
           </FadeInView>
         </DismissKeyboardView>
@@ -319,12 +377,18 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 24, paddingBottom: 40, gap: 16 },
   dismissFill: { flex: 1, gap: 16 },
   banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.statusPendingBg,
     borderRadius: 12,
     padding: 14,
     gap: 8,
   },
-  bannerText: { fontSize: 14, color: Colors.statusPendingFg, fontWeight: '600' },
+  bannerText: { fontSize: 14, color: Colors.statusPendingFg, fontWeight: '600', flexShrink: 1 },
+  bannerSuccess: { backgroundColor: Colors.statusPresentBg },
+  bannerTextSuccess: { color: Colors.statusPresentFg },
+  bannerError: { backgroundColor: Colors.statusRejectedBg },
+  bannerTextError: { color: Colors.statusRejectedFg },
   bannerActions: { flexDirection: 'row', gap: 10 },
   bannerButton: { backgroundColor: Colors.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
   bannerButtonSecondary: { backgroundColor: Colors.textMuted, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 },
@@ -339,7 +403,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  label: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600', marginTop: 6 },
+  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  label: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,
@@ -349,6 +414,28 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   multiline: { minHeight: 80, textAlignVertical: 'top' },
+  itemsHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  countBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    backgroundColor: Colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.primaryDark },
+  emptyState: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 24,
+    alignItems: 'center',
+    gap: 4,
+  },
+  emptyStateText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary, marginTop: 4 },
+  emptyStateSubtext: { fontSize: 12, color: Colors.textMuted },
   itemRow: {
     borderWidth: 1,
     borderColor: Colors.border,
@@ -387,7 +474,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  error: { color: Colors.statusRejectedFg, fontSize: 13 },
   button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  buttonRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   buttonText: { color: 'white', fontWeight: '600' },
 });
