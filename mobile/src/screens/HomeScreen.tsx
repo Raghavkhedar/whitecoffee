@@ -67,7 +67,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <View style={styles.screen}>
-      <HeroHeader subtitle="Field Operations" onLogout={logout} showVersion>
+      <HeroHeader onLogout={logout} showVersion>
         <Text style={styles.greeting}>{timeGreeting()}</Text>
         {roleLabel && (
           <View style={styles.rolePill}>

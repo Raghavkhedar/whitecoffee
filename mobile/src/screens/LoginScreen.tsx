@@ -151,7 +151,6 @@ export default function LoginScreen() {
               <Text style={styles.wordmark}>
                 White<Text style={styles.wordmarkAccent}>Coffee</Text>
               </Text>
-              <Text style={styles.subtitle}>Field Operations</Text>
             </Animated.View>
 
             <Animated.View style={cardAnim}>
@@ -200,14 +199,6 @@ const styles = StyleSheet.create({
   badgeLetter: { color: 'white', fontSize: 26, fontFamily: Fonts.extraBold },
   wordmark: { fontSize: 24, fontFamily: Fonts.bold, color: 'white', letterSpacing: 0.2 },
   wordmarkAccent: { fontFamily: Fonts.extraBold, color: Colors.accent },
-  subtitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.75)',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    fontFamily: Fonts.semiBold,
-    marginTop: 2,
-  },
   card: {
     borderRadius: 24,
     padding: 24,
