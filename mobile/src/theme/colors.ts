@@ -23,18 +23,10 @@ export const Colors = {
   statusSlFg: '#8A4B00',
   statusRejectedBg: '#FFDAD6',
   statusRejectedFg: '#BA1A1A',
-} as const;
-
-// Per-module tile colors — ported verbatim from Android's `LightWcTiles`
-// (android/.../ui/theme/Color.kt), which mobile has never used until now. Each Home card
-// gets its own bg/fg pair instead of the uniform accent/primary badge every card shared
-// before.
-export const Tiles = {
-  attendance: { bg: '#C6EEF1', fg: '#00474C' },
-  regularization: { bg: '#DDDFFF', fg: '#2A2A8A' },
-  leave: { bg: '#FFD7E0', fg: '#8A1B43' },
-  mtBuy: { bg: '#C7F0D2', fg: '#0A5132' },
-  mtRequest: { bg: '#D7E2FF', fg: '#0A3A86' },
-  materialTransfer: { bg: '#E7DDFF', fg: '#3A1D8A' },
-  toolTransfer: { bg: '#BFE8FF', fg: '#064A6E' },
+  // Warm cream "paper" — a deliberate one-screen departure from the cool teal-tinted
+  // screenBg, used only where a specific design direction calls for it (Home's menu-list
+  // redesign). Not a brand color and not meant to spread; Primary/PrimaryDark/Accent stay
+  // exactly the Android-sourced teal this app never deviates from.
+  paper: '#FAF6EF',
+  divider: 'rgba(16,20,20,0.12)',
 } as const;

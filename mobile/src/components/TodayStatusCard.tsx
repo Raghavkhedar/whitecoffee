@@ -65,8 +65,8 @@ export default function TodayStatusCard({ uid }: Props) {
       <View style={styles.divider} />
       <View style={styles.statusBlock}>
         <Text style={styles.todayLabel}>TODAY</Text>
-        <View style={[styles.chip, { backgroundColor: chip.bg }]}>
-          <Text style={[styles.chipText, { color: chip.fg }]}>{chip.label}</Text>
+        <View style={[styles.chip, { backgroundColor: chip.bg, borderColor: chip.fg }]}>
+          <Text style={[styles.chipText, { color: chip.fg }]}>{chip.label.toUpperCase()}</Text>
         </View>
         {chip.label === 'Pending' && <Text style={styles.hint}>In progress — check out to confirm</Text>}
       </View>
@@ -75,23 +75,26 @@ export default function TodayStatusCard({ uid }: Props) {
 }
 
 const styles = StyleSheet.create({
+  // Sharp corners, a solid ink border, a printed-ticket feel — deliberately not the soft
+  // rounded card every other screen in this app uses.
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: Colors.textPrimary,
     padding: 18,
   },
   dateBlock: { flex: 1 },
-  dayName: { fontSize: 11, fontFamily: Fonts.medium, color: Colors.textMuted },
-  dateNum: { fontSize: 33, fontFamily: Fonts.extraBold, color: '#0B0F0F', lineHeight: 35 },
+  dayName: { fontSize: 11, fontFamily: Fonts.bold, color: Colors.textMuted, letterSpacing: 1.2, textTransform: 'uppercase' },
+  dateNum: { fontSize: 34, fontFamily: Fonts.extraBold, color: Colors.textPrimary, lineHeight: 36 },
   monthYear: { fontSize: 12, fontFamily: Fonts.medium, color: Colors.textSecondary, marginTop: 2 },
-  divider: { width: 1, height: 54, backgroundColor: Colors.border },
+  divider: { width: 1.5, height: 54, backgroundColor: Colors.textPrimary },
   statusBlock: { alignItems: 'flex-end', marginLeft: 18, maxWidth: 130 },
-  todayLabel: { fontSize: 10, fontFamily: Fonts.semiBold, color: Colors.textMuted, letterSpacing: 0.4 },
-  chip: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginTop: 7 },
-  chipText: { fontSize: 12, fontFamily: Fonts.bold },
+  todayLabel: { fontSize: 10, fontFamily: Fonts.bold, color: Colors.textMuted, letterSpacing: 1.2 },
+  // A stamp, not a pill — sharp corners, a solid ink border matching the card's own.
+  chip: { borderRadius: 3, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, marginTop: 8 },
+  chipText: { fontSize: 11.5, fontFamily: Fonts.extraBold, letterSpacing: 0.3 },
   hint: { fontSize: 10.5, fontFamily: Fonts.medium, color: Colors.textMuted, marginTop: 6, textAlign: 'right' },
 });

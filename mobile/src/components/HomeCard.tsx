@@ -6,73 +6,67 @@ import { Colors } from '../theme/colors';
 import { Fonts } from '../theme/fonts';
 import AnimatedPressable from './AnimatedPressable';
 
-interface Tile {
-  bg: string;
-  fg: string;
-}
-
 interface HomeCardProps {
+  index: number;
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   subtitle: string;
   onPress: () => void;
-  /** Per-module tile color (Colors.Tiles.X). */
-  tile: Tile;
-  /** Staggered entrance delay in ms — each grid cell reveals slightly after the last. */
+  /** Omits the bottom hairline — set on the last row in the list. */
+  last?: boolean;
+  /** Staggered entrance delay in ms — each row reveals slightly after the last. */
   delay?: number;
 }
 
-// A 2-column grid cell — icon tile above a label + subtitle, mirroring Android's own
-// ModuleCard (ui/home/HomeScreen.kt) exactly, down to the per-module sub-copy.
-export default function HomeCard({ icon, label, subtitle, onPress, tile, delay = 0 }: HomeCardProps) {
+// A menu-board row: a tracked index number, one ink-colored icon (no colorful tile chip),
+// label + subtitle, hairline divider below. Deliberately not the icon-tile grid every other
+// screen in this app has — Home is the one place a different, more editorial layout earns
+// its keep.
+export default function HomeCard({ index, icon, label, subtitle, onPress, last, delay = 0 }: HomeCardProps) {
   const opacity = useSharedValue(0);
-  const translateY = useSharedValue(16);
+  const translateX = useSharedValue(-10);
 
   useEffect(() => {
-    opacity.value = withDelay(delay, withTiming(1, { duration: 380, easing: Easing.out(Easing.cubic) }));
-    translateY.value = withDelay(delay, withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) }));
+    opacity.value = withDelay(delay, withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) }));
+    translateX.value = withDelay(delay, withTiming(0, { duration: 360, easing: Easing.out(Easing.cubic) }));
     // One-shot mount animation, staggered by `delay`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const entrance = useAnimatedStyle(() => ({
     opacity: opacity.value,
-    transform: [{ translateY: translateY.value }],
+    transform: [{ translateX: translateX.value }],
   }));
 
   return (
     <Animated.View style={entrance}>
-      <AnimatedPressable style={styles.card} onPress={onPress}>
-        <View style={[styles.iconTile, { backgroundColor: tile.bg }]}>
-          <Ionicons name={icon} size={22} color={tile.fg} />
-        </View>
-        <View>
+      <AnimatedPressable style={[styles.row, !last && styles.rowDivided]} onPress={onPress}>
+        <Text style={styles.index}>{String(index).padStart(2, '0')}</Text>
+        <Ionicons name={icon} size={20} color={Colors.textPrimary} style={styles.icon} />
+        <View style={styles.textBlock}>
           <Text style={styles.label}>{label}</Text>
           <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
+        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
       </AnimatedPressable>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    minHeight: 118,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    borderRadius: 20,
-    padding: 15,
-    gap: 16,
-    justifyContent: 'space-between',
-  },
-  iconTile: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
+  row: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 14,
   },
-  label: { fontSize: 14.5, fontFamily: Fonts.extraBold, color: Colors.textPrimary, lineHeight: 17 },
-  subtitle: { fontSize: 11.5, fontFamily: Fonts.medium, color: Colors.textHint, marginTop: 3 },
+  rowDivided: {
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  index: { fontSize: 13, fontFamily: Fonts.extraBold, color: Colors.primary, letterSpacing: 0.5, width: 20 },
+  icon: { width: 22 },
+  textBlock: { flex: 1 },
+  label: { fontSize: 15.5, fontFamily: Fonts.bold, color: Colors.textPrimary },
+  subtitle: { fontSize: 12, fontFamily: Fonts.medium, color: Colors.textMuted, marginTop: 2 },
 });
