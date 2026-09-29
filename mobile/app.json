@@ -36,7 +36,8 @@
           "cameraPermission": "WhiteCoffee needs camera access to take a photo for a purchase, request, or transfer record.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
+import { Fonts } from '../theme/fonts';
 
 interface TopBarProps {
   title: string;
@@ -45,5 +46,5 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   backButton: { padding: 8, width: 38 },
-  screenTitle: { flex: 1, fontSize: 17, fontWeight: '600', color: 'white', textAlign: 'center' },
+  screenTitle: { flex: 1, fontSize: 17, fontFamily: Fonts.semiBold, color: 'white', textAlign: 'center' },
 });

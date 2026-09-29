@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
+import { Fonts } from '../theme/fonts';
 import AnimatedPressable from './AnimatedPressable';
 import appConfig from '../../app.json';
 
@@ -82,16 +83,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeLetter: { color: 'white', fontSize: 16, fontWeight: '800' },
-  wordmark: { fontSize: 20, fontWeight: '700', color: 'white', letterSpacing: 0.2 },
-  wordmarkAccent: { fontWeight: '900', color: Colors.accent },
+  badgeLetter: { color: 'white', fontSize: 16, fontFamily: Fonts.extraBold },
+  wordmark: { fontSize: 20, fontFamily: Fonts.bold, color: 'white', letterSpacing: 0.2 },
+  wordmarkAccent: { fontFamily: Fonts.extraBold, color: Colors.accent },
   subtitle: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.75)',
     letterSpacing: 1.4,
     textTransform: 'uppercase',
     marginTop: 10,
-    fontWeight: '600',
+    fontFamily: Fonts.semiBold,
   },
   version: { position: 'absolute', bottom: 10, right: 20, fontSize: 11, color: 'rgba(255,255,255,0.55)' },
 });
