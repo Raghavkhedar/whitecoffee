@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, TextInput, Text, StyleSheet, KeyboardAvoidingView, ScrollView, Platform } from 'react-native';
+import { View, TextInput, Text, StyleSheet, KeyboardAvoidingView, ScrollView, Platform, Keyboard } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -82,7 +82,7 @@ export default function LoginScreen() {
   const pulse = useSharedValue(1);
   useEffect(() => {
     if (submitting) {
-      pulse.value = withRepeat(withSequence(withTiming(0.97, { duration: 420 }), withTiming(1, { duration: 420 })), -1, true);
+      pulse.value = withRepeat(withSequence(withTiming(0.97, { duration: 750 }), withTiming(1, { duration: 750 })), -1, true);
     } else {
       pulse.value = withTiming(1, { duration: 200 });
     }
@@ -91,6 +91,7 @@ export default function LoginScreen() {
 
   async function handleSubmit() {
     if (submitting) return;
+    Keyboard.dismiss();
     setSubmitting(true);
     try {
       await login(email, password);
