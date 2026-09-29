@@ -44,7 +44,7 @@ interface AnimatedFieldProps {
 function AnimatedField({ value, onChangeText, placeholder, secureTextEntry, autoCapitalize }: AnimatedFieldProps) {
   const focus = useSharedValue(0);
   const style = useAnimatedStyle(() => ({
-    borderColor: focus.value > 0.5 ? Colors.primary : Colors.border,
+    borderColor: focus.value > 0.5 ? Colors.primary : 'rgba(90,101,102,0.4)',
     transform: [{ scale: 1 + focus.value * 0.015 }],
   }));
   return (
@@ -192,10 +192,10 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1.5,
     borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     borderRadius: 12,
   },
-  inputText: { padding: 14, fontSize: 15, color: Colors.textPrimary, fontFamily: Fonts.medium },
+  inputText: { padding: 14, fontSize: 15, color: Colors.textPrimary, fontFamily: Fonts.semiBold },
   button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonText: { color: 'white', fontFamily: Fonts.semiBold, fontSize: 15 },
   error: { color: Colors.statusRejectedFg, textAlign: 'center', fontSize: 13, fontFamily: Fonts.medium },
