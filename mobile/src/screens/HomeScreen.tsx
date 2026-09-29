@@ -29,12 +29,10 @@ export default function HomeScreen({ navigation }: Props) {
   // (see regularizationStatus.ts), so it shares this exact gate.
   const canUseOfficeAttendance = user?.role === 'office' || user?.role === 'admin';
   const roleLabel = user?.role ? ROLE_LABELS[user.role] ?? user.role : null;
-  const firstName = user?.name?.trim().split(' ')[0] || 'there';
 
   return (
     <View style={styles.screen}>
       <HeroHeader subtitle="Field Operations" onLogout={logout} showVersion>
-        <Text style={styles.greeting}>Hi, {firstName}</Text>
         {roleLabel && (
           <View style={styles.rolePill}>
             <Text style={styles.rolePillText}>{roleLabel}</Text>
@@ -99,14 +97,13 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.headerGradientEnd },
   scrollContent: { flexGrow: 1 },
-  greeting: { fontSize: 22, fontFamily: Fonts.bold, color: 'white', marginTop: 14 },
   rolePill: {
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(255,255,255,0.18)',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    marginTop: 8,
+    marginTop: 14,
   },
   rolePillText: {
     color: 'white',

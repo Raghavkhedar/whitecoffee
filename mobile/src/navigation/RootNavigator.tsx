@@ -90,13 +90,36 @@ export default function RootNavigator() {
   const [renderAuthed, setRenderAuthed] = useState(!!user);
   const [wiping, setWiping] = useState(false);
   const wasUserRef = useRef(!!user);
+  // Tracks whether LoginScreen was ever actually shown to the user this app session — true
+  // only once auth has resolved with no user. A RESTORED session (already logged in when the
+  // app opens) resolves `loading` with `user` already populated, so this stays false and the
+  // two cases are distinguishable below.
+  const hasShownLoginRef = useRef(false);
+  const homeOpacity = useSharedValue(!!user ? 1 : 0);
+  const homeRevealStyle = useAnimatedStyle(() => ({ opacity: homeOpacity.value }));
+
+  useEffect(() => {
+    if (!loading && !user) {
+      hasShownLoginRef.current = true;
+    }
+  }, [loading, user]);
 
   useEffect(() => {
     const isUser = !!user;
     if (isUser && !wasUserRef.current) {
-      // Just logged in — play the wipe; it swaps `renderAuthed` itself once it has covered
-      // the screen (see onCovered below), never instantly.
-      setWiping(true);
+      if (hasShownLoginRef.current) {
+        // A genuine interactive login (LoginScreen was showing, the user submitted) — the
+        // radial wipe, anchored to that moment, is the right transition.
+        homeOpacity.value = 1;
+        setWiping(true);
+      } else {
+        // App launch with an already-persisted session — LoginScreen was never shown, so
+        // reusing its wipe would be answering an action that didn't happen. A plain crossfade
+        // instead: no circle, no anchor point, just Home settling in.
+        homeOpacity.value = 0;
+        homeOpacity.value = withTiming(1, { duration: 550, easing: Easing.out(Easing.cubic) });
+        setRenderAuthed(true);
+      }
     } else if (!isUser) {
       // Logged out — no transition needed, just fall back to LoginScreen immediately.
       setRenderAuthed(false);
@@ -115,22 +138,24 @@ export default function RootNavigator() {
 
   return (
     <View style={styles.flex}>
-      <NavigationContainer>
-        {renderAuthed ? (
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Attendance" component={AttendanceScreen} />
-            <Stack.Screen name="Leave" component={LeaveScreen} />
-            <Stack.Screen name="Regularization" component={RegularizationScreen} />
-            <Stack.Screen name="MaterialBuy" component={MaterialBuyScreen} />
-            <Stack.Screen name="MaterialRequest" component={MaterialRequestScreen} />
-            <Stack.Screen name="MaterialTransfer" component={MaterialTransferScreen} />
-            <Stack.Screen name="ToolTransfer" component={ToolTransferScreen} />
-          </Stack.Navigator>
-        ) : (
-          <LoginScreen />
-        )}
-      </NavigationContainer>
+      <Animated.View style={[styles.flex, homeRevealStyle]}>
+        <NavigationContainer>
+          {renderAuthed ? (
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="Attendance" component={AttendanceScreen} />
+              <Stack.Screen name="Leave" component={LeaveScreen} />
+              <Stack.Screen name="Regularization" component={RegularizationScreen} />
+              <Stack.Screen name="MaterialBuy" component={MaterialBuyScreen} />
+              <Stack.Screen name="MaterialRequest" component={MaterialRequestScreen} />
+              <Stack.Screen name="MaterialTransfer" component={MaterialTransferScreen} />
+              <Stack.Screen name="ToolTransfer" component={ToolTransferScreen} />
+            </Stack.Navigator>
+          ) : (
+            <LoginScreen />
+          )}
+        </NavigationContainer>
+      </Animated.View>
       {wiping && <LoginSuccessWipe onCovered={() => setRenderAuthed(true)} onDone={() => setWiping(false)} />}
     </View>
   );
