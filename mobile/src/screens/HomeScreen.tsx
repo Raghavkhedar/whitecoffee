@@ -43,6 +43,13 @@ export default function HomeScreen({ navigation }: Props) {
           )}
           <HomeCard icon="calendar-outline" label="Leave" onPress={() => navigation.navigate('Leave')} />
           <HomeCard icon="cart-outline" label="M&T Buy" onPress={() => navigation.navigate('MaterialBuy')} />
+          <HomeCard icon="construct-outline" label="M&T Request" onPress={() => navigation.navigate('MaterialRequest')} />
+          <HomeCard
+            icon="swap-horizontal-outline"
+            label="Material Transfer"
+            onPress={() => navigation.navigate('MaterialTransfer')}
+          />
+          <HomeCard icon="hammer-outline" label="Tool Transfer" onPress={() => navigation.navigate('ToolTransfer')} />
         </FadeInView>
         <AnimatedPressable style={styles.logout} onPress={logout}>
           <Text style={styles.logoutText}>Log Out</Text>
