@@ -12,6 +12,7 @@ import {
 } from '@expo-google-fonts/manrope';
 import { AuthProvider } from './src/auth/AuthContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import SplashIntroScreen from './src/screens/SplashIntroScreen';
 import { Fonts } from './src/theme/fonts';
 import { Colors } from './src/theme/colors';
 
@@ -36,6 +37,7 @@ export default function App() {
     Manrope_700Bold,
     Manrope_800ExtraBold,
   });
+  const [introDone, setIntroDone] = React.useState(false);
 
   if (!fontsLoaded) {
     return (
@@ -43,6 +45,10 @@ export default function App() {
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
+  }
+
+  if (!introDone) {
+    return <SplashIntroScreen onFinish={() => setIntroDone(true)} />;
   }
 
   return (
