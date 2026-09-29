@@ -7,11 +7,21 @@ import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import AttendanceScreen from '../screens/AttendanceScreen';
 import LeaveScreen from '../screens/LeaveScreen';
+import RegularizationScreen from '../screens/RegularizationScreen';
+import MaterialBuyScreen from '../screens/MaterialBuyScreen';
+import MaterialRequestScreen from '../screens/MaterialRequestScreen';
+import MaterialTransferScreen from '../screens/MaterialTransferScreen';
+import ToolTransferScreen from '../screens/ToolTransferScreen';
 
 export type RootStackParamList = {
   Home: undefined;
   Attendance: undefined;
   Leave: undefined;
+  Regularization: undefined;
+  MaterialBuy: undefined;
+  MaterialRequest: undefined;
+  MaterialTransfer: undefined;
+  ToolTransfer: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,6 +44,11 @@ export default function RootNavigator() {
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="Attendance" component={AttendanceScreen} />
           <Stack.Screen name="Leave" component={LeaveScreen} />
+          <Stack.Screen name="Regularization" component={RegularizationScreen} />
+          <Stack.Screen name="MaterialBuy" component={MaterialBuyScreen} />
+          <Stack.Screen name="MaterialRequest" component={MaterialRequestScreen} />
+          <Stack.Screen name="MaterialTransfer" component={MaterialTransferScreen} />
+          <Stack.Screen name="ToolTransfer" component={ToolTransferScreen} />
         </Stack.Navigator>
       ) : (
         <LoginScreen />

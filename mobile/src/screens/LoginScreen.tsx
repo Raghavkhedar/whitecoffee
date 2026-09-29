@@ -13,6 +13,7 @@ import { useAuth } from '../auth/AuthContext';
 import { Colors } from '../theme/colors';
 import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
+import DismissKeyboardView from '../components/DismissKeyboardView';
 
 export default function LoginScreen() {
   const { login, error } = useAuth();
@@ -39,41 +40,46 @@ export default function LoginScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
     >
       <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.scrollContent}
+        // 'always', not 'handled' — see RegularizationScreen.tsx for why: 'always' is what
+        // the docs guarantee lets DismissKeyboardView's Pressable reliably catch a
+        // background tap to dismiss the keyboard.
+        keyboardShouldPersistTaps="always"
       >
-        <FadeInView style={styles.brand}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeLetter}>W</Text>
-          </View>
-          <Text style={styles.wordmark}>
-            White<Text style={styles.wordmarkAccent}>Coffee</Text>
-          </Text>
-          <Text style={styles.subtitle}>Field Operations</Text>
-        </FadeInView>
+        <DismissKeyboardView style={styles.container}>
+          <FadeInView style={styles.brand}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeLetter}>W</Text>
+            </View>
+            <Text style={styles.wordmark}>
+              White<Text style={styles.wordmarkAccent}>Coffee</Text>
+            </Text>
+            <Text style={styles.subtitle}>Field Operations</Text>
+          </FadeInView>
 
-        <FadeInView delay={120} style={styles.card}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email or Employee ID"
-            placeholderTextColor={Colors.textMuted}
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor={Colors.textMuted}
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
-          {error && <Text style={styles.error}>{error}</Text>}
-          <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
-            {submitting ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Log In</Text>}
-          </AnimatedPressable>
-        </FadeInView>
+          <FadeInView delay={120} style={styles.card}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email or Employee ID"
+              placeholderTextColor={Colors.textMuted}
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            {error && <Text style={styles.error}>{error}</Text>}
+            <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
+              {submitting ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Log In</Text>}
+            </AnimatedPressable>
+          </FadeInView>
+        </DismissKeyboardView>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -81,7 +87,12 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: Colors.screenBg },
-  container: { flexGrow: 1, justifyContent: 'center', padding: 24, gap: 32 },
+  scrollContent: { flexGrow: 1 },
+  // On DismissKeyboardView's wrapper View, not the ScrollView's contentContainerStyle —
+  // that view now sits between the ScrollView and these two FadeInViews, so it's the one
+  // that needs to grow and arrange them (see AnimatedPressable's history for this exact
+  // "style split across two nesting levels" mistake, now avoided here on purpose).
+  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 32 },
   brand: { alignItems: 'center', gap: 8 },
   badge: {
     width: 64,

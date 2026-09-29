@@ -141,7 +141,11 @@ export default function AttendanceScreen({ navigation }: Props) {
           {state === 'DayEnded' && <Text style={styles.state}>Day complete</Text>}
         </FadeInView>
 
-        <AnimatedModalCard visible={locationPromptVisible} style={styles.modalCard}>
+        <AnimatedModalCard
+          visible={locationPromptVisible}
+          style={styles.modalCard}
+          onDismiss={() => setLocationPromptVisible(false)}
+        >
           <Text style={styles.modalTitle}>Where are you?</Text>
           <TextInput
             style={styles.input}
