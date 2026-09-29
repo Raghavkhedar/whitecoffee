@@ -18,6 +18,8 @@ import AuroraBackground from '../components/AuroraBackground';
 import DismissKeyboardView from '../components/DismissKeyboardView';
 import AnimatedPressable from '../components/AnimatedPressable';
 
+const BUTTON_HEIGHT = 52;
+
 // A fade-up entrance with a start delay — used to stagger the brand mark in before the card.
 function useEntrance(delay: number) {
   const opacity = useSharedValue(0);
@@ -97,8 +99,13 @@ export default function LoginScreen() {
     revealed.value = withTiming(canSubmit ? 1 : 0, { duration: 240, easing: Easing.out(Easing.cubic) });
   }, [canSubmit, revealed]);
 
+  // Collapses height + margin to 0 when hidden, not just opacity — otherwise the card keeps
+  // reserving the button's full slot (plus the card's own `gap`) and leaves a dead gap below
+  // the password field before anything has been typed.
   const buttonStyle = useAnimatedStyle(() => ({
     opacity: revealed.value,
+    height: revealed.value * BUTTON_HEIGHT,
+    marginTop: revealed.value * 14,
     transform: [{ scale: pulse.value * (0.85 + revealed.value * 0.15) }],
   }));
 
@@ -153,7 +160,7 @@ export default function LoginScreen() {
                 <AnimatedField value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
                 {error && <Text style={styles.error}>{error}</Text>}
                 <AnimatedPressable disabled={submitting || !canSubmit} onPress={handleSubmit} pointerEvents={canSubmit ? 'auto' : 'none'}>
-                  <Animated.View style={buttonStyle}>
+                  <Animated.View style={[styles.buttonWrap, buttonStyle]}>
                     <LinearGradient
                       colors={[Colors.primary, Colors.primaryDark]}
                       start={{ x: 0, y: 0 }}
@@ -216,10 +223,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   inputText: { padding: 14, fontSize: 15, color: Colors.textPrimary, fontFamily: Fonts.semiBold },
+  buttonWrap: { overflow: 'hidden', borderRadius: 12 },
   button: {
-    padding: 16,
+    height: BUTTON_HEIGHT,
+    paddingHorizontal: 16,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.35)',
   },
