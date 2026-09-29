@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     marginTop: -20,
     padding: 20,
-    paddingTop: 24,
+    paddingTop: 36,
   },
   section: { marginBottom: 18 },
   quickActions: { flexDirection: 'row', gap: 10 },
