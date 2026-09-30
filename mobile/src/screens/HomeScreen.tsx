@@ -65,6 +65,11 @@ export default function HomeScreen({ navigation }: Props) {
     { key: 'materialTransfer', icon: 'swap-horizontal-outline', label: 'Material Transfer', subtitle: 'Move stock', route: 'MaterialTransfer' },
     { key: 'toolTransfer', icon: 'hammer-outline', label: 'Tool Transfer', subtitle: 'Handover tools', route: 'ToolTransfer' },
     { key: 'leave', icon: 'calendar-outline', label: 'Leave', subtitle: 'Time off', route: 'Leave' },
+    // Operations only, exactly as Android gates it. A positive check for one role's feature,
+    // not an office-vs-ops binary: every other role (sales included) simply doesn't get it.
+    ...(user?.role === 'operations'
+      ? [{ key: 'workProgress', icon: 'stats-chart-outline' as const, label: 'Work Progress', subtitle: 'Daily report', route: 'WorkProgress' as const }]
+      : []),
     ...(attendanceRoute
       ? [{ key: 'regularization', icon: 'alert-circle-outline' as const, label: 'Regularization', subtitle: 'Fix attendance', route: 'Regularization' as const }]
       : []),

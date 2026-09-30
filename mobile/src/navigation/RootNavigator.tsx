@@ -18,6 +18,7 @@ import OperationsAttendanceScreen from '../screens/OperationsAttendanceScreen';
 import SalesAttendanceScreen from '../screens/SalesAttendanceScreen';
 import AccountSuspendedBlock from '../components/AccountSuspendedBlock';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import WorkProgressScreen from '../screens/WorkProgressScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -31,6 +32,7 @@ export type RootStackParamList = {
   OperationsAttendance: undefined;
   SalesAttendance: undefined;
   Notifications: undefined;
+  WorkProgress: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -160,6 +162,7 @@ export default function RootNavigator() {
               <Stack.Screen name="OperationsAttendance" component={OperationsAttendanceScreen} />
               <Stack.Screen name="SalesAttendance" component={SalesAttendanceScreen} />
               <Stack.Screen name="Notifications" component={NotificationsScreen} />
+              <Stack.Screen name="WorkProgress" component={WorkProgressScreen} />
             </Stack.Navigator>
           ) : (
             <LoginScreen />
