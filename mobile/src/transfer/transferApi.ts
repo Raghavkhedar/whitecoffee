@@ -1,5 +1,6 @@
 import { collection, doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { auditStamp } from '../firebase/auditStamp';
 import type { UserProfile } from '../attendance/attendanceApi';
 
 // Material Transfer and Tool Transfer share an identical Firestore shape on Android
@@ -46,6 +47,7 @@ export function submitTransfer(
   const transferRef = collection(db, 'users', user.uid, collectionName);
   const docRef = doc(transferRef);
   setDoc(docRef, {
+    ...auditStamp(user.uid),
     userId: user.uid,
     userName: user.name,
     employeeId: user.employeeId,
@@ -71,5 +73,6 @@ export async function updateTransferPhotoUrls(
   urls: string[]
 ): Promise<void> {
   const docRef = doc(db, 'users', uid, collectionName, docId);
+  // ⚠️ AUDIT-EXEMPT: the owner may change ONLY photoUrls (rules hasOnly) — no stamp.
   await updateDoc(docRef, { photoUrls: urls });
 }

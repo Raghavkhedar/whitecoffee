@@ -1,5 +1,6 @@
 import { collection, doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { auditStamp } from '../firebase/auditStamp';
 import type { UserProfile } from '../attendance/attendanceApi';
 
 export interface PurchaseItem {
@@ -29,6 +30,7 @@ export function submitMaterialPurchase(user: UserProfile, input: SubmitPurchaseI
   const docRef = doc(purchaseRef);
   const grandTotal = input.items.reduce((sum, item) => sum + item.totalPrice, 0);
   setDoc(docRef, {
+    ...auditStamp(user.uid),
     userId: user.uid,
     userName: user.name,
     employeeId: user.employeeId,
@@ -47,5 +49,6 @@ export function submitMaterialPurchase(user: UserProfile, input: SubmitPurchaseI
 
 export async function updatePurchasePhotoUrls(uid: string, docId: string, urls: string[]): Promise<void> {
   const docRef = doc(db, 'users', uid, 'material_purchases', docId);
+  // ⚠️ AUDIT-EXEMPT: the owner may change ONLY photoUrls (rules hasOnly) — no stamp.
   await updateDoc(docRef, { photoUrls: urls });
 }
