@@ -12,6 +12,8 @@ const APP_VERSION = appConfig.expo.version;
 
 interface HeroHeaderProps {
   onLogout?: () => void;
+  onNotifications?: () => void;
+  unreadCount?: number;
   showVersion?: boolean;
   children?: React.ReactNode;
 }
@@ -21,7 +23,7 @@ interface HeroHeaderProps {
 // than becoming visual noise everywhere. Uses the Colors.headerGradientStart/End pair
 // already defined for this (ported from Android's palette, which the app never deviates
 // from) but previously unused in this app.
-export default function HeroHeader({ onLogout, showVersion, children }: HeroHeaderProps) {
+export default function HeroHeader({ onLogout, onNotifications, unreadCount = 0, showVersion, children }: HeroHeaderProps) {
   const insets = useSafeAreaInsets();
   const topOffset = insets.top + 12;
 
@@ -40,6 +42,21 @@ export default function HeroHeader({ onLogout, showVersion, children }: HeroHead
           accessibilityLabel="Log out"
         >
           <Ionicons name="log-out-outline" size={20} color="white" />
+        </AnimatedPressable>
+      )}
+      {onNotifications && (
+        <AnimatedPressable
+          style={[styles.logoutButton, { top: topOffset, right: onLogout ? 64 : 20 }]}
+          onPress={onNotifications}
+          hitSlop={10}
+          accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        >
+          <Ionicons name="notifications-outline" size={20} color="white" />
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
         </AnimatedPressable>
       )}
       <View style={styles.brandRow}>
@@ -70,6 +87,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
+  unreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: Colors.statusRejectedFg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadText: { color: 'white', fontSize: 10, fontFamily: Fonts.extraBold },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   badge: {
     width: 36,

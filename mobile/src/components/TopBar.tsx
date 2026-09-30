@@ -9,13 +9,15 @@ import { Fonts } from '../theme/fonts';
 interface TopBarProps {
   title: string;
   onBack: () => void;
+  /** Optional text action on the right (e.g. "Read all"). */
+  right?: { label: string; onPress: () => void };
 }
 
 // Compact gradient header for every screen below Home/Login — same gradient family as
 // HeroHeader (Colors.headerGradientStart/End) so the app reads as one visual language, but
 // sized for a form screen rather than a full-bleed moment: the content below still needs to
 // be the star here.
-export default function TopBar({ title, onBack }: TopBarProps) {
+export default function TopBar({ title, onBack, right }: TopBarProps) {
   const insets = useSafeAreaInsets();
   return (
     <LinearGradient
@@ -30,8 +32,14 @@ export default function TopBar({ title, onBack }: TopBarProps) {
       <Text style={styles.screenTitle} numberOfLines={1}>
         {title}
       </Text>
-      {/* Invisible spacer matching the back button's width, keeping the title centered. */}
-      <View style={styles.backButton} />
+      {right ? (
+        <Pressable onPress={right.onPress} hitSlop={8} style={styles.rightAction}>
+          <Text style={styles.rightText}>{right.label}</Text>
+        </Pressable>
+      ) : (
+        // Invisible spacer matching the back button's width, keeping the title centered.
+        <View style={styles.backButton} />
+      )}
 
     </LinearGradient>
   );
@@ -46,5 +54,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   backButton: { padding: 8, width: 38 },
+  rightAction: { minWidth: 38, paddingVertical: 8, alignItems: 'flex-end' },
+  rightText: { color: 'white', fontFamily: Fonts.semiBold, fontSize: 13 },
   screenTitle: { flex: 1, fontSize: 17, fontFamily: Fonts.semiBold, color: 'white', textAlign: 'center' },
 });

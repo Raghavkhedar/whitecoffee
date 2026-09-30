@@ -17,6 +17,7 @@ import ToolTransferScreen from '../screens/ToolTransferScreen';
 import OperationsAttendanceScreen from '../screens/OperationsAttendanceScreen';
 import SalesAttendanceScreen from '../screens/SalesAttendanceScreen';
 import AccountSuspendedBlock from '../components/AccountSuspendedBlock';
+import NotificationsScreen from '../screens/NotificationsScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -29,6 +30,7 @@ export type RootStackParamList = {
   ToolTransfer: undefined;
   OperationsAttendance: undefined;
   SalesAttendance: undefined;
+  Notifications: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -157,6 +159,7 @@ export default function RootNavigator() {
               <Stack.Screen name="ToolTransfer" component={ToolTransferScreen} />
               <Stack.Screen name="OperationsAttendance" component={OperationsAttendanceScreen} />
               <Stack.Screen name="SalesAttendance" component={SalesAttendanceScreen} />
+              <Stack.Screen name="Notifications" component={NotificationsScreen} />
             </Stack.Navigator>
           ) : (
             <LoginScreen />

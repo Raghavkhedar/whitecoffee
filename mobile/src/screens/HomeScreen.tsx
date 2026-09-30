@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import TodayStatusCard from '../components/TodayStatusCard';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { attendanceRouteFor } from '../roles/roleCapabilities';
 import { useLogoutWithCheckout } from '../auth/useLogoutWithCheckout';
+import { subscribeUnreadCount } from '../notifications/notificationsApi';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -44,6 +45,11 @@ interface ModuleDef {
 export default function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
   const logout = useLogoutWithCheckout();
+  const [unreadCount, setUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    return subscribeUnreadCount(user.uid, setUnreadCount);
+  }, [user]);
 
   // Attendance, Regularization and the Today card all follow the role-capabilities table —
   // every known role gets them; an unknown role gets none (see attendanceRouteFor).
@@ -66,7 +72,12 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <View style={styles.screen}>
-      <HeroHeader onLogout={logout} showVersion>
+      <HeroHeader
+        onLogout={logout}
+        onNotifications={() => navigation.navigate('Notifications')}
+        unreadCount={unreadCount}
+        showVersion
+      >
         <Text style={styles.greeting}>{timeGreeting()}</Text>
         {roleLabel && (
           <View style={styles.rolePill}>
