@@ -11,6 +11,7 @@ import FadeInView from '../components/FadeInView';
 import HomeCard from '../components/HomeCard';
 import TodayStatusCard from '../components/TodayStatusCard';
 import AnimatedPressable from '../components/AnimatedPressable';
+import { attendanceRouteFor } from '../roles/roleCapabilities';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -48,15 +49,8 @@ export default function HomeScreen({ navigation }: Props) {
   // office_in/office_out events (see regularizationStatus.ts), so it keeps the office/admin
   // gate on its own; extending it to ops/sales is explicitly deferred (see that spec's
   // "Scope decisions"). Same for TodayStatusCard below — office/admin only, for now.
-  const attendanceRoute: 'Attendance' | 'OperationsAttendance' | 'SalesAttendance' | undefined =
-    user?.role === 'operations'
-      ? 'OperationsAttendance'
-      : user?.role === 'sales'
-        ? 'SalesAttendance'
-        : user?.role === 'office' || user?.role === 'admin'
-          ? 'Attendance'
-          : undefined;
-  const canUseOfficeAttendance = user?.role === 'office' || user?.role === 'admin';
+  const attendanceRoute = attendanceRouteFor(user?.role ?? '');
+  const canUseOfficeAttendance = attendanceRoute === 'Attendance';
   const roleLabel = user?.role ? ROLE_LABELS[user.role] ?? user.role : null;
 
   const modules: ModuleDef[] = [

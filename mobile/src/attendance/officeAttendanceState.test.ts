@@ -80,3 +80,28 @@ describe('isOfficeEventAllowed', () => {
     expect(isOfficeEventAllowed('DayEnded', 'home_out')).toBe(false);
   });
 });
+
+describe('deriveOfficeState with a sales user\'s field events on the same day', () => {
+  it('ignores site/market events instead of returning undefined', () => {
+    expect(
+      deriveOfficeState([
+        { type: 'home_in', timestamp: 1 },
+        { type: 'site_in', timestamp: 2 },
+      ]),
+    ).toBe('DayStarted');
+  });
+
+  it('stays InOffice when a foreign event follows office_in', () => {
+    expect(
+      deriveOfficeState([
+        { type: 'home_in', timestamp: 1 },
+        { type: 'office_in', timestamp: 2 },
+        { type: 'market_in', timestamp: 3 },
+      ]),
+    ).toBe('InOffice');
+  });
+
+  it('is NotStarted without a home_in', () => {
+    expect(deriveOfficeState([{ type: 'office_in', timestamp: 1 }])).toBe('NotStarted');
+  });
+});

@@ -9,6 +9,7 @@ import {
   type OfficeEventType,
 } from '../attendance/officeAttendanceState';
 import { subscribeTodayOfficeEvents, recordOfficeEvent, todayDateString } from '../attendance/attendanceApi';
+import { hasOpenSession } from '../attendance/openSession';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 import { Colors } from '../theme/colors';
 import TopBar from '../components/TopBar';
@@ -73,6 +74,10 @@ export default function AttendanceScreen({ navigation }: Props) {
     }
     if (!user || submitting) return;
     if (!isOfficeEventAllowed(state, type)) return;
+    if (type === 'home_out' && hasOpenSession(events)) {
+      Alert.alert('Check out first', 'You still have an open check-in today. Check out of it before ending your day.');
+      return;
+    }
     setSubmitting(true);
     try {
       const granted = await requestLocationPermission();

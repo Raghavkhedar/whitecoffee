@@ -111,3 +111,28 @@ describe('isOpsEventAllowed', () => {
     expect(isOpsEventAllowed('SiteCheckedIn', 'market_out')).toBe(false);
   });
 });
+
+describe('deriveOpsState with a sales user\'s office events on the same day', () => {
+  it('ignores office_in/office_out instead of returning undefined', () => {
+    const events = [
+      { type: 'home_in', timestamp: 1 },
+      { type: 'office_in', timestamp: 2 },
+      { type: 'office_out', timestamp: 3 },
+    ];
+    expect(deriveOpsState(events)).toBe('HomeCheckedIn');
+  });
+
+  it('still treats home_out as terminal', () => {
+    const events = [
+      { type: 'home_in', timestamp: 1 },
+      { type: 'office_in', timestamp: 2 },
+      { type: 'office_out', timestamp: 3 },
+      { type: 'home_out', timestamp: 4 },
+    ];
+    expect(deriveOpsState(events)).toBe('DayComplete');
+  });
+
+  it('is NoRecord for an unknown type alone', () => {
+    expect(deriveOpsState([{ type: 'bogus', timestamp: 1 }])).toBe('NoRecord');
+  });
+});

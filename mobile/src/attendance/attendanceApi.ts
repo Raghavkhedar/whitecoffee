@@ -1,5 +1,6 @@
 import { collection, doc, getDocs, onSnapshot, orderBy, query, setDoc, Timestamp, where } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { auth, db } from '../firebase/config';
+import { buildPunchPayload, istDateString } from './punchPayload';
 import type { OfficeAttendanceEvent, OfficeEventType } from './officeAttendanceState';
 import type { OpsAttendanceEvent, OpsEventType } from './opsAttendanceState';
 
@@ -14,39 +15,34 @@ export interface RecordEventInput {
   type: OfficeEventType;
   latitude: number;
   longitude: number;
+  isMockLocation: boolean;
   locationName?: string;
 }
 
 /**
- * The device-local calendar date, `yyyy-MM-dd` — the single definition of "today" for
- * both the `date` field written on every event and the `where('date', '==', ...)` filter
- * the day's subscription is built from. Exported so callers (AttendanceScreen) can detect
- * a day rollover against the exact same notion of a day, rather than duplicating date math.
+ * Today's IST calendar date, `yyyy-MM-dd` — the single definition of "today" for both the
+ * `date` field written on every event and the `where('date', '==', ...)` filter the day's
+ * subscription is built from. IST, not the device zone: see istDateString. Exported so callers
+ * (AttendanceScreen) can detect a day rollover against the exact same notion of a day.
  */
 export function todayDateString(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return istDateString(Date.now());
+}
+
+// Fire-and-forget, like Android: the doc id is minted locally and the write is NOT awaited —
+// awaiting the server ack would hang the punch offline.
+function writePunch(user: UserProfile, fields: Parameters<typeof buildPunchPayload>[1]): void {
+  const docRef = doc(collection(db, 'users', user.uid, 'attendance'));
+  const now = Timestamp.now();
+  const actorUid = auth.currentUser?.uid || user.uid;
+  const payload = buildPunchPayload(user, fields, istDateString(now.toMillis()), now, actorUid);
+  setDoc(docRef, payload).catch((error) => {
+    console.error('Failed to sync attendance event to server', error);
+  });
 }
 
 export async function recordOfficeEvent(user: UserProfile, input: RecordEventInput): Promise<void> {
-  const attendanceRef = collection(db, 'users', user.uid, 'attendance');
-  const docRef = doc(attendanceRef); // mints an ID locally — no network round trip
-  setDoc(docRef, {
-    userId: user.uid,
-    employeeId: user.employeeId,
-    userName: user.name,
-    date: todayDateString(),
-    type: input.type,
-    timestamp: Timestamp.now(),
-    latitude: input.latitude,
-    longitude: input.longitude,
-    ...(input.locationName ? { locationName: input.locationName } : {}),
-  }).catch((error) => {
-    console.error('Failed to sync attendance event to server', error);
-  });
+  writePunch(user, input);
 }
 
 export function subscribeTodayOfficeEvents(
@@ -77,29 +73,14 @@ export interface RecordOpsEventInput {
   type: OpsEventType;
   latitude: number;
   longitude: number;
+  isMockLocation: boolean;
   siteId?: string;
   siteName?: string;
   marketName?: string;
 }
 
 export async function recordOpsEvent(user: UserProfile, input: RecordOpsEventInput): Promise<void> {
-  const attendanceRef = collection(db, 'users', user.uid, 'attendance');
-  const docRef = doc(attendanceRef); // mints an ID locally — no network round trip
-  setDoc(docRef, {
-    userId: user.uid,
-    employeeId: user.employeeId,
-    userName: user.name,
-    date: todayDateString(),
-    type: input.type,
-    timestamp: Timestamp.now(),
-    latitude: input.latitude,
-    longitude: input.longitude,
-    ...(input.siteId ? { siteId: input.siteId } : {}),
-    ...(input.siteName ? { siteName: input.siteName } : {}),
-    ...(input.marketName ? { marketName: input.marketName } : {}),
-  }).catch((error) => {
-    console.error('Failed to sync attendance event to server', error);
-  });
+  writePunch(user, input);
 }
 
 export function subscribeTodayOpsEvents(

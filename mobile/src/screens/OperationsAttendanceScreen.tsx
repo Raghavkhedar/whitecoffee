@@ -9,6 +9,7 @@ import {
   type OpsEventType,
 } from '../attendance/opsAttendanceState';
 import { subscribeTodayOpsEvents, recordOpsEvent, todayDateString } from '../attendance/attendanceApi';
+import { hasOpenSession } from '../attendance/openSession';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 import { Colors } from '../theme/colors';
 import TopBar from '../components/TopBar';
@@ -68,6 +69,10 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
     }
     if (!user || submitting) return;
     if (!isOpsEventAllowed(state, type)) return;
+    if (type === 'home_out' && hasOpenSession(events)) {
+      Alert.alert('Check out first', 'You still have an open check-in today. Check out of it before ending your day.');
+      return;
+    }
     setSubmitting(true);
     try {
       const granted = await requestLocationPermission();

@@ -61,11 +61,11 @@ export default function SalesAttendanceScreen({ navigation }: Props) {
       <View style={styles.container}>
         <FadeInView style={styles.content}>
           <Text style={styles.prompt}>How are you working today?</Text>
-          <AnimatedPressable style={styles.card} onPress={() => navigation.navigate('Attendance')}>
+          <AnimatedPressable style={styles.card} onPress={() => navigation.replace('Attendance')}>
             <Text style={styles.cardTitle}>Office Day</Text>
             <Text style={styles.cardSubtitle}>Check in from the office</Text>
           </AnimatedPressable>
-          <AnimatedPressable style={styles.card} onPress={() => navigation.navigate('OperationsAttendance')}>
+          <AnimatedPressable style={styles.card} onPress={() => navigation.replace('OperationsAttendance')}>
             <Text style={styles.cardTitle}>Site Visit</Text>
             <Text style={styles.cardSubtitle}>Check in from a site or market</Text>
           </AnimatedPressable>

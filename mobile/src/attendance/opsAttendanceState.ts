@@ -12,10 +12,18 @@ export type OpsState = 'NoRecord' | 'HomeCheckedIn' | 'SiteCheckedIn' | 'MarketC
 // verified directly against source, not paraphrase. `home_out` is TERMINAL — checked across
 // the whole event list, same reasoning as officeAttendanceState.ts's identical guard: a
 // stray/out-of-order event after home_out must not reopen the day.
-export function deriveOpsState(events: OpsAttendanceEvent[]): OpsState {
-  if (events.length === 0) return 'NoRecord';
+//
+// Office-only types (a sales user's office_in/office_out on the same day) are skipped rather
+// than switched on: Android's `else -> NoRecord` would turn a sales office_out into "day not
+// started" and offer a second home_in. Skipping them can't change a pure-ops day, which never
+// contains them.
+const OPS_TYPES = new Set<string>(['home_in', 'home_out', 'site_in', 'site_out', 'market_in', 'market_out']);
+
+export function deriveOpsState(events: { type: string; timestamp: number }[]): OpsState {
   if (events.some((e) => e.type === 'home_out')) return 'DayComplete';
-  const last = events[events.length - 1];
+  const own = events.filter((e) => OPS_TYPES.has(e.type)) as OpsAttendanceEvent[];
+  if (own.length === 0) return 'NoRecord';
+  const last = own[own.length - 1];
   switch (last.type) {
     case 'home_in':
       return 'HomeCheckedIn';
@@ -29,6 +37,8 @@ export function deriveOpsState(events: OpsAttendanceEvent[]): OpsState {
       return 'MarketCheckedIn';
     case 'market_out':
       return 'HomeCheckedIn';
+    default:
+      return 'NoRecord';
   }
 }
 
