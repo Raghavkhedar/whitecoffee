@@ -67,6 +67,10 @@ export default function HomeScreen({ navigation }: Props) {
     { key: 'leave', icon: 'calendar-outline', label: 'Leave', subtitle: 'Time off', route: 'Leave' },
     // Operations only, exactly as Android gates it. A positive check for one role's feature,
     // not an office-vs-ops binary: every other role (sales included) simply doesn't get it.
+    // Admin only — isAdmin, never "office-or-admin" (the rules gate approvals on admin).
+    ...(user?.role === 'admin'
+      ? [{ key: 'leaveApprovals', icon: 'checkmark-done-outline' as const, label: 'Leave Approvals', subtitle: 'Review requests', route: 'LeaveApprovals' as const }]
+      : []),
     ...(user?.role === 'operations'
       ? [{ key: 'workProgress', icon: 'stats-chart-outline' as const, label: 'Work Progress', subtitle: 'Daily report', route: 'WorkProgress' as const }]
       : []),
