@@ -32,9 +32,9 @@ export function todayDateString(): string {
 
 // Fire-and-forget, like Android: the doc id is minted locally and the write is NOT awaited —
 // awaiting the server ack would hang the punch offline.
-function writePunch(user: UserProfile, fields: Parameters<typeof buildPunchPayload>[1]): void {
+function writePunch(user: UserProfile, fields: Parameters<typeof buildPunchPayload>[1], atMs?: number): void {
   const docRef = doc(collection(db, 'users', user.uid, 'attendance'));
-  const now = Timestamp.now();
+  const now = atMs === undefined ? Timestamp.now() : Timestamp.fromMillis(atMs);
   const actorUid = auth.currentUser?.uid || user.uid;
   const payload = buildPunchPayload(user, fields, istDateString(now.toMillis()), now, actorUid);
   setDoc(docRef, payload).catch((error) => {
@@ -139,6 +139,7 @@ export async function getTodaysSalesCommittedPath(uid: string): Promise<SalesCom
 export interface DayEvent {
   type: string;
   timestamp: number;
+  siteId: string;
   siteName: string;
   marketName: string;
   locationName: string;
@@ -160,6 +161,7 @@ export function subscribeTodayEvents(uid: string, onChange: (events: DayEvent[])
           return {
             type: String(data.type ?? ''),
             timestamp: (data.timestamp as Timestamp | undefined)?.toMillis() ?? NaN,
+            siteId: String(data.siteId ?? ''),
             siteName: String(data.siteName ?? ''),
             marketName: String(data.marketName ?? ''),
             locationName: String(data.locationName ?? ''),
@@ -181,4 +183,36 @@ export async function getPlannedWindow(uid: string, date: string): Promise<Windo
 /** Whether holidays/{date} exists — rest days come from the date + this, never a status doc. */
 export async function isHolidayDate(date: string): Promise<boolean> {
   return (await getDoc(doc(db, 'holidays', date))).exists();
+}
+
+/** Today's events once (logout auto-checkout), ascending. */
+export async function getTodayEventsOnce(uid: string): Promise<DayEvent[]> {
+  const snapshot = await getDocs(
+    query(collection(db, 'users', uid, 'attendance'), where('date', '==', todayDateString()), orderBy('timestamp', 'asc')),
+  );
+  return snapshot.docs.map((docSnap) => {
+    const data = docSnap.data();
+    return {
+      type: String(data.type ?? ''),
+      timestamp: (data.timestamp as Timestamp | undefined)?.toMillis() ?? NaN,
+      siteId: String(data.siteId ?? ''),
+      siteName: String(data.siteName ?? ''),
+      marketName: String(data.marketName ?? ''),
+      locationName: String(data.locationName ?? ''),
+    };
+  });
+}
+
+/**
+ * Write a day-close plan (planDayClose) at one location. Timestamps are 1 ms apart so the
+ * closing order is unambiguous to the timestamp-ordered query and the nightly scorer — equal
+ * timestamps would let home_out sort before the site_out it follows.
+ */
+export function writeDayClose(
+  user: UserProfile,
+  plan: { type: string; siteId?: string; siteName?: string; marketName?: string; locationName?: string }[],
+  coords: { latitude: number; longitude: number; isMockLocation: boolean },
+): void {
+  const base = Date.now();
+  plan.forEach((punch, i) => writePunch(user, { ...punch, ...coords }, base + i));
 }

@@ -12,6 +12,7 @@ import HomeCard from '../components/HomeCard';
 import TodayStatusCard from '../components/TodayStatusCard';
 import AnimatedPressable from '../components/AnimatedPressable';
 import { attendanceRouteFor } from '../roles/roleCapabilities';
+import { useLogoutWithCheckout } from '../auth/useLogoutWithCheckout';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -41,7 +42,8 @@ interface ModuleDef {
 // numbered menu-board list, ink-colored icons, warm paper background, sharp-cornered
 // "stamped ticket" status card. Every other screen in this app still mirrors Android exactly.
 export default function HomeScreen({ navigation }: Props) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
+  const logout = useLogoutWithCheckout();
 
   // Attendance, Regularization and the Today card all follow the role-capabilities table —
   // every known role gets them; an unknown role gets none (see attendanceRouteFor).

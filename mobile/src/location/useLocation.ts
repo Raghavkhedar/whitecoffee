@@ -24,3 +24,20 @@ export async function getCurrentCoordinates(): Promise<Coordinates> {
     isMockLocation: position.mocked === true,
   };
 }
+
+/** getCurrentCoordinates, but rejects after `ms` — a fix can hang indoors, and logout must not. */
+export function getCurrentCoordinatesWithin(ms: number): Promise<Coordinates> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Location timed out')), ms);
+    getCurrentCoordinates().then(
+      (c) => {
+        clearTimeout(timer);
+        resolve(c);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
