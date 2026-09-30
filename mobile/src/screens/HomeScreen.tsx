@@ -80,9 +80,9 @@ export default function HomeScreen({ navigation }: Props) {
       </HeroHeader>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.sheet}>
-          {canUseOfficeAttendance && user && (
+          {attendanceRoute && user && (
             <FadeInView style={styles.section}>
-              <TodayStatusCard uid={user.uid} />
+              <TodayStatusCard uid={user.uid} role={user.role} />
             </FadeInView>
           )}
 

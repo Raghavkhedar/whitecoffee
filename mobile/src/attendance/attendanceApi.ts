@@ -1,6 +1,7 @@
-import { collection, doc, getDocs, onSnapshot, orderBy, query, setDoc, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, Timestamp, where } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { buildPunchPayload, istDateString } from './punchPayload';
+import { resolveOpsWindow, type Window } from './attendanceRules';
 import type { OfficeAttendanceEvent, OfficeEventType } from './officeAttendanceState';
 import type { OpsAttendanceEvent, OpsEventType } from './opsAttendanceState';
 
@@ -133,4 +134,51 @@ export async function getTodaysSalesCommittedPath(uid: string): Promise<SalesCom
   if (types.some((t) => OFFICE_ONLY_TYPES.has(t))) return 'office';
   if (types.some((t) => FIELD_ONLY_TYPES.has(t))) return 'field';
   return null;
+}
+
+export interface DayEvent {
+  type: string;
+  timestamp: number;
+  siteName: string;
+  marketName: string;
+  locationName: string;
+}
+
+/** Every event of today, any type, ascending — for role-independent views like the status card. */
+export function subscribeTodayEvents(uid: string, onChange: (events: DayEvent[]) => void): () => void {
+  const q = query(
+    collection(db, 'users', uid, 'attendance'),
+    where('date', '==', todayDateString()),
+    orderBy('timestamp', 'asc'),
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      onChange(
+        snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            type: String(data.type ?? ''),
+            timestamp: (data.timestamp as Timestamp | undefined)?.toMillis() ?? NaN,
+            siteName: String(data.siteName ?? ''),
+            marketName: String(data.marketName ?? ''),
+            locationName: String(data.locationName ?? ''),
+          };
+        }),
+      );
+    },
+    (error) => console.error('Today events subscription failed', error),
+  );
+}
+
+/** users/{uid}/planned_hours/{date} → scoring window (ops), resolved exactly like the server. */
+export async function getPlannedWindow(uid: string, date: string): Promise<Window | null> {
+  const snap = await getDoc(doc(db, 'users', uid, 'planned_hours', date));
+  const data = snap.data();
+  return resolveOpsWindow(data?.startTime, data?.endTime);
+}
+
+/** Whether holidays/{date} exists — rest days come from the date + this, never a status doc. */
+export async function isHolidayDate(date: string): Promise<boolean> {
+  return (await getDoc(doc(db, 'holidays', date))).exists();
 }

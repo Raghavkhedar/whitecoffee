@@ -1,66 +1,119 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import type { OfficeAttendanceEvent } from '../attendance/officeAttendanceState';
-import { subscribeTodayOfficeEvents } from '../attendance/attendanceApi';
-import { classify } from '../regularization/regularizationStatus';
+import { AppState, View, Text, StyleSheet } from 'react-native';
+import {
+  getPlannedWindow,
+  isHolidayDate,
+  subscribeTodayEvents,
+  todayDateString,
+  type DayEvent,
+} from '../attendance/attendanceApi';
+import { resolveRestDayType, resolveTodayStatus, type Window } from '../attendance/attendanceRules';
+import { usesFixedWindow } from '../roles/roleCapabilities';
 import { Colors } from '../theme/colors';
 import { Fonts } from '../theme/fonts';
 
-type Chip = { label: string; bg: string; fg: string };
+type Chip = { label: string; bg: string; fg: string; hint?: string };
 
-// Same IST-minutes conversion as regularizationStatus.ts's private `istMinutesOfDay` — small
-// enough that duplicating it here (rather than exporting a helper solely for this one caller)
-// matches this app's existing tolerance for a few duplicated lines over cross-module coupling.
-function istMinutesOfDay(epochMs: number): number {
-  const istMs = epochMs + 5.5 * 60 * 60 * 1000;
-  const d = new Date(istMs);
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
+const NEUTRAL = { bg: Colors.border, fg: Colors.textMuted };
+
+// Same wording as Android's HomeViewModel.deriveLocation.
+function describeLocation(e: DayEvent): string {
+  switch (e.type) {
+    case 'home_in': return 'At Home';
+    case 'home_out': return 'Checked out';
+    case 'site_in': return e.siteName ? `At ${e.siteName}` : 'At Site';
+    case 'site_out': return 'Left site';
+    case 'market_in': return e.marketName ? `At ${e.marketName}` : 'At Market';
+    case 'market_out': return 'Left market';
+    case 'office_in': return e.locationName ? `In Office: ${e.locationName}` : 'In Office';
+    case 'office_out': return 'Left office';
+    default: return '';
+  }
 }
 
-function deriveChip(events: OfficeAttendanceEvent[]): Chip {
-  const checkIns = events.filter((e) => e.type === 'office_in');
-  const checkOuts = events.filter((e) => e.type === 'office_out');
-  if (checkIns.length === 0) {
+function formatTime(epochMs: number): string {
+  if (!Number.isFinite(epochMs)) return '';
+  const d = new Date(epochMs);
+  const h = d.getHours();
+  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+function chipFor(events: DayEvent[], role: string, planned: Window | null, restDay: 'Holiday' | 'Sunday' | null): Chip {
+  const preview = resolveTodayStatus(events, role, planned);
+  // A rest day with no scoreable arrival is not an absence — say what the day is instead.
+  if ((preview === 'NotCheckedIn' || preview === 'Pending') && restDay) return { label: restDay, ...NEUTRAL };
+  if (preview === 'NotCheckedIn') {
     return { label: 'Not checked in', bg: Colors.statusRejectedBg, fg: Colors.statusRejectedFg };
   }
-  if (checkOuts.length === 0) {
-    return { label: 'Pending', bg: Colors.border, fg: Colors.textMuted };
+  switch (preview) {
+    case 'Present':
+      return { label: 'Present', bg: Colors.statusPresentBg, fg: Colors.statusPresentFg };
+    case 'HalfDay':
+      return { label: 'Half Day', bg: Colors.statusPendingBg, fg: Colors.statusPendingFg };
+    case 'SL':
+      return { label: 'Short Leave', bg: Colors.statusSlBg, fg: Colors.statusSlFg };
+    default:
+      return { label: 'Pending', ...NEUTRAL, hint: 'Not at a site yet' };
   }
-  const inMin = istMinutesOfDay(checkIns[0].timestamp);
-  const outMin = istMinutesOfDay(checkOuts[checkOuts.length - 1].timestamp);
-  const result = classify(inMin, outMin);
-  if (result === 'Present') return { label: 'Present', bg: Colors.statusPresentBg, fg: Colors.statusPresentFg };
-  if (result === 'HalfDay') return { label: 'Half Day', bg: Colors.statusPendingBg, fg: Colors.statusPendingFg };
-  return { label: 'Short Leave', bg: Colors.statusSlBg, fg: Colors.statusSlFg };
 }
 
-const DAY_NAME_FORMAT = new Intl.DateTimeFormat('en-US', { weekday: 'long' });
-const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+  'September', 'October', 'November', 'December'];
 
 interface Props {
   uid: string;
+  role: string;
 }
 
-// The employee's live today-at-a-glance card, ported from Android's TodayStatusCard
-// (ui/home/HomeScreen.kt) — date on the left, a status chip on the right derived from the
-// same office_in/office_out events + classify() rule Regularization already uses, so the
-// chip can never disagree with what the nightly payroll job will eventually write.
-export default function TodayStatusCard({ uid }: Props) {
-  const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
-  const now = new Date();
+// Today-at-a-glance, for every role with attendance. The chip is the same verdict the nightly
+// computeDailyAttendanceStatus will assign — resolveTodayStatus is a port of Android's
+// ResolveTodayStatusUseCase over the shared attendanceRules mirror — so it can't disagree with
+// payroll. The date shown is the IST date, the same "today" the punches are filed under.
+export default function TodayStatusCard({ uid, role }: Props) {
+  const [date, setDate] = useState(todayDateString());
+  const [events, setEvents] = useState<DayEvent[]>([]);
+  const [planned, setPlanned] = useState<Window | null>(null);
+  const [restDay, setRestDay] = useState<'Holiday' | 'Sunday' | null>(resolveRestDayType(date, false));
+
+  useEffect(() => subscribeTodayEvents(uid, setEvents), [uid, date]);
 
   useEffect(() => {
-    return subscribeTodayOfficeEvents(uid, setEvents);
-  }, [uid]);
+    let cancelled = false;
+    setRestDay(resolveRestDayType(date, false));
+    isHolidayDate(date)
+      .then((h) => !cancelled && setRestDay(resolveRestDayType(date, h)))
+      .catch(() => {});
+    if (!usesFixedWindow(role)) {
+      getPlannedWindow(uid, date)
+        .then((w) => !cancelled && setPlanned(w))
+        .catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [uid, role, date]);
 
-  const chip = deriveChip(events);
+  // Midnight rollover while backgrounded — same pattern as the attendance screens.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active' && todayDateString() !== date) setDate(todayDateString());
+    });
+    return () => sub.remove();
+  }, [date]);
+
+  const chip = chipFor(events, role, planned, restDay);
+  const last = events[events.length - 1];
+  const location = last ? describeLocation(last) : '';
+  const since = last ? formatTime(last.timestamp) : '';
+  const d = new Date(`${date}T00:00:00Z`);
 
   return (
     <View style={styles.card}>
       <View style={styles.dateBlock}>
-        <Text style={styles.dayName}>{DAY_NAME_FORMAT.format(now)}</Text>
-        <Text style={styles.dateNum}>{now.getDate()}</Text>
-        <Text style={styles.monthYear}>{MONTH_YEAR_FORMAT.format(now)}</Text>
+        <Text style={styles.dayName}>{DAY_NAMES[d.getUTCDay()]}</Text>
+        <Text style={styles.dateNum}>{d.getUTCDate()}</Text>
+        <Text style={styles.monthYear}>{`${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`}</Text>
       </View>
       <View style={styles.divider} />
       <View style={styles.statusBlock}>
@@ -68,7 +121,11 @@ export default function TodayStatusCard({ uid }: Props) {
         <View style={[styles.chip, { backgroundColor: chip.bg, borderColor: chip.fg }]}>
           <Text style={[styles.chipText, { color: chip.fg }]}>{chip.label.toUpperCase()}</Text>
         </View>
-        {chip.label === 'Pending' && <Text style={styles.hint}>In progress — check out to confirm</Text>}
+        {location ? (
+          <Text style={styles.hint}>{since ? `${location} · ${since}` : location}</Text>
+        ) : chip.hint ? (
+          <Text style={styles.hint}>{chip.hint}</Text>
+        ) : null}
       </View>
     </View>
   );

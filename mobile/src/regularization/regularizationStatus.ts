@@ -1,36 +1,9 @@
 import type { OfficeAttendanceEvent } from '../attendance/officeAttendanceState';
 
-// Ported from firebase/functions/attendanceRules.js — office/admin's fixed-window branch
-// only. Operations' planned-shift window is out of scope for this phase (mobile has no
-// operations attendance flow yet); see the Phase 2b spec's "Scope decisions" section.
-const OFFICE_START_MIN = 10 * 60; // 10:00
-const OFFICE_END_MIN = 18 * 60; // 18:00
-
-/**
- * Late-in and early-out are graded independently, zero grace on either side — HalfDay
- * wins when both apply. Mirrors attendanceRules.js's `classify` exactly (same signature,
- * same null-outMinutes semantics for a day still in progress).
- */
-export function classify(
-  inMinutes: number,
-  outMinutes: number | null,
-  startMin: number = OFFICE_START_MIN,
-  endMin: number = OFFICE_END_MIN,
-): 'HalfDay' | 'SL' | 'Present' {
-  const late = Math.max(0, inMinutes - startMin);
-  const earlyOut = outMinutes == null ? 0 : Math.max(0, endMin - outMinutes);
-  if (late > 0) return 'HalfDay';
-  if (earlyOut > 0) return 'SL';
-  return 'Present';
-}
-
-// Epoch ms (UTC) → IST minutes-of-day, matching firebase/functions/nightlyScoring.js's
-// getHourIST/getMinuteIST (shift by +5:30, read the UTC wall-clock components).
-function istMinutesOfDay(epochMs: number): number {
-  const istMs = epochMs + 5.5 * 60 * 60 * 1000;
-  const d = new Date(istMs);
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
-}
+// The rule itself lives in attendance/attendanceRules.ts (the mobile mirror of
+// firebase/functions/attendanceRules.js); re-exported so existing callers keep working.
+import { classify, istMinutesOfDay } from '../attendance/attendanceRules';
+export { classify };
 
 /**
  * Today's live-derived status from the same event stream Attendance already subscribes
