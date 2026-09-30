@@ -1,5 +1,6 @@
 import { collection, doc, onSnapshot, orderBy, query, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { auditStamp } from '../firebase/auditStamp';
 import type { UserProfile } from '../attendance/attendanceApi';
 
 export interface LeaveRequest {
@@ -40,6 +41,7 @@ export async function submitLeaveRequest(user: UserProfile, input: SubmitLeaveIn
   const leaveRef = collection(db, 'users', user.uid, 'leave_requests');
   const docRef = doc(leaveRef); // mints an ID locally — no network round trip
   setDoc(docRef, {
+    ...auditStamp(user.uid),
     userId: user.uid,
     userName: user.name,
     employeeId: user.employeeId,

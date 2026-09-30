@@ -4,7 +4,7 @@ Three products for Senken Engineering, one Firebase project (`white-coffee-92c27
 
 - **`android/`** — Android app (Kotlin, Jetpack Compose, Gradle). Authoritative context: `android/CLAUDE.md`. Build: `cd android && ./gradlew :app:compileDebugKotlin`.
 - **`admin/`** — Next.js admin portal. Authoritative context: `admin/CLAUDE.md`. Build: `cd admin && npm run build`.
-- **`mobile/`** — iOS client (Expo/React Native, TypeScript), Phase 1: office-role attendance only. Authoritative context: `mobile/AGENTS.md` (`mobile/CLAUDE.md` just includes it). Build/typecheck: `cd mobile && npx tsc --noEmit`. Test: `cd mobile && npm test`. Requires `mobile/.env` (gitignored, real Firebase web config — copy the six values from `admin/.env.local`, renamed `EXPO_PUBLIC_FIREBASE_*`).
+- **`mobile/`** — Expo/React Native client (TypeScript) being brought to parity with `android/` so it can replace it — all four roles; plan of record `docs/mobile-app-replacing-android.md`. Authoritative context: `mobile/AGENTS.md` (`mobile/CLAUDE.md` just includes it). Build/typecheck: `cd mobile && npx tsc --noEmit`. Test: `cd mobile && npm test`. Requires `mobile/.env` (gitignored, real Firebase web config — copy the six values from `admin/.env.local`, renamed `EXPO_PUBLIC_FIREBASE_*`).
 - **`firebase/`** — SINGLE source of truth for backend: `firestore.rules`, `storage.rules`, `functions/`. Deploy from repo root: `firebase deploy` (may need `firebase login --reauth` if the CLI token expired). Functions have a `npm test` (`node --test`, no deps) boundary suite in `firebase/functions/` (and `npm run test:emulator` for the late-leave trigger, which needs the Firestore emulator via the firebase CLI); `npm run lint` works (0 errors; a few unused-var warnings remain), but `node --check` + `npm test` are still the real gate. Cloud functions run on a **UTC** clock — compute IST dates by shifting `+05:30` and reading `getUTC*` / `getUTCDay()` on a `"yyyy-mm-ddT00:00:00Z"` string; never use bare `new Date()`/`getDay()` for an IST date.
 
 ## In-app notifications — the server writes the bell row
@@ -42,11 +42,12 @@ conveyance; no OT/shortage/WO/categories/manpower), so it rides **neither** side
 binary `isOps = role === 'operations' ? (site) : (office)` — that pattern drops sales into the
 office branch **silently**, which is a payroll bug, not a cosmetic one.
 
-Route role decisions through the **role-capabilities table**, mirrored on all three sides (there is
-no shared JS build graph) and unit-tested on each — **change all three together**:
+Route role decisions through the **role-capabilities table**, mirrored on all four sides (there is
+no shared JS build graph) and unit-tested on each — **change all four together**:
 - `admin/src/lib/roleCapabilities.ts` (+ `.test.ts`, `npx tsx`)
 - `firebase/functions/roleCapabilities.js` (+ `.test.js`, `npm test`)
 - `android/…/data/model/RoleCapabilities.kt`
+- `mobile/src/roles/roleCapabilities.ts` (+ `.test.ts`, `npm test`) — unknown roles get NO attendance route here (fails closed)
 
 Axes: `attendanceInTypes` · `attendanceOutTypes` · `usesFixedWindow` · `usesOtShortageLedger` ·
 `tracksShortage` · `usesConveyance` · `getsCategories` · `inManpowerReports`. Note `tracksShortage`

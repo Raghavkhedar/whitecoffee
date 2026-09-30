@@ -4,33 +4,35 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/colors';
+import { Fonts } from '../theme/fonts';
 import AnimatedPressable from './AnimatedPressable';
 import appConfig from '../../app.json';
 
 const APP_VERSION = appConfig.expo.version;
 
 interface HeroHeaderProps {
-  subtitle?: string;
   onLogout?: () => void;
+  onNotifications?: () => void;
+  unreadCount?: number;
   showVersion?: boolean;
   children?: React.ReactNode;
 }
 
-// Full-bleed gradient header used by Home and Login — the two "entry" screens. Every other
-// screen keeps the flat TopBar; this is deliberately reserved for the two that set first
-// impressions, so it stays a moment rather than becoming visual noise everywhere.
-// Uses the Colors.headerGradientStart/End pair already defined for this (ported from
-// Android's palette, which the app never deviates from) but previously unused in this app.
-export default function HeroHeader({ subtitle, onLogout, showVersion, children }: HeroHeaderProps) {
+// Full-bleed gradient header used by Home — every other screen keeps the flat TopBar; this
+// is deliberately reserved for the one first-impression screen, so it stays a moment rather
+// than becoming visual noise everywhere. Uses the Colors.headerGradientStart/End pair
+// already defined for this (ported from Android's palette, which the app never deviates
+// from) but previously unused in this app.
+export default function HeroHeader({ onLogout, onNotifications, unreadCount = 0, showVersion, children }: HeroHeaderProps) {
   const insets = useSafeAreaInsets();
-  const topOffset = insets.top + 16;
+  const topOffset = insets.top + 12;
 
   return (
     <LinearGradient
       colors={[Colors.headerGradientStart, Colors.headerGradientEnd]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
-      style={[styles.hero, { paddingTop: topOffset + 24 }]}
+      style={[styles.hero, { paddingTop: topOffset + 14 }]}
     >
       {onLogout && (
         <AnimatedPressable
@@ -42,6 +44,21 @@ export default function HeroHeader({ subtitle, onLogout, showVersion, children }
           <Ionicons name="log-out-outline" size={20} color="white" />
         </AnimatedPressable>
       )}
+      {onNotifications && (
+        <AnimatedPressable
+          style={[styles.logoutButton, { top: topOffset, right: onLogout ? 64 : 20 }]}
+          onPress={onNotifications}
+          hitSlop={10}
+          accessibilityLabel={unreadCount ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        >
+          <Ionicons name="notifications-outline" size={20} color="white" />
+          {unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+            </View>
+          )}
+        </AnimatedPressable>
+      )}
       <View style={styles.brandRow}>
         <View style={styles.badge}>
           <Text style={styles.badgeLetter}>W</Text>
@@ -50,7 +67,6 @@ export default function HeroHeader({ subtitle, onLogout, showVersion, children }
           White<Text style={styles.wordmarkAccent}>Coffee</Text>
         </Text>
       </View>
-      {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       {children}
       {showVersion && <Text style={styles.version}>v{APP_VERSION}</Text>}
     </LinearGradient>
@@ -60,7 +76,7 @@ export default function HeroHeader({ subtitle, onLogout, showVersion, children }
 const styles = StyleSheet.create({
   hero: {
     paddingHorizontal: 24,
-    paddingBottom: 32,
+    paddingBottom: 20,
     borderBottomLeftRadius: 4,
     borderBottomRightRadius: 4,
   },
@@ -71,6 +87,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
+  unreadBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: Colors.statusRejectedFg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadText: { color: 'white', fontSize: 10, fontFamily: Fonts.extraBold },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   badge: {
     width: 36,
@@ -82,16 +111,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeLetter: { color: 'white', fontSize: 16, fontWeight: '800' },
-  wordmark: { fontSize: 20, fontWeight: '700', color: 'white', letterSpacing: 0.2 },
-  wordmarkAccent: { fontWeight: '900', color: Colors.accent },
-  subtitle: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.75)',
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
-    marginTop: 10,
-    fontWeight: '600',
-  },
+  badgeLetter: { color: 'white', fontSize: 16, fontFamily: Fonts.extraBold },
+  wordmark: { fontSize: 20, fontFamily: Fonts.bold, color: 'white', letterSpacing: 0.2 },
+  wordmarkAccent: { fontFamily: Fonts.extraBold, color: Colors.accent },
   version: { position: 'absolute', bottom: 10, right: 20, fontSize: 11, color: 'rgba(255,255,255,0.55)' },
 });

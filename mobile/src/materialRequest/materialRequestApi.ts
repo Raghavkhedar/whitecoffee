@@ -1,5 +1,6 @@
 import { collection, doc, setDoc, Timestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { auditStamp } from '../firebase/auditStamp';
 import type { UserProfile } from '../attendance/attendanceApi';
 
 export interface RequestItem {
@@ -24,6 +25,7 @@ export function submitMaterialRequest(user: UserProfile, input: SubmitRequestInp
   const requestRef = collection(db, 'users', user.uid, 'material_requests');
   const docRef = doc(requestRef);
   setDoc(docRef, {
+    ...auditStamp(user.uid),
     userId: user.uid,
     userName: user.name,
     employeeId: user.employeeId,
@@ -41,5 +43,6 @@ export function submitMaterialRequest(user: UserProfile, input: SubmitRequestInp
 
 export async function updateRequestPhotoUrls(uid: string, docId: string, urls: string[]): Promise<void> {
   const docRef = doc(db, 'users', uid, 'material_requests', docId);
+  // ⚠️ AUDIT-EXEMPT: the owner may change ONLY photoUrls (rules hasOnly) — no stamp.
   await updateDoc(docRef, { photoUrls: urls });
 }

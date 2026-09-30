@@ -11,6 +11,7 @@ import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import DismissKeyboardView from '../components/DismissKeyboardView';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MaterialRequest'>;
 
@@ -43,6 +44,7 @@ function SectionLabel({ icon, children }: { icon: keyof typeof Ionicons.glyphMap
 export default function MaterialRequestScreen({ navigation }: Props) {
   const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
+  const { refreshControl } = usePullToRefresh();
 
   const [siteId, setSiteId] = useState('');
   const [siteName, setSiteName] = useState('');
@@ -190,6 +192,7 @@ export default function MaterialRequestScreen({ navigation }: Props) {
       <TopBar title="M&T Request" onBack={() => navigation.goBack()} />
       <ScrollView
         ref={scrollRef}
+        refreshControl={refreshControl}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="always"
         automaticallyAdjustKeyboardInsets

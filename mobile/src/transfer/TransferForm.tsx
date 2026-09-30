@@ -9,6 +9,7 @@ import TopBar from '../components/TopBar';
 import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import DismissKeyboardView from '../components/DismissKeyboardView';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 interface ItemDraft {
   itemName: string;
@@ -57,6 +58,7 @@ interface Props {
 export default function TransferForm({ collection, title, submitLabel, onBack }: Props) {
   const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
+  const { refreshControl } = usePullToRefresh();
 
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
@@ -226,6 +228,7 @@ export default function TransferForm({ collection, title, submitLabel, onBack }:
       <TopBar title={title} onBack={onBack} />
       <ScrollView
         ref={scrollRef}
+        refreshControl={refreshControl}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="always"
         automaticallyAdjustKeyboardInsets

@@ -1,51 +1,39 @@
-import type { OfficeAttendanceEvent } from '../attendance/officeAttendanceState';
 
-// Ported from firebase/functions/attendanceRules.js — office/admin's fixed-window branch
-// only. Operations' planned-shift window is out of scope for this phase (mobile has no
-// operations attendance flow yet); see the Phase 2b spec's "Scope decisions" section.
-const OFFICE_START_MIN = 10 * 60; // 10:00
-const OFFICE_END_MIN = 18 * 60; // 18:00
-
-/**
- * Late-in and early-out are graded independently, zero grace on either side — HalfDay
- * wins when both apply. Mirrors attendanceRules.js's `classify` exactly (same signature,
- * same null-outMinutes semantics for a day still in progress).
- */
-export function classify(
-  inMinutes: number,
-  outMinutes: number | null,
-  startMin: number = OFFICE_START_MIN,
-  endMin: number = OFFICE_END_MIN,
-): 'HalfDay' | 'SL' | 'Present' {
-  const late = Math.max(0, inMinutes - startMin);
-  const earlyOut = outMinutes == null ? 0 : Math.max(0, endMin - outMinutes);
-  if (late > 0) return 'HalfDay';
-  if (earlyOut > 0) return 'SL';
-  return 'Present';
-}
-
-// Epoch ms (UTC) → IST minutes-of-day, matching firebase/functions/nightlyScoring.js's
-// getHourIST/getMinuteIST (shift by +5:30, read the UTC wall-clock components).
-function istMinutesOfDay(epochMs: number): number {
-  const istMs = epochMs + 5.5 * 60 * 60 * 1000;
-  const d = new Date(istMs);
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
-}
+// The rule itself lives in attendance/attendanceRules.ts (the mobile mirror of
+// firebase/functions/attendanceRules.js); re-exported so existing callers keep working.
+import {
+  classify,
+  OFFICE_END_MIN,
+  OFFICE_START_MIN,
+  scorablePunches,
+  type TimedEvent,
+  type Window,
+} from '../attendance/attendanceRules';
+import { usesFixedWindow } from '../roles/roleCapabilities';
+export { classify };
 
 /**
- * Today's live-derived status from the same event stream Attendance already subscribes
- * to — first office_in, last office_out (events arrive pre-sorted ascending by timestamp
- * from subscribeTodayOfficeEvents). Returns null when there's nothing to flag: no
- * office_in yet, or the day classifies as Present — this is a deliberate subset of
- * classify()'s output, matching Android's own live-preview semantics exactly.
+ * Today's status worth regularizing, or null when there's nothing to fix (Present, or no
+ * scoreable arrival). Port of Android's RegularizationViewModel.deriveLiveStatus: in/out types
+ * come from the role (so a sales SITE day is regularizable, not invisible) and the window is the
+ * ops planned shift, falling back to 10:00–18:00 — never "unmarked", or Home would show Half Day
+ * for a day this screen then offers nothing to dispute. Events sorted ascending.
  */
-export function deriveTodayLiveStatus(events: OfficeAttendanceEvent[]): 'HalfDay' | 'SL' | null {
-  const checkIns = events.filter((e) => e.type === 'office_in');
-  const checkOuts = events.filter((e) => e.type === 'office_out');
-  if (checkIns.length === 0) return null;
-  const inMinutes = istMinutesOfDay(checkIns[0].timestamp);
-  const outMinutes = checkOuts.length > 0 ? istMinutesOfDay(checkOuts[checkOuts.length - 1].timestamp) : null;
-  const status = classify(inMinutes, outMinutes);
+export function deriveTodayLiveStatus(
+  events: TimedEvent[],
+  role: string = 'office',
+  plannedWindow: Window | null = null,
+): 'HalfDay' | 'SL' | null {
+  const punches = scorablePunches(events, role);
+  if (!punches.hasCheckIn) return null;
+  if (punches.inMin == null) return 'HalfDay';
+  const window = usesFixedWindow(role) ? null : plannedWindow;
+  const status = classify(
+    punches.inMin,
+    punches.outMin,
+    window?.startMin ?? OFFICE_START_MIN,
+    window?.endMin ?? OFFICE_END_MIN,
+  );
   return status === 'Present' ? null : status;
 }
 
