@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "leave_requests",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "dailySpend",
       "queryScope": "COLLECTION",
       "fields": [
