@@ -6,14 +6,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
-import com.google.firebase.Timestamp
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.raghav.whitecoffee.MainActivity
 import com.raghav.whitecoffee.R
-import com.raghav.whitecoffee.data.model.AppNotification
 import com.raghav.whitecoffee.data.repository.NotificationRepository
-import com.raghav.whitecoffee.data.session.SessionManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,29 +22,17 @@ import javax.inject.Inject
 class FcmService : FirebaseMessagingService() {
 
     @Inject lateinit var notificationRepository: NotificationRepository
-    @Inject lateinit var sessionManager: SessionManager
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onMessageReceived(message: RemoteMessage) {
         val title = message.notification?.title ?: message.data["title"] ?: "White Coffee"
         val body  = message.notification?.body  ?: message.data["body"]  ?: ""
-        val type  = message.data["type"] ?: "general"
 
-        if (sessionManager.userId.isNotEmpty()) {
-            serviceScope.launch {
-                notificationRepository.saveNotification(
-                    AppNotification(
-                        title     = title,
-                        body      = body,
-                        type      = type,
-                        isRead    = false,
-                        createdAt = Timestamp.now()
-                    )
-                )
-            }
-        }
-
+        // Display only. The in-app bell row is written server-side by whoever sent the push
+        // (admin portal / openSessionReminder); firestore.rules has no owner-create on
+        // users/{uid}/notifications, so saving a copy here was PERMISSION_DENIED for employees
+        // and a duplicate row for admins.
         showSystemNotification(title, body)
     }
 

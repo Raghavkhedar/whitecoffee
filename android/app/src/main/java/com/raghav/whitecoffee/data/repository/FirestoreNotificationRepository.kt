@@ -2,9 +2,7 @@ package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.raghav.whitecoffee.data.firestore.AuditStamp
 import com.raghav.whitecoffee.data.firestore.snapshotsAsFlow
-import com.raghav.whitecoffee.data.firestore.withAuditStamp
 import com.raghav.whitecoffee.data.model.AppNotification
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.flow.Flow
@@ -65,18 +63,6 @@ class FirestoreNotificationRepository @Inject constructor(
             val unread = collection().whereEqualTo("isRead", false).get().await()
             unread.documents.forEach { batch.update(it.reference, "isRead", true) }
             batch.commit()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun saveNotification(notification: AppNotification): Result<Unit> {
-        return try {
-            if (sessionManager.userId.isEmpty()) return Result.success(Unit)
-            // Stampable: the notification CREATE rule is a plain allow (no hasOnly).
-            collection().add(notification.toMap().withAuditStamp(AuditStamp.uid(sessionManager)))
-                .await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
