@@ -1,24 +1,39 @@
-import type { OfficeAttendanceEvent } from '../attendance/officeAttendanceState';
 
 // The rule itself lives in attendance/attendanceRules.ts (the mobile mirror of
 // firebase/functions/attendanceRules.js); re-exported so existing callers keep working.
-import { classify, istMinutesOfDay } from '../attendance/attendanceRules';
+import {
+  classify,
+  OFFICE_END_MIN,
+  OFFICE_START_MIN,
+  scorablePunches,
+  type TimedEvent,
+  type Window,
+} from '../attendance/attendanceRules';
+import { usesFixedWindow } from '../roles/roleCapabilities';
 export { classify };
 
 /**
- * Today's live-derived status from the same event stream Attendance already subscribes
- * to — first office_in, last office_out (events arrive pre-sorted ascending by timestamp
- * from subscribeTodayOfficeEvents). Returns null when there's nothing to flag: no
- * office_in yet, or the day classifies as Present — this is a deliberate subset of
- * classify()'s output, matching Android's own live-preview semantics exactly.
+ * Today's status worth regularizing, or null when there's nothing to fix (Present, or no
+ * scoreable arrival). Port of Android's RegularizationViewModel.deriveLiveStatus: in/out types
+ * come from the role (so a sales SITE day is regularizable, not invisible) and the window is the
+ * ops planned shift, falling back to 10:00–18:00 — never "unmarked", or Home would show Half Day
+ * for a day this screen then offers nothing to dispute. Events sorted ascending.
  */
-export function deriveTodayLiveStatus(events: OfficeAttendanceEvent[]): 'HalfDay' | 'SL' | null {
-  const checkIns = events.filter((e) => e.type === 'office_in');
-  const checkOuts = events.filter((e) => e.type === 'office_out');
-  if (checkIns.length === 0) return null;
-  const inMinutes = istMinutesOfDay(checkIns[0].timestamp);
-  const outMinutes = checkOuts.length > 0 ? istMinutesOfDay(checkOuts[checkOuts.length - 1].timestamp) : null;
-  const status = classify(inMinutes, outMinutes);
+export function deriveTodayLiveStatus(
+  events: TimedEvent[],
+  role: string = 'office',
+  plannedWindow: Window | null = null,
+): 'HalfDay' | 'SL' | null {
+  const punches = scorablePunches(events, role);
+  if (!punches.hasCheckIn) return null;
+  if (punches.inMin == null) return 'HalfDay';
+  const window = usesFixedWindow(role) ? null : plannedWindow;
+  const status = classify(
+    punches.inMin,
+    punches.outMin,
+    window?.startMin ?? OFFICE_START_MIN,
+    window?.endMin ?? OFFICE_END_MIN,
+  );
   return status === 'Present' ? null : status;
 }
 

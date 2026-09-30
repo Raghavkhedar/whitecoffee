@@ -43,14 +43,9 @@ interface ModuleDef {
 export default function HomeScreen({ navigation }: Props) {
   const { user, logout } = useAuth();
 
-  // Phase 4a adds operations/site attendance and the sales office/site chooser (see
-  // docs/superpowers/specs/2026-09-29-mobile-ops-sales-attendance-design.md) — every known
-  // role now has an Attendance route. Regularization's live status still derives ONLY from
-  // office_in/office_out events (see regularizationStatus.ts), so it keeps the office/admin
-  // gate on its own; extending it to ops/sales is explicitly deferred (see that spec's
-  // "Scope decisions"). Same for TodayStatusCard below — office/admin only, for now.
+  // Attendance, Regularization and the Today card all follow the role-capabilities table —
+  // every known role gets them; an unknown role gets none (see attendanceRouteFor).
   const attendanceRoute = attendanceRouteFor(user?.role ?? '');
-  const canUseOfficeAttendance = attendanceRoute === 'Attendance';
   const roleLabel = user?.role ? ROLE_LABELS[user.role] ?? user.role : null;
 
   const modules: ModuleDef[] = [
@@ -62,7 +57,7 @@ export default function HomeScreen({ navigation }: Props) {
     { key: 'materialTransfer', icon: 'swap-horizontal-outline', label: 'Material Transfer', subtitle: 'Move stock', route: 'MaterialTransfer' },
     { key: 'toolTransfer', icon: 'hammer-outline', label: 'Tool Transfer', subtitle: 'Handover tools', route: 'ToolTransfer' },
     { key: 'leave', icon: 'calendar-outline', label: 'Leave', subtitle: 'Time off', route: 'Leave' },
-    ...(canUseOfficeAttendance
+    ...(attendanceRoute
       ? [{ key: 'regularization', icon: 'alert-circle-outline' as const, label: 'Regularization', subtitle: 'Fix attendance', route: 'Regularization' as const }]
       : []),
   ];

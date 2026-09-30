@@ -3,8 +3,14 @@ import { AppState, View, Text, TextInput, StyleSheet, ScrollView, Platform } fro
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
-import { subscribeTodayOfficeEvents, todayDateString } from '../attendance/attendanceApi';
-import type { OfficeAttendanceEvent } from '../attendance/officeAttendanceState';
+import {
+  getPlannedWindow,
+  subscribeTodayEvents,
+  todayDateString,
+  type DayEvent,
+} from '../attendance/attendanceApi';
+import type { Window } from '../attendance/attendanceRules';
+import { usesConveyance, usesFixedWindow } from '../roles/roleCapabilities';
 import { deriveTodayLiveStatus, isRestDay } from '../regularization/regularizationStatus';
 import {
   submitRegularizationRequest,
@@ -40,7 +46,12 @@ function yesterday(): Date {
 
 export default function RegularizationScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
+  const [events, setEvents] = useState<DayEvent[]>([]);
+  const [plannedWindow, setPlannedWindow] = useState<Window | null>(null);
+  const role = user?.role ?? '';
+  // KM is offered only to roles that earn conveyance (ops/sales) — same gate as Android.
+  const canClaimConveyance = usesConveyance(role);
+  const [km, setKm] = useState('');
   const [windowOpen, setWindowOpen] = useState(false);
   const modalScrollRef = useRef<ScrollView>(null);
   // Same rollover guard as AttendanceScreen.tsx: the Firestore query behind
@@ -64,7 +75,20 @@ export default function RegularizationScreen({ navigation }: Props) {
   // Re-subscribe whenever the date we subscribed for changes.
   useEffect(() => {
     if (!user) return;
-    return subscribeTodayOfficeEvents(user.uid, setEvents);
+    return subscribeTodayEvents(user.uid, setEvents);
+  }, [user, subscribedDate]);
+
+  // Operations score against the day's planned shift (10:00–18:00 when none is set).
+  useEffect(() => {
+    if (!user || usesFixedWindow(user.role)) return;
+    let cancelled = false;
+    setPlannedWindow(null);
+    getPlannedWindow(user.uid, subscribedDate)
+      .then((w) => !cancelled && setPlannedWindow(w))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [user, subscribedDate]);
 
   // The app spends the rollover suspended, so nothing re-renders at midnight — the date
@@ -85,7 +109,7 @@ export default function RegularizationScreen({ navigation }: Props) {
     return subscribeRegularizationWindow(setWindowOpen);
   }, []);
 
-  const todayLiveStatus = deriveTodayLiveStatus(events);
+  const todayLiveStatus = deriveTodayLiveStatus(events, role, plannedWindow);
 
   function openTodayModal() {
     // Write-time backstop, mirroring Attendance's submitEvent: the AppState listener may
@@ -99,6 +123,7 @@ export default function RegularizationScreen({ navigation }: Props) {
     if (!todayLiveStatus) return;
     setFormError(null);
     setReason('');
+    setKm('');
     setModalDate(todayDateString());
     setModalOriginalStatus(todayLiveStatus);
     setModalVisible(true);
@@ -143,6 +168,7 @@ export default function RegularizationScreen({ navigation }: Props) {
     if (!pastStatus) return;
     setFormError(null);
     setReason('');
+    setKm('');
     setModalDate(formatDateString(pickedDate));
     setModalOriginalStatus(pastStatus);
     setModalVisible(true);
@@ -153,6 +179,14 @@ export default function RegularizationScreen({ navigation }: Props) {
     if (!reason.trim()) {
       setFormError('A reason is required.');
       return;
+    }
+    let claimedKm: number | null = null;
+    if (canClaimConveyance && km.trim()) {
+      claimedKm = Number(km.trim().replace(',', '.'));
+      if (!Number.isFinite(claimedKm) || claimedKm < 0) {
+        setFormError('KM must be a number.');
+        return;
+      }
     }
     if (!user || submitting) return;
     setSubmitting(true);
@@ -178,13 +212,20 @@ export default function RegularizationScreen({ navigation }: Props) {
         setFormError('This date is a rest day and cannot be regularized.');
         return;
       }
-      await submitRegularizationRequest(user, {
-        date: modalDate,
-        originalStatus: modalOriginalStatus,
-        reason: reason.trim(),
-      });
+      try {
+        await submitRegularizationRequest(user, {
+          date: modalDate,
+          originalStatus: modalOriginalStatus,
+          reason: reason.trim(),
+          claimedKm,
+        });
+      } catch (e) {
+        setFormError((e as Error).message);
+        return;
+      }
       setModalVisible(false);
       setReason('');
+      setKm('');
     } finally {
       setSubmitting(false);
     }
@@ -273,6 +314,17 @@ export default function RegularizationScreen({ navigation }: Props) {
               // the buttons below it.
               onFocus={() => modalScrollRef.current?.scrollToEnd({ animated: true })}
             />
+            {canClaimConveyance && (
+              <TextInput
+                style={styles.input}
+                placeholder="KM traveled that day (optional)"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="decimal-pad"
+                value={km}
+                onChangeText={setKm}
+                onFocus={() => modalScrollRef.current?.scrollToEnd({ animated: true })}
+              />
+            )}
             {formError && <Text style={styles.error}>{formError}</Text>}
             <AnimatedPressable style={styles.button} disabled={submitting} onPress={handleSubmit}>
               <Text style={styles.buttonText}>{submitting ? 'Submitting…' : 'Submit Request'}</Text>

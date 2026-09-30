@@ -106,3 +106,25 @@ describe('isRestDay', () => {
     expect(isRestDay('2026-09-24', false)).toBe(false);
   });
 });
+
+describe('deriveTodayLiveStatus by role', () => {
+  const at = (type: string, h: number, m: number) => ({ type, timestamp: epochForIstTime(h, m) });
+
+  it('a sales SITE day is regularizable', () => {
+    expect(deriveTodayLiveStatus([at('site_in', 10, 20)], 'sales')).toBe('HalfDay');
+  });
+
+  it('office punches are invisible to an operations day', () => {
+    expect(deriveTodayLiveStatus([at('office_in', 10, 20)], 'operations')).toBeNull();
+  });
+
+  it('operations scores against the planned shift', () => {
+    const events = [at('site_in', 11, 50), at('site_out', 20, 0)];
+    expect(deriveTodayLiveStatus(events, 'operations', { startMin: 12 * 60, endMin: 20 * 60 })).toBeNull();
+    expect(deriveTodayLiveStatus(events, 'operations', null)).toBe('HalfDay');
+  });
+
+  it('an office day stays unchanged by the default role', () => {
+    expect(deriveTodayLiveStatus([at('office_in', 9, 50), at('office_out', 17, 0)])).toBe('SL');
+  });
+});
