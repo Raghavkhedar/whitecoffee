@@ -28,9 +28,6 @@ class FakeNotificationRepository(
     var savedToken: String? = null
         private set
 
-    /** Every notification passed to [saveNotification], in order. */
-    val saved = mutableListOf<AppNotification>()
-
     fun setNotifications(list: List<AppNotification>) { notifications.value = list }
 
     private fun stream(): Flow<List<AppNotification>> = notifications.map { list ->
@@ -53,13 +50,6 @@ class FakeNotificationRepository(
     override suspend fun markAllAsRead(): Result<Unit> {
         failWith?.let { return Result.failure(it) }
         notifications.value = notifications.value.map { it.copy(isRead = true) }
-        return Result.success(Unit)
-    }
-
-    override suspend fun saveNotification(notification: AppNotification): Result<Unit> {
-        failWith?.let { return Result.failure(it) }
-        saved += notification
-        notifications.value = notifications.value + notification
         return Result.success(Unit)
     }
 

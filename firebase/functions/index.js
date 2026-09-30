@@ -67,6 +67,7 @@ const { assessPunch } = require("./punchIntegrity");
 // Is a punch structurally possible given the rest of its day? A punch can be individually
 // honest and still impossible in sequence — see punchSequence.js.
 const { assessSequence, isDayOpen } = require("./punchSequence");
+const { buildOpenSessionReminder } = require("./openSessionReminder");
 // Auto-file a regularization for a day that scored LNF because a check-out was forgotten.
 const { needsAutoRegularization, buildAutoRegularization } = require("./unclosedDay");
 // Before/after audit entry for every write — see auditLog.js on why the actor is
@@ -1717,9 +1718,12 @@ exports.exportToSheets = onSchedule(
 // ── FCM Push Notifications ────────────────────────────────────────────────────
 // Triggered when admin portal writes a new doc to /sent_notifications/.
 // Reads FCM tokens for the target audience and sends push to all their devices,
-// even when the app is closed. The in-app notification record is written by the
-// admin portal (writeBatch to /users/{uid}/notifications/); this function only
-// handles the push delivery layer.
+// even when the app is closed. This function only handles the push delivery layer:
+// the in-app record (/users/{uid}/notifications/) is written by whoever creates the
+// sent_notifications doc — the admin portal in its own writeBatch, openSessionReminder in
+// its own batch. No client writes it (rules forbid owner-create), so a new sender that
+// skips the row gets a push with no bell entry. Don't write it here generically: the
+// admin portal already has, and it would appear twice.
 exports.sendPushNotification = onDocumentCreated(
   "sent_notifications/{docId}",
   async (event) => {
@@ -1888,14 +1892,15 @@ exports.autoFileUnclosedDays = onSchedule(
 // employee can still act beats a regularization the next morning. autoFileUnclosedDays is
 // the safety net for when this is missed or ignored — both exist on purpose.
 //
-// Sends ONLY a `sent_notifications` doc, which sendPushNotification fans out to FCM. It
-// deliberately does NOT also write users/{uid}/notifications: FcmService.onMessageReceived
-// already saves an in-app copy when it receives one, so writing our own would give every
-// foregrounded employee two identical rows.
+// Writes a `sent_notifications` doc (sendPushNotification fans it out to FCM) AND the
+// users/{uid}/notifications bell row, in one batch. The row MUST be written here: rules
+// have no owner-create on that collection (it let employees forge company messages), so
+// the Android client's old foreground save was PERMISSION_DENIED and the reminder never
+// reached the in-app list. See openSessionReminder.js.
 //
-// Idempotent by deterministic doc ID: sendPushNotification triggers on document CREATION,
-// so a re-run `set`s the same path, which is an update and does not fire the trigger again.
-// A retry therefore cannot push the same reminder twice.
+// Idempotent by deterministic doc IDs: sendPushNotification triggers on document CREATION,
+// so a re-run `set`s the same paths — an update, which does not fire the trigger again and
+// overwrites rather than duplicates the bell row. A retry cannot push or list it twice.
 //
 // No Sunday/holiday calendar logic, deliberately: someone with no punches has an unopened
 // day, isDayOpen returns false, and they are never messaged. The data already says who is
@@ -1934,15 +1939,13 @@ exports.openSessionReminder = onSchedule(
     for (const { userId, user, punches } of perUser) {
       if (!isDayOpen(punches, user.role)) continue;
 
-      batch.set(db.collection("sent_notifications").doc(`open-session-${userId}-${today}`), {
-        title: "You are still checked in",
-        body: "Your day has no check-out yet. Please check out in the app — an unclosed day is recorded as a half day.",
-        type: "attendance",
-        recipientType: "specific",
-        recipientId: userId,
-        sentAt: admin.firestore.Timestamp.now(),
-        sentBy: "openSessionReminder",
-      });
+      const r = buildOpenSessionReminder(userId, today);
+      const now = admin.firestore.Timestamp.now();
+      batch.set(db.collection("sent_notifications").doc(r.pushId), { ...r.push, sentAt: now });
+      batch.set(
+        db.collection("users").doc(userId).collection("notifications").doc(r.inAppId),
+        { ...r.inApp, createdAt: now }
+      );
       nudged.push(user.employeeId || userId);
     }
 

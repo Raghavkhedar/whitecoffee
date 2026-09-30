@@ -19,9 +19,6 @@ interface NotificationRepository {
 
     suspend fun markAllAsRead(): Result<Unit>
 
-    /** Persists a notification received while the app was foregrounded. */
-    suspend fun saveNotification(notification: AppNotification): Result<Unit>
-
     /** Stores the device's FCM token on the user document. */
     suspend fun saveToken(token: String): Result<Unit>
 }
