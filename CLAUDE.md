@@ -7,6 +7,15 @@ Three products for Senken Engineering, one Firebase project (`white-coffee-92c27
 - **`mobile/`** — iOS client (Expo/React Native, TypeScript), Phase 1: office-role attendance only. Authoritative context: `mobile/AGENTS.md` (`mobile/CLAUDE.md` just includes it). Build/typecheck: `cd mobile && npx tsc --noEmit`. Test: `cd mobile && npm test`. Requires `mobile/.env` (gitignored, real Firebase web config — copy the six values from `admin/.env.local`, renamed `EXPO_PUBLIC_FIREBASE_*`).
 - **`firebase/`** — SINGLE source of truth for backend: `firestore.rules`, `storage.rules`, `functions/`. Deploy from repo root: `firebase deploy` (may need `firebase login --reauth` if the CLI token expired). Functions have a `npm test` (`node --test`, no deps) boundary suite in `firebase/functions/` (and `npm run test:emulator` for the late-leave trigger, which needs the Firestore emulator via the firebase CLI); `npm run lint` works (0 errors; a few unused-var warnings remain), but `node --check` + `npm test` are still the real gate. Cloud functions run on a **UTC** clock — compute IST dates by shifting `+05:30` and reading `getUTC*` / `getUTCDay()` on a `"yyyy-mm-ddT00:00:00Z"` string; never use bare `new Date()`/`getDay()` for an IST date.
 
+## In-app notifications — the server writes the bell row
+`users/{uid}/notifications` has **no owner-create** in the rules (it let employees forge company
+messages), so no client may write it — clients only display pushes and mark rows read. Whoever
+creates the `sent_notifications` doc that `sendPushNotification` fans out must write the bell row
+too: the admin portal does it in its own batch; server senders do it in theirs (Admin SDK), as
+`openSessionReminder` does with a deterministic row ID. A new sender that skips it delivers a push
+that never appears in the in-app list. Never add the row generically in `sendPushNotification` —
+the portal already wrote one and it would appear twice.
+
 ## Security boundary — read before touching `firestore.rules`
 Both clients use the **client Firebase SDK**, so `firebase/firestore.rules` is not one
 layer of defence among several — **it is the defence**. Anything the rules permit, an
