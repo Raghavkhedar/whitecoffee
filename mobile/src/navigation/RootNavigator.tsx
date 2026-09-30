@@ -16,6 +16,7 @@ import MaterialTransferScreen from '../screens/MaterialTransferScreen';
 import ToolTransferScreen from '../screens/ToolTransferScreen';
 import OperationsAttendanceScreen from '../screens/OperationsAttendanceScreen';
 import SalesAttendanceScreen from '../screens/SalesAttendanceScreen';
+import AccountSuspendedBlock from '../components/AccountSuspendedBlock';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -90,7 +91,7 @@ function LoginSuccessWipe({ onCovered, onDone }: LoginSuccessWipeProps) {
 }
 
 export default function RootNavigator() {
-  const { user, loading } = useAuth();
+  const { user, loading, accountStatus } = useAuth();
   const [renderAuthed, setRenderAuthed] = useState(!!user);
   const [wiping, setWiping] = useState(false);
   const wasUserRef = useRef(!!user);
@@ -163,6 +164,9 @@ export default function RootNavigator() {
         </NavigationContainer>
       </Animated.View>
       {wiping && <LoginSuccessWipe onCovered={() => setRenderAuthed(true)} onDone={() => setWiping(false)} />}
+      {user && accountStatus.kind === 'suspended' && (
+        <AccountSuspendedBlock reason={accountStatus.reason} expectedReturn={accountStatus.expectedReturn} />
+      )}
     </View>
   );
 }
