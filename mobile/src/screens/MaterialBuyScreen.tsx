@@ -10,6 +10,7 @@ import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import DismissKeyboardView from '../components/DismissKeyboardView';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'MaterialBuy'>;
 
@@ -38,6 +39,7 @@ type UploadState = 'idle' | 'uploading' | 'failed';
 export default function MaterialBuyScreen({ navigation }: Props) {
   const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
+  const { refreshControl } = usePullToRefresh();
 
   const [siteId, setSiteId] = useState('');
   const [siteName, setSiteName] = useState('');
@@ -184,6 +186,7 @@ export default function MaterialBuyScreen({ navigation }: Props) {
       <TopBar title="M&T Buy" onBack={() => navigation.goBack()} />
       <ScrollView
         ref={scrollRef}
+        refreshControl={refreshControl}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="always"
         automaticallyAdjustKeyboardInsets

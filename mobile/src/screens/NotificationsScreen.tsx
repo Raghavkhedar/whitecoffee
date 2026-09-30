@@ -14,6 +14,7 @@ import { Colors } from '../theme/colors';
 import { Fonts } from '../theme/fonts';
 import TopBar from '../components/TopBar';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
 
@@ -23,11 +24,12 @@ export default function NotificationsScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [items, setItems] = useState<AppNotification[] | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { refreshKey, refreshControl } = usePullToRefresh();
 
   useEffect(() => {
     if (!user) return;
     return subscribeNotifications(user.uid, setItems);
-  }, [user]);
+  }, [user, refreshKey]);
 
   const hasUnread = !!items?.some((n) => !n.isRead);
   const now = Date.now();
@@ -53,6 +55,7 @@ export default function NotificationsScreen({ navigation }: Props) {
         data={items ?? []}
         keyExtractor={(n) => n.id}
         contentContainerStyle={styles.list}
+        refreshControl={refreshControl}
         ListEmptyComponent={
           items === null ? (
             <Text style={styles.empty}>Loading…</Text>

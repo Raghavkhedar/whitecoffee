@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
 import { getTodaysSalesCommittedPath } from '../attendance/attendanceApi';
@@ -8,6 +8,7 @@ import TopBar from '../components/TopBar';
 import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SalesAttendance'>;
 
@@ -21,6 +22,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'SalesAttendance'>;
 export default function SalesAttendanceScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [checking, setChecking] = useState(true);
+  const { refreshKey, refreshControl } = usePullToRefresh();
 
   useEffect(() => {
     if (!user) return;
@@ -42,7 +44,7 @@ export default function SalesAttendanceScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [user, navigation]);
+  }, [user, navigation, refreshKey]);
 
   if (checking) {
     return (
@@ -58,7 +60,7 @@ export default function SalesAttendanceScreen({ navigation }: Props) {
   return (
     <View style={styles.screen}>
       <TopBar title="Attendance" onBack={() => navigation.goBack()} />
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} refreshControl={refreshControl}>
         <FadeInView style={styles.content}>
           <Text style={styles.prompt}>How are you working today?</Text>
           <AnimatedPressable style={styles.card} onPress={() => navigation.replace('Attendance')}>
@@ -70,7 +72,7 @@ export default function SalesAttendanceScreen({ navigation }: Props) {
             <Text style={styles.cardSubtitle}>Check in from a site or market</Text>
           </AnimatedPressable>
         </FadeInView>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -78,7 +80,7 @@ export default function SalesAttendanceScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.screenBg },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  container: { flex: 1 },
+  container: { flexGrow: 1 },
   content: { flex: 1, padding: 24, gap: 16 },
   prompt: { fontSize: 16, fontWeight: '600', color: Colors.textPrimary, marginBottom: 8 },
   card: {

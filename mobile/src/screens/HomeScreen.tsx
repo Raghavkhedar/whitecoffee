@@ -14,6 +14,7 @@ import AnimatedPressable from '../components/AnimatedPressable';
 import { attendanceRouteFor } from '../roles/roleCapabilities';
 import { useLogoutWithCheckout } from '../auth/useLogoutWithCheckout';
 import { subscribeUnreadCount } from '../notifications/notificationsApi';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -46,10 +47,11 @@ export default function HomeScreen({ navigation }: Props) {
   const { user } = useAuth();
   const logout = useLogoutWithCheckout();
   const [unreadCount, setUnreadCount] = useState(0);
+  const { refreshKey, refreshControl } = usePullToRefresh();
   useEffect(() => {
     if (!user) return;
     return subscribeUnreadCount(user.uid, setUnreadCount);
-  }, [user]);
+  }, [user, refreshKey]);
 
   // Attendance, Regularization and the Today card all follow the role-capabilities table —
   // every known role gets them; an unknown role gets none (see attendanceRouteFor).
@@ -95,11 +97,11 @@ export default function HomeScreen({ navigation }: Props) {
           </View>
         )}
       </HeroHeader>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} refreshControl={refreshControl}>
         <View style={styles.sheet}>
           {attendanceRoute && user && (
             <FadeInView style={styles.section}>
-              <TodayStatusCard uid={user.uid} role={user.role} />
+              <TodayStatusCard uid={user.uid} role={user.role} refreshKey={refreshKey} />
             </FadeInView>
           )}
 

@@ -29,6 +29,7 @@ import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import AnimatedModalCard from '../components/AnimatedModalCard';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Regularization'>;
 
@@ -82,6 +83,14 @@ export default function RegularizationScreen({ navigation }: Props) {
   // subscription left running across midnight keeps serving yesterday's events. Re-key the
   // subscription on this and re-check it on AppState 'active' (see below).
   const [subscribedDate, setSubscribedDate] = useState(todayDateString());
+  // Pull-to-refresh: re-opens every listener below, re-reads the shift, and re-checks the
+  // picked past date's status. The refs are filled in on each render further down.
+  const pastPickerVisibleRef = useRef(false);
+  const loadPastStatusRef = useRef<(() => Promise<void>) | null>(null);
+  const { refreshKey, refreshControl } = usePullToRefresh(() => {
+    if (todayDateString() !== subscribedDate) setSubscribedDate(todayDateString());
+    if (pastPickerVisibleRef.current) return loadPastStatusRef.current?.();
+  });
 
   const [pastPickerVisible, setPastPickerVisible] = useState(false);
   const [pickedDate, setPickedDate] = useState<Date>(yesterday());
@@ -101,7 +110,7 @@ export default function RegularizationScreen({ navigation }: Props) {
   useEffect(() => {
     if (!user) return;
     return subscribeTodayEvents(user.uid, setEvents);
-  }, [user, subscribedDate]);
+  }, [user, subscribedDate, refreshKey]);
 
   // Operations score against the day's planned shift (10:00–18:00 when none is set).
   useEffect(() => {
@@ -114,7 +123,7 @@ export default function RegularizationScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [user, subscribedDate]);
+  }, [user, subscribedDate, refreshKey]);
 
   // The app spends the rollover suspended, so nothing re-renders at midnight — the date
   // check has to happen when it wakes back up.
@@ -132,7 +141,7 @@ export default function RegularizationScreen({ navigation }: Props) {
 
   useEffect(() => {
     return subscribeRegularizationWindow(setWindowOpen);
-  }, []);
+  }, [refreshKey]);
 
   // The request already filed for today / the picked date, if any — live, so the button is
   // replaced by its status the moment a request is submitted.
@@ -140,14 +149,16 @@ export default function RegularizationScreen({ navigation }: Props) {
     if (!user) return;
     setTodayRequest(null);
     return subscribeRequestForDate(user.uid, subscribedDate, setTodayRequest);
-  }, [user, subscribedDate]);
+  }, [user, subscribedDate, refreshKey]);
 
   const pickedDateString = formatDateString(pickedDate);
   useEffect(() => {
     if (!user || !pastPickerVisible) return;
     setPastRequest(null);
     return subscribeRequestForDate(user.uid, pickedDateString, setPastRequest);
-  }, [user, pastPickerVisible, pickedDateString]);
+  }, [user, pastPickerVisible, pickedDateString, refreshKey]);
+  pastPickerVisibleRef.current = pastPickerVisible;
+  loadPastStatusRef.current = () => loadPastStatus(pickedDate);
 
   const todayLiveStatus = deriveTodayLiveStatus(events, role, plannedWindow);
 
@@ -276,7 +287,7 @@ export default function RegularizationScreen({ navigation }: Props) {
   return (
     <View style={styles.screen}>
       <TopBar title="Regularization" onBack={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={refreshControl}>
         <FadeInView style={styles.card}>
           <Text style={styles.label}>Today</Text>
           {todayLiveStatus ? (

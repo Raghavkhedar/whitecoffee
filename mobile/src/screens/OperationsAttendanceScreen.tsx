@@ -15,6 +15,7 @@ import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import AnimatedModalCard from '../components/AnimatedModalCard';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OperationsAttendance'>;
 
@@ -32,6 +33,9 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
   // Same day-rollover freshness guard as AttendanceScreen.tsx (office) — see that file's
   // comment on `subscribedDate` for the full S338 incident this protects against.
   const [subscribedDate, setSubscribedDate] = useState(todayDateString());
+  const { refreshKey, refreshControl } = usePullToRefresh(() => {
+    if (todayDateString() !== subscribedDate) setSubscribedDate(todayDateString());
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -39,7 +43,7 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
       setEvents(newEvents);
       setEventsLoaded(true);
     });
-  }, [user, subscribedDate]);
+  }, [user, subscribedDate, refreshKey]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
@@ -139,7 +143,7 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <TopBar title="Attendance" onBack={() => navigation.goBack()} />
       <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView contentContainerStyle={styles.scroll} refreshControl={refreshControl}>
         <FadeInView style={styles.content}>
           <AttendanceStatusHeader title={header.title} subtitle={header.subtitle} />
 

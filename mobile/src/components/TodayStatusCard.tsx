@@ -60,19 +60,21 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 interface Props {
   uid: string;
   role: string;
+  /** Bumped by the screen's pull-to-refresh: re-opens the listener and re-reads shift/holiday. */
+  refreshKey?: number;
 }
 
 // Today-at-a-glance, for every role with attendance. The chip is the same verdict the nightly
 // computeDailyAttendanceStatus will assign — resolveTodayStatus is a port of Android's
 // ResolveTodayStatusUseCase over the shared attendanceRules mirror — so it can't disagree with
 // payroll. The date shown is the IST date, the same "today" the punches are filed under.
-export default function TodayStatusCard({ uid, role }: Props) {
+export default function TodayStatusCard({ uid, role, refreshKey = 0 }: Props) {
   const [date, setDate] = useState(todayDateString());
   const [events, setEvents] = useState<DayEvent[]>([]);
   const [planned, setPlanned] = useState<Window | null>(null);
   const [restDay, setRestDay] = useState<'Holiday' | 'Sunday' | null>(resolveRestDayType(date, false));
 
-  useEffect(() => subscribeTodayEvents(uid, setEvents), [uid, date]);
+  useEffect(() => subscribeTodayEvents(uid, setEvents), [uid, date, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +90,7 @@ export default function TodayStatusCard({ uid, role }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [uid, role, date]);
+  }, [uid, role, date, refreshKey]);
 
   // Midnight rollover while backgrounded — same pattern as the attendance screens.
   useEffect(() => {

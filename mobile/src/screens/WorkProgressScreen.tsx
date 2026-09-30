@@ -12,6 +12,7 @@ import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import DismissKeyboardView from '../components/DismissKeyboardView';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'WorkProgress'>;
 
@@ -21,6 +22,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'WorkProgress'>;
 export default function WorkProgressScreen({ navigation }: Props) {
   const { user } = useAuth();
   const scrollRef = useRef<ScrollView>(null);
+  const { refreshControl } = usePullToRefresh();
   const [siteName, setSiteName] = useState('');
   const [siteId, setSiteId] = useState('');
   const [date, setDate] = useState(new Date());
@@ -95,6 +97,7 @@ export default function WorkProgressScreen({ navigation }: Props) {
       <TopBar title="Work Progress" onBack={() => navigation.goBack()} />
       <ScrollView
         ref={scrollRef}
+        refreshControl={refreshControl}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="always"
         automaticallyAdjustKeyboardInsets

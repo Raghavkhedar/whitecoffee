@@ -16,6 +16,7 @@ import FadeInView from '../components/FadeInView';
 import AnimatedPressable from '../components/AnimatedPressable';
 import DismissKeyboardView from '../components/DismissKeyboardView';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Leave'>;
 
@@ -48,11 +49,12 @@ export default function LeaveScreen({ navigation }: Props) {
   const [formError, setFormError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<LeaveRequest[]>([]);
+  const { refreshKey, refreshControl } = usePullToRefresh();
 
   useEffect(() => {
     if (!user) return;
     return subscribeMyLeaveRequests(user.uid, setHistory);
-  }, [user]);
+  }, [user, refreshKey]);
 
   const dayCount = expandDateRange(formatDateString(fromDate), formatDateString(toDate)).length;
 
@@ -116,6 +118,7 @@ export default function LeaveScreen({ navigation }: Props) {
       {tab === 'apply' ? (
         <ScrollView
           ref={applyScrollRef}
+          refreshControl={refreshControl}
           contentContainerStyle={styles.content}
           // 'always', not 'handled' — see RegularizationScreen.tsx for why: 'always' is what
           // the docs guarantee lets DismissKeyboardView's Pressable reliably catch a
@@ -199,7 +202,7 @@ export default function LeaveScreen({ navigation }: Props) {
           </DismissKeyboardView>
         </ScrollView>
       ) : (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={styles.content} refreshControl={refreshControl}>
           <FadeInView style={styles.historyList}>
             {history.length === 0 ? (
               <Text style={styles.empty}>No leave requests yet.</Text>

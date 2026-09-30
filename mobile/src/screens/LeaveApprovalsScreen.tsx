@@ -9,6 +9,7 @@ import TopBar from '../components/TopBar';
 import AnimatedPressable from '../components/AnimatedPressable';
 import AnimatedModalCard from '../components/AnimatedModalCard';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { usePullToRefresh } from '../components/usePullToRefresh';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LeaveApprovals'>;
 
@@ -27,11 +28,12 @@ export default function LeaveApprovalsScreen({ navigation }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<PendingLeave | null>(null);
   const [comment, setComment] = useState('');
+  const { refreshKey, refreshControl } = usePullToRefresh();
 
   useEffect(() => subscribePendingLeaves((list) => {
     setItems(list);
     setLoadError(null);
-  }, setLoadError), []);
+  }, setLoadError), [refreshKey]);
 
   function confirmApprove(item: PendingLeave) {
     Alert.alert(
@@ -78,6 +80,7 @@ export default function LeaveApprovalsScreen({ navigation }: Props) {
         data={items ?? []}
         keyExtractor={(i) => `${i.userId}/${i.id}`}
         contentContainerStyle={styles.list}
+        refreshControl={refreshControl}
         ListEmptyComponent={
           <Text style={styles.empty}>{loadError ?? (items === null ? 'Loading…' : 'No pending leave requests')}</Text>
         }
