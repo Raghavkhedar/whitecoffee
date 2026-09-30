@@ -88,7 +88,21 @@ export function useLogoutWithCheckout(): () => Promise<void> {
         return;
       }
 
-      writeDayClose(user, plan, coords);
+      // Wait for the server to confirm the closing punches BEFORE signing out (see
+      // writeDayClose). Offline they can't confirm; the user decides, knowing the risk.
+      try {
+        await withTimeout(writeDayClose(user, plan, coords), 10000);
+      } catch (e) {
+        const denied = (e as { code?: string }).code === 'permission-denied';
+        const anyway = await confirm(
+          denied ? "Couldn't close your day" : "Couldn't confirm your check-out",
+          denied
+            ? 'The server refused the check-out, so your day may still be open. Stay logged in and use the Attendance screen, or contact your administrator.'
+            : "Your check-out hasn't reached the server yet (no connection?). If you log out and the app is closed before it syncs, it will be lost and your day will stay open.",
+          'Log out anyway',
+        );
+        if (!anyway) return;
+      }
       await logout();
     } finally {
       busy.current = false;

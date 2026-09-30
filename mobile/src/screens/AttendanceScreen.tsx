@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, View, Text, StyleSheet, Alert, TextInput } from 'react-native';
+import { AppState, View, Text, StyleSheet, Alert, TextInput, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
-import {
-  deriveOfficeState,
-  isOfficeEventAllowed,
-  type OfficeAttendanceEvent,
-  type OfficeEventType,
-} from '../attendance/officeAttendanceState';
-import { subscribeTodayOfficeEvents, recordOfficeEvent, todayDateString } from '../attendance/attendanceApi';
+import { deriveOfficeState, isOfficeEventAllowed, type OfficeEventType } from '../attendance/officeAttendanceState';
+import { subscribeTodayEvents, recordOfficeEvent, todayDateString, type DayEvent } from '../attendance/attendanceApi';
+import { formatTime } from '../attendance/dayTimeline';
+import DayTimeline from '../components/DayTimeline';
+import AttendanceStatusHeader from '../components/AttendanceStatusHeader';
 import { hasOpenSession } from '../attendance/openSession';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 import { Colors } from '../theme/colors';
@@ -22,7 +20,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Attendance'>;
 
 export default function AttendanceScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const [events, setEvents] = useState<OfficeAttendanceEvent[]>([]);
+  const [events, setEvents] = useState<DayEvent[]>([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [locationPromptVisible, setLocationPromptVisible] = useState(false);
@@ -39,7 +37,7 @@ export default function AttendanceScreen({ navigation }: Props) {
   // Layer 1: re-subscribe whenever the date we subscribed for changes.
   useEffect(() => {
     if (!user) return;
-    return subscribeTodayOfficeEvents(user.uid, (newEvents) => {
+    return subscribeTodayEvents(user.uid, (newEvents) => {
       setEvents(newEvents);
       setEventsLoaded(true);
     });
@@ -61,6 +59,23 @@ export default function AttendanceScreen({ navigation }: Props) {
   }, [subscribedDate]);
 
   const state = deriveOfficeState(events);
+
+  // What the header says — Android's wording ("Checked in · At <place>"), never the raw state.
+  const lastOf = (type: string) => [...events].reverse().find((e) => e.type === type);
+  let header: { title: string; subtitle?: string };
+  if (!eventsLoaded) header = { title: 'Loading…' };
+  else if (state === 'NotStarted') header = { title: 'Day not started', subtitle: 'Check in from home to begin your day' };
+  else if (state === 'DayStarted') {
+    const homeIn = lastOf('home_in');
+    header = { title: 'Home checked in', subtitle: homeIn ? `Since ${formatTime(homeIn.timestamp)}` : undefined };
+  } else if (state === 'InOffice') {
+    const open = lastOf('office_in');
+    const where = open?.locationName ? `At ${open.locationName}` : 'Checked in';
+    header = { title: 'Checked in', subtitle: open ? `${where} · since ${formatTime(open.timestamp)}` : undefined };
+  } else {
+    const homeOut = lastOf('home_out');
+    header = { title: 'Day complete', subtitle: homeOut ? `Home out at ${formatTime(homeOut.timestamp)}` : undefined };
+  }
 
   async function submitEvent(type: OfficeEventType, locationName?: string) {
     // Layer 2, write-time backstop: the AppState listener may not have fired yet (the day
@@ -117,8 +132,9 @@ export default function AttendanceScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <TopBar title="Attendance" onBack={() => navigation.goBack()} />
       <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scroll}>
         <FadeInView style={styles.content}>
-          <Text style={styles.state}>Status: {state}</Text>
+          <AttendanceStatusHeader title={header.title} subtitle={header.subtitle} />
 
           {state === 'NotStarted' && (
             <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={() => submitEvent('home_in')}>
@@ -129,7 +145,7 @@ export default function AttendanceScreen({ navigation }: Props) {
           {state === 'DayStarted' && (
             <>
               <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleOfficeIn}>
-                <Text style={styles.buttonText}>Office Check In</Text>
+                <Text style={styles.buttonText}>Check In</Text>
               </AnimatedPressable>
               <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={handleHomeOut}>
                 <Text style={styles.buttonText}>End Day — Home Out</Text>
@@ -143,20 +159,21 @@ export default function AttendanceScreen({ navigation }: Props) {
             </AnimatedPressable>
           )}
 
-          {state === 'DayEnded' && <Text style={styles.state}>Day complete</Text>}
+          <DayTimeline events={events} />
         </FadeInView>
+        </ScrollView>
 
         <AnimatedModalCard
           visible={locationPromptVisible}
           style={styles.modalCard}
           onDismiss={() => setLocationPromptVisible(false)}
         >
-          <Text style={styles.modalTitle}>Where are you?</Text>
+          <Text style={styles.modalTitle}>Where are you checking in?</Text>
           <TextInput
             style={styles.input}
             value={locationText}
             onChangeText={setLocationText}
-            placeholder="e.g. Head Office"
+            placeholder="Office or site name"
           />
           <AnimatedPressable style={styles.button} disabled={submitting || !eventsLoaded} onPress={confirmOfficeIn}>
             <Text style={styles.buttonText}>Confirm</Text>
@@ -188,7 +205,8 @@ export default function AttendanceScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.screenBg },
   container: { flex: 1 },
-  content: { flex: 1, padding: 24, gap: 16 },
+  scroll: { flexGrow: 1 },
+  content: { padding: 24, gap: 16 },
   state: { fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
   button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonSecondary: { backgroundColor: Colors.textMuted, padding: 16, borderRadius: 12, alignItems: 'center' },

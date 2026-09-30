@@ -18,6 +18,9 @@ import {
   getAttendanceStatusForDate,
   hasPendingOrApprovedRequest,
   checkIsHoliday,
+  subscribeRequestForDate,
+  blocksNewRequest,
+  type ExistingRequest,
 } from '../regularization/regularizationApi';
 import { formatDateString } from '../leave/leaveApi';
 import { Colors } from '../theme/colors';
@@ -44,6 +47,26 @@ function yesterday(): Date {
   return d;
 }
 
+const REQUEST_LABEL: Record<string, { text: string; bg: string; fg: string }> = {
+  pending: { text: 'Request submitted — pending review', bg: Colors.statusPendingBg, fg: Colors.statusPendingFg },
+  approved: { text: 'Request approved', bg: Colors.statusPresentBg, fg: Colors.statusPresentFg },
+  rejected: { text: 'Previous request rejected — you can request again', bg: Colors.statusRejectedBg, fg: Colors.statusRejectedFg },
+};
+
+function RequestStatus({ request }: { request: ExistingRequest | null }) {
+  if (!request) return null;
+  const label = REQUEST_LABEL[request.status];
+  if (!label) return null;
+  return (
+    <View style={[styles.requestPill, { backgroundColor: label.bg }]}>
+      <Text style={[styles.requestText, { color: label.fg }]}>{label.text}</Text>
+      {request.approverComment ? (
+        <Text style={[styles.requestComment, { color: label.fg }]}>“{request.approverComment}”</Text>
+      ) : null}
+    </View>
+  );
+}
+
 export default function RegularizationScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [events, setEvents] = useState<DayEvent[]>([]);
@@ -55,7 +78,7 @@ export default function RegularizationScreen({ navigation }: Props) {
   const [windowOpen, setWindowOpen] = useState(false);
   const modalScrollRef = useRef<ScrollView>(null);
   // Same rollover guard as AttendanceScreen.tsx: the Firestore query behind
-  // subscribeTodayOfficeEvents bakes in `where('date', '==', ...)` at subscribe time, so a
+  // subscribeTodayEvents bakes in `where('date', '==', ...)` at subscribe time, so a
   // subscription left running across midnight keeps serving yesterday's events. Re-key the
   // subscription on this and re-check it on AppState 'active' (see below).
   const [subscribedDate, setSubscribedDate] = useState(todayDateString());
@@ -64,6 +87,8 @@ export default function RegularizationScreen({ navigation }: Props) {
   const [pickedDate, setPickedDate] = useState<Date>(yesterday());
   const [pastStatus, setPastStatus] = useState<string | null>(null);
   const [pastStatusLoading, setPastStatusLoading] = useState(false);
+  const [todayRequest, setTodayRequest] = useState<ExistingRequest | null>(null);
+  const [pastRequest, setPastRequest] = useState<ExistingRequest | null>(null);
 
   const [modalVisible, setModalVisible] = useState(false);
   const [modalDate, setModalDate] = useState('');
@@ -109,6 +134,21 @@ export default function RegularizationScreen({ navigation }: Props) {
     return subscribeRegularizationWindow(setWindowOpen);
   }, []);
 
+  // The request already filed for today / the picked date, if any — live, so the button is
+  // replaced by its status the moment a request is submitted.
+  useEffect(() => {
+    if (!user) return;
+    setTodayRequest(null);
+    return subscribeRequestForDate(user.uid, subscribedDate, setTodayRequest);
+  }, [user, subscribedDate]);
+
+  const pickedDateString = formatDateString(pickedDate);
+  useEffect(() => {
+    if (!user || !pastPickerVisible) return;
+    setPastRequest(null);
+    return subscribeRequestForDate(user.uid, pickedDateString, setPastRequest);
+  }, [user, pastPickerVisible, pickedDateString]);
+
   const todayLiveStatus = deriveTodayLiveStatus(events, role, plannedWindow);
 
   function openTodayModal() {
@@ -120,7 +160,7 @@ export default function RegularizationScreen({ navigation }: Props) {
       setSubscribedDate(todayDateString());
       return;
     }
-    if (!todayLiveStatus) return;
+    if (!todayLiveStatus || blocksNewRequest(todayRequest)) return;
     setFormError(null);
     setReason('');
     setKm('');
@@ -165,7 +205,7 @@ export default function RegularizationScreen({ navigation }: Props) {
   }, [pastPickerVisible]);
 
   function openPastModal() {
-    if (!pastStatus) return;
+    if (!pastStatus || blocksNewRequest(pastRequest)) return;
     setFormError(null);
     setReason('');
     setKm('');
@@ -244,9 +284,12 @@ export default function RegularizationScreen({ navigation }: Props) {
               <Text style={styles.state}>
                 Today's status looks like: {STATUS_LABEL[todayLiveStatus] ?? todayLiveStatus}
               </Text>
-              <AnimatedPressable style={styles.button} onPress={openTodayModal}>
-                <Text style={styles.buttonText}>Request Correction</Text>
-              </AnimatedPressable>
+              <RequestStatus request={todayRequest} />
+              {!blocksNewRequest(todayRequest) && (
+                <AnimatedPressable style={styles.button} onPress={openTodayModal}>
+                  <Text style={styles.buttonText}>Request Correction</Text>
+                </AnimatedPressable>
+              )}
             </>
           ) : (
             <Text style={styles.muted}>No issues with today's attendance so far.</Text>
@@ -274,9 +317,12 @@ export default function RegularizationScreen({ navigation }: Props) {
                     <Text style={styles.state}>
                       {formatDateString(pickedDate)} status: {STATUS_LABEL[pastStatus] ?? pastStatus}
                     </Text>
-                    <AnimatedPressable style={styles.button} onPress={openPastModal}>
-                      <Text style={styles.buttonText}>Request Correction</Text>
-                    </AnimatedPressable>
+                    <RequestStatus request={pastRequest} />
+                    {!blocksNewRequest(pastRequest) && (
+                      <AnimatedPressable style={styles.button} onPress={openPastModal}>
+                        <Text style={styles.buttonText}>Request Correction</Text>
+                      </AnimatedPressable>
+                    )}
                   </>
                 )}
               </>
@@ -339,6 +385,9 @@ export default function RegularizationScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  requestPill: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, gap: 4 },
+  requestText: { fontSize: 13, fontWeight: '700' },
+  requestComment: { fontSize: 13 },
   screen: { flex: 1, backgroundColor: Colors.screenBg },
   content: { padding: 24, gap: 16 },
   card: {

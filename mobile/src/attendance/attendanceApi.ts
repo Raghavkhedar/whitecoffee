@@ -2,8 +2,8 @@ import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, T
 import { auth, db } from '../firebase/config';
 import { buildPunchPayload, istDateString } from './punchPayload';
 import { resolveOpsWindow, type Window } from './attendanceRules';
-import type { OfficeAttendanceEvent, OfficeEventType } from './officeAttendanceState';
-import type { OpsAttendanceEvent, OpsEventType } from './opsAttendanceState';
+import type { OfficeEventType } from './officeAttendanceState';
+import type { OpsEventType } from './opsAttendanceState';
 
 export interface UserProfile {
   uid: string;
@@ -32,42 +32,26 @@ export function todayDateString(): string {
 
 // Fire-and-forget, like Android: the doc id is minted locally and the write is NOT awaited —
 // awaiting the server ack would hang the punch offline.
-function writePunch(user: UserProfile, fields: Parameters<typeof buildPunchPayload>[1], atMs?: number): void {
+// Returns the server-ack promise for callers that must wait for it (logout); everyone else
+// ignores it, and a failure is logged here either way.
+function writePunch(
+  user: UserProfile,
+  fields: Parameters<typeof buildPunchPayload>[1],
+  atMs?: number,
+): Promise<void> {
   const docRef = doc(collection(db, 'users', user.uid, 'attendance'));
   const now = atMs === undefined ? Timestamp.now() : Timestamp.fromMillis(atMs);
   const actorUid = auth.currentUser?.uid || user.uid;
   const payload = buildPunchPayload(user, fields, istDateString(now.toMillis()), now, actorUid);
-  setDoc(docRef, payload).catch((error) => {
+  const ack = setDoc(docRef, payload);
+  ack.catch((error) => {
     console.error('Failed to sync attendance event to server', error);
   });
+  return ack;
 }
 
 export async function recordOfficeEvent(user: UserProfile, input: RecordEventInput): Promise<void> {
-  writePunch(user, input);
-}
-
-export function subscribeTodayOfficeEvents(
-  uid: string,
-  onChange: (events: OfficeAttendanceEvent[]) => void,
-): () => void {
-  const attendanceRef = collection(db, 'users', uid, 'attendance');
-  const q = query(attendanceRef, where('date', '==', todayDateString()), orderBy('timestamp', 'asc'));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const events = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          type: data.type as OfficeEventType,
-          timestamp: (data.timestamp as Timestamp).toMillis(),
-        };
-      });
-      onChange(events);
-    },
-    (error) => {
-      console.error('Attendance events subscription failed', error);
-    },
-  );
+  void writePunch(user, input);
 }
 
 export interface RecordOpsEventInput {
@@ -81,31 +65,7 @@ export interface RecordOpsEventInput {
 }
 
 export async function recordOpsEvent(user: UserProfile, input: RecordOpsEventInput): Promise<void> {
-  writePunch(user, input);
-}
-
-export function subscribeTodayOpsEvents(
-  uid: string,
-  onChange: (events: OpsAttendanceEvent[]) => void,
-): () => void {
-  const attendanceRef = collection(db, 'users', uid, 'attendance');
-  const q = query(attendanceRef, where('date', '==', todayDateString()), orderBy('timestamp', 'asc'));
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const events = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          type: data.type as OpsEventType,
-          timestamp: (data.timestamp as Timestamp).toMillis(),
-        };
-      });
-      onChange(events);
-    },
-    (error) => {
-      console.error('Attendance events subscription failed', error);
-    },
-  );
+  void writePunch(user, input);
 }
 
 export type SalesCommittedPath = 'office' | 'field' | null;
@@ -212,7 +172,12 @@ export function writeDayClose(
   user: UserProfile,
   plan: { type: string; siteId?: string; siteName?: string; marketName?: string; locationName?: string }[],
   coords: { latitude: number; longitude: number; isMockLocation: boolean },
-): void {
+): Promise<void> {
   const base = Date.now();
-  plan.forEach((punch, i) => writePunch(user, { ...punch, ...coords }, base + i));
+  // All issued together (the SDK sends them in order); the caller awaits the server ack of
+  // every one BEFORE signing out — a write still in flight at sign-out goes up with no auth
+  // and the rules refuse it, silently leaving the day half-closed (LNF).
+  return Promise.all(plan.map((punch, i) => writePunch(user, { ...punch, ...coords }, base + i))).then(
+    () => undefined,
+  );
 }

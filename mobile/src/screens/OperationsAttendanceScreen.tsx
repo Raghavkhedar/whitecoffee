@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { AppState, View, Text, StyleSheet, Alert, TextInput } from 'react-native';
+import { AppState, View, Text, StyleSheet, Alert, TextInput, ScrollView } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../auth/AuthContext';
-import {
-  deriveOpsState,
-  isOpsEventAllowed,
-  type OpsAttendanceEvent,
-  type OpsEventType,
-} from '../attendance/opsAttendanceState';
-import { subscribeTodayOpsEvents, recordOpsEvent, todayDateString } from '../attendance/attendanceApi';
+import { deriveOpsState, isOpsEventAllowed, type OpsEventType } from '../attendance/opsAttendanceState';
+import { subscribeTodayEvents, recordOpsEvent, todayDateString, type DayEvent } from '../attendance/attendanceApi';
+import { formatTime } from '../attendance/dayTimeline';
+import DayTimeline from '../components/DayTimeline';
+import AttendanceStatusHeader from '../components/AttendanceStatusHeader';
 import { hasOpenSession } from '../attendance/openSession';
 import { requestLocationPermission, getCurrentCoordinates } from '../location/useLocation';
 import { Colors } from '../theme/colors';
@@ -22,7 +20,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'OperationsAttendance'>;
 
 export default function OperationsAttendanceScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const [events, setEvents] = useState<OpsAttendanceEvent[]>([]);
+  const [events, setEvents] = useState<DayEvent[]>([]);
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [sitePromptVisible, setSitePromptVisible] = useState(false);
@@ -37,7 +35,7 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeTodayOpsEvents(user.uid, (newEvents) => {
+    return subscribeTodayEvents(user.uid, (newEvents) => {
       setEvents(newEvents);
       setEventsLoaded(true);
     });
@@ -57,6 +55,24 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
   }, [subscribedDate]);
 
   const state = deriveOpsState(events);
+
+  // Android's wording, never the raw state name.
+  const lastOf = (type: string) => [...events].reverse().find((e) => e.type === type);
+  const since = (e?: DayEvent) => (e ? `Since ${formatTime(e.timestamp)}` : undefined);
+  let header: { title: string; subtitle?: string };
+  if (!eventsLoaded) header = { title: 'Loading…' };
+  else if (state === 'NoRecord') header = { title: 'Not started', subtitle: 'Check in from home to begin your day' };
+  else if (state === 'HomeCheckedIn') header = { title: 'At Home', subtitle: since(events[events.length - 1]) };
+  else if (state === 'SiteCheckedIn') {
+    const open = lastOf('site_in');
+    header = { title: open?.siteName ? `At Site: ${open.siteName}` : 'At Site', subtitle: since(open) };
+  } else if (state === 'MarketCheckedIn') {
+    const open = lastOf('market_in');
+    header = { title: open?.marketName ? `At Market: ${open.marketName}` : 'At Market', subtitle: since(open) };
+  } else {
+    const homeOut = lastOf('home_out');
+    header = { title: 'Day complete', subtitle: homeOut ? `Home out at ${formatTime(homeOut.timestamp)}` : undefined };
+  }
 
   async function submitEvent(
     type: OpsEventType,
@@ -123,8 +139,9 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
     <View style={styles.screen}>
       <TopBar title="Attendance" onBack={() => navigation.goBack()} />
       <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scroll}>
         <FadeInView style={styles.content}>
-          <Text style={styles.state}>Status: {state}</Text>
+          <AttendanceStatusHeader title={header.title} subtitle={header.subtitle} />
 
           {state === 'NoRecord' && (
             <AnimatedPressable
@@ -175,8 +192,9 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
             </AnimatedPressable>
           )}
 
-          {state === 'DayComplete' && <Text style={styles.state}>Day complete</Text>}
+          <DayTimeline events={events} />
         </FadeInView>
+        </ScrollView>
 
         <AnimatedModalCard
           visible={sitePromptVisible}
@@ -245,7 +263,8 @@ export default function OperationsAttendanceScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.screenBg },
   container: { flex: 1 },
-  content: { flex: 1, padding: 24, gap: 16 },
+  scroll: { flexGrow: 1 },
+  content: { padding: 24, gap: 16 },
   state: { fontSize: 18, fontWeight: '600', color: Colors.textPrimary },
   button: { backgroundColor: Colors.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
   buttonSecondary: { backgroundColor: Colors.textMuted, padding: 16, borderRadius: 12, alignItems: 'center' },

@@ -9,6 +9,7 @@ import {
 } from '../attendance/attendanceApi';
 import { resolveRestDayType, resolveTodayStatus, type Window } from '../attendance/attendanceRules';
 import { usesFixedWindow } from '../roles/roleCapabilities';
+import { formatTime } from '../attendance/dayTimeline';
 import { Colors } from '../theme/colors';
 import { Fonts } from '../theme/fonts';
 
@@ -16,7 +17,8 @@ type Chip = { label: string; bg: string; fg: string; hint?: string };
 
 const NEUTRAL = { bg: Colors.border, fg: Colors.textMuted };
 
-// Same wording as Android's HomeViewModel.deriveLocation.
+// Android's HomeViewModel.deriveLocation wording, except office_in: that check-in can be at
+// a site too, so it reads "At <place>" rather than "In Office".
 function describeLocation(e: DayEvent): string {
   switch (e.type) {
     case 'home_in': return 'At Home';
@@ -25,18 +27,12 @@ function describeLocation(e: DayEvent): string {
     case 'site_out': return 'Left site';
     case 'market_in': return e.marketName ? `At ${e.marketName}` : 'At Market';
     case 'market_out': return 'Left market';
-    case 'office_in': return e.locationName ? `In Office: ${e.locationName}` : 'In Office';
-    case 'office_out': return 'Left office';
+    case 'office_in': return e.locationName ? `At ${e.locationName}` : 'Checked in';
+    case 'office_out': return 'Checked out';
     default: return '';
   }
 }
 
-function formatTime(epochMs: number): string {
-  if (!Number.isFinite(epochMs)) return '';
-  const d = new Date(epochMs);
-  const h = d.getHours();
-  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
-}
 
 function chipFor(events: DayEvent[], role: string, planned: Window | null, restDay: 'Holiday' | 'Sunday' | null): Chip {
   const preview = resolveTodayStatus(events, role, planned);

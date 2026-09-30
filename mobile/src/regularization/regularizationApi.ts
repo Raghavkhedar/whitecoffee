@@ -93,3 +93,43 @@ export async function checkIsHoliday(date: string): Promise<boolean> {
   const snapshot = await getDoc(holidayRef);
   return snapshot.exists();
 }
+
+export interface ExistingRequest {
+  status: string; // 'pending' | 'approved' | 'rejected'
+  approverComment: string;
+}
+
+/**
+ * The live request for a date (the active one if any, else the latest) — so the screen shows
+ * "pending review" the moment a request is filed (the local write is visible immediately, even
+ * offline) instead of offering the button again. Only pending/approved block a new request,
+ * matching hasPendingOrApprovedRequest and Android; a rejected one can be re-filed.
+ */
+export function subscribeRequestForDate(
+  uid: string,
+  date: string,
+  onChange: (request: ExistingRequest | null) => void,
+): () => void {
+  const q = query(collection(db, 'users', uid, 'regularization_requests'), where('date', '==', date));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const all = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          status: String(data.status ?? ''),
+          approverComment: String(data.approverComment ?? ''),
+          submittedAt: (data.submittedAt as Timestamp | undefined)?.toMillis() ?? 0,
+        };
+      });
+      const active = all.find((r) => r.status === 'pending' || r.status === 'approved');
+      const latest = active ?? all.sort((a, b) => b.submittedAt - a.submittedAt)[0];
+      onChange(latest ? { status: latest.status, approverComment: latest.approverComment } : null);
+    },
+    (error) => console.error('Regularization request subscription failed', error),
+  );
+}
+
+export function blocksNewRequest(request: ExistingRequest | null): boolean {
+  return request?.status === 'pending' || request?.status === 'approved';
+}
