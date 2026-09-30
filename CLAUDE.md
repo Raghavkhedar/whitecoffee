@@ -33,11 +33,12 @@ conveyance; no OT/shortage/WO/categories/manpower), so it rides **neither** side
 binary `isOps = role === 'operations' ? (site) : (office)` — that pattern drops sales into the
 office branch **silently**, which is a payroll bug, not a cosmetic one.
 
-Route role decisions through the **role-capabilities table**, mirrored on all three sides (there is
-no shared JS build graph) and unit-tested on each — **change all three together**:
+Route role decisions through the **role-capabilities table**, mirrored on all four sides (there is
+no shared JS build graph) and unit-tested on each — **change all four together**:
 - `admin/src/lib/roleCapabilities.ts` (+ `.test.ts`, `npx tsx`)
 - `firebase/functions/roleCapabilities.js` (+ `.test.js`, `npm test`)
 - `android/…/data/model/RoleCapabilities.kt`
+- `mobile/src/roles/roleCapabilities.ts` (+ `.test.ts`, `npm test`) — unknown roles get NO attendance route here (fails closed)
 
 Axes: `attendanceInTypes` · `attendanceOutTypes` · `usesFixedWindow` · `usesOtShortageLedger` ·
 `tracksShortage` · `usesConveyance` · `getsCategories` · `inManpowerReports`. Note `tracksShortage`
