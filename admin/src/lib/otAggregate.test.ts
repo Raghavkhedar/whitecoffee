@@ -178,5 +178,15 @@ r = computeRangeLedger(U, evU, [], [{ userId: U, date: '2026-06-02', requestedMi
 eq('approved 120 → net 120', r.netMins, 120);
 eq('without the status: 360 shortage', computeRangeLedger(U, evU, [], [], [], noHol).shortageMins, 360);
 
+console.log('\nEvery status: non-worked ones move hours to pending OT, worked ones keep shortage:');
+for (const st of ['Absent', 'SCHL', 'USCHL', 'WO', 'Holiday']) {
+  const rs = computeRangeLedger(U, evU, [], [], [{ id: 'x', userId: U, date: '2026-06-02', status: st } as never], noHol);
+  eq(`${st}: shortage/pending`, `${rs.shortageMins}/${rs.pendingOtMins}`, '0/120');
+}
+for (const st of ['Present', 'HalfDay', 'SL', 'LNF']) {
+  const rs = computeRangeLedger(U, evU, [], [], [{ id: 'x', userId: U, date: '2026-06-02', status: st } as never], noHol);
+  eq(`${st}: keeps 360 shortage`, rs.shortageMins, 360);
+}
+
 console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

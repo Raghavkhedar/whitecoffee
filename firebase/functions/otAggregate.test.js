@@ -276,3 +276,15 @@ test("USCHL day with punches: no shortage, whole worked window pending, not a WO
   // Without the status the same punches are a 360-min shortage.
   assert.equal(computeRangeLedger(U, events, [], [], [], noHol).shortageMins, 360);
 });
+
+test("every status: non-worked move hours to pending OT, worked keep the hours-based shortage", () => {
+  const events = [ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "12:00")];
+  for (const st of ["Absent", "SCHL", "USCHL", "WO", "Holiday"]) {
+    const r = computeRangeLedger(U, events, [], [], [{ userId: U, date: "2026-06-02", status: st }], noHol);
+    assert.deepEqual([r.shortageMins, r.pendingOtMins], [0, 120], st);
+  }
+  for (const st of ["Present", "HalfDay", "SL", "LNF"]) {
+    const r = computeRangeLedger(U, events, [], [], [{ userId: U, date: "2026-06-02", status: st }], noHol);
+    assert.equal(r.shortageMins, 360, st);
+  }
+});

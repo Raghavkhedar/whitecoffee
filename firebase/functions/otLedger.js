@@ -26,8 +26,10 @@ const ZERO = {
 // auto-credited, never shortage, and the declared-OT ceiling does not apply. It is credited
 // only when an admin later approves some or all of it via the separate approval flow.
 // Statuses whose day is ledger-neutral: no shortage, whole worked window → pending OT.
-// WO, and USCHL (admin moves that day's hours into OT to manage monthly hours).
-const isOtOnlyStatus = (s) => s === "WO" || s === "USCHL";
+// Any admin-chosen non-worked outcome (leave / WO / holiday / absent) moves that day's hours
+// into OT. Present / HalfDay / SL / LNF keep the normal hours-based shortage + OT.
+const OT_ONLY_STATUSES = new Set(["WO", "USCHL", "SCHL", "Absent", "Holiday", "Sunday"]);
+const isOtOnlyStatus = (s) => !!s && OT_ONLY_STATUSES.has(s);
 
 function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, isWoDay }) {
   const worked = Math.max(0, outMin - inMin);

@@ -458,7 +458,7 @@ export async function getPunchLabelsForDay(uid: string, date: string): Promise<s
 export async function approveRegularization(
   userId: string, requestId: string, date: string, approverName: string,
   comment: string, approvedStatus: string, userName = '', employeeId = '',
-  inTime?: string, outTime?: string, km?: number,
+  inTime?: string, outTime?: string, km?: number, paid?: boolean,
 ) {
   // Re-check rather than trust the submitted form: the regularization page already excludes WO
   // from the outcome list for a rest-day request and refuses to file a request for one at all
@@ -485,7 +485,10 @@ export async function approveRegularization(
       inTime: carryHours ? inTime : deleteField(),
       outTime: carryHours ? outTime : deleteField(),
       // Clear a stale credit from a previous auto SCHL/Holiday doc: the admin status is the truth now.
-      salaryCredit: deleteField(),
+      // SCHL/Holiday are the only statuses whose pay is a credit: the admin picks paid/unpaid
+      // (Holiday with no field is also paid). A paid SCHL here does NOT draw from plBalance.
+      salaryCredit: (approvedStatus === 'SCHL' || approvedStatus === 'Holiday') && paid !== undefined
+        ? (paid ? 1 : 0) : deleteField(),
       updatedAt: Timestamp.now(),
     }),
     { merge: true }
@@ -527,7 +530,7 @@ export async function approveRegularization(
   // Re-checked here, not trusted from the page: conveyance is only claimable on a worked-day
   // outcome. Absent/USCHL/WO/SCHL either dock salary or formally assert the day was not worked —
   // crediting travel reimbursement on the same day would be internally contradictory.
-  const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
+  const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay' || approvedStatus === 'SL';
   if (canCreditKm && km !== undefined && km >= 0) {
     const userSnap = await getDoc(doc(db, 'users', userId));
     const userData = userSnap.exists() ? userSnap.data() : undefined;

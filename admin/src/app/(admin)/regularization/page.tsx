@@ -12,7 +12,20 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 
 type Filter = 'pending' | 'approved' | 'rejected' | 'all';
 
-const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'Absent', 'USCHL', 'WO'] as const;
+// Every outcome an admin may set (Sunday is excluded: it only exists on a Sunday, which is an
+// immutable rest day). Labels are what the payroll/ledger treat them as.
+const ATTENDANCE_STATUSES = ['Present', 'HalfDay', 'SL', 'LNF', 'Absent', 'SCHL', 'USCHL', 'WO', 'Holiday'] as const;
+const STATUS_HINT: Record<string, string> = {
+  Present: 'Full day. Hours-based shortage/OT as worked.',
+  HalfDay: 'Half pay (0.5). Hours-based shortage/OT as worked.',
+  SL: 'Short Leave (0.75). Hours-based shortage/OT as worked.',
+  LNF: 'Log-out Not Found (0.5). No shortage/OT (open day).',
+  Absent: 'Absent (−2 days). Any hours worked become pending OT; no shortage.',
+  SCHL: 'Scheduled Leave. Any hours worked become pending OT; no shortage. Paid or not is your choice below (does not draw leave balance).',
+  USCHL: 'Unscheduled Leave, unpaid. Any hours worked become pending OT; no shortage.',
+  WO: 'Paid day off (ops) with an 8h debit. Hours worked become pending OT.',
+  Holiday: 'Day off. Any hours worked become pending OT; no shortage. Paid or not is your choice below.',
+};
 
 function StatusBadge({ status }: { status: string }) {
   const cls = status === 'approved' ? 'badge-approved' : status === 'rejected' ? 'badge-rejected' : 'badge-pending';
@@ -29,6 +42,10 @@ function ApprovedStatusBadge({ status }: { status: string }) {
     Present:  'bg-green-100 text-green-700',
     HalfDay:  'bg-amber-100 text-amber-700',
     Absent:   'bg-red-100 text-red-700',
+    SL:       'bg-yellow-100 text-yellow-700',
+    LNF:      'bg-orange-100 text-orange-700',
+    SCHL:     'bg-blue-100 text-blue-700',
+    Holiday:  'bg-teal-100 text-teal-700',
     USCHL:    'bg-purple-100 text-purple-700',
     PL:       'bg-blue-100 text-blue-700',    // legacy: historical approved rows
     LWP:      'bg-purple-100 text-purple-700', // legacy: historical approved rows
@@ -75,6 +92,7 @@ export default function RegularizationPage() {
   const [effIn, setEffIn]             = useState('');
   const [effOut, setEffOut]           = useState('');
   const [km, setKm]                   = useState('');
+  const [paid, setPaid]               = useState(true);
   const [actioning, setActioning]     = useState('');
   // "uid|date" → that day's punches (IST), loaded lazily for the requests on screen.
   const [punches, setPunches]         = useState<Record<string, string[]>>({});
@@ -137,6 +155,7 @@ export default function RegularizationPage() {
     setActionModal({ req, type });
     setActionComment('');
     setApprovedStatus('Present');
+    setPaid(true);
     setEffIn('');
     setEffOut('');
     setKm(req.claimedKm != null ? String(req.claimedKm) : '');
@@ -169,7 +188,7 @@ export default function RegularizationPage() {
     // Conveyance is only claimable on a worked-day outcome — crediting travel reimbursement on
     // a day simultaneously approved as Absent/USCHL/WO/SCHL (which docks salary or asserts no work
     // happened) is internally contradictory. SL isn't an outcome this page offers at all.
-    const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
+    const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay' || approvedStatus === 'SL';
     let kmValue: number | undefined;
     if (type === 'approve' && canCreditKm && km.trim()) {
       kmValue = parseFloat(km);
@@ -184,6 +203,7 @@ export default function RegularizationPage() {
         await approveRegularization(
           req.userId, req.id, req.date, adminName, actionComment, approvedStatus, req.userName, req.employeeId,
           carry ? effIn : undefined, carry ? effOut : undefined, kmValue,
+          approvedStatus === 'SCHL' || approvedStatus === 'Holiday' ? paid : undefined,
         );
       } else {
         await rejectRegularization(req.userId, req.id, adminName, actionComment);
@@ -436,7 +456,7 @@ export default function RegularizationPage() {
                 <select
                   className="input mt-1"
                   value={approvedStatus}
-                  onChange={e => setApprovedStatus(e.target.value)}
+                  onChange={e => { setApprovedStatus(e.target.value); setPaid(e.target.value === 'Holiday'); }}
                 >
                   {/* WO is illegal on a rest day (Protocol 1) — a Sunday/holiday already carries
                       no obligation, so a WO there is meaningless and the write is rejected
@@ -445,6 +465,13 @@ export default function RegularizationPage() {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+                <p className="text-xs text-text-secondary mt-1.5">{STATUS_HINT[approvedStatus]}</p>
+                {(approvedStatus === 'SCHL' || approvedStatus === 'Holiday') && (
+                  <label className="flex items-center gap-2 mt-2 text-sm text-text-primary">
+                    <input type="checkbox" checked={paid} onChange={e => setPaid(e.target.checked)} />
+                    Paid day (+1 day pay)
+                  </label>
+                )}
                 {modalIsRestDay && (
                   <p className="text-xs text-text-secondary mt-1.5">
                     {actionModal.req.date} is a rest day (Sunday/holiday) — WO isn&apos;t offered here.
