@@ -4,7 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { useAccess } from '@/components/AccessContext';
-import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen, getHolidaysForDateRange, isRestDay } from '@/lib/firestore';
+import { getAllRegularizationRequests, approveRegularization, rejectRegularization, getRegularizationWindow, setRegularizationWindowOpen, getHolidaysForDateRange, isRestDay, getPunchLabelsForDay } from '@/lib/firestore';
 import type { RegularizationRequest } from '@/types';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
@@ -76,6 +76,8 @@ export default function RegularizationPage() {
   const [effOut, setEffOut]           = useState('');
   const [km, setKm]                   = useState('');
   const [actioning, setActioning]     = useState('');
+  // "uid|date" → that day's punches (IST), loaded lazily for the requests on screen.
+  const [punches, setPunches]         = useState<Record<string, string[]>>({});
   const [employeeFilter, setEmployeeFilter]   = useState('');
   const [windowOpen, setWindowOpen]     = useState(false);
   const [togglingWindow, setToggling]   = useState(false);
@@ -101,6 +103,21 @@ export default function RegularizationPage() {
   useEffect(() => {
     getRegularizationWindow().then(w => setWindowOpen(w.open)).catch(() => setWindowOpen(false));
   }, []);
+
+  useEffect(() => {
+    requests.forEach(r => {
+      const k = `${r.userId}|${r.date}`;
+      if (k in punches) return;
+      setPunches(p => ({ ...p, [k]: [] })); // mark in-flight so it isn't fetched twice
+      getPunchLabelsForDay(r.userId, r.date).then(l => setPunches(p => ({ ...p, [k]: l }))).catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests]);
+
+  const PunchLine = ({ r }: { r: RegularizationRequest }) => {
+    const l = punches[`${r.userId}|${r.date}`];
+    return <p className="text-xs text-text-secondary mt-1">{l && l.length ? l.join(' · ') : 'No punches recorded'}</p>;
+  };
 
   async function load() {
     setLoading(true);
@@ -310,7 +327,8 @@ export default function RegularizationPage() {
                     ? <ApprovedStatusBadge status={r.approvedStatus} />
                     : <span className="text-text-secondary text-xs">—</span>}
                 </div>
-                <p className="text-text-secondary text-sm mt-2">{r.reason}</p>
+                <p className="text-text-secondary text-sm mt-2 whitespace-pre-wrap break-words">{r.reason}</p>
+                <PunchLine r={r} />
                 {r.approverComment && (
                   <p className={`text-xs mt-1 italic ${r.status === 'rejected' ? 'text-red-500' : 'text-green-600'}`}>
                     &ldquo;{r.approverComment}&rdquo;
@@ -359,8 +377,9 @@ export default function RegularizationPage() {
                       ? <ApprovedStatusBadge status={r.approvedStatus} />
                       : <span className="text-text-secondary text-xs">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-text-secondary max-w-xs">
-                    <p className="truncate">{r.reason}</p>
+                  <td className="px-4 py-3 text-text-secondary min-w-[18rem] max-w-md">
+                    <p className="whitespace-pre-wrap break-words">{r.reason}</p>
+                    <PunchLine r={r} />
                     {r.approverComment && (
                       <p className={`text-xs mt-0.5 italic ${r.status === 'rejected' ? 'text-red-500' : 'text-green-600'}`}>
                         &ldquo;{r.approverComment}&rdquo;
@@ -405,6 +424,11 @@ export default function RegularizationPage() {
               &ensp;&mdash;&ensp;{actionModal.req.date}
               &ensp;&middot;&ensp;Auto-marked: <span className="font-semibold">{actionModal.req.originalStatus}</span>
             </p>
+
+            <div className="mb-4 p-3 bg-background rounded-lg max-h-48 overflow-y-auto">
+              <p className="text-sm text-text-primary whitespace-pre-wrap break-words">{actionModal.req.reason}</p>
+              <PunchLine r={actionModal.req} />
+            </div>
 
             {actionModal.type === 'approve' && (
               <div className="mb-4">

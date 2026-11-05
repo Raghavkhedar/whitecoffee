@@ -37,6 +37,10 @@ export interface DayLedger {
   pendingExtraMins: number;   // OT beyond declared (or, on a rest day, the whole worked window) → needs admin review
 }
 
+// Statuses whose day is ledger-neutral: no shortage, whole worked window → pending OT.
+// WO, and USCHL (admin moves that day's hours into OT to manage monthly hours).
+export const isOtOnlyStatus = (s?: string): boolean => s === 'WO' || s === 'USCHL';
+
 const ZERO: DayLedger = {
   shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0,
 };

@@ -25,6 +25,10 @@ const ZERO = {
 // either kind of day raises a PENDING overtime request for the WHOLE window — never
 // auto-credited, never shortage, and the declared-OT ceiling does not apply. It is credited
 // only when an admin later approves some or all of it via the separate approval flow.
+// Statuses whose day is ledger-neutral: no shortage, whole worked window → pending OT.
+// WO, and USCHL (admin moves that day's hours into OT to manage monthly hours).
+const isOtOnlyStatus = (s) => s === "WO" || s === "USCHL";
+
 function computeDayLedger({ shiftStartMin, shiftEndMin, inMin, outMin, declaredOtMins, isRestDay, isWoDay }) {
   const worked = Math.max(0, outMin - inMin);
 
@@ -58,5 +62,5 @@ function netLedgerMins(p) {
 
 module.exports = {
   WO_DEBIT_MINS, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
-  istMinuteOfDay, computeDayLedger, netLedgerMins,
+  istMinuteOfDay, computeDayLedger, netLedgerMins, isOtOnlyStatus,
 };

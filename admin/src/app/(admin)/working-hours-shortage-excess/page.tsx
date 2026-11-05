@@ -9,7 +9,7 @@ import { RoleBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr, istDaysAgoStr } from '@/lib/date';
-import { computeDayLedger, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
+import { computeDayLedger, isOtOnlyStatus, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
 import { LAUNCH_DATE } from '@/lib/config';
 import { attendanceInTypes, attendanceOutTypes, usesFixedWindow, usesOtShortageLedger, tracksShortage } from '@/lib/roleCapabilities';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -188,7 +188,7 @@ function aggregateForEmployee(
   // Protocol 3: WO dates, needed so commitDay can suppress that date's shift math exactly
   // like a rest day (ops/usesLedger only — WO has no meaning for office/admin/sales here).
   const woDateSet = usesLedger
-    ? new Set(statuses.filter(s => s.userId === user.id && s.status === 'WO').map(s => s.date))
+    ? new Set(statuses.filter(s => s.userId === user.id && isOtOnlyStatus(s.status)).map(s => s.date))
     : new Set<string>();
 
   // A completed worked day (raw events or a regularized override) → ledger + totals.

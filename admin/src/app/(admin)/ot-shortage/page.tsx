@@ -9,7 +9,7 @@ import { RoleBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
 import { downloadSheet } from '@/lib/excel';
 import { istTodayStr, istDaysAgoStr } from '@/lib/date';
-import { computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
+import { computeDayLedger, isOtOnlyStatus, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN } from '@/lib/otLedger';
 import { LAUNCH_DATE } from '@/lib/config';
 import { tracksShortage } from '@/lib/roleCapabilities';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -193,7 +193,7 @@ function aggregateForEmployee(
   const woDates = isOps
     ? statuses.filter(s => s.userId === user.id && s.status === 'WO').map(s => s.date).sort()
     : [];
-  const woDateSet = new Set(woDates);
+  const otOnlyDates = new Set(statuses.filter(s => s.userId === user.id && isOtOnlyStatus(s.status)).map(s => s.date));
 
   const eventsByDate = new Map<string, AttendanceRecord[]>();
   userEvents.forEach(e => {
@@ -237,7 +237,7 @@ function aggregateForEmployee(
         inMin: istMinuteOfDay(firstIn), outMin: istMinuteOfDay(lastOut),
         declaredOtMins: declaredDay,
         isRestDay: restDay,
-        isWoDay: woDateSet.has(date),
+        isWoDay: otOnlyDates.has(date),
       });
       detail.shortageMins     = led.shortageMins;
       detail.autoOtMins       = led.autoOtMins;

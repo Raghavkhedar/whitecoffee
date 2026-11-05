@@ -259,3 +259,20 @@ test("dailyOtWoCash: rest-day date is 0 when unapproved, equals approved minutes
   const approved = dailyOtWoCash(U, rate, events, [], approvals, [], noHol);
   assert.equal(approved.get("2026-06-07"), 90); // 90 approved mins × ₹1/min
 });
+
+test("USCHL day with punches: no shortage, whole worked window pending, not a WO day", () => {
+  // Mon 2026-06-02, 2h worked on a 10–18 shift. Regularized to USCHL → hours move to OT.
+  const events = [ev(U, "2026-06-02", "site_in", "10:00"), ev(U, "2026-06-02", "site_out", "12:00")];
+  const statuses = [{ userId: U, date: "2026-06-02", status: "USCHL" }];
+  const r = computeRangeLedger(U, events, [], [], statuses, noHol);
+  assert.equal(r.shortageMins, 0);
+  assert.equal(r.pendingOtMins, 120);
+  assert.deepEqual(r.woDates, []); // USCHL must not feed WO pay/debit
+  // Admin approves the 2h → net +120, nothing pending.
+  const appr = [{ userId: U, date: "2026-06-02", requestedMins: 120, approvedMins: 120, status: "approved" }];
+  const a = computeRangeLedger(U, events, [], appr, statuses, noHol);
+  assert.equal(a.netMins, 120);
+  assert.equal(a.pendingDates.length, 0);
+  // Without the status the same punches are a 360-min shortage.
+  assert.equal(computeRangeLedger(U, events, [], [], [], noHol).shortageMins, 360);
+});

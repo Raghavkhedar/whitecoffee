@@ -5,7 +5,7 @@
 // Divergence from the TS source: isSunday uses UTC-safe getUTCDay() (functions run on UTC).
 
 const {
-  computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay,
+  computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay, isOtOnlyStatus,
   DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
 } = require("./otLedger");
 
@@ -49,7 +49,8 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
   });
 
   const woDates = statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date).sort();
-  const woDateSet = new Set(woDates);
+  // WO + USCHL days: shift math suppressed (hours → pending OT). Separate from woDates, which drives WO pay.
+  const otOnlyDates = new Set(statuses.filter((s) => s.userId === userId && isOtOnlyStatus(s.status)).map((s) => s.date));
 
   let autoOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates = [];
@@ -62,7 +63,7 @@ function computeRangeLedger(userId, events, planned, approvals, statuses, holida
       inMin, outMin,
       declaredOtMins: info ? info.declared : 0,
       isRestDay: isSunday(date) || holidays.has(date),
-      isWoDay: woDateSet.has(date),
+      isWoDay: otOnlyDates.has(date),
     });
     shortageMins += led.shortageMins;
     autoOtMins   += led.autoOtMins;
@@ -134,6 +135,8 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
     statuses.filter((s) => s.userId === userId && s.status === "WO").map((s) => s.date),
   );
 
+  const otOnlyDates = new Set(statuses.filter((s) => s.userId === userId && isOtOnlyStatus(s.status)).map((s) => s.date));
+
   const perDate = new Map(); // date → { autoOtMins, shortageMins }
   const ensure = (d) => {
     if (!perDate.has(d)) perDate.set(d, { autoOtMins: 0, shortageMins: 0 });
@@ -147,7 +150,7 @@ function dailyOtWoCash(userId, salaryRate, events, planned, approvals, statuses,
       inMin, outMin,
       declaredOtMins: info ? info.declared : 0,
       isRestDay: isSunday(date) || holidays.has(date),
-      isWoDay: woByDate.has(date),
+      isWoDay: otOnlyDates.has(date),
     });
     const acc = ensure(date);
     acc.shortageMins += led.shortageMins;

@@ -438,6 +438,20 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
   });
 }
 
+// One employee's punches for a date, oldest first, as "HH:MM type" strings in IST — shown on the
+// Regularization page so the reviewer sees what was actually recorded next to the reason.
+export async function getPunchLabelsForDay(uid: string, date: string): Promise<string[]> {
+  const snap = await getDocs(query(collection(db, 'users', uid, 'attendance'), where('date', '==', date)));
+  return snap.docs
+    .map(d => d.data() as { type: string; timestamp?: { seconds: number } })
+    .filter(e => e.timestamp)
+    .sort((a, b) => a.timestamp!.seconds - b.timestamp!.seconds)
+    .map(e => {
+      const t = new Date(e.timestamp!.seconds * 1000).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+      return `${t} ${e.type.replace(/_/g, ' ')}`;
+    });
+}
+
 // Approve a regularization request → write the admin attendance_status. When approving to a
 // worked status (Present) the admin may pass effective in/out times ("HH:MM"), captured on the
 // status doc so the OT/shortage ledger can carry that day's shortage/OT (missed-punch fix).
