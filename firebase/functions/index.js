@@ -1219,7 +1219,7 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("material_requests").get();
       const header = [
         "Submitted At", "Employee Name", "Employee ID",
-        "Site ID", "Site Name", "Item Name", "Quantity", "Unit", "Item Notes", "Overall Notes", "Photo URLs",
+        "Site ID", "Site Name", "Item Name", "Spec 1", "Spec 2", "Quantity", "Unit", "Item Notes", "Overall Notes", "Photo URLs",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1229,8 +1229,8 @@ exports.exportToSheets = onSchedule(
         const uid    = uidOf(doc);
         const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos] }));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.spec1 || "", item.spec2 || "", item.quantity || "", item.unit || "", item.notes || "", d.notes || "", photos] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_3, TABS.REQUESTS, [header, ...rows.map((r) => r.row)]);
@@ -1242,8 +1242,8 @@ exports.exportToSheets = onSchedule(
       const snap   = await db.collectionGroup("material_purchases").get();
       const header = [
         "Submitted At", "Employee Name", "Employee ID",
-        "Site ID", "Site Name", "Item Name", "Quantity", "Unit",
-        "Price Per Unit", "Total Price", "Grand Total", "Notes", "Photo URLs", "Purchase Date",
+        "Site ID", "Site Name", "Item Name", "Spec 1", "Spec 2", "Quantity", "Unit",
+        "Price Per Unit", "Total Price", "Grand Total", "Item Notes", "Notes", "Photo URLs", "Purchase Date",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1253,8 +1253,8 @@ exports.exportToSheets = onSchedule(
         const uid    = uidOf(doc);
         const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos, dmy(d.purchaseDate)] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos, dmy(d.purchaseDate)] }));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.grandTotal || "", "", d.notes || "", photos, dmy(d.purchaseDate)] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.spec1 || "", item.spec2 || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", item.notes || "", d.notes || "", photos, dmy(d.purchaseDate)] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows.map((r) => r.row)]);
@@ -1267,7 +1267,7 @@ exports.exportToSheets = onSchedule(
       const header = [
         "Submitted At", "Employee Name", "Employee ID", "Transfer Date",
         "From", "To", "Transferred By", "Received By",
-        "Item Name", "Quantity", "Unit", "Condition", "Notes", "Photo URLs",
+        "Item Name", "Make", "Spec 1", "Spec 2", "Quantity", "Unit", "Condition", "Notes", "Photo URLs",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1279,8 +1279,8 @@ exports.exportToSheets = onSchedule(
         // transfers dated the same day.
         const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || "", photos] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos] }));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.make || "", item.spec1 || "", item.spec2 || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
@@ -1293,19 +1293,20 @@ exports.exportToSheets = onSchedule(
       const header = [
         "Submitted At", "Employee Name", "Employee ID", "Transfer Date",
         "From", "To", "Transferred By", "Received By",
-        "Item Name", "Quantity", "Unit", "Condition", "Notes",
+        "Item Name", "Make", "Spec 1", "Spec 2", "Quantity", "Unit", "Condition", "Notes", "Photo URLs",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
         const d    = doc.data();
         const items = Array.isArray(d.items) ? d.items : [];
+        const photos = Array.isArray(d.photoUrls) ? d.photoUrls.join("\n") : "";
         const uid   = uidOf(doc);
         // The business date leads; submittedAt only breaks ties between two
         // transfers dated the same day.
         const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
         const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", d.notes || ""] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || ""] }));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.notes || "", photos] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.make || "", item.spec1 || "", item.spec2 || "", item.quantity || "", item.unit || "", item.condition || "", d.notes || "", photos] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
