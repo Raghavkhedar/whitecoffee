@@ -28,7 +28,7 @@ New top-level `directory/{uid}` = `{name, employeeId, active}` only. Any signed-
 
 ### Rules (`firebase/firestore.rules`, both transfer collections)
 - Read: add `resource.data.receiverId == request.auth.uid`, in the per-doc match and the `{path=**}` match (needed for the incoming query).
-- Update, receiver branch: active user, is `receiverId`, `changedKeysWithin(withStamp(['receiptStatus','receiptNote','receiptAt']))`, `stampIsTruthful()`, allowed transition only, `receiptAt` is a timestamp, non-empty string note for `problem`.
+- Update, receiver branch: active user, is `receiverId`, `changedKeysWithin(withStamp(['receiptStatus','receiptNote','receiptAt']))`, `stampIsTruthful()`, allowed transition only, non-empty string note for `problem`. From review: `receiptAt` is the server time and `lastModifiedBy` is required; the note cannot change when marking `received`.
 - Create: no `receiptNote`/`receiptAt`; `receiptStatus` absent or `pending`; `receiverId` not the sender. Creates without these fields still pass, so old APKs keep working.
 - The sender's branch stays `photoUrls` only, so a sender cannot mark their own transfer received.
 - `firestore.indexes.json`: collection-group field override for `receiverId` on both collections (keep the default collection-scope indexes).

@@ -310,9 +310,13 @@ service cloud.firestore {
       let from = resource.data.get('receiptStatus', 'pending');
       return resource.data.get('receiverId', '') == request.auth.uid
              && changedKeysWithin(withStamp(['receiptStatus', 'receiptNote', 'receiptAt']))
-             && stampIsTruthful()
-             && d.receiptAt is timestamp
-             && ((d.receiptStatus == 'received' && from in ['pending', 'problem'])
+             // Both must be written each time: the writer is named, the time is the server's
+             // (an offline answer is dated when it syncs, and a wrong phone clock is harmless).
+             && d.lastModifiedBy == request.auth.uid
+             && d.diff(resource.data).affectedKeys().hasAll(['receiptStatus', 'receiptAt'])
+             && d.receiptAt == request.time
+             && ((d.receiptStatus == 'received' && from in ['pending', 'problem']
+                  && d.get('receiptNote', '') == resource.data.get('receiptNote', ''))
                  || (d.receiptStatus == 'problem' && from == 'pending'
                      && d.receiptNote is string
                      && d.receiptNote.size() > 0 && d.receiptNote.size() <= 500))

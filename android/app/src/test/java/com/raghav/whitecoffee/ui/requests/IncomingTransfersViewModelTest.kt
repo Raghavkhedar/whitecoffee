@@ -73,6 +73,17 @@ class IncomingTransfersViewModelTest {
     }
 
     @Test
+    fun `a rejected answer is shown until dismissed`() = runTest(dispatcher) {
+        val vm = IncomingTransfersViewModel(repo, FakeNetworkMonitor())
+
+        repo.receiptError.value = "not saved"
+        assertEquals("not saved", vm.receiptError.value)
+
+        vm.dismissError()
+        assertEquals(null, vm.receiptError.value)
+    }
+
+    @Test
     fun `a problem without a note writes nothing`() = runTest(dispatcher) {
         val vm = IncomingTransfersViewModel(repo, FakeNetworkMonitor())
 

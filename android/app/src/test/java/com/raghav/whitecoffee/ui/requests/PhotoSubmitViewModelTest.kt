@@ -243,6 +243,14 @@ class PhotoSubmitViewModelTest {
     }
 
     @Test
+    fun `the employee list is unknown until it has loaded, not empty`() = runTest(dispatcher) {
+        val vm = transferVm()
+        assertEquals(null, vm.employees.value)
+        advanceUntilIdle()
+        assertEquals(emptyList<Employee>(), vm.employees.value)
+    }
+
+    @Test
     fun `the picker offers active colleagues only, never the sender`() = runTest(dispatcher) {
         repo.directory = listOf(
             Employee("u2", "Zed"), Employee("u1", "Me"), Employee("u3", "Gone", active = false), Employee("u4", "Amy"),
@@ -250,7 +258,7 @@ class PhotoSubmitViewModelTest {
         val vm = transferVm()
         advanceUntilIdle()
 
-        assertEquals(listOf("Amy", "Zed"), vm.employees.value.map { it.name })
+        assertEquals(listOf("Amy", "Zed"), vm.employees.value!!.map { it.name })
     }
 
     @Test

@@ -9,7 +9,7 @@ const { test, before, after, beforeEach } = require("node:test");
 const {
   setup, teardown, seedUsers, seedDocs, asUser, assertSucceeds, assertFails,
 } = require("./helpers");
-const { Timestamp } = require("firebase/firestore");
+const { Timestamp, serverTimestamp } = require("firebase/firestore");
 
 let env;
 const COLLECTIONS = ["material_transfers", "tool_transfers"];
@@ -19,7 +19,7 @@ const transfer = (extra = {}) => ({
 });
 const path = (col, id = "t1") => `users/sender/${col}/${id}`;
 const receipt = (status, extra = {}) => ({
-  receiptStatus: status, receiptAt: Timestamp.now(), ...extra,
+  receiptStatus: status, receiptAt: serverTimestamp(), lastModifiedBy: "receiver", ...extra,
 });
 
 before(async () => {
@@ -56,7 +56,7 @@ for (const col of COLLECTIONS) {
   });
 
   test(`${col}: receiver confirms, or reports a problem then confirms`, async () => {
-    await assertSucceeds(doc("receiver").update(receipt("received", { lastModifiedBy: "receiver" })));
+    await assertSucceeds(doc("receiver").update(receipt("received")));
     await assertSucceeds(doc("receiver", "bad").update(receipt("received")));
     await seedDocs(env, { [path(col)]: transfer() });
     await assertSucceeds(doc("receiver").update(receipt("problem", { receiptNote: "damaged" })));
@@ -81,6 +81,20 @@ for (const col of COLLECTIONS) {
     await assertFails(doc("receiver").update(receipt("problem")));
     await assertFails(doc("receiver").update(receipt("problem", { receiptNote: "" })));
     await assertFails(doc("receiver").update({ receiptStatus: "received", receiptAt: "now" }));
+  });
+
+  test(`${col}: a problem report survives being marked received`, async () => {
+    await assertFails(doc("receiver", "bad").update(receipt("received", { receiptNote: "" })));
+    await assertFails(doc("receiver", "bad").update(receipt("received", { receiptNote: 7 })));
+    await assertFails(doc("receiver").update(receipt("received", { receiptNote: "added" })));
+  });
+
+  test(`${col}: the receipt time is the server's and the writer is named`, async () => {
+    const later = Timestamp.fromDate(new Date(Date.now() + 86400000));
+    await assertFails(doc("receiver").update(receipt("received", { receiptAt: later })));
+    await assertFails(doc("receiver").update(receipt("received", { receiptAt: Timestamp.now() })));
+    await assertFails(doc("receiver").update({ receiptStatus: "received", lastModifiedBy: "receiver" }));
+    await assertFails(doc("receiver").update({ receiptStatus: "received", receiptAt: serverTimestamp() }));
   });
 
   test(`${col}: a transfer cannot be born confirmed or addressed to its sender`, async () => {

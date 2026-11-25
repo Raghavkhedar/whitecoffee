@@ -35,7 +35,14 @@ class FakeRequestRepository : RequestRepository {
     /** Every receipt written, as [collection, senderId, docId, status, note]. */
     val receipts = mutableListOf<List<String>>()
 
-    override suspend fun getDirectory(): Result<List<Employee>> = Result.success(directory)
+    var directoryLoads = 0
+    override suspend fun getDirectory(): Result<List<Employee>> {
+        directoryLoads++
+        return Result.success(directory)
+    }
+
+    override val receiptError = MutableStateFlow<String?>(null)
+    override fun clearReceiptError() { receiptError.value = null }
 
     override fun observeIncomingTransfers() = incoming
 

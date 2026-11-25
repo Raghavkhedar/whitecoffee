@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.Toast
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -32,6 +33,8 @@ class IncomingTransfersFragment : Fragment() {
         setContent {
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val state by viewModel.state.collectAsStateWithLifecycle()
+            val error by viewModel.receiptError.collectAsStateWithLifecycle()
+            LaunchedEffect(error) { error?.let(::showRejected) }
             IncomingTransfersScreen(
                 state = state,
                 isOnline = isOnline,
@@ -40,6 +43,15 @@ class IncomingTransfersFragment : Fragment() {
                 onProblem = ::askProblem,
             )
         }
+    }
+
+    private fun showRejected(message: String) {
+        viewModel.dismissError()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Not saved")
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     // "Received" is final under the rules, so a stray tap must not be enough.

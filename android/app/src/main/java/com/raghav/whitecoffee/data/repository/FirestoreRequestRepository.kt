@@ -1,6 +1,7 @@
 package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.raghav.whitecoffee.data.firestore.AuditStamp
@@ -14,6 +15,8 @@ import com.raghav.whitecoffee.data.model.WorkProgress
 import com.raghav.whitecoffee.data.session.SessionManager
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.tasks.await
@@ -204,6 +207,12 @@ class FirestoreRequestRepository @Inject constructor(
 
     // ── Transfer receipt ───────────────────────────────────────────────────
 
+    // shortcut: held in memory, so a refusal arriving after the app was killed is not shown;
+    // persist the queued answer if that turns out to happen.
+    private val _receiptError = MutableStateFlow<String?>(null)
+    override val receiptError: StateFlow<String?> = _receiptError
+    override fun clearReceiptError() { _receiptError.value = null }
+
     override suspend fun getDirectory(): Result<List<Employee>> {
         return try {
             val snapshot = firestore.collection("directory").get().await()
@@ -252,12 +261,18 @@ class FirestoreRequestRepository @Inject constructor(
         return try {
             val data = buildMap<String, Any> {
                 put("receiptStatus", status)
-                put("receiptAt", Timestamp.now())
+                put("receiptAt", FieldValue.serverTimestamp())
                 if (note.isNotEmpty()) put("receiptNote", note)
             }
             firestore.collection("users").document(senderId)
                 .collection(collectionName).document(docId)
                 .update(data.withAuditStamp(AuditStamp.uid(sessionManager)))
+                // Not awaited, but a refusal (e.g. the office closed it first) must be seen.
+                .addOnFailureListener {
+                    val answer = if (note.isEmpty()) "\"Received\"" else "problem report \"$note\""
+                    _receiptError.value = "Your $answer was not saved. The transfer may already " +
+                        "be closed. Tell the office directly."
+                }
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

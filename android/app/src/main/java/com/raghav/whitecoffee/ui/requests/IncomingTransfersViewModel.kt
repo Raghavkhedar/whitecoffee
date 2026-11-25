@@ -37,6 +37,10 @@ class IncomingTransfersViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UiState.Loading())
 
+    val receiptError: StateFlow<String?> = repository.receiptError
+
+    fun dismissError() = repository.clearReceiptError()
+
     fun confirm(item: IncomingTransfer) = answer(item, "received", "")
 
     fun reportProblem(item: IncomingTransfer, note: String) {

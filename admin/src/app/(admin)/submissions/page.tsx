@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { collectionGroup, getDocs, doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { collectionGroup, getDocs, doc, updateDoc, addDoc, collection, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { db, auth } from '@/lib/firebase';
 import { stamped } from '@/lib/firestore';
@@ -8,6 +8,7 @@ import Icon from '@/components/Icon';
 import { Avatar, TH, TD } from '@/components/ui';
 import { downloadSheet } from '@/lib/excel';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAccess } from '@/components/AccessContext';
 
 type CollectionKey = 'material_requests' | 'material_purchases' | 'material_transfers' | 'tool_transfers' | 'work_progress';
 
@@ -172,7 +173,9 @@ function EditModal({
   onClose: () => void;
   onSaved: (updated: Row) => void;
 }) {
-  const fields = EDITABLE_FIELDS[collectionKey];
+  // With a receiver set, access and notifications follow receiverId, so renaming
+  // receivedBy alone would mislead.
+  const fields = EDITABLE_FIELDS[collectionKey].filter(f => !(f.key === 'receivedBy' && row.receiverId));
   const [form, setForm] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     fields.forEach(f => { init[f.key] = String(row[f.key] ?? ''); });
@@ -298,12 +301,15 @@ const RECEIPT_STYLE: Record<string, [string, string]> = {
 // Only transfers addressed to a receiver carry a receipt; older rows render nothing.
 function Receipt({ row, onClose }: { row: Row; onClose: (row: Row) => void }) {
   const style = RECEIPT_STYLE[String(row.receiptStatus ?? '')];
+  const { user } = useAccess();
+  // The rules refuse a non-admin closing their own transfer, so don't offer it.
+  const ownRow = row.userId === auth.currentUser?.uid && user?.role !== 'admin';
   if (!row.receiverId || !style) return null;
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap ${style[1]}`}
         title={String(row.receiptNote ?? '')}>{style[0]}</span>
-      {row.receiptStatus !== 'received' && (
+      {row.receiptStatus !== 'received' && !ownRow && (
         <button onClick={() => onClose(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">
           Mark received
         </button>
@@ -311,6 +317,8 @@ function Receipt({ row, onClose }: { row: Row; onClose: (row: Row) => void }) {
     </span>
   );
 }
+
+const STALE = 'This transfer changed since the page loaded. Check it again before closing.';
 
 export default function SubmissionsPage() {
   const isMobile = useIsMobile();
@@ -369,10 +377,20 @@ export default function SubmissionsPage() {
     const note = row.receiptNote ? ` Reported problem: "${row.receiptNote}".` : '';
     if (!window.confirm(`Close this transfer as received by ${row.receivedBy}?${note} This cannot be undone by the employee.`)) return;
     try {
-      await updateDoc(doc(db, row._path), stamped({ receiptStatus: 'received', receiptAt: serverTimestamp() }));
+      // The row may be stale: never close over an answer this admin has not seen.
+      await runTransaction(db, async tx => {
+        const ref = doc(db, row._path);
+        const live = (await tx.get(ref)).data();
+        if (live?.receiptStatus !== row.receiptStatus || live?.receiptNote !== row.receiptNote) {
+          throw new Error(STALE);
+        }
+        tx.update(ref, stamped({ receiptStatus: 'received', receiptAt: serverTimestamp() }));
+      });
       setRows(prev => prev.map(r => r._path === row._path ? { ...r, receiptStatus: 'received' } : r));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === STALE) await load(active); // load() clears the error, so set it after
+      setError(message);
     }
   }
 

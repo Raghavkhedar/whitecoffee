@@ -58,8 +58,8 @@ class ToolTransferFragment : Fragment() {
                 photos = photos,
                 receiverName = receiver?.name,
                 onPickReceiver = {
-                    if (employees.isEmpty()) viewModel.loadEmployees()
                     showReceiverPicker(requireContext(), employees) { receiver = it }
+                    if (employees?.isEmpty() == true) viewModel.loadEmployees()
                 },
                 onBack = { findNavController().navigateUp() },
                 onAddPhoto = addPhoto,

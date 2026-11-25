@@ -31,20 +31,19 @@ class TransferViewModel @Inject constructor(
     private val sessionManager: SessionManager,
 ) : PhotoSubmitViewModel(requestRepository, photos, networkMonitor) {
 
-    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+    private val _employees = MutableStateFlow<List<Employee>?>(null)
 
-    /** Who a transfer can be addressed to. */
-    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
+    /** Who a transfer can be addressed to; null while still loading. */
+    val employees: StateFlow<List<Employee>?> = _employees.asStateFlow()
 
     init { loadEmployees() }
 
     fun loadEmployees() {
+        _employees.value = null
         viewModelScope.launch {
-            requestRepository.getDirectory().onSuccess { all ->
-                _employees.value = all
-                    .filter { it.active && it.uid != sessionManager.userId }
-                    .sortedBy { it.name.lowercase() }
-            }
+            _employees.value = requestRepository.getDirectory().getOrDefault(emptyList())
+                .filter { it.active && it.uid != sessionManager.userId }
+                .sortedBy { it.name.lowercase() }
         }
     }
 
