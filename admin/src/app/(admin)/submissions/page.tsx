@@ -394,6 +394,7 @@ export default function SubmissionsPage() {
     }
   }
 
+  const isTransfer = active === 'material_transfers' || active === 'tool_transfers';
   const activeLabel = COLLECTIONS.find(c => c.key === active)?.label ?? active;
   const filteredRows = employeeFilter ? rows.filter(r => String(r.userName ?? '') === employeeFilter) : rows;
 
@@ -475,6 +476,7 @@ export default function SubmissionsPage() {
                 <th className={TH}>Site</th>
                 <th className={TH}>Date</th>
                 <th className={TH}>Items / Description</th>
+                {isTransfer && <th className={TH}>Receipt</th>}
                 <th className={`${TH} pr-[18px] text-right`}>Actions</th>
               </tr>
             </thead>
@@ -499,9 +501,13 @@ export default function SubmissionsPage() {
                       <span className="truncate block max-w-xs">{String(row.workDescription)}</span>
                     ) : '—'}
                   </td>
+                  {isTransfer && (
+                    <td className={`${TD} text-[#9A938C]`}>
+                      {row.receiverId ? <Receipt row={row} onClose={markReceived} /> : '—'}
+                    </td>
+                  )}
                   <td className={`${TD} pr-[18px] text-right`}>
                     <div className="flex items-center gap-3 justify-end">
-                      <Receipt row={row} onClose={markReceived} />
                       <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">View</button>
                       <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline whitespace-nowrap">Edit</button>
                     </div>
