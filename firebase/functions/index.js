@@ -2667,12 +2667,20 @@ function onTransferWritten(collection) {
   return onDocumentWritten(`users/{userId}/${collection}/{docId}`, async (event) => {
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
+    // receiverId is client-written and ends up in a document path: only a real user passes.
+    const receiverId = after?.receiverId;
+    if (typeof receiverId !== "string" || !receiverId || receiverId.includes("/")) return;
     const db = admin.firestore();
+    const [sender, receiver] = await db.getAll(
+      db.doc(`users/${event.params.userId}`), db.doc(`users/${receiverId}`),
+    );
     const adminIds = after?.receiptStatus === "problem"
       ? (await db.collection("users").where("role", "==", "admin").get()).docs.map((d) => d.id)
       : [];
     const notices = buildReceiptNotices({
       before, after, collection, adminIds,
+      senderName: sender.data()?.name || "",
+      receiverName: receiver.exists ? receiver.data().name || "Receiver" : null,
       docId: event.params.docId, senderId: event.params.userId,
     });
     if (notices.length === 0) return;

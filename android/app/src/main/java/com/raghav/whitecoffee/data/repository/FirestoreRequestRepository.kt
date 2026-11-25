@@ -264,11 +264,14 @@ class FirestoreRequestRepository @Inject constructor(
                 put("receiptAt", FieldValue.serverTimestamp())
                 if (note.isNotEmpty()) put("receiptNote", note)
             }
+            val answeredBy = sessionManager.userId
             firestore.collection("users").document(senderId)
                 .collection(collectionName).document(docId)
                 .update(data.withAuditStamp(AuditStamp.uid(sessionManager)))
                 // Not awaited, but a refusal (e.g. the office closed it first) must be seen.
                 .addOnFailureListener {
+                    // A refusal landing after a user switch must not show to someone else.
+                    if (sessionManager.userId != answeredBy) return@addOnFailureListener
                     val answer = if (note.isEmpty()) "\"Received\"" else "problem report \"$note\""
                     _receiptError.value = "Your $answer was not saved. The transfer may already " +
                         "be closed. Tell the office directly."

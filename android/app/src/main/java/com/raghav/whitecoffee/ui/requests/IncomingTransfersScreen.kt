@@ -35,7 +35,11 @@ fun IncomingTransfersScreen(
         when (state) {
             is UiState.Loading -> Text("Loading…", color = WcTheme.colors.TextMuted)
             is UiState.Error -> Text(state.message, color = WcTheme.colors.DangerFg)
-            is UiState.Empty -> EmptyState(Ms.check_circle, "Nothing to confirm", "Transfers sent to you appear here.")
+            is UiState.Empty -> EmptyState(
+                Ms.check_circle, "Nothing to confirm",
+                if (isOnline) "Transfers sent to you appear here."
+                else "You are offline. A recent transfer may not have reached this phone yet.",
+            )
             is UiState.Success -> state.data.forEach { item ->
                 IncomingCard(item, onReceived, onProblem)
                 Spacer(Modifier.height(12.dp))

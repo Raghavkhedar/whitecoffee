@@ -6,14 +6,24 @@
  * Like openSessionReminder.js, each notice is a push AND a bell row, with deterministic IDs.
  */
 
+// Item text and notes are client-written, so every use of them in a message is bounded.
+const clip = (text, max) => {
+  const s = String(text ?? "");
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+};
+
 function itemSummary(items) {
   const list = Array.isArray(items) ? items : [];
-  const shown = list.slice(0, 3).map((i) => `${i.itemName} x${i.quantity}`).join(", ");
+  const shown = list.slice(0, 3).map((i) => `${clip(i?.itemName, 40)} x${Number(i?.quantity) || 0}`).join(", ");
   return list.length > 3 ? `${shown} +${list.length - 3} more` : shown;
 }
 
-function buildReceiptNotices({ before, after, collection, docId, senderId, adminIds = [] }) {
-  if (!after || !after.receiverId) return [];
+// senderName/receiverName come from users/{uid}: names typed into the transfer are forgeable.
+// receiverName is null when receiverId is not a real user.
+function buildReceiptNotices({
+  before, after, collection, docId, senderId, senderName, receiverName, adminIds = [],
+}) {
+  if (!after || !after.receiverId || receiverName == null) return [];
   const status = after.receiptStatus || "pending";
   if (before && (before.receiptStatus || "pending") === status) return [];
 
@@ -24,23 +34,23 @@ function buildReceiptNotices({ before, after, collection, docId, senderId, admin
   let recipients;
   if (!before) {
     title = `${kind} transfer to confirm`;
-    body = `${after.userName || "A colleague"} sent you ${items}. Confirm in the app once it arrives.`;
+    body = `${senderName || "A colleague"} sent you ${items}. Confirm in the app once it arrives.`;
     recipients = [after.receiverId];
   } else if (status === "received") {
-    const who = after.lastModifiedBy === after.receiverId ? after.receivedBy : "The office";
+    const who = after.lastModifiedBy === after.receiverId ? receiverName : "The office";
     title = `${kind} transfer received`;
     body = `${who} marked ${items} as received.`;
     recipients = [senderId];
   } else if (status === "problem") {
     title = `${kind} transfer problem`;
-    body = `${after.receivedBy} reported a problem with ${items}: ${after.receiptNote}`;
+    body = `${receiverName} reported a problem with ${items}: ${after.receiptNote}`;
     recipients = [...new Set([senderId, ...adminIds])];
   } else {
     return [];
   }
 
   return recipients.map((userId) => {
-    const message = { title, body, type: "general" };
+    const message = { title, body: clip(body, 400), type: "general" };
     const id = `transfer-${docId}-${status}`;
     return {
       userId,

@@ -85,6 +85,26 @@ class HomeViewModelTest {
         assertEquals(1, requests.directoryLoads)
     }
 
+    @Test
+    fun `incoming transfers are fetched from Home, so they are there offline`() = runTest(dispatcher) {
+        val requests = FakeRequestRepository()
+        subject(requests = requests)
+        advanceUntilIdle()
+
+        assertEquals(1, requests.incoming.subscriptionCount.value)
+    }
+
+    @Test
+    fun `a refused receipt answer reaches Home until dismissed`() = runTest(dispatcher) {
+        val requests = FakeRequestRepository()
+        val vm = subject(requests = requests)
+        requests.receiptError.value = "not saved"
+        assertEquals("not saved", vm.receiptError.value)
+
+        vm.dismissReceiptError()
+        assertEquals(null, vm.receiptError.value)
+    }
+
     private fun notif(id: String, isRead: Boolean) =
         AppNotification(id = id, title = "t", body = "b", isRead = isRead)
 

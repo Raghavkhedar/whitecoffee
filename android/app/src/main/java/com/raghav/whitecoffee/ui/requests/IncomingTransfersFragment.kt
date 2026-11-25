@@ -34,7 +34,12 @@ class IncomingTransfersFragment : Fragment() {
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val state by viewModel.state.collectAsStateWithLifecycle()
             val error by viewModel.receiptError.collectAsStateWithLifecycle()
-            LaunchedEffect(error) { error?.let(::showRejected) }
+            LaunchedEffect(error) {
+                error?.let {
+                    viewModel.dismissError()
+                    showReceiptRejected(requireContext(), it)
+                }
+            }
             IncomingTransfersScreen(
                 state = state,
                 isOnline = isOnline,
@@ -43,15 +48,6 @@ class IncomingTransfersFragment : Fragment() {
                 onProblem = ::askProblem,
             )
         }
-    }
-
-    private fun showRejected(message: String) {
-        viewModel.dismissError()
-        AlertDialog.Builder(requireContext())
-            .setTitle("Not saved")
-            .setMessage(message)
-            .setPositiveButton("OK", null)
-            .show()
     }
 
     // "Received" is final under the rules, so a stray tap must not be enough.
@@ -83,4 +79,13 @@ class IncomingTransfersFragment : Fragment() {
             .setNegativeButton("Cancel", null)
             .show()
     }
+}
+
+/** Shown by this screen and by Home, whichever the user is on when the refusal arrives. */
+fun showReceiptRejected(context: android.content.Context, message: String) {
+    AlertDialog.Builder(context)
+        .setTitle("Not saved")
+        .setMessage(message)
+        .setPositiveButton("OK", null)
+        .show()
 }

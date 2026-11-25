@@ -386,7 +386,7 @@ export default function SubmissionsPage() {
         }
         tx.update(ref, stamped({ receiptStatus: 'received', receiptAt: serverTimestamp() }));
       });
-      setRows(prev => prev.map(r => r._path === row._path ? { ...r, receiptStatus: 'received' } : r));
+      await load(active); // picks up receiptAt and who closed it, for View and Excel
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message === STALE) await load(active); // load() clears the error, so set it after

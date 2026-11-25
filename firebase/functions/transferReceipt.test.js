@@ -10,6 +10,7 @@ const base = {
 };
 const build = (before, after) => buildReceiptNotices({
   before, after, collection: "tool_transfers", docId: "t1", senderId: "s1", adminIds: ["a1", "s1"],
+  senderName: "Asha", receiverName: "Ravi",
 });
 const to = (notices) => notices.map((n) => n.push.recipientId);
 
@@ -46,6 +47,27 @@ test("IDs are deterministic, so a retried event cannot push twice", () => {
   assert.equal(build(null, base)[0].pushId, build(null, base)[0].pushId);
   const done = build(base, { ...base, receiptStatus: "received" })[0];
   assert.notEqual(done.pushId, build(null, base)[0].pushId);
+});
+
+test("names come from the user records, never from what the sender typed", () => {
+  const forged = { ...base, userName: "HR", receivedBy: "The Director" };
+  assert.match(build(null, forged)[0].push.body, /^Asha sent you/);
+  assert.match(build(base, { ...forged, receiptStatus: "received", lastModifiedBy: "r1" })[0].push.body, /^Ravi/);
+  const problem = build(base, { ...forged, receiptStatus: "problem", receiptNote: "x" })[0];
+  assert.match(problem.push.body, /^Ravi/);
+});
+
+test("sender-written item text cannot grow a message without bound", () => {
+  const items = [{ itemName: "A".repeat(9000), quantity: "B".repeat(9000) }];
+  const body = build(null, { ...base, items })[0].push.body;
+  assert.ok(body.length < 200, String(body.length));
+  const note = build(base, { ...base, items, receiptStatus: "problem", receiptNote: "n".repeat(500) })[0];
+  assert.ok(note.push.body.length <= 400);
+});
+
+test("a receiver who is not a real user gets nothing written", () => {
+  const args = { before: null, after: base, collection: "tool_transfers", docId: "t1", senderId: "s1" };
+  assert.deepEqual(buildReceiptNotices({ ...args, senderName: "Asha", receiverName: null }), []);
 });
 
 test("directoryEntry carries names only and skips unrelated user writes", () => {

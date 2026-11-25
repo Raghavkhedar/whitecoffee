@@ -95,6 +95,21 @@ class HomeViewModel @Inject constructor(
         observeUnreadCount()
         loadTodayAttendance()
         cacheDirectory(networkMonitor)
+        cacheIncomingTransfers()
+    }
+
+    val receiptError: StateFlow<String?> = requestRepository.receiptError
+
+    fun dismissReceiptError() = requestRepository.clearReceiptError()
+
+    // Listening here keeps transfers addressed to this user in the cache, so one can be
+    // confirmed offline without the Incoming screen ever having been opened.
+    private fun cacheIncomingTransfers() {
+        viewModelScope.launch {
+            requestRepository.observeIncomingTransfers()
+                .catch { /* the Incoming screen reports load errors */ }
+                .collect {}
+        }
     }
 
     // Reading it here puts the receiver list in Firestore's cache before the user is at a

@@ -37,6 +37,7 @@ New top-level `directory/{uid}` = `{name, employeeId, active}` only. Any signed-
 New pure `transferReceipt.js` (+ `.test.js`) builds the notification docs, following `openSessionReminder.js`: `sent_notifications` **and** the bell row, deterministic IDs, one batch.
 - Transfer created with `receiverId` → notify receiver.
 - `receiptStatus` becomes `received` → notify sender. `problem` → notify sender and all admins.
+- From review: names in messages come from `users/{uid}`, client-written text is length-limited, and a `receiverId` that is not a real user is ignored.
 - `exportToSheets`: append Receipt Status, Receipt Note, Received At at the end of both transfer tabs (existing columns do not move).
 
 ### Android
