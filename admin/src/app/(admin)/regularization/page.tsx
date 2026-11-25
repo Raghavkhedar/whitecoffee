@@ -95,7 +95,7 @@ export default function RegularizationPage() {
   const [paid, setPaid]               = useState(true);
   const [actioning, setActioning]     = useState('');
   // "uid|date" → that day's punches (IST), loaded lazily for the requests on screen.
-  const [punches, setPunches]         = useState<Record<string, string[]>>({});
+  const [punches, setPunches]         = useState<Record<string, string[] | 'loading' | 'error'>>({});
   const [employeeFilter, setEmployeeFilter]   = useState('');
   const [windowOpen, setWindowOpen]     = useState(false);
   const [togglingWindow, setToggling]   = useState(false);
@@ -126,15 +126,17 @@ export default function RegularizationPage() {
     requests.forEach(r => {
       const k = `${r.userId}|${r.date}`;
       if (k in punches) return;
-      setPunches(p => ({ ...p, [k]: [] })); // mark in-flight so it isn't fetched twice
-      getPunchLabelsForDay(r.userId, r.date).then(l => setPunches(p => ({ ...p, [k]: l }))).catch(() => {});
+      setPunches(p => ({ ...p, [k]: 'loading' })); // also stops a second fetch
+      getPunchLabelsForDay(r.userId, r.date).then(l => setPunches(p => ({ ...p, [k]: l }))).catch(() => setPunches(p => ({ ...p, [k]: 'error' })));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requests]);
 
   const PunchLine = ({ r }: { r: RegularizationRequest }) => {
     const l = punches[`${r.userId}|${r.date}`];
-    return <p className="text-xs text-text-secondary mt-1">{l && l.length ? l.join(' · ') : 'No punches recorded'}</p>;
+    return <p className="text-xs text-text-secondary mt-1">{l === undefined || l === 'loading' ? 'Loading punches…'
+      : l === 'error' ? 'Could not load punches. Reload the page.'
+      : l.length ? l.join(' · ') : 'No punches recorded'}</p>;
   };
 
   async function load() {
@@ -187,7 +189,7 @@ export default function RegularizationPage() {
     }
     // Conveyance is only claimable on a worked-day outcome — crediting travel reimbursement on
     // a day simultaneously approved as Absent/USCHL/WO/SCHL (which docks salary or asserts no work
-    // happened) is internally contradictory. SL isn't an outcome this page offers at all.
+    // happened) is internally contradictory. SL is a worked day, so it can claim.
     const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay' || approvedStatus === 'SL';
     let kmValue: number | undefined;
     if (type === 'approve' && canCreditKm && km.trim()) {
@@ -496,7 +498,7 @@ export default function RegularizationPage() {
             )}
 
             {actionModal.type === 'approve' && canClaimConveyance
-              && (approvedStatus === 'Present' || approvedStatus === 'HalfDay') && (
+              && (approvedStatus === 'Present' || approvedStatus === 'HalfDay' || approvedStatus === 'SL') && (
               <div className="mb-4">
                 <label className="label">KM traveled <span className="font-normal text-text-secondary">(optional)</span></label>
                 <input
