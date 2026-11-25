@@ -38,7 +38,8 @@ private data class XferRow(
 @Composable
 fun TransferScreen(
     isTool: Boolean,
-    todayDate: String,
+    dateLabel: String,
+    onPickDate: () -> Unit,
     isOnline: Boolean,
     submitting: Boolean,
     error: String?,
@@ -100,7 +101,7 @@ fun TransferScreen(
         AddItemButton("Add item", onClick = { items.add(XferRow()) })
 
         Spacer(Modifier.height(18.dp))
-        ReadOnlyFieldBox(text = "Transfer date · $todayDate", leadingIcon = Ms.event, leadingTint = WcTheme.colors.TextSecondary)
+        ReadOnlyFieldBox(text = "Transfer date · $dateLabel", leadingIcon = Ms.event, leadingTint = WcTheme.colors.TextSecondary, onClick = onPickDate)
 
         Spacer(Modifier.height(16.dp))
         FieldLabel("Notes"); Spacer(Modifier.height(9.dp))

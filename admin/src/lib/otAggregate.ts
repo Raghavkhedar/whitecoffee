@@ -4,7 +4,7 @@
 
 import type { AttendanceRecord, PlannedHours, OtApproval, AttendanceStatus } from '@/types';
 import {
-  computeDayLedger, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay,
+  computeDayLedger, isOtOnlyStatus, netLedgerMins, WO_DEBIT_MINS, istMinuteOfDay,
   DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
 } from './otLedger';
 import { usesOtShortageLedger } from './roleCapabilities';
@@ -68,7 +68,8 @@ export function computeRangeLedger(
   // Protocol 3: WO dates are computed BEFORE the accrual loop (previously derived after it)
   // so each date's accrueDay call can suppress that date's shift math exactly like a rest day.
   const woDates = statuses.filter(s => s.userId === userId && s.status === 'WO').map(s => s.date).sort();
-  const woDateSet = new Set(woDates);
+  // WO + USCHL days: shift math suppressed (hours → pending OT). Separate from woDates, which drives WO pay.
+  const otOnlyDates = new Set(statuses.filter(s => s.userId === userId && isOtOnlyStatus(s.status)).map(s => s.date));
 
   let autoOtMins = 0, shortageMins = 0, pendingOtMins = 0;
   const pendingDates: string[] = [];
@@ -81,7 +82,7 @@ export function computeRangeLedger(
       inMin, outMin,
       declaredOtMins: info?.declared ?? 0,
       isRestDay: isSunday(date) || holidays.has(date),
-      isWoDay: woDateSet.has(date),
+      isWoDay: otOnlyDates.has(date),
     });
     shortageMins   += led.shortageMins;
     autoOtMins     += led.autoOtMins;

@@ -32,6 +32,7 @@ const EDITABLE_FIELDS: Record<CollectionKey, EditableField[]> = {
     { key: 'siteId',     label: 'Site ID',     type: 'text' },
     { key: 'siteName',   label: 'Site Name',   type: 'text' },
     { key: 'grandTotal', label: 'Grand Total', type: 'number' },
+    { key: 'purchaseDate', label: 'Purchase Date', type: 'text' },
     { key: 'notes',      label: 'Notes',       type: 'textarea' },
   ],
   material_transfers: [

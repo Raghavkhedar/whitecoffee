@@ -167,5 +167,26 @@ eq('single ops user, 1 pending Sunday day', pendingOtDayCount([opsA], evSun, [],
 eq('sales user excluded even with the same pending-shaped fixture', pendingOtDayCount([salesC], evSun, [], [], [], noHol), 0);
 eq('two ops users, each with their own pending Sunday, sums to 2', pendingOtDayCount([opsA, opsB], [...evSun, ...evOpsB], [], [], [], noHol), 2);
 
+console.log('\nUSCHL day with punches: no shortage, worked window pending, not a WO day:');
+const evU = [ev(U, '2026-06-02', 'site_in', '10:00'), ev(U, '2026-06-02', 'site_out', '12:00')];
+const uschl = [{ id: '2026-06-02', userId: U, date: '2026-06-02', status: 'USCHL' } as never];
+r = computeRangeLedger(U, evU, [], [], uschl, noHol);
+eq('shortage = 0', r.shortageMins, 0);
+eq('pending = 120', r.pendingOtMins, 120);
+eq('woDates = 0 (USCHL must not feed WO pay)', r.woDates.length, 0);
+r = computeRangeLedger(U, evU, [], [{ userId: U, date: '2026-06-02', requestedMins: 120, approvedMins: 120, status: 'approved' } as never], uschl, noHol);
+eq('approved 120 → net 120', r.netMins, 120);
+eq('without the status: 360 shortage', computeRangeLedger(U, evU, [], [], [], noHol).shortageMins, 360);
+
+console.log('\nEvery status: non-worked ones move hours to pending OT, worked ones keep shortage:');
+for (const st of ['Absent', 'SCHL', 'USCHL', 'WO', 'Holiday']) {
+  const rs = computeRangeLedger(U, evU, [], [], [{ id: 'x', userId: U, date: '2026-06-02', status: st } as never], noHol);
+  eq(`${st}: shortage/pending`, `${rs.shortageMins}/${rs.pendingOtMins}`, '0/120');
+}
+for (const st of ['Present', 'HalfDay', 'SL', 'LNF']) {
+  const rs = computeRangeLedger(U, evU, [], [], [{ id: 'x', userId: U, date: '2026-06-02', status: st } as never], noHol);
+  eq(`${st}: keeps 360 shortage`, rs.shortageMins, 360);
+}
+
 console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -37,6 +37,12 @@ export interface DayLedger {
   pendingExtraMins: number;   // OT beyond declared (or, on a rest day, the whole worked window) → needs admin review
 }
 
+// Statuses whose day is ledger-neutral: no shortage, whole worked window → pending OT.
+// Any admin-chosen non-worked outcome (leave / WO / holiday / absent) moves that day's hours
+// into OT. Present / HalfDay / SL / LNF keep the normal hours-based shortage + OT.
+const OT_ONLY_STATUSES = new Set(['WO', 'USCHL', 'SCHL', 'Absent', 'Holiday', 'Sunday']);
+export const isOtOnlyStatus = (s?: string): boolean => !!s && OT_ONLY_STATUSES.has(s);
+
 const ZERO: DayLedger = {
   shortageMins: 0, autoOtMins: 0, pendingExtraMins: 0,
 };

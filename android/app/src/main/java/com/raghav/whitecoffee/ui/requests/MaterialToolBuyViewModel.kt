@@ -7,6 +7,7 @@ import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.photo.PhotoPipeline
 import com.raghav.whitecoffee.data.repository.RequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.LocalDate
 import javax.inject.Inject
 
 @HiltViewModel
@@ -24,6 +25,7 @@ class MaterialToolBuyViewModel @Inject constructor(
         items: List<PurchaseItem>,
         notes: String,
         photoUris: List<Uri> = emptyList(),
+        date: LocalDate = LocalDate.now(),
     ) = submit(
         collection = COLLECTION,
         photoUris = photoUris,
@@ -36,6 +38,7 @@ class MaterialToolBuyViewModel @Inject constructor(
                     items      = items,
                     grandTotal = items.sumOf { it.totalPrice },
                     notes      = notes.trim(),
+                    purchaseDate = date.toString(), // ISO yyyy-MM-dd
                 ),
                 docId,
                 // Written with empty photoUrls; the worker patches them in once uploaded.

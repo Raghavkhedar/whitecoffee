@@ -24,7 +24,7 @@ const {
 } = require("./payrollDeductions");
 // Per-day OT / shortage / rest-day ledger — single source of truth (see otLedger.js).
 const {
-  computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN,
+  computeDayLedger, DEFAULT_SHIFT_START_MIN, DEFAULT_SHIFT_END_MIN, isOtOnlyStatus,
 } = require("./otLedger");
 // Range/month OT/shortage/WO aggregation for the Employee Dashboard's live column (otAggregate.js).
 const { computeRangeLedger, settlementCash, dailyOtWoCash } = require("./otAggregate");
@@ -860,7 +860,7 @@ exports.exportToSheets = onSchedule(
               inMin, outMin,
               declaredOtMins: plan ? plan.declared : 0,
               isRestDay: restDay,
-              isWoDay: statusMap.get(key) === 'WO',
+              isWoDay: isOtOnlyStatus(statusMap.get(key)),
             });
             // A rest day's auto-approved slice is always 0 (nothing is pre-authorized on
             // a rest day) — its whole worked window is pendingExtraMins, credited only via
@@ -977,7 +977,7 @@ exports.exportToSheets = onSchedule(
             inMin, outMin,
             declaredOtMins: plan ? plan.declared : 0,
             isRestDay: restDay,
-            isWoDay: statusMap.get(key) === 'WO',
+            isWoDay: isOtOnlyStatus(statusMap.get(key)),
           });
         }
 
@@ -988,7 +988,7 @@ exports.exportToSheets = onSchedule(
         //   (a rest day's whole worked window is PENDING until an admin approves it).
         let rawOtMins = 0, approvedOtMins = 0;
         if (inMin != null && outMin != null) {
-          const isWoDay = statusMap.get(key) === 'WO';
+          const isWoDay = isOtOnlyStatus(statusMap.get(key));
           if (restDay || isWoDay) {
             rawOtMins = Math.max(0, outMin - inMin);
             approvedOtMins = 0; // never auto-credited on a rest/WO day; approvalMap adds any grant below
@@ -1184,7 +1184,7 @@ exports.exportToSheets = onSchedule(
             inMin, outMin,
             declaredOtMins: plan ? plan.declared : 0,
             isRestDay: restDay,
-            isWoDay: statusMap.get(key) === 'WO',
+            isWoDay: isOtOnlyStatus(statusMap.get(key)),
           });
           // Rest-day auto-approved slice is always 0 — credit comes only via approvalMap below.
           creditedOt = led.autoOtMins;
@@ -1243,7 +1243,7 @@ exports.exportToSheets = onSchedule(
       const header = [
         "Submitted At", "Employee Name", "Employee ID",
         "Site ID", "Site Name", "Item Name", "Quantity", "Unit",
-        "Price Per Unit", "Total Price", "Grand Total", "Notes", "Photo URLs",
+        "Price Per Unit", "Total Price", "Grand Total", "Notes", "Photo URLs", "Purchase Date",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1253,8 +1253,8 @@ exports.exportToSheets = onSchedule(
         const uid    = uidOf(doc);
         const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos] }));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos, dmy(d.purchaseDate)] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos, dmy(d.purchaseDate)] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows.map((r) => r.row)]);

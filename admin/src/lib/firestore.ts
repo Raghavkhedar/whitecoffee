@@ -438,13 +438,27 @@ export async function getAllRegularizationRequests(status?: string): Promise<Reg
   });
 }
 
+// One employee's punches for a date, oldest first, as "HH:MM type" strings in IST — shown on the
+// Regularization page so the reviewer sees what was actually recorded next to the reason.
+export async function getPunchLabelsForDay(uid: string, date: string): Promise<string[]> {
+  const snap = await getDocs(query(collection(db, 'users', uid, 'attendance'), where('date', '==', date)));
+  return snap.docs
+    .map(d => d.data() as { type: string; timestamp?: { seconds: number } })
+    .filter(e => e.timestamp)
+    .sort((a, b) => a.timestamp!.seconds - b.timestamp!.seconds)
+    .map(e => {
+      const t = new Date(e.timestamp!.seconds * 1000).toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+      return `${t} ${e.type.replace(/_/g, ' ')}`;
+    });
+}
+
 // Approve a regularization request → write the admin attendance_status. When approving to a
 // worked status (Present) the admin may pass effective in/out times ("HH:MM"), captured on the
 // status doc so the OT/shortage ledger can carry that day's shortage/OT (missed-punch fix).
 export async function approveRegularization(
   userId: string, requestId: string, date: string, approverName: string,
   comment: string, approvedStatus: string, userName = '', employeeId = '',
-  inTime?: string, outTime?: string, km?: number,
+  inTime?: string, outTime?: string, km?: number, paid?: boolean,
 ) {
   // Re-check rather than trust the submitted form: the regularization page already excludes WO
   // from the outcome list for a rest-day request and refuses to file a request for one at all
@@ -471,7 +485,10 @@ export async function approveRegularization(
       inTime: carryHours ? inTime : deleteField(),
       outTime: carryHours ? outTime : deleteField(),
       // Clear a stale credit from a previous auto SCHL/Holiday doc: the admin status is the truth now.
-      salaryCredit: deleteField(),
+      // SCHL/Holiday are the only statuses whose pay is a credit: the admin picks paid/unpaid
+      // (Holiday with no field is also paid). A paid SCHL here does NOT draw from plBalance.
+      salaryCredit: (approvedStatus === 'SCHL' || approvedStatus === 'Holiday') && paid !== undefined
+        ? (paid ? 1 : 0) : deleteField(),
       updatedAt: Timestamp.now(),
     }),
     { merge: true }
@@ -513,7 +530,7 @@ export async function approveRegularization(
   // Re-checked here, not trusted from the page: conveyance is only claimable on a worked-day
   // outcome. Absent/USCHL/WO/SCHL either dock salary or formally assert the day was not worked —
   // crediting travel reimbursement on the same day would be internally contradictory.
-  const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay';
+  const canCreditKm = approvedStatus === 'Present' || approvedStatus === 'HalfDay' || approvedStatus === 'SL';
   if (canCreditKm && km !== undefined && km >= 0) {
     const userSnap = await getDoc(doc(db, 'users', userId));
     const userData = userSnap.exists() ? userSnap.data() : undefined;
