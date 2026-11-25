@@ -3,6 +3,7 @@ package com.raghav.whitecoffee
 import com.raghav.whitecoffee.data.model.AccountStatus
 import com.raghav.whitecoffee.data.model.isSessionSuperseded
 import com.raghav.whitecoffee.domain.CloseOpenDayUseCase
+import com.raghav.whitecoffee.fake.FakeRequestRepository
 import com.raghav.whitecoffee.fake.FakeAttendanceNotifier
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
 import com.raghav.whitecoffee.fake.FakeAuthRepository
@@ -65,7 +66,19 @@ class MainViewModelTest {
         userRepository = users,
         closeOpenDay = CloseOpenDayUseCase(attendance, location, session),
         attendanceNotifier = notifier,
+        requestRepository = requests,
     )
+
+    private val requests = FakeRequestRepository()
+
+    @Test
+    fun `logout forgets a refused receipt, so the next user never sees it`() = runTest(dispatcher) {
+        requests.receiptError.value = "not saved"
+
+        viewModel().logout()
+
+        assertEquals(null, requests.receiptError.value)
+    }
 
     // ── The session-supersede decision, in isolation ──────────────────────
 

@@ -6,6 +6,7 @@ import com.raghav.whitecoffee.data.model.AccountStatus
 import com.raghav.whitecoffee.data.model.isSessionSuperseded
 import com.raghav.whitecoffee.data.notification.AttendanceNotifier
 import com.raghav.whitecoffee.data.repository.AuthRepository
+import com.raghav.whitecoffee.data.repository.RequestRepository
 import com.raghav.whitecoffee.data.repository.UserRepository
 import com.raghav.whitecoffee.data.session.SessionManager
 import com.raghav.whitecoffee.domain.CloseOpenDayUseCase
@@ -27,6 +28,7 @@ class MainViewModel @Inject constructor(
     private val userRepository: UserRepository,
     private val closeOpenDay: CloseOpenDayUseCase,
     private val attendanceNotifier: AttendanceNotifier,
+    private val requestRepository: RequestRepository,
 ) : ViewModel() {
 
     private val _sessionInvalidated = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -97,6 +99,7 @@ class MainViewModel @Inject constructor(
         // writes a terminal HOME_OUT). Without this, a signed-out device keeps an ongoing,
         // undismissable notification telling the next person they are checked in.
         attendanceNotifier.clear()
+        requestRepository.clearReceiptError()
         authRepository.logout()
     }
 

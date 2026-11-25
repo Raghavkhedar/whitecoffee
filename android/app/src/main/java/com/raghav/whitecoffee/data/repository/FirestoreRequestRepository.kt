@@ -1,15 +1,24 @@
 package com.raghav.whitecoffee.data.repository
 
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.raghav.whitecoffee.data.firestore.AuditStamp
 import com.raghav.whitecoffee.data.firestore.withAuditStamp
+import com.raghav.whitecoffee.data.model.Employee
+import com.raghav.whitecoffee.data.model.IncomingTransfer
 import com.raghav.whitecoffee.data.model.MaterialToolPurchase
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.Transfer
 import com.raghav.whitecoffee.data.model.WorkProgress
 import com.raghav.whitecoffee.data.session.SessionManager
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -191,6 +200,83 @@ class FirestoreRequestRepository @Inject constructor(
                 .get()
                 .await()
             Result.success(snapshot.documents.mapNotNull { Transfer.fromDocument(it) })
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ── Transfer receipt ───────────────────────────────────────────────────
+
+    // shortcut: held in memory, so a refusal arriving after the app was killed is not shown;
+    // persist the queued answer if that turns out to happen.
+    private val _receiptError = MutableStateFlow<String?>(null)
+    override val receiptError: StateFlow<String?> = _receiptError
+    override fun clearReceiptError() { _receiptError.value = null }
+
+    override suspend fun getDirectory(): Result<List<Employee>> {
+        return try {
+            val snapshot = firestore.collection("directory").get().await()
+            Result.success(snapshot.documents.map {
+                Employee(
+                    uid        = it.id,
+                    name       = it.getString("name") ?: "",
+                    employeeId = it.getString("employeeId") ?: "",
+                    active     = it.getBoolean("active") ?: true,
+                )
+            })
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override fun observeIncomingTransfers(): Flow<Result<List<IncomingTransfer>>> =
+        combine(incoming("material_transfers"), incoming("tool_transfers")) { material, tool ->
+            runCatching { material.getOrThrow() + tool.getOrThrow() }
+        }
+
+    // shortcut: listens to every transfer ever sent to this user; filter on receiptStatus
+    // (with a composite index) once that list grows large.
+    private fun incoming(collectionName: String): Flow<Result<List<IncomingTransfer>>> = callbackFlow {
+        val registration = firestore.collectionGroup(collectionName)
+            .whereEqualTo("receiverId", sessionManager.userId)
+            .addSnapshotListener { snapshot, error ->
+                trySend(
+                    if (error != null) Result.failure(error)
+                    else Result.success(snapshot?.documents.orEmpty().mapNotNull { doc ->
+                        Transfer.fromDocument(doc)?.let { IncomingTransfer(collectionName, it) }
+                    })
+                )
+            }
+        awaitClose { registration.remove() }
+    }
+
+    // Not awaited: confirming at a site with no signal must work (see OfflineWritePolicyTest).
+    override suspend fun confirmReceipt(
+        collectionName: String,
+        senderId: String,
+        docId: String,
+        status: String,
+        note: String
+    ): Result<Unit> {
+        return try {
+            val data = buildMap<String, Any> {
+                put("receiptStatus", status)
+                put("receiptAt", FieldValue.serverTimestamp())
+                if (note.isNotEmpty()) put("receiptNote", note)
+            }
+            val answeredBy = sessionManager.userId
+            firestore.collection("users").document(senderId)
+                .collection(collectionName).document(docId)
+                .update(data.withAuditStamp(AuditStamp.uid(sessionManager)))
+                // Not awaited, but a refusal (e.g. the office closed it first) must be seen.
+                .addOnFailureListener {
+                    // A refusal landing after a user switch must not show to someone else.
+                    if (sessionManager.userId != answeredBy) return@addOnFailureListener
+                    val answer = if (note.isEmpty()) "\"Received\"" else "problem report \"$note\""
+                    _receiptError.value = "Your $answer was not saved. The transfer may already " +
+                        "be closed. Tell the office directly."
+                }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -8,6 +8,7 @@ import com.raghav.whitecoffee.data.session.SessionManager
 import com.raghav.whitecoffee.domain.ResolveTodayStatusUseCase
 import com.raghav.whitecoffee.fake.FakeAttendanceRepository
 import com.raghav.whitecoffee.fake.FakeNetworkMonitor
+import com.raghav.whitecoffee.fake.FakeRequestRepository
 import com.raghav.whitecoffee.fake.FakeNotificationRepository
 import com.raghav.whitecoffee.fake.FakeSessionManager
 import kotlinx.coroutines.Dispatchers
@@ -50,9 +51,10 @@ class HomeViewModelTest {
         attendance: FakeAttendanceRepository = FakeAttendanceRepository(),
         notifications: FakeNotificationRepository = FakeNotificationRepository(),
         network: FakeNetworkMonitor = FakeNetworkMonitor(),
+        requests: FakeRequestRepository = FakeRequestRepository(),
     ) = HomeViewModel(
         session, notifications, attendance,
-        ResolveTodayStatusUseCase(session), network
+        ResolveTodayStatusUseCase(session), network, requests
     )
 
     /** An event at local [hour]:[minute] — the same clock the scoring window is expressed in. */
@@ -68,6 +70,39 @@ class HomeViewModelTest {
             id = "e", userId = "u1", type = type, timestamp = Timestamp(cal.time),
             siteName = siteName, marketName = marketName, locationName = locationName,
         )
+    }
+
+    @Test
+    fun `the employee list is cached from Home, and again when signal returns`() = runTest(dispatcher) {
+        val network = FakeNetworkMonitor(online = false)
+        val requests = FakeRequestRepository()
+        subject(network = network, requests = requests)
+        advanceUntilIdle()
+        assertEquals(0, requests.directoryLoads)
+
+        network.setOnline(true)
+        advanceUntilIdle()
+        assertEquals(1, requests.directoryLoads)
+    }
+
+    @Test
+    fun `incoming transfers are fetched from Home, so they are there offline`() = runTest(dispatcher) {
+        val requests = FakeRequestRepository()
+        subject(requests = requests)
+        advanceUntilIdle()
+
+        assertEquals(1, requests.incoming.subscriptionCount.value)
+    }
+
+    @Test
+    fun `a refused receipt answer reaches Home until dismissed`() = runTest(dispatcher) {
+        val requests = FakeRequestRepository()
+        val vm = subject(requests = requests)
+        requests.receiptError.value = "not saved"
+        assertEquals("not saved", vm.receiptError.value)
+
+        vm.dismissReceiptError()
+        assertEquals(null, vm.receiptError.value)
     }
 
     private fun notif(id: String, isRead: Boolean) =

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { collectionGroup, getDocs, doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { collectionGroup, getDocs, doc, updateDoc, addDoc, collection, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { getStorage, ref, getDownloadURL } from 'firebase/storage';
 import { db, auth } from '@/lib/firebase';
 import { stamped } from '@/lib/firestore';
@@ -8,6 +8,7 @@ import Icon from '@/components/Icon';
 import { Avatar, TH, TD } from '@/components/ui';
 import { downloadSheet } from '@/lib/excel';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useAccess } from '@/components/AccessContext';
 
 type CollectionKey = 'material_requests' | 'material_purchases' | 'material_transfers' | 'tool_transfers' | 'work_progress';
 
@@ -172,7 +173,9 @@ function EditModal({
   onClose: () => void;
   onSaved: (updated: Row) => void;
 }) {
-  const fields = EDITABLE_FIELDS[collectionKey];
+  // With a receiver set, access and notifications follow receiverId, so renaming
+  // receivedBy alone would mislead.
+  const fields = EDITABLE_FIELDS[collectionKey].filter(f => !(f.key === 'receivedBy' && row.receiverId));
   const [form, setForm] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     fields.forEach(f => { init[f.key] = String(row[f.key] ?? ''); });
@@ -289,6 +292,34 @@ function EditModal({
   );
 }
 
+const RECEIPT_STYLE: Record<string, [string, string]> = {
+  pending:  ['Awaiting receipt', 'bg-amber-50 text-amber-700'],
+  received: ['Received',         'bg-green-50 text-green-700'],
+  problem:  ['Problem',          'bg-red-50 text-red-600'],
+};
+
+// Only transfers addressed to a receiver carry a receipt; older rows render nothing.
+function Receipt({ row, onClose }: { row: Row; onClose: (row: Row) => void }) {
+  const style = RECEIPT_STYLE[String(row.receiptStatus ?? '')];
+  const { user } = useAccess();
+  // The rules refuse a non-admin closing their own transfer, so don't offer it.
+  const ownRow = row.userId === auth.currentUser?.uid && user?.role !== 'admin';
+  if (!row.receiverId || !style) return null;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap ${style[1]}`}
+        title={String(row.receiptNote ?? '')}>{style[0]}</span>
+      {row.receiptStatus !== 'received' && !ownRow && (
+        <button onClick={() => onClose(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">
+          Mark received
+        </button>
+      )}
+    </span>
+  );
+}
+
+const STALE = 'This transfer changed since the page loaded. Check it again before closing.';
+
 export default function SubmissionsPage() {
   const isMobile = useIsMobile();
   const [active, setActive]   = useState<CollectionKey>('material_requests');
@@ -340,6 +371,27 @@ export default function SubmissionsPage() {
   function handleSaved(updated: Row) {
     setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
     setEditing(null);
+  }
+
+  async function markReceived(row: Row) {
+    const note = row.receiptNote ? ` Reported problem: "${row.receiptNote}".` : '';
+    if (!window.confirm(`Close this transfer as received by ${row.receivedBy}?${note} This cannot be undone by the employee.`)) return;
+    try {
+      // The row may be stale: never close over an answer this admin has not seen.
+      await runTransaction(db, async tx => {
+        const ref = doc(db, row._path);
+        const live = (await tx.get(ref)).data();
+        if (live?.receiptStatus !== row.receiptStatus || live?.receiptNote !== row.receiptNote) {
+          throw new Error(STALE);
+        }
+        tx.update(ref, stamped({ receiptStatus: 'received', receiptAt: serverTimestamp() }));
+      });
+      await load(active); // picks up receiptAt and who closed it, for View and Excel
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message === STALE) await load(active); // load() clears the error, so set it after
+      setError(message);
+    }
   }
 
   const activeLabel = COLLECTIONS.find(c => c.key === active)?.label ?? active;
@@ -406,6 +458,7 @@ export default function SubmissionsPage() {
                     <span>{String(row.workDescription)}</span>
                   ) : '—'}
                 </div>
+                <div className="mt-2 empty:hidden"><Receipt row={row} onClose={markReceived} /></div>
                 <div className="flex items-center gap-4 mt-2">
                   <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline">View</button>
                   <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline">Edit</button>
@@ -448,6 +501,7 @@ export default function SubmissionsPage() {
                   </td>
                   <td className={`${TD} pr-[18px] text-right`}>
                     <div className="flex items-center gap-3 justify-end">
+                      <Receipt row={row} onClose={markReceived} />
                       <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">View</button>
                       <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline whitespace-nowrap">Edit</button>
                     </div>

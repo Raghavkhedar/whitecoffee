@@ -1,10 +1,13 @@
 package com.raghav.whitecoffee.fake
 
+import com.raghav.whitecoffee.data.model.Employee
+import com.raghav.whitecoffee.data.model.IncomingTransfer
 import com.raghav.whitecoffee.data.model.MaterialToolPurchase
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.Transfer
 import com.raghav.whitecoffee.data.model.WorkProgress
 import com.raghav.whitecoffee.data.repository.RequestRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * In-memory [RequestRepository] for unit tests.
@@ -25,6 +28,30 @@ class FakeRequestRepository : RequestRepository {
     var failWith: Exception? = null
 
     private var nextId = 1
+
+    var directory: List<Employee> = emptyList()
+    val incoming = MutableStateFlow<Result<List<IncomingTransfer>>>(Result.success(emptyList()))
+
+    /** Every receipt written, as [collection, senderId, docId, status, note]. */
+    val receipts = mutableListOf<List<String>>()
+
+    var directoryLoads = 0
+    override suspend fun getDirectory(): Result<List<Employee>> {
+        directoryLoads++
+        return Result.success(directory)
+    }
+
+    override val receiptError = MutableStateFlow<String?>(null)
+    override fun clearReceiptError() { receiptError.value = null }
+
+    override fun observeIncomingTransfers() = incoming
+
+    override suspend fun confirmReceipt(
+        collectionName: String, senderId: String, docId: String, status: String, note: String,
+    ): Result<Unit> {
+        receipts += listOf(collectionName, senderId, docId, status, note)
+        return Result.success(Unit)
+    }
 
     override fun newDocId(collectionName: String): String =
         "doc-${nextId++}".also { issuedIds += it }

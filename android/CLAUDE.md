@@ -310,6 +310,18 @@ See `SiteRepository.kt` and `SiteTask.kt` for re-enable instructions.
 > Collection group `leave_requests` → `status` ASC + `submittedAt` ASC
 > Create in Firebase Console → Firestore → Indexes → Composite → Add index
 
+### Transfer receipt (`material_transfers`, `tool_transfers`)
+| Field | Notes |
+|---|---|
+| receiverId | uid picked from `/directory`; absent on old records and `mobile/` submissions |
+| receiptStatus | pending → received / problem; problem → received. `received` is final |
+| receiptNote / receiptAt | written by the receiver (note required for problem) |
+
+Only the receiver (or admin / Submissions tab) may change these; rules enforce it. `/directory/{uid}`
+(`name`, `employeeId`, `active`) is written only by the `syncDirectory` function. Notifications come
+from `onMaterialTransferWritten` / `onToolTransferWritten` (`transferReceipt.js`).
+Design: `../docs/superpowers/specs/2026-11-25-transfer-receipt-design.md`
+
 ### Migration note:
 Old flat collections (`attendance`, `material_tool_requests`, etc.) were replaced by sub-collections.
 Delete old flat collections from Firestore Console — they only contain test data.

@@ -31,6 +31,7 @@ import androidx.navigation.NavOptions
 import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.MainViewModel
 import com.raghav.whitecoffee.R
+import com.raghav.whitecoffee.ui.requests.showReceiptRejected
 import com.raghav.whitecoffee.ui.theme.WcDialog
 import com.raghav.whitecoffee.ui.theme.WhiteCoffeeTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -63,6 +64,14 @@ class HomeFragment : Fragment() {
             val isOnline     by viewModel.isOnline.collectAsStateWithLifecycle()
             val isLoggingOut by mainViewModel.logoutInProgress.collectAsStateWithLifecycle()
             var showLogoutConfirm by remember { mutableStateOf(false) }
+
+            val receiptError by viewModel.receiptError.collectAsStateWithLifecycle()
+            LaunchedEffect(receiptError) {
+                receiptError?.let {
+                    viewModel.dismissReceiptError()
+                    showReceiptRejected(requireContext(), it)
+                }
+            }
 
             // Collect logout-complete event and navigate once it fires.
             LaunchedEffect(Unit) {
@@ -102,6 +111,7 @@ class HomeFragment : Fragment() {
                 onMtBuyClick            = { findNavController().navigate(R.id.action_homeFragment_to_materialToolBuyFragment) },
                 onMaterialTransferClick = { findNavController().navigate(R.id.action_homeFragment_to_materialTransferFragment) },
                 onToolTransferClick     = { findNavController().navigate(R.id.action_homeFragment_to_toolTransferFragment) },
+                onIncomingTransfersClick = { findNavController().navigate(R.id.action_homeFragment_to_incomingTransfersFragment) },
                 onWorkProgressClick     = { findNavController().navigate(R.id.action_homeFragment_to_workProgressFragment) },
                 onLeaveClick            = { findNavController().navigate(R.id.action_homeFragment_to_leaveFragment) },
                 onLeaveApprovalsClick   = { findNavController().navigate(R.id.action_homeFragment_to_leaveApprovalsFragment) },

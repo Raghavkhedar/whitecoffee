@@ -52,6 +52,7 @@ class OfflineWritePolicyTest {
             "submitMaterialToolPurchase",
             "submitMaterialTransfer",
             "submitToolTransfer",
+            "confirmReceipt",
             "submitWorkProgress",
         ),
     )

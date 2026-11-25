@@ -8,6 +8,7 @@ import com.raghav.whitecoffee.data.model.willLogoutCloseDay
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.repository.AttendanceRepository
 import com.raghav.whitecoffee.data.repository.NotificationRepository
+import com.raghav.whitecoffee.data.repository.RequestRepository
 import com.raghav.whitecoffee.data.session.SessionManager
 import com.raghav.whitecoffee.domain.DayStatusPreview
 import com.raghav.whitecoffee.domain.ResolveTodayStatusUseCase
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -63,7 +65,8 @@ class HomeViewModel @Inject constructor(
     private val notificationRepository: NotificationRepository,
     private val attendanceRepository: AttendanceRepository,
     private val resolveTodayStatus: ResolveTodayStatusUseCase,
-    networkMonitor: NetworkMonitor
+    networkMonitor: NetworkMonitor,
+    private val requestRepository: RequestRepository
 ) : ViewModel() {
 
     val isOnline: StateFlow<Boolean> = networkMonitor.isOnline
@@ -91,6 +94,30 @@ class HomeViewModel @Inject constructor(
     init {
         observeUnreadCount()
         loadTodayAttendance()
+        cacheDirectory(networkMonitor)
+        cacheIncomingTransfers()
+    }
+
+    val receiptError: StateFlow<String?> = requestRepository.receiptError
+
+    fun dismissReceiptError() = requestRepository.clearReceiptError()
+
+    // Listening here keeps transfers addressed to this user in the cache, so one can be
+    // confirmed offline without the Incoming screen ever having been opened.
+    private fun cacheIncomingTransfers() {
+        viewModelScope.launch {
+            requestRepository.observeIncomingTransfers()
+                .catch { /* the Incoming screen reports load errors */ }
+                .collect {}
+        }
+    }
+
+    // Reading it here puts the receiver list in Firestore's cache before the user is at a
+    // site with no signal and needs to file a transfer.
+    private fun cacheDirectory(networkMonitor: NetworkMonitor) {
+        viewModelScope.launch {
+            networkMonitor.isOnline.filter { it }.collect { requestRepository.getDirectory() }
+        }
     }
 
     private fun observeUnreadCount() {
