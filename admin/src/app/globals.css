@@ -20,6 +20,9 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #C7C1B9; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
+.tick-path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: tick-draw 0.35s ease-out forwards; }
+@keyframes tick-draw { to { stroke-dashoffset: 0; } }
+
 @layer components {
   .btn-primary {
     @apply bg-primary text-white px-4 py-2 rounded-[10px] font-medium hover:bg-[#27598F] transition-colors disabled:opacity-50 disabled:cursor-not-allowed;

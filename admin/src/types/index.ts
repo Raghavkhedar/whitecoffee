@@ -42,10 +42,10 @@ export interface User {
   level?: string | null;
   salaryRate?: number;
   /** Payroll percentages, admin-set on /users. Stored as the percent VALUE (12 = 12%), not a
-   *  fraction. Currently recorded only — no Cloud Function or export reads them yet, so setting
-   *  one has no effect on Employee Dashboard salary or TOTAL DUE. Wiring them up is a separate
-   *  decision: PF/ESI are statutory *deductions* (they'd subtract), whereas the existing manual
-   *  `Imprest` column *adds* to TOTAL DUE (index.js), so the signs are not the same. */
+   *  fraction. Read by the Sheets export and dailySpend via firebase/functions/payrollDeductions.js:
+   *  PF and ESI are DEDUCTED from TOTAL DUE, Imprest is ADDED, each as a percentage of Salary Due
+   *  MTD (base floored at 0). Live values come from users/{uid}/compensation/current (see
+   *  lib/compensation.ts); these inline fields are the legacy fallback. */
   pfPercent?: number;
   esiPercent?: number;
   imprestPercent?: number;

@@ -34,6 +34,7 @@ export const TABS: TabDef[] = [
   { path: '/access',             label: 'Access Control', icon: 'list',       group: 'People',    adminOnly: true },
   { path: '/working-hours-shortage-excess', label: 'Working Hours-Shortage/Excess',  icon: 'userCircle', group: 'People' },
   { path: '/leaves',             label: 'Leave Requests', icon: 'leave',      group: 'People', badgeKey: 'pending' },
+  { path: '/leave-calendar',     label: 'Leave Calendar', icon: 'calendar',   group: 'People' },
   { path: '/regularization',     label: 'Regularization', icon: 'clock',      group: 'People' },
   { path: '/attendance',         label: 'Attendance',     icon: 'calendar',   group: 'Time & Sites' },
   { path: '/daily-activity',     label: 'Daily Activity', icon: 'clock',      group: 'Time & Sites', adminOnly: true },

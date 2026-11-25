@@ -17,6 +17,7 @@ import { computeRangeLedger, settlementCash, type RangeLedger } from '@/lib/otAg
 import { WO_DEBIT_MINS } from '@/lib/otLedger';
 import { usesOtShortageLedger } from '@/lib/roleCapabilities';
 import ExportButton from '@/components/ExportButton';
+import AsyncButton from '@/components/AsyncButton';
 import { downloadExcel } from '@/lib/excel';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
@@ -603,8 +604,6 @@ function SettleWoModal({ wo, onClose, onSettled }: { wo: WoLedgerEntry; onClose:
   const [selectedDate, setSelectedDate] = useState('');
   const [mins, setMins] = useState('');
   const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-
   useEffect(() => {
     (async () => {
       const [approvals, settlements] = await Promise.all([
@@ -625,17 +624,9 @@ function SettleWoModal({ wo, onClose, onSettled }: { wo: WoLedgerEntry; onClose:
 
   async function submit() {
     const value = Math.round(Number(mins) || 0);
-    if (!selected || value <= 0 || value > maxMins) { setError(`Enter a value between 1 and ${maxMins}.`); return; }
-    setSaving(true);
+    if (!selected || value <= 0 || value > maxMins) throw new Error(`Enter a value between 1 and ${maxMins}.`);
     setError('');
-    try {
-      await settleWoDebit(wo.userId, wo.date, selected.date, value, 'Admin');
-      onSettled();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to settle.');
-    }
-    setSaving(false);
+    await settleWoDebit(wo.userId, wo.date, selected.date, value, 'Admin');
   }
 
   return (
@@ -668,9 +659,9 @@ function SettleWoModal({ wo, onClose, onSettled }: { wo: WoLedgerEntry; onClose:
         </div>
         <div className="flex justify-end gap-2 p-5 border-t border-border flex-shrink-0">
           <button onClick={onClose} className="btn-outline !py-1.5 !px-4 text-[13px]">Cancel</button>
-          <button onClick={submit} disabled={saving || !selected} className="btn-success !py-1.5 !px-4 text-[13px]">
-            {saving ? 'Saving…' : 'Settle'}
-          </button>
+          <AsyncButton onClick={submit} onDone={() => { onSettled(); onClose(); }} onError={e => setError(e.message)} disabled={!selected} className="btn-success !py-1.5 !px-4 text-[13px]">
+            Settle
+          </AsyncButton>
         </div>
       </div>
     </div>
