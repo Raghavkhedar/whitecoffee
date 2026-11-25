@@ -1243,7 +1243,7 @@ exports.exportToSheets = onSchedule(
       const header = [
         "Submitted At", "Employee Name", "Employee ID",
         "Site ID", "Site Name", "Item Name", "Quantity", "Unit",
-        "Price Per Unit", "Total Price", "Grand Total", "Notes", "Photo URLs",
+        "Price Per Unit", "Total Price", "Grand Total", "Notes", "Photo URLs", "Purchase Date",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1253,8 +1253,8 @@ exports.exportToSheets = onSchedule(
         const uid    = uidOf(doc);
         const sortKey = [millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", d.siteId || "", d.siteName || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos] }));
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", d.grandTotal || "", d.notes || "", photos, dmy(d.purchaseDate)] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.quantity || "", item.unit || "", item.pricePerUnit || "", item.totalPrice || "", d.grandTotal || "", d.notes || "", photos, dmy(d.purchaseDate)] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_4, TABS.PURCHASES, [header, ...rows.map((r) => r.row)]);

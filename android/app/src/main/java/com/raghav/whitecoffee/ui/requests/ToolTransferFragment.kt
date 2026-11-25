@@ -19,7 +19,6 @@ import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.UiState
 import dagger.hilt.android.AndroidEntryPoint
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 /** Tool Transfer — Compose host. Logic stays in [TransferViewModel]. */
 @AndroidEntryPoint
@@ -37,7 +36,7 @@ class ToolTransferFragment : Fragment() {
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val submit by viewModel.submitState.collectAsStateWithLifecycle()
             var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
-            val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("dd MMM yyyy")) }
+            var date by remember { mutableStateOf(LocalDate.now()) }
 
             val addPhoto = rememberPhotoAdder { uris ->
                 photos = (photos + uris).distinct()
@@ -48,7 +47,8 @@ class ToolTransferFragment : Fragment() {
 
             TransferScreen(
                 isTool = true,
-                todayDate = today,
+                dateLabel = date.formLabel(),
+                onPickDate = { showPastDatePicker(requireContext(), date) { date = it } },
                 isOnline = isOnline,
                 submitting = submit is UiState.Loading,
                 error = (submit as? UiState.Error)?.message,
@@ -57,7 +57,7 @@ class ToolTransferFragment : Fragment() {
                 onAddPhoto = addPhoto,
                 onRemovePhoto = { photos = photos - it; viewModel.onPhotosChanged("tool_transfers", photos) },
                 onSubmit = { from, to, by, recv, items, notes ->
-                    viewModel.submitToolTransfer(from, to, by, recv, items, notes, photos)
+                    viewModel.submitToolTransfer(from, to, by, recv, items, notes, photos, date)
                 },
             )
         }

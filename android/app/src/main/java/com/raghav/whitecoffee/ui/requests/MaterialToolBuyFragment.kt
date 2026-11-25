@@ -18,6 +18,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.fragment.findNavController
 import com.raghav.whitecoffee.core.UiState
 import dagger.hilt.android.AndroidEntryPoint
+import java.time.LocalDate
 
 /** M&T Buy — Compose host. Logic stays in [MaterialToolBuyViewModel]. */
 @AndroidEntryPoint
@@ -35,6 +36,7 @@ class MaterialToolBuyFragment : Fragment() {
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
             val submit by viewModel.submitState.collectAsStateWithLifecycle()
             var photos by remember { mutableStateOf<List<Uri>>(emptyList()) }
+            var date by remember { mutableStateOf(LocalDate.now()) }
             var localError by remember { mutableStateOf<String?>(null) }
 
             val addPhoto = rememberPhotoAdder { uris ->
@@ -45,6 +47,8 @@ class MaterialToolBuyFragment : Fragment() {
             LaunchedEffect(submit) { if (submit is UiState.Success) showSuccessAndExit() }
 
             MaterialToolBuyScreen(
+                dateLabel = date.formLabel(),
+                onPickDate = { showPastDatePicker(requireContext(), date) { date = it } },
                 isOnline = isOnline,
                 submitting = submit is UiState.Loading,
                 error = localError ?: (submit as? UiState.Error)?.message,
@@ -57,7 +61,7 @@ class MaterialToolBuyFragment : Fragment() {
                         localError = "Please enter the site name."
                     } else {
                         localError = null
-                        viewModel.submitPurchase(siteId, siteName, items, notes, photos)
+                        viewModel.submitPurchase(siteId, siteName, items, notes, photos, date)
                     }
                 },
             )

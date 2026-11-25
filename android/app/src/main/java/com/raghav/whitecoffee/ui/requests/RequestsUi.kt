@@ -1,5 +1,6 @@
 package com.raghav.whitecoffee.ui.requests
 
+import android.app.DatePickerDialog
 import android.content.Context
 import android.net.Uri
 import android.widget.ImageView
@@ -47,6 +48,20 @@ import com.raghav.whitecoffee.ui.theme.MsIcon
 import com.raghav.whitecoffee.ui.theme.OfflineBanner
 import com.raghav.whitecoffee.ui.theme.WcTheme
 import java.io.File
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+/** Entry date as the forms display it. */
+fun LocalDate.formLabel(): String = format(DateTimeFormatter.ofPattern("dd MMM yyyy"))
+
+/** Date picker for back-dated entries: any past date, never a future one. */
+fun showPastDatePicker(context: Context, current: LocalDate, onPicked: (LocalDate) -> Unit) {
+    DatePickerDialog(
+        context,
+        { _, year, month, day -> onPicked(LocalDate.of(year, month + 1, day)) },
+        current.year, current.monthValue - 1, current.dayOfMonth,
+    ).apply { datePicker.maxDate = System.currentTimeMillis() }.show()
+}
 
 /** Top bar + offline banner + scrollable padded body for the request/transfer/work forms. */
 @Composable

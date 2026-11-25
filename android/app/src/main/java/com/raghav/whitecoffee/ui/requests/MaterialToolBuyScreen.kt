@@ -27,6 +27,7 @@ import com.raghav.whitecoffee.data.model.PurchaseItem
 import com.raghav.whitecoffee.ui.theme.AddItemButton
 import com.raghav.whitecoffee.ui.theme.FieldLabel
 import com.raghav.whitecoffee.ui.theme.Ms
+import com.raghav.whitecoffee.ui.theme.ReadOnlyFieldBox
 import com.raghav.whitecoffee.ui.theme.SectionLabel
 import com.raghav.whitecoffee.ui.theme.WcTheme
 import com.raghav.whitecoffee.ui.theme.WcField
@@ -40,6 +41,8 @@ private data class BuyRow(
 
 @Composable
 fun MaterialToolBuyScreen(
+    dateLabel: String,
+    onPickDate: () -> Unit,
     isOnline: Boolean,
     submitting: Boolean,
     error: String?,
@@ -65,6 +68,8 @@ fun MaterialToolBuyScreen(
         FieldLabel("Site ID (optional)")
         Spacer(Modifier.height(7.dp))
         WcField(siteId, { siteId = it }, placeholder = "e.g. Site-001")
+        Spacer(Modifier.height(12.dp))
+        ReadOnlyFieldBox(text = "Purchase date · $dateLabel", leadingIcon = Ms.event, leadingTint = WcTheme.colors.TextSecondary, onClick = onPickDate)
 
         SectionLabel("PURCHASED ITEMS", Modifier.padding(top = 22.dp, bottom = 10.dp))
         items.forEachIndexed { i, row ->

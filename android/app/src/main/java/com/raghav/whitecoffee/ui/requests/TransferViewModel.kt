@@ -35,8 +35,9 @@ class TransferViewModel @Inject constructor(
         items: List<TransferItem>,
         notes: String,
         photoUris: List<Uri> = emptyList(),
+        date: LocalDate = LocalDate.now(),
     ) = submitTransfer(
-        MATERIAL_TRANSFERS, fromLocation, toLocation, transferredBy, receivedBy, items, notes, photoUris,
+        MATERIAL_TRANSFERS, fromLocation, toLocation, transferredBy, receivedBy, items, notes, photoUris, date,
     ) { docId, transfer -> requestRepository.submitMaterialTransfer(transfer, docId, emptyList()) }
 
     fun submitToolTransfer(
@@ -47,8 +48,9 @@ class TransferViewModel @Inject constructor(
         items: List<TransferItem>,
         notes: String,
         photoUris: List<Uri> = emptyList(),
+        date: LocalDate = LocalDate.now(),
     ) = submitTransfer(
-        TOOL_TRANSFERS, fromLocation, toLocation, transferredBy, receivedBy, items, notes, photoUris,
+        TOOL_TRANSFERS, fromLocation, toLocation, transferredBy, receivedBy, items, notes, photoUris, date,
     ) { docId, transfer -> requestRepository.submitToolTransfer(transfer, docId, emptyList()) }
 
     private fun submitTransfer(
@@ -60,6 +62,7 @@ class TransferViewModel @Inject constructor(
         items: List<TransferItem>,
         notes: String,
         photoUris: List<Uri>,
+        date: LocalDate,
         write: suspend (docId: String, transfer: Transfer) -> Result<String>,
     ) = submit(
         collection = collection,
@@ -75,7 +78,7 @@ class TransferViewModel @Inject constructor(
                     receivedBy    = receivedBy.trim(),
                     items         = items,
                     notes         = notes.trim(),
-                    transferDate  = LocalDate.now().format(DATE_FORMAT),
+                    transferDate  = date.format(DATE_FORMAT),
                 ),
             )
         },

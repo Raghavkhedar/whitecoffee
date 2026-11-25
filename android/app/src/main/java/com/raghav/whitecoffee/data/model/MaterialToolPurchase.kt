@@ -50,6 +50,7 @@ data class MaterialToolPurchase(
     val items: List<PurchaseItem> = emptyList(),
     val grandTotal: Double = 0.0,
     val notes: String = "",
+    val purchaseDate: String = "",      // yyyy-MM-dd; empty on records before the field existed
     val photoUrls: List<String> = emptyList(),
     val submittedAt: Timestamp? = null
 ) {
@@ -69,7 +70,8 @@ data class MaterialToolPurchase(
             "Spec 2"         to item.spec2,
             "Item Notes"     to item.notes,
             "Notes"          to notes,
-            "Submitted At"   to (submittedAt?.toDate()?.toString() ?: "")
+            "Submitted At"   to (submittedAt?.toDate()?.toString() ?: ""),
+            "Purchase Date"  to purchaseDate
         )
     }
 
@@ -82,6 +84,7 @@ data class MaterialToolPurchase(
         "items"       to items.map { it.toMap() },
         "grandTotal"  to grandTotal,
         "notes"       to notes,
+        "purchaseDate" to purchaseDate,
         "photoUrls"   to photoUrls,
         "submittedAt" to submittedAt
     )
@@ -106,6 +109,7 @@ data class MaterialToolPurchase(
                     items       = rawItems,
                     grandTotal  = doc.getDouble("grandTotal") ?: 0.0,
                     notes       = doc.getString("notes") ?: "",
+                    purchaseDate = doc.getString("purchaseDate") ?: "",
                     photoUrls   = photoUrls,
                     submittedAt = doc.getTimestamp("submittedAt")
                 )

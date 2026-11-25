@@ -2,6 +2,8 @@ package com.raghav.whitecoffee.ui.requests
 
 import android.net.Uri
 import com.raghav.whitecoffee.core.UiState
+import com.raghav.whitecoffee.data.model.MaterialToolPurchase
+import com.raghav.whitecoffee.data.model.PurchaseItem
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.RequestItem
 import com.raghav.whitecoffee.data.model.Transfer
@@ -21,6 +23,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
 
 /**
  * The shared submit pipeline behind the four request forms, exercised through two of them.
@@ -68,6 +71,23 @@ class PhotoSubmitViewModelTest {
     private fun items() = listOf(RequestItem(itemName = "Cement", quantity = 10.0))
 
     private fun transferItems() = listOf(TransferItem(itemName = "Drill", quantity = 1.0))
+
+    // ── back-dated entries ────────────────────────────────────────────────
+
+    @Test
+    fun `a picked past date is what gets written`() = runTest(dispatcher) {
+        val past = LocalDate.of(2026, 1, 5)
+
+        transferVm().submitToolTransfer("A", "B", "x", "y", transferItems(), "", date = past)
+        MaterialToolBuyViewModel(repo, photos, FakeNetworkMonitor()).submitPurchase(
+            "S-001", "Site", listOf(PurchaseItem(itemName = "Cement", quantity = 1.0)), "", date = past,
+        )
+        advanceUntilIdle()
+
+        val payloads = repo.written.map { it.third }
+        assertEquals("2026-01-05", payloads.filterIsInstance<Transfer>().single().transferDate)
+        assertEquals("2026-01-05", payloads.filterIsInstance<MaterialToolPurchase>().single().purchaseDate)
+    }
 
     // ── validation ────────────────────────────────────────────────────────
 
