@@ -102,6 +102,7 @@ class HomeFragment : Fragment() {
                 onMtBuyClick            = { findNavController().navigate(R.id.action_homeFragment_to_materialToolBuyFragment) },
                 onMaterialTransferClick = { findNavController().navigate(R.id.action_homeFragment_to_materialTransferFragment) },
                 onToolTransferClick     = { findNavController().navigate(R.id.action_homeFragment_to_toolTransferFragment) },
+                onIncomingTransfersClick = { findNavController().navigate(R.id.action_homeFragment_to_incomingTransfersFragment) },
                 onWorkProgressClick     = { findNavController().navigate(R.id.action_homeFragment_to_workProgressFragment) },
                 onLeaveClick            = { findNavController().navigate(R.id.action_homeFragment_to_leaveFragment) },
                 onLeaveApprovalsClick   = { findNavController().navigate(R.id.action_homeFragment_to_leaveApprovalsFragment) },

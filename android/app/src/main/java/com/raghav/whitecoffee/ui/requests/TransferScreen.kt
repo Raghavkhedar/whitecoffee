@@ -44,16 +44,17 @@ fun TransferScreen(
     submitting: Boolean,
     error: String?,
     photos: List<Uri>,
+    receiverName: String?,
+    onPickReceiver: () -> Unit,
     onBack: () -> Unit,
     onAddPhoto: () -> Unit,
     onRemovePhoto: (Uri) -> Unit,
-    onSubmit: (from: String, to: String, transferredBy: String, receivedBy: String, items: List<TransferItem>, notes: String) -> Unit,
+    onSubmit: (from: String, to: String, transferredBy: String, items: List<TransferItem>, notes: String) -> Unit,
 ) = WhiteCoffeeTheme {
     val items = remember { mutableStateListOf(XferRow()) }
     var from by remember { mutableStateOf("") }
     var to by remember { mutableStateOf("") }
     var transferredBy by remember { mutableStateOf("") }
-    var receivedBy by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
     RequestScaffold(title = if (isTool) "Tool Transfer" else "Material Transfer", onBack = onBack, isOnline = isOnline) {
@@ -75,7 +76,7 @@ fun TransferScreen(
             }
             Column(Modifier.weight(1f)) {
                 FieldLabel("Received by"); Spacer(Modifier.height(7.dp))
-                WcField(receivedBy, { receivedBy = it }, placeholder = "Name")
+                ReadOnlyFieldBox(text = receiverName ?: "Choose", onClick = onPickReceiver)
             }
         }
 
@@ -125,7 +126,7 @@ fun TransferScreen(
                     if (it.name.isBlank() || q == null) null
                     else TransferItem(it.name.trim(), q, it.unit.trim(), it.condition.trim(), it.spec1.trim(), it.spec2.trim(), it.make.trim())
                 }
-                onSubmit(from.trim(), to.trim(), transferredBy.trim(), receivedBy.trim(), mapped, notes.trim())
+                onSubmit(from.trim(), to.trim(), transferredBy.trim(), mapped, notes.trim())
             },
         )
     }

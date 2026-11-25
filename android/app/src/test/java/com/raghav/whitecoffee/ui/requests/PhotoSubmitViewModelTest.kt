@@ -2,6 +2,7 @@ package com.raghav.whitecoffee.ui.requests
 
 import android.net.Uri
 import com.raghav.whitecoffee.core.UiState
+import com.raghav.whitecoffee.data.model.Employee
 import com.raghav.whitecoffee.data.model.MaterialToolPurchase
 import com.raghav.whitecoffee.data.model.PurchaseItem
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
@@ -11,6 +12,7 @@ import com.raghav.whitecoffee.data.model.TransferItem
 import com.raghav.whitecoffee.fake.FakeNetworkMonitor
 import com.raghav.whitecoffee.fake.FakePhotoPipeline
 import com.raghav.whitecoffee.fake.FakeRequestRepository
+import com.raghav.whitecoffee.fake.FakeSessionManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -59,7 +61,7 @@ class PhotoSubmitViewModelTest {
         MaterialToolRequestViewModel(repo, photos, FakeNetworkMonitor())
 
     private fun transferVm() =
-        TransferViewModel(repo, photos, FakeNetworkMonitor())
+        TransferViewModel(repo, photos, FakeNetworkMonitor(), FakeSessionManager())
 
     /**
      * Uri is abstract with a private constructor, so a test cannot build a real one. Nothing
@@ -70,6 +72,8 @@ class PhotoSubmitViewModelTest {
 
     private fun items() = listOf(RequestItem(itemName = "Cement", quantity = 10.0))
 
+    private val asha = Employee(uid = "u2", name = "Asha", employeeId = "EMP002")
+
     private fun transferItems() = listOf(TransferItem(itemName = "Drill", quantity = 1.0))
 
     // ── back-dated entries ────────────────────────────────────────────────
@@ -78,7 +82,7 @@ class PhotoSubmitViewModelTest {
     fun `a picked past date is what gets written`() = runTest(dispatcher) {
         val past = LocalDate.of(2026, 1, 5)
 
-        transferVm().submitToolTransfer("A", "B", "x", "y", transferItems(), "", date = past)
+        transferVm().submitToolTransfer("A", "B", "x", asha, transferItems(), "", date = past)
         MaterialToolBuyViewModel(repo, photos, FakeNetworkMonitor()).submitPurchase(
             "S-001", "Site", listOf(PurchaseItem(itemName = "Cement", quantity = 1.0)), "", date = past,
         )
@@ -228,12 +232,34 @@ class PhotoSubmitViewModelTest {
     // ── transfers: one ViewModel, two collections ─────────────────────────
 
     @Test
+    fun `a transfer is addressed to the picked employee and awaits their receipt`() = runTest(dispatcher) {
+        transferVm().submitToolTransfer("Depot", "Site A", "Ravi", asha, transferItems(), "")
+        advanceUntilIdle()
+
+        val transfer = repo.written.single().third as Transfer
+        assertEquals("u2", transfer.receiverId)
+        assertEquals("pending", transfer.receiptStatus)
+        assertEquals("pending", transfer.toMap()["receiptStatus"])
+    }
+
+    @Test
+    fun `the picker offers active colleagues only, never the sender`() = runTest(dispatcher) {
+        repo.directory = listOf(
+            Employee("u2", "Zed"), Employee("u1", "Me"), Employee("u3", "Gone", active = false), Employee("u4", "Amy"),
+        )
+        val vm = transferVm()
+        advanceUntilIdle()
+
+        assertEquals(listOf("Amy", "Zed"), vm.employees.value.map { it.name })
+    }
+
+    @Test
     fun `material and tool transfers land in different collections`() = runTest(dispatcher) {
         val vm = transferVm()
 
-        vm.submitMaterialTransfer("Depot", "Site A", "Ravi", "Asha", transferItems(), "")
+        vm.submitMaterialTransfer("Depot", "Site A", "Ravi", asha, transferItems(), "")
         advanceUntilIdle()
-        vm.submitToolTransfer("Depot", "Site B", "Ravi", "Asha", transferItems(), "")
+        vm.submitToolTransfer("Depot", "Site B", "Ravi", asha, transferItems(), "")
         advanceUntilIdle()
 
         assertEquals(
@@ -246,12 +272,12 @@ class PhotoSubmitViewModelTest {
     fun `a transfer missing its receiver is refused`() = runTest(dispatcher) {
         val vm = transferVm()
 
-        vm.submitMaterialTransfer("Depot", "Site A", "Ravi", "  ", transferItems(), "")
+        vm.submitMaterialTransfer("Depot", "Site A", "Ravi", null, transferItems(), "")
         advanceUntilIdle()
 
         assertTrue(repo.written.isEmpty())
         assertEquals(
-            "Please enter who is receiving.",
+            "Please choose who is receiving.",
             (vm.submitState.value as UiState.Error).message,
         )
     }
@@ -260,7 +286,7 @@ class PhotoSubmitViewModelTest {
     fun `transfer fields are trimmed before they are stored`() = runTest(dispatcher) {
         val vm = transferVm()
 
-        vm.submitMaterialTransfer("  Depot  ", "  Site A  ", "  Ravi  ", "  Asha  ", transferItems(), "  n  ")
+        vm.submitMaterialTransfer("  Depot  ", "  Site A  ", "  Ravi  ", asha, transferItems(), "  n  ")
         advanceUntilIdle()
 
         val transfer = repo.written.single().third as Transfer

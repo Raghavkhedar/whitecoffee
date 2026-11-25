@@ -74,6 +74,7 @@ fun HomeScreen(
     onMtBuyClick: () -> Unit,
     onMaterialTransferClick: () -> Unit,
     onToolTransferClick: () -> Unit,
+    onIncomingTransfersClick: () -> Unit,
     onWorkProgressClick: () -> Unit,
     onLeaveClick: () -> Unit,
     onLeaveApprovalsClick: () -> Unit,
@@ -88,6 +89,7 @@ fun HomeScreen(
         /* all roles  */ add(ModuleItem("M&T Buy", "Log purchases", Ms.shopping_cart, WcTheme.colors.Tiles.MtBuy, onMtBuyClick))
         /* all roles  */ add(ModuleItem("Material Transfer", "Move stock", Ms.inventory_2, WcTheme.colors.Tiles.MaterialXfer, onMaterialTransferClick))
         /* all roles  */ add(ModuleItem("Tool Transfer", "Handover tools", Ms.handyman, WcTheme.colors.Tiles.ToolXfer, onToolTransferClick))
+        /* all roles  */ add(ModuleItem("Incoming", "Confirm receipt", Ms.check_circle, WcTheme.colors.Tiles.ToolXfer, onIncomingTransfersClick))
         /* ops only   */ if (isOperations) add(ModuleItem("Work Progress", "Daily report", Ms.insights, WcTheme.colors.Tiles.Work, onWorkProgressClick))
         /* all roles  */ add(ModuleItem("Leave", "Time off", Ms.event_busy, WcTheme.colors.Tiles.Leave, onLeaveClick))
         /* admin only */ if (isAdmin) add(ModuleItem("Leave Approvals", "Review requests", Ms.fact_check, WcTheme.colors.Tiles.Approvals, onLeaveApprovalsClick))
@@ -356,7 +358,7 @@ private fun HomeScreenPreview() {
         todayStatus = TodayAttendanceStatus.Present("At Home", "8:30 AM"),
         isOperations = true, isOffice = false, isAdmin = false, isOnline = true, unreadCount = 2, isLoggingOut = false,
         onBellClick = {}, onLogout = {}, onAttendanceClick = {}, onMtRequestClick = {}, onMtBuyClick = {},
-        onMaterialTransferClick = {}, onToolTransferClick = {}, onWorkProgressClick = {}, onLeaveClick = {},
+        onMaterialTransferClick = {}, onToolTransferClick = {}, onIncomingTransfersClick = {}, onWorkProgressClick = {}, onLeaveClick = {},
         onLeaveApprovalsClick = {}, onRegularizationClick = {},
     )
 }

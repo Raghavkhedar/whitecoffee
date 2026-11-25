@@ -27,6 +27,24 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "material_transfers",
+      "fieldPath": "receiverId",
+      "indexes": [
+        { "order": "ASCENDING",  "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING",  "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "tool_transfers",
+      "fieldPath": "receiverId",
+      "indexes": [
+        { "order": "ASCENDING",  "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING",  "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
       "collectionGroup": "attendance",
       "fieldPath": "date",
       "indexes": [

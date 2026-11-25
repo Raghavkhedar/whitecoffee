@@ -295,6 +295,38 @@ service cloud.firestore {
              || request.resource.data.status == 'pending';
     }
 
+    // ── Transfer receipt ─────────────────────────────────────────────────
+    // A transfer names its receiver (`receiverId`). A sender may only create it unconfirmed,
+    // and only that receiver may later move it pending → received|problem, problem → received.
+    function createdUnreceived(userId) {
+      let d = request.resource.data;
+      return !d.keys().hasAny(['receiptNote', 'receiptAt'])
+             && d.get('receiptStatus', 'pending') == 'pending'
+             && d.get('receiverId', '') != userId;
+    }
+
+    function isReceiptByReceiver() {
+      let d = request.resource.data;
+      let from = resource.data.get('receiptStatus', 'pending');
+      return resource.data.get('receiverId', '') == request.auth.uid
+             && changedKeysWithin(withStamp(['receiptStatus', 'receiptNote', 'receiptAt']))
+             && stampIsTruthful()
+             && d.receiptAt is timestamp
+             && ((d.receiptStatus == 'received' && from in ['pending', 'problem'])
+                 || (d.receiptStatus == 'problem' && from == 'pending'
+                     && d.receiptNote is string
+                     && d.receiptNote.size() > 0 && d.receiptNote.size() <= 500))
+             && isActive();
+    }
+
+    // ── /directory/{userId} — names only, for picking a receiver ─────────
+    // Rules are document-level, so users/{uid} cannot be opened for this: it holds far more
+    // than a name. Written only by the syncDirectory Cloud Function.
+    match /directory/{userId} {
+      allow read:  if isLoggedIn();
+      allow write: if false;
+    }
+
     // ── /users/{userId} — User profiles ──────────────────────────────────
 
     match /users/{userId} {
@@ -394,8 +426,11 @@ service cloud.firestore {
       // ── /material_transfers/{docId} ───────────────────────────────────
       match /material_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
+        allow read:   if isLoggedIn() && resource.data.receiverId == request.auth.uid;
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed()
+                      && createdUnreceived(userId);
         // notSelf: a Submissions manager must not approve their own submitted work.
+        allow update: if isLoggedIn() && isReceiptByReceiver();
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
@@ -407,8 +442,11 @@ service cloud.firestore {
       // ── /tool_transfers/{docId} ───────────────────────────────────────
       match /tool_transfers/{docId} {
         allow read:   if isLoggedIn() && (isOwner(userId) || isAdmin() || canAccessSubmissions());
-        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed();
+        allow read:   if isLoggedIn() && resource.data.receiverId == request.auth.uid;
+        allow create: if isLoggedIn() && isOwner(userId) && isActive() && createdUnreviewed()
+                      && createdUnreceived(userId);
         // notSelf: a Submissions manager must not approve their own submitted work.
+        allow update: if isLoggedIn() && isReceiptByReceiver();
         allow update: if isLoggedIn() && (
           isAdmin() ||
           (canAccessSubmissions() && notSelf(userId)) ||
@@ -616,9 +654,11 @@ service cloud.firestore {
     }
     match /{path=**}/material_transfers/{docId} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
+      allow read: if isLoggedIn() && resource.data.receiverId == request.auth.uid;
     }
     match /{path=**}/tool_transfers/{docId} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());
+      allow read: if isLoggedIn() && resource.data.receiverId == request.auth.uid;
     }
     match /{path=**}/work_progress/{docId} {
       allow read: if isLoggedIn() && (isAdmin() || canAccessSubmissions());

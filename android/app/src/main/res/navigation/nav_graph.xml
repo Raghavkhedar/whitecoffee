@@ -44,6 +44,9 @@
             android:id="@+id/action_homeFragment_to_toolTransferFragment"
             app:destination="@id/toolTransferFragment" />
         <action
+            android:id="@+id/action_homeFragment_to_incomingTransfersFragment"
+            app:destination="@id/incomingTransfersFragment" />
+        <action
             android:id="@+id/action_homeFragment_to_workProgressFragment"
             app:destination="@id/workProgressFragment" />
         <action
@@ -94,6 +97,12 @@
         android:id="@+id/toolTransferFragment"
         android:name="com.raghav.whitecoffee.ui.requests.ToolTransferFragment"
         android:label="Tool Transfer" />
+
+    <!-- ── Incoming Transfers ── -->
+    <fragment
+        android:id="@+id/incomingTransfersFragment"
+        android:name="com.raghav.whitecoffee.ui.requests.IncomingTransfersFragment"
+        android:label="Incoming Transfers" />
 
     <!-- ── Office Attendance ── -->
     <fragment

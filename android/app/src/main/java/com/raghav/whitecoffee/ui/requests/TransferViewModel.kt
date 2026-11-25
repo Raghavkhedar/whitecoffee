@@ -1,11 +1,18 @@
 package com.raghav.whitecoffee.ui.requests
 
 import android.net.Uri
+import androidx.lifecycle.viewModelScope
+import com.raghav.whitecoffee.data.model.Employee
 import com.raghav.whitecoffee.data.model.Transfer
 import com.raghav.whitecoffee.data.model.TransferItem
 import com.raghav.whitecoffee.data.network.NetworkMonitor
 import com.raghav.whitecoffee.data.photo.PhotoPipeline
 import com.raghav.whitecoffee.data.repository.RequestRepository
+import com.raghav.whitecoffee.data.session.SessionManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -21,7 +28,25 @@ class TransferViewModel @Inject constructor(
     requestRepository: RequestRepository,
     photos: PhotoPipeline,
     networkMonitor: NetworkMonitor,
+    private val sessionManager: SessionManager,
 ) : PhotoSubmitViewModel(requestRepository, photos, networkMonitor) {
+
+    private val _employees = MutableStateFlow<List<Employee>>(emptyList())
+
+    /** Who a transfer can be addressed to. */
+    val employees: StateFlow<List<Employee>> = _employees.asStateFlow()
+
+    init { loadEmployees() }
+
+    fun loadEmployees() {
+        viewModelScope.launch {
+            requestRepository.getDirectory().onSuccess { all ->
+                _employees.value = all
+                    .filter { it.active && it.uid != sessionManager.userId }
+                    .sortedBy { it.name.lowercase() }
+            }
+        }
+    }
 
     // The collection is chosen by the host Fragment, so it is a parameter here rather than a
     // constant like the single-purpose forms.
@@ -31,26 +56,26 @@ class TransferViewModel @Inject constructor(
         fromLocation: String,
         toLocation: String,
         transferredBy: String,
-        receivedBy: String,
+        receiver: Employee?,
         items: List<TransferItem>,
         notes: String,
         photoUris: List<Uri> = emptyList(),
         date: LocalDate = LocalDate.now(),
     ) = submitTransfer(
-        MATERIAL_TRANSFERS, fromLocation, toLocation, transferredBy, receivedBy, items, notes, photoUris, date,
+        MATERIAL_TRANSFERS, fromLocation, toLocation, transferredBy, receiver, items, notes, photoUris, date,
     ) { docId, transfer -> requestRepository.submitMaterialTransfer(transfer, docId, emptyList()) }
 
     fun submitToolTransfer(
         fromLocation: String,
         toLocation: String,
         transferredBy: String,
-        receivedBy: String,
+        receiver: Employee?,
         items: List<TransferItem>,
         notes: String,
         photoUris: List<Uri> = emptyList(),
         date: LocalDate = LocalDate.now(),
     ) = submitTransfer(
-        TOOL_TRANSFERS, fromLocation, toLocation, transferredBy, receivedBy, items, notes, photoUris, date,
+        TOOL_TRANSFERS, fromLocation, toLocation, transferredBy, receiver, items, notes, photoUris, date,
     ) { docId, transfer -> requestRepository.submitToolTransfer(transfer, docId, emptyList()) }
 
     private fun submitTransfer(
@@ -58,7 +83,7 @@ class TransferViewModel @Inject constructor(
         from: String,
         to: String,
         transferredBy: String,
-        receivedBy: String,
+        receiver: Employee?,
         items: List<TransferItem>,
         notes: String,
         photoUris: List<Uri>,
@@ -67,7 +92,7 @@ class TransferViewModel @Inject constructor(
     ) = submit(
         collection = collection,
         photoUris = photoUris,
-        validate = { validateInputs(from, to, transferredBy, receivedBy, items) },
+        validate = { validateInputs(from, to, transferredBy, receiver, items) },
         write = { docId ->
             write(
                 docId,
@@ -75,7 +100,9 @@ class TransferViewModel @Inject constructor(
                     fromLocation  = from.trim(),
                     toLocation    = to.trim(),
                     transferredBy = transferredBy.trim(),
-                    receivedBy    = receivedBy.trim(),
+                    receivedBy    = receiver!!.name,
+                    receiverId    = receiver.uid,
+                    receiptStatus = "pending",
                     items         = items,
                     notes         = notes.trim(),
                     transferDate  = date.format(DATE_FORMAT),
@@ -94,13 +121,13 @@ class TransferViewModel @Inject constructor(
             from: String,
             to: String,
             transferredBy: String,
-            receivedBy: String,
+            receiver: Employee?,
             items: List<TransferItem>,
         ): String? = when {
             from.isBlank() -> "Please enter the from location."
             to.isBlank() -> "Please enter the to location."
             transferredBy.isBlank() -> "Please enter who is transferring."
-            receivedBy.isBlank() -> "Please enter who is receiving."
+            receiver == null -> "Please choose who is receiving."
             items.isEmpty() -> "Please add at least one item."
             items.any { it.itemName.isBlank() || it.quantity <= 0 } ->
                 "Please fill in all item names and quantities."

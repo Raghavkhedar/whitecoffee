@@ -1,9 +1,12 @@
 package com.raghav.whitecoffee.data.repository
 
+import com.raghav.whitecoffee.data.model.Employee
+import com.raghav.whitecoffee.data.model.IncomingTransfer
 import com.raghav.whitecoffee.data.model.MaterialToolPurchase
 import com.raghav.whitecoffee.data.model.MaterialToolRequest
 import com.raghav.whitecoffee.data.model.Transfer
 import com.raghav.whitecoffee.data.model.WorkProgress
+import kotlinx.coroutines.flow.Flow
 
 /**
  * Field submissions: M&T requests and purchases, material and tool transfers, work progress.
@@ -49,6 +52,21 @@ interface RequestRepository {
     ): Result<String>
 
     suspend fun getToolTransfers(): Result<List<Transfer>>
+
+    /** Every colleague a transfer can be addressed to. */
+    suspend fun getDirectory(): Result<List<Employee>>
+
+    /** Material and tool transfers addressed to the signed-in user, live. */
+    fun observeIncomingTransfers(): Flow<Result<List<IncomingTransfer>>>
+
+    /** Records the receiver's answer on the sender's document. */
+    suspend fun confirmReceipt(
+        collectionName: String,
+        senderId: String,
+        docId: String,
+        status: String,
+        note: String = "",
+    ): Result<Unit>
 
     suspend fun submitWorkProgress(
         progress: WorkProgress,

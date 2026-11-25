@@ -36,6 +36,17 @@ data class TransferItem(
     }
 }
 
+/** A `directory/{uid}` entry: all an employee may know about a colleague. */
+data class Employee(
+    val uid: String = "",
+    val name: String = "",
+    val employeeId: String = "",
+    val active: Boolean = true,
+)
+
+/** A transfer addressed to the signed-in user; [collection] says which kind it is. */
+data class IncomingTransfer(val collection: String, val transfer: Transfer)
+
 data class Transfer(
     @DocumentId
     val id: String = "",
@@ -50,7 +61,10 @@ data class Transfer(
     val notes: String = "",
     val photoUrls: List<String> = emptyList(),
     val transferDate: String = "",      // yyyy-MM-dd
-    val submittedAt: Timestamp? = null
+    val submittedAt: Timestamp? = null,
+    val receiverId: String = "",        // uid who must confirm; blank on old records
+    val receiptStatus: String = "",     // pending / received / problem
+    val receiptNote: String = "",
 ) {
     /** One row per item for Google Sheets export */
     fun toSheetRows(): List<Map<String, Any>> = items.map { item ->
@@ -87,6 +101,10 @@ data class Transfer(
         "photoUrls"     to photoUrls,
         "transferDate"  to transferDate,
         "submittedAt"   to submittedAt
+    ) + if (receiverId.isBlank()) emptyMap() else mapOf(
+        // receiptNote/receiptAt are the receiver's to write; the rules refuse them on create.
+        "receiverId"    to receiverId,
+        "receiptStatus" to receiptStatus,
     )
 
     companion object {
@@ -112,7 +130,10 @@ data class Transfer(
                     notes         = doc.getString("notes") ?: "",
                     photoUrls     = photoUrls,
                     transferDate  = doc.getString("transferDate") ?: "",
-                    submittedAt   = doc.getTimestamp("submittedAt")
+                    submittedAt   = doc.getTimestamp("submittedAt"),
+                    receiverId    = doc.getString("receiverId") ?: "",
+                    receiptStatus = doc.getString("receiptStatus") ?: "",
+                    receiptNote   = doc.getString("receiptNote") ?: ""
                 )
             } catch (e: Exception) {
                 null

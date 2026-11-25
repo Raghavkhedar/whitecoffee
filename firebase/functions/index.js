@@ -68,6 +68,7 @@ const { assessPunch } = require("./punchIntegrity");
 // honest and still impossible in sequence — see punchSequence.js.
 const { assessSequence, isDayOpen } = require("./punchSequence");
 const { buildOpenSessionReminder } = require("./openSessionReminder");
+const { buildReceiptNotices, directoryEntry } = require("./transferReceipt");
 // Auto-file a regularization for a day that scored LNF because a check-out was forgotten.
 const { needsAutoRegularization, buildAutoRegularization } = require("./unclosedDay");
 // Before/after audit entry for every write — see auditLog.js on why the actor is
@@ -1268,6 +1269,7 @@ exports.exportToSheets = onSchedule(
         "Submitted At", "Employee Name", "Employee ID", "Transfer Date",
         "From", "To", "Transferred By", "Received By",
         "Item Name", "Make", "Spec 1", "Spec 2", "Quantity", "Unit", "Condition", "Notes", "Photo URLs",
+        "Receipt Status", "Receipt Note", "Received At",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1279,8 +1281,9 @@ exports.exportToSheets = onSchedule(
         // transfers dated the same day.
         const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
         const base   = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.notes || "", photos] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.make || "", item.spec1 || "", item.spec2 || "", item.quantity ?? "", item.unit || "", item.condition || "", d.notes || "", photos] }));
+        const receipt = [d.receiptStatus || "", d.receiptNote || "", d.receiptStatus === "received" ? ts(d.receiptAt) : ""];
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.notes || "", photos, ...receipt] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.make || "", item.spec1 || "", item.spec2 || "", item.quantity ?? "", item.unit || "", item.condition || "", d.notes || "", photos, ...receipt] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_5, TABS.MATERIAL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
@@ -1294,6 +1297,7 @@ exports.exportToSheets = onSchedule(
         "Submitted At", "Employee Name", "Employee ID", "Transfer Date",
         "From", "To", "Transferred By", "Received By",
         "Item Name", "Make", "Spec 1", "Spec 2", "Quantity", "Unit", "Condition", "Notes", "Photo URLs",
+        "Receipt Status", "Receipt Note", "Received At",
       ];
       const rows = [];
       snap.docs.forEach((doc) => {
@@ -1305,8 +1309,9 @@ exports.exportToSheets = onSchedule(
         // transfers dated the same day.
         const sortKey = [d.transferDate || "", millisOf(d.submittedAt)];
         const base  = [ts(d.submittedAt), userNameMap.get(uid) ?? d.userName ?? "", userEmpIdMap.get(uid) ?? d.employeeId ?? "", dmy(d.transferDate), d.fromLocation || "", d.toLocation || "", d.transferredBy || "", d.receivedBy || ""];
-        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.notes || "", photos] });
-        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.make || "", item.spec1 || "", item.spec2 || "", item.quantity ?? "", item.unit || "", item.condition || "", d.notes || "", photos] }));
+        const receipt = [d.receiptStatus || "", d.receiptNote || "", d.receiptStatus === "received" ? ts(d.receiptAt) : ""];
+        if (items.length === 0) rows.push({ sortKey, row: [...base, "", "", "", "", "", "", "", d.notes || "", photos, ...receipt] });
+        else items.forEach((item) => rows.push({ sortKey, row: [...base, item.itemName || "", item.make || "", item.spec1 || "", item.spec2 || "", item.quantity ?? "", item.unit || "", item.condition || "", d.notes || "", photos, ...receipt] }));
       });
       rows.sort(byKeys);
       await writeTab(sheets, SHEET_ID_6, TABS.TOOL_TRANSFERS, [header, ...rows.map((r) => r.row)]);
@@ -2657,6 +2662,44 @@ exports.updateUserEmail = onCall(async (request) => {
 // signal is cached locally and synced later. Routing punches through a callable would
 // require connectivity and would lose those punches outright.
 //
+// ── Transfer receipt — tell the receiver, then tell the sender what happened ────
+function onTransferWritten(collection) {
+  return onDocumentWritten(`users/{userId}/${collection}/{docId}`, async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    const db = admin.firestore();
+    const adminIds = after?.receiptStatus === "problem"
+      ? (await db.collection("users").where("role", "==", "admin").get()).docs.map((d) => d.id)
+      : [];
+    const notices = buildReceiptNotices({
+      before, after, collection, adminIds,
+      docId: event.params.docId, senderId: event.params.userId,
+    });
+    if (notices.length === 0) return;
+
+    const batch = db.batch();
+    const now = admin.firestore.Timestamp.now();
+    for (const n of notices) {
+      batch.set(db.collection("sent_notifications").doc(n.pushId), { ...n.push, sentAt: now });
+      batch.set(db.doc(`users/${n.userId}/notifications/${n.inAppId}`), { ...n.inApp, createdAt: now });
+    }
+    await batch.commit();
+  });
+}
+exports.onMaterialTransferWritten = onTransferWritten("material_transfers");
+exports.onToolTransferWritten = onTransferWritten("tool_transfers");
+
+// Names-only mirror of users/{uid} for the receiver picker (employees cannot read profiles).
+exports.syncDirectory = onDocumentWritten("users/{userId}", async (event) => {
+  const entry = directoryEntry(
+    event.data.before.exists ? event.data.before.data() : null,
+    event.data.after.exists ? event.data.after.data() : null,
+  );
+  if (entry === undefined) return;
+  const ref = admin.firestore().doc(`directory/${event.params.userId}`);
+  await (entry === null ? ref.delete() : ref.set(entry));
+});
+
 // Security rules bound what the client may write (type allowlist, timestamp window,
 // shape). This trigger scores what actually landed and — crucially — corrects the `date`
 // field, which rules cannot do (no timezone arithmetic) and which the nightly scorer

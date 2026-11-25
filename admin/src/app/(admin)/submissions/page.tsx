@@ -289,6 +289,29 @@ function EditModal({
   );
 }
 
+const RECEIPT_STYLE: Record<string, [string, string]> = {
+  pending:  ['Awaiting receipt', 'bg-amber-50 text-amber-700'],
+  received: ['Received',         'bg-green-50 text-green-700'],
+  problem:  ['Problem',          'bg-red-50 text-red-600'],
+};
+
+// Only transfers addressed to a receiver carry a receipt; older rows render nothing.
+function Receipt({ row, onClose }: { row: Row; onClose: (row: Row) => void }) {
+  const style = RECEIPT_STYLE[String(row.receiptStatus ?? '')];
+  if (!row.receiverId || !style) return null;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap ${style[1]}`}
+        title={String(row.receiptNote ?? '')}>{style[0]}</span>
+      {row.receiptStatus !== 'received' && (
+        <button onClick={() => onClose(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">
+          Mark received
+        </button>
+      )}
+    </span>
+  );
+}
+
 export default function SubmissionsPage() {
   const isMobile = useIsMobile();
   const [active, setActive]   = useState<CollectionKey>('material_requests');
@@ -340,6 +363,17 @@ export default function SubmissionsPage() {
   function handleSaved(updated: Row) {
     setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
     setEditing(null);
+  }
+
+  async function markReceived(row: Row) {
+    const note = row.receiptNote ? ` Reported problem: "${row.receiptNote}".` : '';
+    if (!window.confirm(`Close this transfer as received by ${row.receivedBy}?${note} This cannot be undone by the employee.`)) return;
+    try {
+      await updateDoc(doc(db, row._path), stamped({ receiptStatus: 'received', receiptAt: serverTimestamp() }));
+      setRows(prev => prev.map(r => r._path === row._path ? { ...r, receiptStatus: 'received' } : r));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   const activeLabel = COLLECTIONS.find(c => c.key === active)?.label ?? active;
@@ -406,6 +440,7 @@ export default function SubmissionsPage() {
                     <span>{String(row.workDescription)}</span>
                   ) : '—'}
                 </div>
+                <div className="mt-2 empty:hidden"><Receipt row={row} onClose={markReceived} /></div>
                 <div className="flex items-center gap-4 mt-2">
                   <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline">View</button>
                   <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline">Edit</button>
@@ -448,6 +483,7 @@ export default function SubmissionsPage() {
                   </td>
                   <td className={`${TD} pr-[18px] text-right`}>
                     <div className="flex items-center gap-3 justify-end">
+                      <Receipt row={row} onClose={markReceived} />
                       <button onClick={() => setViewing(row)} className="text-primary text-xs font-medium hover:underline whitespace-nowrap">View</button>
                       <button onClick={() => setEditing(row)} className="text-[#9A938C] text-xs font-medium hover:text-primary hover:underline whitespace-nowrap">Edit</button>
                     </div>
