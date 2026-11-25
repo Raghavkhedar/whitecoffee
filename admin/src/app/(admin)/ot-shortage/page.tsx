@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { getAllUsers, getAttendanceForDateRange, getPlannedHoursForDateRange, getOtApprovalsForDateRange, getHolidaysForDateRange, getAttendanceStatusForDateRange, approveOt, rejectOt, setManualOt } from '@/lib/firestore';
+import AsyncButton from '@/components/AsyncButton';
 import type { User, AttendanceRecord, PlannedHours, OtApproval, Holiday, AttendanceStatus } from '@/types';
 import { RoleBadge } from '@/components/ui';
 import ExportButton from '@/components/ExportButton';
@@ -336,26 +337,17 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
     row.pendingOt.forEach(d => { init[d.date] = { mins: String(d.pendingExtraMins), reason: '' }; });
     return init;
   });
-  const [saving, setSaving] = useState('');
   const [error, setError]   = useState('');
   const [manual, setManual] = useState<{ date: string; mins: string; reason: string }>({ date: end, mins: '', reason: '' });
-  const [manualSaving, setManualSaving] = useState(false);
 
   async function addManualOt() {
     const mins = Math.max(0, Math.round(Number(manual.mins) || 0));
-    if (!manual.date)         { setError('Pick a date for the manual OT entry.'); return; }
-    if (mins <= 0)            { setError('Enter the OT minutes to grant (greater than 0).'); return; }
-    if (!manual.reason.trim()){ setError('A reason is required for a manual OT entry.'); return; }
+    if (!manual.date)         throw new Error('Pick a date for the manual OT entry.');
+    if (mins <= 0)            throw new Error('Enter the OT minutes to grant (greater than 0).');
+    if (!manual.reason.trim()) throw new Error('A reason is required for a manual OT entry.');
     setError('');
-    setManualSaving(true);
-    try {
-      await setManualOt(row.user, manual.date, mins, manual.reason.trim(), adminName);
-      setManual({ date: end, mins: '', reason: '' });
-      onApproved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save the manual entry. Try again.');
-    }
-    setManualSaving(false);
+    await setManualOt(row.user, manual.date, mins, manual.reason.trim(), adminName);
+    setManual({ date: end, mins: '', reason: '' });
   }
 
   function set(date: string, field: 'mins' | 'reason', value: string) {
@@ -367,30 +359,16 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
     // Grant is capped at the beyond-declared OT for the day — admin may approve less, never more.
     // (The declared portion is already auto-approved and not part of this grant.)
     const mins  = Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(draft.mins) || 0)));
-    if (!draft.reason.trim()) { setError('A reason is required to approve overtime.'); return; }
+    if (!draft.reason.trim()) throw new Error('A reason is required to approve overtime.');
     setError('');
-    setSaving(day.date);
-    try {
-      await approveOt(row.user, day.date, day.pendingExtraMins, mins, draft.reason.trim(), adminName);
-      onApproved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to approve. Try again.');
-    }
-    setSaving('');
+    await approveOt(row.user, day.date, day.pendingExtraMins, mins, draft.reason.trim(), adminName);
   }
 
   async function reject(day: DayDetail) {
     const draft = drafts[day.date];
-    if (!draft.reason.trim()) { setError('A reason is required to reject overtime.'); return; }
+    if (!draft.reason.trim()) throw new Error('A reason is required to reject overtime.');
     setError('');
-    setSaving(day.date);
-    try {
-      await rejectOt(row.user, day.date, day.pendingExtraMins, draft.reason.trim(), adminName);
-      onApproved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to reject. Try again.');
-    }
-    setSaving('');
+    await rejectOt(row.user, day.date, day.pendingExtraMins, draft.reason.trim(), adminName);
   }
 
   return (
@@ -474,12 +452,12 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
                         </div>
                       </div>
                       <div className="flex justify-end gap-2 mt-3">
-                        <button onClick={() => reject(day)} disabled={saving === day.date} className="btn-danger !py-1.5 !px-4 text-[13px]">
-                          {saving === day.date ? 'Saving…' : 'Reject'}
-                        </button>
-                        <button onClick={() => approve(day)} disabled={saving === day.date} className="btn-success !py-1.5 !px-4 text-[13px]">
-                          {saving === day.date ? 'Saving…' : `Approve ${minutesToDisplay(Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(drafts[day.date]?.mins) || 0))))}`}
-                        </button>
+                        <AsyncButton onClick={() => reject(day)} onDone={onApproved} onError={e => setError(e.message)} className="btn-danger !py-1.5 !px-4 text-[13px]">
+                          Reject
+                        </AsyncButton>
+                        <AsyncButton onClick={() => approve(day)} onDone={onApproved} onError={e => setError(e.message)} className="btn-success !py-1.5 !px-4 text-[13px]">
+                          {`Approve ${minutesToDisplay(Math.min(day.pendingExtraMins, Math.max(0, Math.round(Number(drafts[day.date]?.mins) || 0))))}`}
+                        </AsyncButton>
                       </div>
                     </div>
                   ))}
@@ -512,9 +490,9 @@ function DetailModal({ row, adminName, start, end, onClose, onApproved }: {
                 </div>
               </div>
               <div className="flex justify-end mt-3">
-                <button onClick={addManualOt} disabled={manualSaving} className="btn-primary !py-1.5 !px-4 text-[13px]">
-                  {manualSaving ? 'Saving…' : 'Add OT'}
-                </button>
+                <AsyncButton onClick={addManualOt} onDone={onApproved} onError={e => setError(e.message)} className="btn-primary !py-1.5 !px-4 text-[13px]">
+                  Add OT
+                </AsyncButton>
               </div>
             </div>
           )}

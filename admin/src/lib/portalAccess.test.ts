@@ -74,7 +74,7 @@ console.log('Config integrity:');
 // disagree, a manager gets a tab that renders nothing.
 eq('exactly 5 admin-only tabs', TABS.filter(t => t.adminOnly).map(t => t.path),
   ['/dashboard', '/users', '/access', '/daily-activity', '/audit']);
-eq('10 grantable tabs', GRANTABLE.length, 10);
+eq('11 grantable tabs', GRANTABLE.length, 11);
 eq('/audit is never grantable', GRANTABLE.includes('/audit'), false);
 eq('/superadmin is never grantable', GRANTABLE.includes('/superadmin'), false);
 eq('exactly 1 superAdminOnly tab', TABS.filter(t => t.superAdminOnly).map(t => t.path), ['/superadmin']);
